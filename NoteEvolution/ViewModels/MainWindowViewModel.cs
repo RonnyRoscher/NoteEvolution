@@ -8,6 +8,7 @@ using DynamicData;
 using DynamicData.Binding;
 using ReactiveUI;
 using NoteEvolution.Models;
+using System.Reflection;
 
 namespace NoteEvolution.ViewModels
 {
@@ -68,6 +69,8 @@ namespace NoteEvolution.ViewModels
         #endregion
 
         #region Public Properties
+
+        public string TitleBarText => "NoteEvolution v" + Assembly.GetEntryAssembly().GetName().Version;
 
         private SourceCache<Note, Guid> _noteListSource;
 

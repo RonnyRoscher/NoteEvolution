@@ -6,7 +6,7 @@
         mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
         x:Class="NoteEvolution.Views.MainWindow"
         Icon="/Assets/avalonia-logo.ico"
-        Title="NoteEvolution">
+        Title="{Binding TitleBarText}">
 
     <Design.DataContext>
         <vm:MainWindowViewModel/>
