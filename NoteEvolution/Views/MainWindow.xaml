@@ -11,25 +11,52 @@
     <Design.DataContext>
         <vm:MainWindowViewModel/>
     </Design.DataContext>
-
-  <Grid ColumnDefinitions="0.4*,0.6*" RowDefinitions="Auto,*">
-    <StackPanel Margin="1 0 0 0" Orientation="Horizontal">
-      <Button Margin="3" Padding="4 0 4 2" Content="+" ToolTip.Tip="Create new note" Command="{Binding CreateNewNoteCommand}"/>
-      <Button Margin="3" Padding="7 0 6 2" Content="-" ToolTip.Tip="Delete selected note" Command="{Binding DeleteSelectedNoteCommand}"/>
-    </StackPanel>
-    <ListBox Grid.Column="0" Grid.Row="1" Margin="3" Padding="1" VirtualizationMode="Simple" Items="{Binding NoteList.Items}" SelectedItem="{Binding SelectedNote}">
-      <ListBox.ItemTemplate>
-        <DataTemplate>
-          <Border BorderBrush="Gray" Background="White" BorderThickness="1" Padding="4">
-            <TextBlock Text="{Binding Content}"/>
-          </Border>
-        </DataTemplate>
-      </ListBox.ItemTemplate>
-    </ListBox>
-    <DockPanel Grid.Column="1" Grid.Row="1" Margin="3" LastChildFill="True">
-      <TextBlock DockPanel.Dock="Top" Text="Text:"/>
-      <TextBox AcceptsReturn="True" TextWrapping="Wrap" Text="{Binding SelectedNote.Content}"/>
+  
+  <Grid ColumnDefinitions="0.4*,0.6*" RowDefinitions="0.3*,0.7*">
+    
+    <DockPanel Grid.Column="0" Grid.Row="0" LastChildFill="True">
+      <StackPanel DockPanel.Dock="Top" Margin="1 0 0 0" Orientation="Horizontal">
+        <Button Margin="3" Padding="4 0 4 2" Content="+" ToolTip.Tip="Create new document" Command="{Binding CreateNewDocumentCommand}"/>
+        <Button Margin="3" Padding="7 0 6 2" Content="-" ToolTip.Tip="Delete selected document but keep notes" Command="{Binding DeleteSelectedDocumentCommand}"/>
+        <Button Margin="3" Padding="7 0 6 2" Content="-" ToolTip.Tip="Delete selected document and notes" Command="{Binding DeleteSelectedDocumentAndNotesCommand}"/>
+      </StackPanel>
+      <ListBox Margin="3" Padding="1" VirtualizationMode="Simple" Items="{Binding DocumentList}" SelectedItem="{Binding SelectedDocument}">
+        <ListBox.ItemTemplate>
+          <DataTemplate>
+            <Border BorderBrush="Gray" Background="White" BorderThickness="1" Padding="4">
+              <TextBlock Text="{Binding Title}"/>
+            </Border>
+          </DataTemplate>
+        </ListBox.ItemTemplate>
+      </ListBox>
     </DockPanel>
+
+    <DockPanel Grid.Column="1" Grid.Row="0" Margin="3" LastChildFill="True">
+      <TextBlock DockPanel.Dock="Top" Text="Document Name"/>
+      <TextBox AcceptsReturn="True" TextWrapping="Wrap" Text="{Binding SelectedDocument.Title}"/>
+    </DockPanel>
+    
+    <DockPanel Grid.Column="0" Grid.Row="1" LastChildFill="True">
+      <StackPanel DockPanel.Dock="Top" Margin="1 0 0 0" Orientation="Horizontal">
+        <Button Margin="3" Padding="4 0 4 2" Content="+" ToolTip.Tip="Create new note" Command="{Binding CreateNewNoteCommand}"/>
+        <Button Margin="3" Padding="7 0 6 2" Content="-" ToolTip.Tip="Delete selected note" Command="{Binding DeleteSelectedNoteCommand}"/>
+      </StackPanel>
+      <ListBox Margin="3" Padding="1" VirtualizationMode="Simple" Items="{Binding NoteList}" SelectedItem="{Binding SelectedNote}">
+        <ListBox.ItemTemplate>
+          <DataTemplate>
+            <Border BorderBrush="Gray" Background="White" BorderThickness="1" Padding="4">
+              <TextBlock Text="{Binding Text}"/>
+            </Border>
+          </DataTemplate>
+        </ListBox.ItemTemplate>
+      </ListBox>
+    </DockPanel>
+
+    <DockPanel Grid.Column="1" Grid.Row="1" Margin="3" LastChildFill="True">
+      <TextBlock DockPanel.Dock="Top" Text="Note Text"/>
+      <TextBox AcceptsReturn="True" TextWrapping="Wrap" Text="{Binding SelectedNote.Text}"/>
+    </DockPanel>
+
   </Grid>
 
 </Window>

@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Reactive.Linq;
 using ReactiveUI;
 
 namespace NoteEvolution.Models
@@ -7,17 +8,20 @@ namespace NoteEvolution.Models
     {
         public Note()
         {
-            Id = Guid.NewGuid();
+            NoteId = Guid.NewGuid();
             CreationDate = DateTime.Now;
-            ModificationDate = CreationDate;
+
+            this.WhenAnyValue(x => x.CreationDate, x => x.Text, x => x.RelatedDocument)
+                .Select(_ => DateTime.Now)
+                .ToProperty(this, x => x.ModificationDate, out _modificationDate);
         }
 
-        private Guid _id;
+        private Guid _noteId;
 
-        public Guid Id
+        public Guid NoteId
         {
-            get => _id;
-            set => this.RaiseAndSetIfChanged(ref _id, value);
+            get => _noteId;
+            set => this.RaiseAndSetIfChanged(ref _noteId, value);
         }
 
         private DateTime _creationDate;
@@ -28,25 +32,23 @@ namespace NoteEvolution.Models
             set => this.RaiseAndSetIfChanged(ref _creationDate, value);
         }
 
-        private DateTime _modificationDate;
+        readonly ObservableAsPropertyHelper<DateTime> _modificationDate;
+        public DateTime ModificationDate => _modificationDate.Value;
 
-        public DateTime ModificationDate
+        private Document _relatedDocument;
+
+        public Document RelatedDocument
         {
-            get => _modificationDate;
-            set => this.RaiseAndSetIfChanged(ref _modificationDate, value);
+            get => _relatedDocument;
+            set => this.RaiseAndSetIfChanged(ref _relatedDocument, value);
         }
 
-        private string _content;
+        private string _text;
 
-        public string Content
+        public string Text
         {
-            get => _content;
-            set
-            {
-                if (value != _content)
-                    ModificationDate = DateTime.Now;
-                this.RaiseAndSetIfChanged(ref _content, value);
-            }
+            get => _text;
+            set => this.RaiseAndSetIfChanged(ref _text, value);
         }
     }
 }
