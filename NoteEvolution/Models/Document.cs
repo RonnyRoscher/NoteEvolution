@@ -13,30 +13,43 @@ namespace NoteEvolution.Models
         {
             DocumentId = Guid.NewGuid();
             CreationDate = DateTime.Now;
+            _noteListSource = new SourceCache<Note, Guid>(n => n.NoteId);
+            _rootNoteListSource = new SourceCache<Note, Guid>(n => n.NoteId);
 
-            _noteListSource = new SourceCache<Note, Guid>(note => note.NoteId);
+            var rootNote = new Note(this);
+            _noteListSource.AddOrUpdate(rootNote);
+            _rootNoteListSource.AddOrUpdate(rootNote);
 
             this.WhenAnyValue(x => x.CreationDate, x => x.Title)
                 .Select(_ => DateTime.Now)
                 .ToProperty(this, x => x.ModificationDate, out _modificationDate);
 
-            _noteListSource.Connect()
-                .WhenPropertyChanged(n => n.Text)
-                .Select(_ => DateTime.Now)
+            _noteListSource
+                .Connect()
+                .WhenPropertyChanged(n => n.ModificationDate)
+                .Throttle(TimeSpan.FromMilliseconds(250))
+                .Select(n => n.Value)
                 .ToProperty(this, x => x.ModificationDate, out _modificationDate);
         }
 
         #region Public Methods
+
+        public SourceCache<Note, Guid> GetRootNoteListSource()
+        {
+            return _rootNoteListSource;
+        }
 
         public SourceCache<Note, Guid> GetNoteListSource()
         {
             return _noteListSource;
         }
 
-        public void AddOrUpdateNote(Note newNote)
+        public Note AddNote()
         {
-            if (newNote != null)
-                _noteListSource.AddOrUpdate(newNote);
+            var latestRootNote = RootNoteList.LastOrDefault();
+            if (latestRootNote != null)
+                return latestRootNote.AddSuccessor();
+            return null;
         }
 
         public void RemoveNote(Note oldNote)
@@ -76,6 +89,10 @@ namespace NoteEvolution.Models
             get => _title;
             set => this.RaiseAndSetIfChanged(ref _title, value);
         }
+
+        public SourceCache<Note, Guid> _rootNoteListSource;
+
+        public IEnumerable<Note> RootNoteList => _rootNoteListSource.Items;
 
         public SourceCache<Note, Guid> _noteListSource;
 

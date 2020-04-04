@@ -25,7 +25,10 @@ namespace NoteEvolution.ViewModels
             DeleteSelectedDocumentCommand = ReactiveCommand.Create(ExecuteDeleteSelectedDocument);
             DeleteSelectedDocumentAndNotesCommand = ReactiveCommand.Create(ExecuteDeleteSelectedDocumentAndNotes);
             LoadDocumentNotesCommand = ReactiveCommand.Create<Document>(ExecuteLoadDocumentNotes);
+            SelectNoteCommand = ReactiveCommand.Create(ExecuteSelectNote);
             CreateNewNoteCommand = ReactiveCommand.Create(ExecuteCreateNewNote);
+            CreateNewSuccessorNoteCommand = ReactiveCommand.Create(ExecuteCreateNewSuccessorNote);
+            CreateNewChildNoteCommand = ReactiveCommand.Create(ExecuteCreateNewChildNote);
             DeleteSelectedNoteCommand = ReactiveCommand.Create(ExecuteDeleteSelectedNote);
 
             // build sorted document list
@@ -40,7 +43,7 @@ namespace NoteEvolution.ViewModels
                 .Connect()
                 .Sort(documentComparer, documentWasModified)
                 .ObserveOn(RxApp.MainThreadScheduler)
-                .Bind(out _documentList)
+                .Bind(out _documentListView)
                 .DisposeMany()
                 .Subscribe();
             _unsortedNotesDocument = new Document { Title = "Unsorted Notes", DocumentId = Guid.Empty };
@@ -55,6 +58,11 @@ namespace NoteEvolution.ViewModels
                 .InvokeCommand(LoadDocumentNotesCommand);
 
             SelectedDocument = _documentListSource.Items.LastOrDefault();
+
+            ChangedSelection = this
+                .WhenPropertyChanged(n => n.SelectedNote)
+                .Where(nvm => nvm.Value != null)
+                .Select(nvm => nvm.Value);
         }
 
         #region Commands
@@ -122,17 +130,60 @@ namespace NoteEvolution.ViewModels
                 .Bind(out _noteListOutput)
                 .DisposeMany()
                 .Subscribe();
-            NoteList = _noteListOutput;
-            SelectedNote = NoteList.LastOrDefault();
+            NoteListView = _noteListOutput;
+            DocumentRootNoteTreeView = new NoteTreeViewModel(selectedDocument.GetRootNoteListSource());
+
+            DocumentRootNoteTreeView.ChangedSelection
+                .Where(n => n.NoteId != SelectedNote.NoteId)
+                .Do(n => SelectedNote = n)
+                .SubscribeOn(RxApp.MainThreadScheduler)
+                .ObserveOn(RxApp.MainThreadScheduler)
+                .Subscribe();
+            /*ChangedSelection.
+                Where(n => n.NoteId != DocumentRootNoteTreeView.SelectedItem?.Value?.NoteId)
+                .Do(n => DocumentRootNoteTreeView.SelectedItem = DocumentRootNoteTreeView.Items.FirstOrDefault(nvm => nvm.Value.NoteId == n.NoteId))
+                .SubscribeOn(RxApp.MainThreadScheduler)
+                .ObserveOn(RxApp.MainThreadScheduler)
+                .Subscribe();*/
+
+            SelectedNote = NoteListView.LastOrDefault();
         }
+        
+        public ReactiveCommand<Unit, Unit> SelectNoteCommand { get; }
+
+        void ExecuteSelectNote()
+        {
+            var newNote = SelectedDocument.AddNote();
+            if (newNote != null)
+                SelectedNote = newNote;
+        }
+
 
         public ReactiveCommand<Unit, Unit> CreateNewNoteCommand { get; }
 
         void ExecuteCreateNewNote()
         {
-            var newNote = new Note { RelatedDocument = SelectedDocument };
-            SelectedDocument.AddOrUpdateNote(newNote);
-            SelectedNote = newNote;
+            var newNote = SelectedDocument.AddNote();
+            if (newNote != null)
+                SelectedNote = newNote;
+        }
+
+        public ReactiveCommand<Unit, Unit> CreateNewSuccessorNoteCommand { get; }
+
+        void ExecuteCreateNewSuccessorNote()
+        {
+            var newNote = SelectedNote.AddSuccessor();
+            if (newNote != null)
+                SelectedNote = newNote;
+        }
+
+        public ReactiveCommand<Unit, Unit> CreateNewChildNoteCommand { get; }
+
+        void ExecuteCreateNewChildNote()
+        {
+            var newNote = SelectedNote.AddChild();
+            if (newNote != null)
+                SelectedNote = newNote;
         }
 
         public ReactiveCommand<Unit, Unit> DeleteSelectedNoteCommand { get; }
@@ -157,9 +208,17 @@ namespace NoteEvolution.ViewModels
 
         private SourceCache<Document, Guid> _documentListSource;
 
-        private ReadOnlyObservableCollection<Document> _documentList;
+        private ReadOnlyObservableCollection<Document> _documentListView;
 
-        public ReadOnlyObservableCollection<Document> DocumentList => _documentList;
+        public ReadOnlyObservableCollection<Document> DocumentListView => _documentListView;
+
+        private NoteTreeViewModel _documentRootNoteTreeView;
+
+        public NoteTreeViewModel DocumentRootNoteTreeView
+        {
+            get => _documentRootNoteTreeView;
+            set => this.RaiseAndSetIfChanged(ref _documentRootNoteTreeView, value);
+        }
 
         private Document _selectedDocument;
 
@@ -171,12 +230,12 @@ namespace NoteEvolution.ViewModels
 
         private ReadOnlyObservableCollection<Note> _noteListOutput;
 
-        private ReadOnlyObservableCollection<Note> _noteList;
+        private ReadOnlyObservableCollection<Note> _noteListView;
 
-        public ReadOnlyObservableCollection<Note> NoteList
+        public ReadOnlyObservableCollection<Note> NoteListView
         {
-            get => _noteList;
-            set => this.RaiseAndSetIfChanged(ref _noteList, value);
+            get => _noteListView;
+            set => this.RaiseAndSetIfChanged(ref _noteListView, value);
         }
 
         private Note _selectedNote;
@@ -186,6 +245,12 @@ namespace NoteEvolution.ViewModels
             get => _selectedNote;
             set => this.RaiseAndSetIfChanged(ref _selectedNote, value);
         }
+
+        #endregion
+
+        #region Public Observables
+
+        public IObservable<Note> ChangedSelection { get; private set; }
 
         #endregion
     }

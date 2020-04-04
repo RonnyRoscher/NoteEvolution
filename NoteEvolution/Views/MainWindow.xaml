@@ -1,5 +1,7 @@
 ﻿<Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:uc="clr-namespace:NoteEvolution.UserControls;assembly=NoteEvolution"
+        xmlns:models="clr-namespace:NoteEvolution.Models;assembly=NoteEvolution"
         xmlns:vm="clr-namespace:NoteEvolution.ViewModels;assembly=NoteEvolution"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
@@ -20,7 +22,7 @@
         <Button Margin="3" Padding="7 0 6 2" Content="-" ToolTip.Tip="Delete selected document but keep notes" Command="{Binding DeleteSelectedDocumentCommand}"/>
         <Button Margin="3" Padding="7 0 6 2" Content="-" ToolTip.Tip="Delete selected document and notes" Command="{Binding DeleteSelectedDocumentAndNotesCommand}"/>
       </StackPanel>
-      <ListBox Margin="3" Padding="1" VirtualizationMode="Simple" Items="{Binding DocumentList}" SelectedItem="{Binding SelectedDocument}">
+      <ListBox Margin="3" Padding="1" VirtualizationMode="Simple" Items="{Binding DocumentListView}" SelectedItem="{Binding SelectedDocument}">
         <ListBox.ItemTemplate>
           <DataTemplate>
             <Border BorderBrush="Gray" Background="White" BorderThickness="1" Padding="4">
@@ -38,18 +40,41 @@
     
     <DockPanel Grid.Column="0" Grid.Row="1" LastChildFill="True">
       <StackPanel DockPanel.Dock="Top" Margin="1 0 0 0" Orientation="Horizontal">
-        <Button Margin="3" Padding="4 0 4 2" Content="+" ToolTip.Tip="Create new note" Command="{Binding CreateNewNoteCommand}"/>
+        <Button Margin="3" Padding="4 0 4 2" Content="+D" ToolTip.Tip="Create new note" Command="{Binding CreateNewNoteCommand}"/>
+        <Button Margin="3" Padding="4 0 4 2" Content="+S" ToolTip.Tip="Create new note" Command="{Binding CreateNewSuccessorNoteCommand}"/>
+        <Button Margin="3" Padding="4 0 4 2" Content="+C" ToolTip.Tip="Create new note" Command="{Binding CreateNewChildNoteCommand}"/>
         <Button Margin="3" Padding="7 0 6 2" Content="-" ToolTip.Tip="Delete selected note" Command="{Binding DeleteSelectedNoteCommand}"/>
       </StackPanel>
-      <ListBox Margin="3" Padding="1" VirtualizationMode="Simple" Items="{Binding NoteList}" SelectedItem="{Binding SelectedNote}">
-        <ListBox.ItemTemplate>
-          <DataTemplate>
-            <Border BorderBrush="Gray" Background="White" BorderThickness="1" Padding="4">
-              <TextBlock Text="{Binding Text}"/>
-            </Border>
-          </DataTemplate>
-        </ListBox.ItemTemplate>
-      </ListBox>
+      <TabControl Margin="3" Padding="1">
+        <TabItem Header="List">
+          <ListBox VirtualizationMode="Simple" Items="{Binding NoteListView}" SelectedItem="{Binding SelectedNote}">
+            <ListBox.ItemTemplate>
+              <DataTemplate>
+                <Border BorderBrush="Gray" Background="White" BorderThickness="1" Padding="4">
+                  <TextBlock Text="{Binding Text}"/>
+                </Border>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+        </TabItem>
+        <TabItem Header="Tree">
+          <uc:NoteTreeControl DataContext="{Binding DocumentRootNoteTreeView}"/>
+          <!--<TreeView Items="{Binding SelectedDocument.NoteListView}">
+            <TreeView.Styles>
+              <Style Selector="TreeViewItem">
+                <Setter Property="IsVisible" Value="{Binding IsVisible}"/>
+                <Setter Property="IsSelected" Value="{Binding IsSelected}"/>
+                <Setter Property="IsExpanded" Value="{Binding IsExpanded}"/>
+              </Style>
+            </TreeView.Styles>
+            <TreeView.DataTemplates>
+              <TreeDataTemplate DataType="models:Note" ItemsSource="{Binding ChildNotes}">
+                <TextBlock Text="{Binding Text}" />
+              </TreeDataTemplate >
+            </TreeView.DataTemplates>
+          </TreeView>-->
+        </TabItem>
+      </TabControl>
     </DockPanel>
 
     <DockPanel Grid.Column="1" Grid.Row="1" Margin="3" LastChildFill="True">
