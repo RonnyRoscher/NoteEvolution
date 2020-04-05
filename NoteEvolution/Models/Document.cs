@@ -20,16 +20,17 @@ namespace NoteEvolution.Models
             _noteListSource.AddOrUpdate(rootNote);
             _rootNoteListSource.AddOrUpdate(rootNote);
 
-            this.WhenAnyValue(x => x.CreationDate, x => x.Title)
+            // update ModifiedDate on changes to local note properties
+            this.WhenAnyValue(d => d.CreationDate, d => d.Title)
                 .Select(_ => DateTime.Now)
-                .ToProperty(this, x => x.ModificationDate, out _modificationDate);
-
+                .ToProperty(this, d => d.ModificationDate, out _modificationDate);
+            // update ModifiedDate on ModifiedDate changes in any associated note
             _noteListSource
                 .Connect()
                 .WhenPropertyChanged(n => n.ModificationDate)
                 .Throttle(TimeSpan.FromMilliseconds(250))
                 .Select(n => n.Value)
-                .ToProperty(this, x => x.ModificationDate, out _modificationDate);
+                .ToProperty(this, d => d.ModificationDate, out _modificationDate);
         }
 
         #region Public Methods

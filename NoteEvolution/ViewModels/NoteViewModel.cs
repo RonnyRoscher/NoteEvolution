@@ -32,10 +32,11 @@ namespace NoteEvolution.ViewModels
             var noteWasModified = _childNoteListSource
                 .Connect()
                 .WhenPropertyChanged(n => n.ModificationDate)
-                .Throttle(TimeSpan.FromMilliseconds(250))
                 .Select(_ => Unit.Default);
             _childNoteListSource
                 .Connect()
+                // without this delay, the treeview sometimes cause the item not to be added as well a a crash on bringing the treeview into view
+                .Throttle(TimeSpan.FromMilliseconds(250))
                 .Transform(x => new NoteViewModel(x))
                 .Sort(noteComparer, noteWasModified)
                 .ObserveOn(RxApp.MainThreadScheduler)

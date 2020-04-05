@@ -15,9 +15,10 @@ namespace NoteEvolution.Models
             CreationDate = DateTime.Now;
             _childNotesSource = new SourceCache<Note, Guid>(note => note.NoteId);
 
+            // update ModifiedDate on changes to local note properties
             this.WhenAnyValue(n => n.CreationDate, n => n.Text, n => n.RelatedDocument, n => n.Parent, n => n.Predecessor, n => n.Successor)
                 .Select(_ => DateTime.Now)
-                .ToProperty(this, x => x.ModificationDate, out _modificationDate);
+                .ToProperty(this, n => n.ModificationDate, out _modificationDate);
 
             RelatedDocument = relatedDocument;
             RelatedDocument.GetNoteListSource().AddOrUpdate(this);

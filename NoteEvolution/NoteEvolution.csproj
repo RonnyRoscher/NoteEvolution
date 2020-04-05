@@ -1,9 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>netcoreapp3.0</TargetFramework>
-    <AssemblyVersion>0.0.0.3</AssemblyVersion>
-    <FileVersion>0.0.0.3</FileVersion>
+    <TargetFramework>netcoreapp3.1</TargetFramework>
+    <AssemblyVersion>0.0.0.4</AssemblyVersion>
+    <FileVersion>0.0.0.4</FileVersion>
   </PropertyGroup>
   <ItemGroup>
     <Compile Update="**\*.xaml.cs">
@@ -21,9 +21,9 @@
     <None Remove="UserControls\NoteTreeControl.xaml" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="Avalonia" Version="0.9.4" />
-    <PackageReference Include="Avalonia.Desktop" Version="0.9.4" />
-    <PackageReference Include="Avalonia.ReactiveUI" Version="0.9.4" />
+    <PackageReference Include="Avalonia" Version="0.9.7" />
+    <PackageReference Include="Avalonia.Desktop" Version="0.9.7" />
+    <PackageReference Include="Avalonia.ReactiveUI" Version="0.9.7" />
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="UserControls\NoteTreeControl.xaml">
