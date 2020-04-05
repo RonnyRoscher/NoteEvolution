@@ -1,0 +1,20 @@
+﻿<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:models="clr-namespace:NoteEvolution.Models;assembly=NoteEvolution"
+        xmlns:vm="clr-namespace:NoteEvolution.ViewModels;assembly=NoteEvolution"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
+             x:Class="NoteEvolution.UserControls.NoteListControl">
+
+  <ListBox VirtualizationMode="Simple" Items="{Binding Items}" SelectedItem="{Binding SelectedItem}">
+    <ListBox.ItemTemplate>
+      <DataTemplate>
+        <Border BorderBrush="Gray" Background="White" BorderThickness="1" Padding="4">
+          <TextBlock Text="{Binding Value.Text}"/>
+        </Border>
+      </DataTemplate>
+    </ListBox.ItemTemplate>
+  </ListBox>
+  
+</UserControl>

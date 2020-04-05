@@ -117,36 +117,34 @@ namespace NoteEvolution.ViewModels
         {
             // build sorted note list
             _currentDocumentNoteListSource = SelectedDocument.GetNoteListSource();
-            var noteComparer = SortExpressionComparer<Note>.Descending(note => note.ModificationDate);
-            var noteWasModified = _currentDocumentNoteListSource
-                .Connect()
-                .WhenPropertyChanged(note => note.ModificationDate)
-                .Throttle(TimeSpan.FromMilliseconds(250))
-                .Select(_ => Unit.Default);
-            _currentDocumentNoteListSource
-                .Connect()
-                .Sort(noteComparer, noteWasModified)
-                .ObserveOn(RxApp.MainThreadScheduler)
-                .Bind(out _noteListOutput)
-                .DisposeMany()
-                .Subscribe();
-            NoteListView = _noteListOutput;
-            DocumentRootNoteTreeView = new NoteTreeViewModel(selectedDocument.GetRootNoteListSource());
+            DocumentNoteListView = new NoteListViewModel(_currentDocumentNoteListSource);
+            DocumentNoteTreeView = new NoteTreeViewModel(_currentDocumentNoteListSource);
 
-            DocumentRootNoteTreeView.ChangedSelection
-                .Where(n => n.NoteId != SelectedNote.NoteId)
+            DocumentNoteListView
+                .ChangedSelection
                 .Do(n => SelectedNote = n)
-                .SubscribeOn(RxApp.MainThreadScheduler)
-                .ObserveOn(RxApp.MainThreadScheduler)
                 .Subscribe();
-            /*ChangedSelection.
-                Where(n => n.NoteId != DocumentRootNoteTreeView.SelectedItem?.Value?.NoteId)
-                .Do(n => DocumentRootNoteTreeView.SelectedItem = DocumentRootNoteTreeView.Items.FirstOrDefault(nvm => nvm.Value.NoteId == n.NoteId))
-                .SubscribeOn(RxApp.MainThreadScheduler)
-                .ObserveOn(RxApp.MainThreadScheduler)
-                .Subscribe();*/
 
-            SelectedNote = NoteListView.LastOrDefault();
+            DocumentNoteTreeView
+                .ChangedSelection
+                .Do(n => SelectedNote = n)
+                .Subscribe();
+
+            this.WhenAnyValue(vm => vm.SelectedNote)
+                .Where(n => n != null)
+                // without this delay, the treeview sometimes cause the item not to be added as well a a crash on bringing the treeview into view
+                .Throttle(TimeSpan.FromMilliseconds(250))
+                .Do(n =>
+                {
+                    if (DocumentNoteListView.SelectedItem?.Value.NoteId != n.NoteId)
+                        DocumentNoteListView.SelectNote(n);
+                    if (DocumentNoteTreeView.SelectedItem?.Value.NoteId != n.NoteId)
+                        DocumentNoteTreeView.SelectNote(n);
+                })
+                .Subscribe();
+
+            if (DocumentNoteListView.SelectedItem == null)
+                DocumentNoteListView.SelectedItem = DocumentNoteListView.Items.LastOrDefault();
         }
         
         public ReactiveCommand<Unit, Unit> SelectNoteCommand { get; }
@@ -157,7 +155,6 @@ namespace NoteEvolution.ViewModels
             if (newNote != null)
                 SelectedNote = newNote;
         }
-
 
         public ReactiveCommand<Unit, Unit> CreateNewNoteCommand { get; }
 
@@ -212,12 +209,12 @@ namespace NoteEvolution.ViewModels
 
         public ReadOnlyObservableCollection<Document> DocumentListView => _documentListView;
 
-        private NoteTreeViewModel _documentRootNoteTreeView;
+        private NoteTreeViewModel _documentNoteTreeView;
 
-        public NoteTreeViewModel DocumentRootNoteTreeView
+        public NoteTreeViewModel DocumentNoteTreeView
         {
-            get => _documentRootNoteTreeView;
-            set => this.RaiseAndSetIfChanged(ref _documentRootNoteTreeView, value);
+            get => _documentNoteTreeView;
+            set => this.RaiseAndSetIfChanged(ref _documentNoteTreeView, value);
         }
 
         private Document _selectedDocument;
@@ -228,14 +225,12 @@ namespace NoteEvolution.ViewModels
             set => this.RaiseAndSetIfChanged(ref _selectedDocument, value);
         }
 
-        private ReadOnlyObservableCollection<Note> _noteListOutput;
+        private NoteListViewModel _documentNoteListView;
 
-        private ReadOnlyObservableCollection<Note> _noteListView;
-
-        public ReadOnlyObservableCollection<Note> NoteListView
+        public NoteListViewModel DocumentNoteListView
         {
-            get => _noteListView;
-            set => this.RaiseAndSetIfChanged(ref _noteListView, value);
+            get => _documentNoteListView;
+            set => this.RaiseAndSetIfChanged(ref _documentNoteListView, value);
         }
 
         private Note _selectedNote;

@@ -47,32 +47,10 @@
       </StackPanel>
       <TabControl Margin="3" Padding="1">
         <TabItem Header="List">
-          <ListBox VirtualizationMode="Simple" Items="{Binding NoteListView}" SelectedItem="{Binding SelectedNote}">
-            <ListBox.ItemTemplate>
-              <DataTemplate>
-                <Border BorderBrush="Gray" Background="White" BorderThickness="1" Padding="4">
-                  <TextBlock Text="{Binding Text}"/>
-                </Border>
-              </DataTemplate>
-            </ListBox.ItemTemplate>
-          </ListBox>
+          <uc:NoteListControl DataContext="{Binding DocumentNoteListView}"/>
         </TabItem>
         <TabItem Header="Tree">
-          <uc:NoteTreeControl DataContext="{Binding DocumentRootNoteTreeView}"/>
-          <!--<TreeView Items="{Binding SelectedDocument.NoteListView}">
-            <TreeView.Styles>
-              <Style Selector="TreeViewItem">
-                <Setter Property="IsVisible" Value="{Binding IsVisible}"/>
-                <Setter Property="IsSelected" Value="{Binding IsSelected}"/>
-                <Setter Property="IsExpanded" Value="{Binding IsExpanded}"/>
-              </Style>
-            </TreeView.Styles>
-            <TreeView.DataTemplates>
-              <TreeDataTemplate DataType="models:Note" ItemsSource="{Binding ChildNotes}">
-                <TextBlock Text="{Binding Text}" />
-              </TreeDataTemplate >
-            </TreeView.DataTemplates>
-          </TreeView>-->
+          <uc:NoteTreeControl DataContext="{Binding DocumentNoteTreeView}"/>
         </TabItem>
       </TabControl>
     </DockPanel>

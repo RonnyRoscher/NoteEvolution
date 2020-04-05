@@ -2,7 +2,7 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>netcoreapp3.1</TargetFramework>
-    <AssemblyVersion>0.0.0.4</AssemblyVersion>
+    <AssemblyVersion>0.0.0.5</AssemblyVersion>
     <FileVersion>0.0.0.4</FileVersion>
   </PropertyGroup>
   <ItemGroup>
@@ -15,9 +15,14 @@
     <AvaloniaResource Include="Assets\**" />
   </ItemGroup>
   <ItemGroup>
+    <AvaloniaResource Remove="UserControls\NoteListControl.xaml" />
     <AvaloniaResource Remove="UserControls\NoteTreeControl.xaml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Remove="UserControls\NoteTreeControl - Copy.xaml.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Remove="UserControls\NoteListControl.xaml" />
     <None Remove="UserControls\NoteTreeControl.xaml" />
   </ItemGroup>
   <ItemGroup>
@@ -26,6 +31,9 @@
     <PackageReference Include="Avalonia.ReactiveUI" Version="0.9.7" />
   </ItemGroup>
   <ItemGroup>
+    <EmbeddedResource Include="UserControls\NoteListControl.xaml">
+      <Generator>MSBuild:Compile</Generator>
+    </EmbeddedResource>
     <EmbeddedResource Include="UserControls\NoteTreeControl.xaml">
       <Generator>MSBuild:Compile</Generator>
     </EmbeddedResource>

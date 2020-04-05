@@ -10,43 +10,32 @@ using System.Linq;
 
 namespace NoteEvolution.ViewModels
 {
-    public class NoteTreeViewModel : ViewModelBase
+    public class NoteListViewModel : ViewModelBase
     {
         #region Private Properties
 
         private SourceCache<Note, Guid> _noteListSource;
 
-        private ReadOnlyObservableCollection<NoteViewModel> _rootNoteListView;
-
         private ReadOnlyObservableCollection<NoteViewModel> _noteListView;
 
         #endregion
 
-        public NoteTreeViewModel(SourceCache<Note, Guid> noteListSource)
+        public NoteListViewModel(SourceCache<Note, Guid> noteListSource)
         {
             _noteListSource = noteListSource;
-            _noteListSource
-                .Connect()
-                .Transform(n => new NoteViewModel(n))
-                .ObserveOn(RxApp.MainThreadScheduler)
-                .Bind(out _noteListView)
-                .DisposeMany()
-                .Subscribe();
 
-            var noteComparer = SortExpressionComparer<NoteViewModel>.Ascending(nvm => nvm.Value.OrderNr);
+            var noteComparer = SortExpressionComparer<NoteViewModel>.Descending(nvm => nvm.Value.ModificationDate);
             var noteWasModified = _noteListSource
                 .Connect()
-                .WhenPropertyChanged(n => n.OrderNr)
+                .WhenPropertyChanged(n => n.ModificationDate)
+                .Throttle(TimeSpan.FromMilliseconds(250))
                 .Select(_ => Unit.Default);
             _noteListSource
                 .Connect()
-                // without this delay, the treeview sometimes cause the item not to be added as well a a crash on bringing the treeview into view
-                .Throttle(TimeSpan.FromMilliseconds(250))
-                .Filter(n => n.Parent == null)
                 .Transform(x => new NoteViewModel(x))
                 .Sort(noteComparer, noteWasModified)
                 .ObserveOn(RxApp.MainThreadScheduler)
-                .Bind(out _rootNoteListView)
+                .Bind(out _noteListView)
                 .DisposeMany()
                 .Subscribe();
 
@@ -72,7 +61,7 @@ namespace NoteEvolution.ViewModels
 
         #region Public Properties
 
-        public ReadOnlyObservableCollection<NoteViewModel> Items => _rootNoteListView;
+        public ReadOnlyObservableCollection<NoteViewModel> Items => _noteListView;
 
         private NoteViewModel _selectedItem;
 
