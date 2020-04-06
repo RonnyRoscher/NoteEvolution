@@ -57,6 +57,13 @@ namespace NoteEvolution.ViewModels
                 .Where(x => SelectedDocument != null)
                 .InvokeCommand(LoadDocumentNotesCommand);
 
+            // set LastAddedDocument on new document added, used to auto focus the title textbox
+            _documentListSource
+                .Connect()
+                .OnItemAdded(d => LastAddedDocument = d)
+                .DisposeMany()
+                .Subscribe();
+
             SelectedDocument = _documentListSource.Items.LastOrDefault();
 
             ChangedSelection = this
@@ -120,16 +127,15 @@ namespace NoteEvolution.ViewModels
             DocumentNoteListView = new NoteListViewModel(_currentDocumentNoteListSource);
             DocumentNoteTreeView = new NoteTreeViewModel(_currentDocumentNoteListSource);
 
+            // synchronize ListView and TreeView note seletions
             DocumentNoteListView
                 .ChangedSelection
                 .Do(n => SelectedNote = n)
                 .Subscribe();
-
             DocumentNoteTreeView
                 .ChangedSelection
                 .Do(n => SelectedNote = n)
                 .Subscribe();
-
             this.WhenAnyValue(vm => vm.SelectedNote)
                 .Where(n => n != null)
                 // without this delay, the treeview sometimes cause the item not to be added as well a a crash on bringing the treeview into view
@@ -141,6 +147,17 @@ namespace NoteEvolution.ViewModels
                     if (DocumentNoteTreeView.SelectedItem?.Value.NoteId != n.NoteId)
                         DocumentNoteTreeView.SelectNote(n);
                 })
+                .Subscribe();
+
+            // set LastAddedNote on new note added, used to auto focus the text textbox
+            _currentDocumentNoteListSource
+                .Connect()
+                .OnItemAdded(n => {
+                    // keep document title focused if document was just created, except for the initial automatically created unsorted notes document 
+                    if (n.RelatedDocument.NoteList.Count() > 1 || selectedDocument.DocumentId != _unsortedNotesDocument.DocumentId)
+                        LastAddedNote = n;
+                    })
+                .DisposeMany()
                 .Subscribe();
 
             if (DocumentNoteListView.SelectedItem == null)
@@ -225,6 +242,14 @@ namespace NoteEvolution.ViewModels
             set => this.RaiseAndSetIfChanged(ref _selectedDocument, value);
         }
 
+        private Document _lastAddedDocument;
+
+        public Document LastAddedDocument
+        {
+            get => _lastAddedDocument;
+            set => this.RaiseAndSetIfChanged(ref _lastAddedDocument, value);
+        }
+
         private NoteListViewModel _documentNoteListView;
 
         public NoteListViewModel DocumentNoteListView
@@ -239,6 +264,14 @@ namespace NoteEvolution.ViewModels
         {
             get => _selectedNote;
             set => this.RaiseAndSetIfChanged(ref _selectedNote, value);
+        }
+
+        private Note _lastAddedNote;
+
+        public Note LastAddedNote
+        {
+            get => _lastAddedNote;
+            set => this.RaiseAndSetIfChanged(ref _lastAddedNote, value);
         }
 
         #endregion
