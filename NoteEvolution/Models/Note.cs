@@ -13,12 +13,23 @@ namespace NoteEvolution.Models
         {
             NoteId = Guid.NewGuid();
             CreationDate = DateTime.Now;
-            _childNotesSource = new SourceCache<Note, Guid>(note => note.NoteId);
+            _childNotesSource = new SourceCache<Note, Guid>(n => n.NoteId);
+            _contentSource = new SourceCache<Text, Guid>(t => t.TextId);
+            _contentSource.AddOrUpdate(new Text());
+            _contentSource.AddOrUpdate(new Text(2));
 
             // update ModifiedDate on changes to local note properties
-            this.WhenAnyValue(n => n.CreationDate, n => n.Text, n => n.RelatedDocument, n => n.Parent, n => n.Predecessor, n => n.Successor)
+            this.WhenAnyValue(n => n.CreationDate, n => n.RelatedDocument, n => n.Parent, n => n.Predecessor, n => n.Successor, n => n.Content)
                 .Select(_ => DateTime.Now)
                 .ToProperty(this, n => n.ModificationDate, out _modificationDate);
+
+            // update header on text changes
+            _contentSource
+                .Connect()
+                .WhenPropertyChanged(n => n.Value)
+                // FirstOrDefault(n => n.LanguageId == SelectedLanguageId)
+                .Select(n => (Content.FirstOrDefault()?.Value ?? "").Replace(Environment.NewLine, "").Substring(0, Math.Min((Content.FirstOrDefault()?.Value ?? "").Length, 200)))
+                .ToProperty(this, n => n.Header, out _header);
 
             RelatedDocument = relatedDocument;
             RelatedDocument.GetNoteListSource().AddOrUpdate(this);
@@ -244,13 +255,12 @@ namespace NoteEvolution.Models
         public IEnumerable<Note> ChildNotes => _childNotesSource.Items;
 
 
-        private string _text;
+        public SourceCache<Text, Guid> _contentSource;
 
-        public string Text
-        {
-            get => _text;
-            set => this.RaiseAndSetIfChanged(ref _text, value);
-        }
+        public IEnumerable<Text> Content => _contentSource.Items;
+
+        readonly ObservableAsPropertyHelper<string> _header;
+        public string Header => _header.Value;
 
         #endregion
     }

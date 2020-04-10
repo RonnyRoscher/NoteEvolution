@@ -16,7 +16,7 @@ namespace NoteEvolution.Behaviors
 		{
 			if (e.Property.Name == nameof(Control.Tag))
 			{
-				Dispatcher.UIThread.Post(() => AssociatedObject.Focus(), DispatcherPriority.Layout);
+				Dispatcher.UIThread.Post(() => AssociatedObject?.Focus(), DispatcherPriority.Layout);
 			}
 		}
 	}

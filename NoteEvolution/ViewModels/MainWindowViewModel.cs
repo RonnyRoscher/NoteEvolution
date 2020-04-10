@@ -25,7 +25,6 @@ namespace NoteEvolution.ViewModels
             DeleteSelectedDocumentCommand = ReactiveCommand.Create(ExecuteDeleteSelectedDocument);
             DeleteSelectedDocumentAndNotesCommand = ReactiveCommand.Create(ExecuteDeleteSelectedDocumentAndNotes);
             LoadDocumentNotesCommand = ReactiveCommand.Create<Document>(ExecuteLoadDocumentNotes);
-            SelectNoteCommand = ReactiveCommand.Create(ExecuteSelectNote);
             CreateNewNoteCommand = ReactiveCommand.Create(ExecuteCreateNewNote);
             CreateNewSuccessorNoteCommand = ReactiveCommand.Create(ExecuteCreateNewSuccessorNote);
             CreateNewChildNoteCommand = ReactiveCommand.Create(ExecuteCreateNewChildNote);
@@ -155,22 +154,13 @@ namespace NoteEvolution.ViewModels
                 .OnItemAdded(n => {
                     // keep document title focused if document was just created, except for the initial automatically created unsorted notes document 
                     if (n.RelatedDocument.NoteList.Count() > 1 || selectedDocument.DocumentId != _unsortedNotesDocument.DocumentId)
-                        LastAddedNote = n;
+                        LastAddedText = n.Content.FirstOrDefault();
                     })
                 .DisposeMany()
                 .Subscribe();
 
             if (DocumentNoteListView.SelectedItem == null)
                 DocumentNoteListView.SelectedItem = DocumentNoteListView.Items.LastOrDefault();
-        }
-        
-        public ReactiveCommand<Unit, Unit> SelectNoteCommand { get; }
-
-        void ExecuteSelectNote()
-        {
-            var newNote = SelectedDocument.AddNote();
-            if (newNote != null)
-                SelectedNote = newNote;
         }
 
         public ReactiveCommand<Unit, Unit> CreateNewNoteCommand { get; }
@@ -266,12 +256,12 @@ namespace NoteEvolution.ViewModels
             set => this.RaiseAndSetIfChanged(ref _selectedNote, value);
         }
 
-        private Note _lastAddedNote;
+        private Text _lastAddedText;
 
-        public Note LastAddedNote
+        public Text LastAddedText
         {
-            get => _lastAddedNote;
-            set => this.RaiseAndSetIfChanged(ref _lastAddedNote, value);
+            get => _lastAddedText;
+            set => this.RaiseAndSetIfChanged(ref _lastAddedText, value);
         }
 
         #endregion

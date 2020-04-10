@@ -65,11 +65,24 @@
 
     <DockPanel Grid.Column="1" Grid.Row="1" Margin="3" LastChildFill="True">
       <TextBlock DockPanel.Dock="Top" Text="Note Text"/>
-      <TextBox x:Name="tbxNoteText" AcceptsReturn="True" TextWrapping="Wrap" Text="{Binding SelectedNote.Text}" Tag="{Binding LastAddedNote}">
-        <i:Interaction.Behaviors>
-          <b:FocusOnTagChangedBehavior/>
-        </i:Interaction.Behaviors>
-      </TextBox>
+
+      <ItemsControl Items="{Binding SelectedNote.Content}">
+        <ItemsControl.ItemsPanel>
+          <ItemsPanelTemplate>
+            <UniformGrid/>
+          </ItemsPanelTemplate>
+        </ItemsControl.ItemsPanel>
+        <ItemsControl.DataTemplates>
+          <DataTemplate>
+            <TextBox AcceptsReturn="True" TextWrapping="Wrap" Text="{Binding Value}" Tag="{Binding $parent[ItemsControl].DataContext.LastAddedText}">
+              <i:Interaction.Behaviors>
+                <b:FocusOnTagChangedBehavior/>
+              </i:Interaction.Behaviors>
+            </TextBox>
+          </DataTemplate>
+        </ItemsControl.DataTemplates>
+      </ItemsControl>
+      
     </DockPanel>
 
   </Grid>

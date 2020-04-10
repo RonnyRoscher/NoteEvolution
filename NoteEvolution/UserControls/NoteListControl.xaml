@@ -11,7 +11,7 @@
     <ListBox.ItemTemplate>
       <DataTemplate>
         <Border BorderBrush="Gray" Background="White" BorderThickness="1" Padding="4">
-          <TextBlock Text="{Binding Value.Text}"/>
+          <TextBlock Text="{Binding Value.Header}"/>
         </Border>
       </DataTemplate>
     </ListBox.ItemTemplate>

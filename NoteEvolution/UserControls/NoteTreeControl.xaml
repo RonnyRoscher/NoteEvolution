@@ -18,7 +18,7 @@
     <TreeView.DataTemplates>
       <TreeDataTemplate DataType="vm:NoteViewModel" ItemsSource="{Binding ChildNoteListView}">
         <StackPanel Orientation="Horizontal">
-          <TextBlock Text="{Binding Value.Text}"/>
+          <TextBlock Text="{Binding Value.Header}"/>
           <TextBlock Text=" ["/>
           <TextBlock Text="{Binding Value.OrderNr}"/>
           <TextBlock Text="]"/>

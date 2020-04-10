@@ -13,14 +13,6 @@ namespace NoteEvolution.Views
 #if DEBUG
             this.AttachDevTools();
 #endif
-            /*var focusManager = new FocusManager();
-            var tbxNoteText = this.FindControl<TextBox>("tbxNoteText");
-            if (tbxNoteText != null)
-            {
-                //tbxNoteText.Focus();
-                //focusManager.Focus(tbxNoteText);
-                focusManager.SetFocusedElement(this, tbxNoteText);
-            }*/
         }
 
         private void InitializeComponent()
