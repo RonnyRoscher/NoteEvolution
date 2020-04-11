@@ -24,20 +24,6 @@ namespace NoteEvolution.ViewModels
                 .OnItemAdded(d => LastAddedDocument = d)
                 .DisposeMany()
                 .Subscribe();
-
-            // set LastAddedText on new unsorted note added, used to auto focus the textbox
-            DocumentListView
-                .WhenAnyValue(dlv => dlv.SelectedItemContentTree)
-                .Where(ct => ct != null)
-                .Do(ct =>
-                {
-                    ct.GetDocumentNoteListSource()
-                        .Connect()
-                        .OnItemAdded(tu => LastAddedNote = tu.Content.FirstOrDefault())
-                        .DisposeMany()
-                        .Subscribe();
-                })
-                .Subscribe();
         }
 
         #region Public Properties
@@ -57,14 +43,6 @@ namespace NoteEvolution.ViewModels
         {
             get => _lastAddedDocument;
             set => this.RaiseAndSetIfChanged(ref _lastAddedDocument, value);
-        }
-
-        private Note _lastAddedNote;
-
-        public Note LastAddedNote
-        {
-            get => _lastAddedNote;
-            set => this.RaiseAndSetIfChanged(ref _lastAddedNote, value);
         }
 
         #endregion

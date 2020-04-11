@@ -13,8 +13,8 @@
 
     <v:DocumentListView Grid.Row="0" Grid.Column="0" DataContext="{Binding DocumentListView}"/>
 
-    <DockPanel Grid.Row="0" Grid.Column="1" Margin="3" LastChildFill="True">
-      <TextBlock DockPanel.Dock="Top" Text="Document Name"/>
+    <DockPanel Grid.Row="0" Grid.Column="1" Margin="3 10 3 3" LastChildFill="True">
+      <TextBlock DockPanel.Dock="Top" Margin="0 0 0 3" Text="Document Name"/>
       <TextBox AcceptsReturn="True" TextWrapping="Wrap" Text="{Binding DocumentListView.SelectedItem.Title}" Tag="{Binding LastAddedDocument}">
         <i:Interaction.Behaviors>
           <b:FocusOnTagChangedBehavior/>
@@ -24,25 +24,7 @@
 
     <v:TextUnitTreeView Grid.Row="1" Grid.Column="0" DataContext="{Binding DocumentListView.SelectedItemContentTree}"/>
 
-    <DockPanel Grid.Row="1" Grid.Column="1" Margin="3" LastChildFill="True">
-      <TextBlock DockPanel.Dock="Top" Text="Note Text"/>
-      <ItemsControl Items="{Binding DocumentListView.SelectedItemContentTree.SelectedItem.Value.Content}">
-        <ItemsControl.ItemsPanel>
-          <ItemsPanelTemplate>
-            <UniformGrid/>
-          </ItemsPanelTemplate>
-        </ItemsControl.ItemsPanel>
-        <ItemsControl.DataTemplates>
-          <DataTemplate>
-            <TextBox AcceptsReturn="True" TextWrapping="Wrap" Text="{Binding Text}" Tag="{Binding $parent[ItemsControl].DataContext.LastAddedNote}">
-              <i:Interaction.Behaviors>
-                <b:FocusOnTagChangedBehavior/>
-              </i:Interaction.Behaviors>
-            </TextBox>
-          </DataTemplate>
-        </ItemsControl.DataTemplates>
-      </ItemsControl>
-    </DockPanel>
+    <v:TextUnitFlowView Grid.Row="1" Grid.Column="1" Margin="0 4 0 0" DataContext="{Binding DocumentListView.SelectedItemContentFlow}"/>
 
   </Grid>
 </UserControl>

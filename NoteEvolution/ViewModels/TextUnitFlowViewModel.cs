@@ -10,7 +10,7 @@ using System.Linq;
 
 namespace NoteEvolution.ViewModels
 {
-    public class TextUnitTreeViewModel : ViewModelBase
+    public class TextUnitFlowViewModel : ViewModelBase
     {
         #region Private Properties
 
@@ -18,13 +18,11 @@ namespace NoteEvolution.ViewModels
 
         private SourceCache<TextUnit, Guid> _documentNoteListSource;
 
-        private ReadOnlyObservableCollection<TextUnitViewModel> _rootNoteListView;
-
         private ReadOnlyObservableCollection<TextUnitViewModel> _noteListView;
 
         #endregion
 
-        public TextUnitTreeViewModel(SourceCache<Note, Guid> unsortedNoteListSource, SourceCache<TextUnit, Guid> documentNoteListSource)
+        public TextUnitFlowViewModel(SourceCache<Note, Guid> unsortedNoteListSource, SourceCache<TextUnit, Guid> documentNoteListSource)
         {
             CreateNewSuccessorCommand = ReactiveCommand.Create(ExecuteCreateNewSuccessor);
             CreateNewChildCommand = ReactiveCommand.Create(ExecuteCreateNewChild);
@@ -34,13 +32,6 @@ namespace NoteEvolution.ViewModels
             _unsortedNoteListSource = unsortedNoteListSource;
 
             _documentNoteListSource = documentNoteListSource;
-            _documentNoteListSource
-                .Connect()
-                .Transform(n => new TextUnitViewModel(n))
-                .ObserveOn(RxApp.MainThreadScheduler)
-                .Bind(out _noteListView)
-                .DisposeMany()
-                .Subscribe();
 
             var textUnitComparer = SortExpressionComparer<TextUnitViewModel>.Ascending(tuvm => tuvm.Value.OrderNr);
             var textUnitWasModified = _documentNoteListSource
@@ -51,11 +42,18 @@ namespace NoteEvolution.ViewModels
                 .Connect()
                 // without this delay, the treeview sometimes cause the item not to be added as well a a crash on bringing the treeview into view
                 .Throttle(TimeSpan.FromMilliseconds(250))
-                .Filter(tu => tu.Parent == null)
                 .Transform(tu => new TextUnitViewModel(tu))
                 .Sort(textUnitComparer, textUnitWasModified)
                 .ObserveOn(RxApp.MainThreadScheduler)
-                .Bind(out _rootNoteListView)
+                .Bind(out _noteListView)
+                .DisposeMany()
+                .Subscribe();
+
+            // set LastAddedText on new unsorted note added, used to auto focus the textbox
+            _documentNoteListSource
+                .Connect()
+                .Where(tu => _documentNoteListSource.Count > 1)
+                .OnItemAdded(tu => LastAddedNote = tu.Content.FirstOrDefault())
                 .DisposeMany()
                 .Subscribe();
 
@@ -71,24 +69,18 @@ namespace NoteEvolution.ViewModels
 
         void ExecuteCreateNewSuccessor()
         {
-            if (SelectedItem != null)
-            {
-                var newTextUnit = SelectedItem.Value.AddSuccessor();
-                if (newTextUnit != null)
-                    SelectTextUnit(newTextUnit);
-            }
+            var newTextUnit = SelectedItem.Value.AddSuccessor();
+            if (newTextUnit != null)
+                SelectTextUnit(newTextUnit);
         }
 
         public ReactiveCommand<Unit, Unit> CreateNewChildCommand { get; }
 
         void ExecuteCreateNewChild()
         {
-            if (SelectedItem != null)
-            {
-                var newTextUnit = SelectedItem.Value.AddChild();
-                if (newTextUnit != null)
-                    SelectTextUnit(newTextUnit);
-            }
+            var newTextUnit = SelectedItem.Value.AddChild();
+            if (newTextUnit != null)
+                SelectTextUnit(newTextUnit);
         }
 
         public ReactiveCommand<Unit, Unit> RemoveSelectedCommand { get; }
@@ -140,7 +132,7 @@ namespace NoteEvolution.ViewModels
 
         #region Public Properties
 
-        public ReadOnlyObservableCollection<TextUnitViewModel> Items => _rootNoteListView;
+        public ReadOnlyObservableCollection<TextUnitViewModel> Items => _noteListView;
 
         private TextUnitViewModel _selectedItem;
 
@@ -148,6 +140,14 @@ namespace NoteEvolution.ViewModels
         {
             get => _selectedItem;
             set => this.RaiseAndSetIfChanged(ref _selectedItem, value);
+        }
+
+        private Note _lastAddedNote;
+
+        public Note LastAddedNote
+        {
+            get => _lastAddedNote;
+            set => this.RaiseAndSetIfChanged(ref _lastAddedNote, value);
         }
 
         #endregion

@@ -56,7 +56,10 @@ namespace NoteEvolution.ViewModels
             // load note list on document selection change
             ChangedSelection
                 .Where(d => SelectedItem != null)
-                .Do(d => SelectedItemContentTree = new TextUnitTreeViewModel(_unsortedNoteListSource, d.GetTextUnitListSource()))
+                .Do(d => {
+                    SelectedItemContentTree = new TextUnitTreeViewModel(_unsortedNoteListSource, d.GetTextUnitListSource());
+                    SelectedItemContentFlow = new TextUnitFlowViewModel(_unsortedNoteListSource, d.GetTextUnitListSource());
+                    })
                 .Subscribe();
         }
 
@@ -134,6 +137,14 @@ namespace NoteEvolution.ViewModels
         {
             get => _selectedItemContentTree;
             set => this.RaiseAndSetIfChanged(ref _selectedItemContentTree, value);
+        }
+
+        private TextUnitFlowViewModel _selectedItemContentFlow;
+
+        public TextUnitFlowViewModel SelectedItemContentFlow
+        {
+            get => _selectedItemContentFlow;
+            set => this.RaiseAndSetIfChanged(ref _selectedItemContentFlow, value);
         }
 
         #endregion

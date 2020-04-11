@@ -2,8 +2,8 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>netcoreapp3.1</TargetFramework>
-    <AssemblyVersion>0.0.1.1</AssemblyVersion>
-    <FileVersion>0.0.1.1</FileVersion>
+    <AssemblyVersion>0.0.1.2</AssemblyVersion>
+    <FileVersion>0.0.1.2</FileVersion>
   </PropertyGroup>
   <ItemGroup>
     <Compile Update="**\*.xaml.cs">
@@ -18,8 +18,12 @@
     <AvaloniaResource Remove="Views\DocumentListView.xaml" />
     <AvaloniaResource Remove="Views\DocumentsView.xaml" />
     <AvaloniaResource Remove="Views\NoteListView.xaml" />
+    <AvaloniaResource Remove="Views\TextUnitFlowView.xaml" />
     <AvaloniaResource Remove="Views\TextUnitTreeView.xaml" />
     <AvaloniaResource Remove="Views\UnsortedNotesView.xaml" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Remove="Views\TextUnitFlowView.xaml" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Avalonia" Version="0.9.7" />
@@ -45,6 +49,9 @@
     <EmbeddedResource Include="Views\DocumentsView.xaml">
       <Generator>MSBuild:Compile</Generator>
     </EmbeddedResource>
+    <EmbeddedResource Include="Views\TextUnitFlowView.xaml">
+      <Generator>MSBuild:Compile</Generator>
+    </EmbeddedResource>
   </ItemGroup>
   <ItemGroup>
     <Compile Update="Views\DocumentListView.xaml.cs">
@@ -55,6 +62,9 @@
     </Compile>
     <Compile Update="Views\NoteListView.xaml.cs">
       <DependentUpon>NoteListView.xaml</DependentUpon>
+    </Compile>
+    <Compile Update="Views\TextUnitFlowView.xaml.cs">
+      <DependentUpon>TextUnitFlowView.xaml</DependentUpon>
     </Compile>
     <Compile Update="Views\TextUnitTreeView.xaml.cs">
       <DependentUpon>TextUnitTreeView.xaml</DependentUpon>

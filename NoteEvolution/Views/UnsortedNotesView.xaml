@@ -12,17 +12,13 @@
 
   <Grid ColumnDefinitions="0.4*,0.6*">
     <v:NoteListView Grid.Column="0" DataContext="{Binding NoteListView}"/>
-    
-    <DockPanel Grid.Column="1" Margin="6 10 0 0" LastChildFill="True">
-
-      <TextBlock DockPanel.Dock="Top" Text="Note Text"/>
-
+    <DockPanel Grid.Column="1" Margin="6 7 0 0" LastChildFill="True">
+      <TextBlock DockPanel.Dock="Top" Margin="0 0 0 3" Text="Note Text"/>
       <TextBox AcceptsReturn="True" TextWrapping="Wrap" Text="{Binding NoteListView.SelectedItem.Value.Text}" Tag="{Binding LastAddedNote}">
         <i:Interaction.Behaviors>
           <b:FocusOnTagChangedBehavior/>
         </i:Interaction.Behaviors>
       </TextBox>
-
     </DockPanel>
   </Grid>
   
