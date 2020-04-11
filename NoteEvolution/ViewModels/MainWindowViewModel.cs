@@ -3,6 +3,7 @@ using System.Reflection;
 using DynamicData;
 using ReactiveUI;
 using NoteEvolution.Models;
+using System.Reactive;
 
 namespace NoteEvolution.ViewModels
 {
@@ -13,6 +14,10 @@ namespace NoteEvolution.ViewModels
 
         public MainWindowViewModel()
         {
+            CreateNewNoteCommand = ReactiveCommand.Create(ExecuteCreateNewNote);
+
+            SelectedMainTabIndex = 0;
+
             _unsortedNoteListSource = new SourceCache<Note, Guid>(n => n.NoteId);
             UnsortedNotesView = new UnsortedNotesViewModel(_unsortedNoteListSource);
             
@@ -20,9 +25,32 @@ namespace NoteEvolution.ViewModels
             DocumentsView = new DocumentsViewModel(_unsortedNoteListSource, _documentListSource);
         }
 
+        #region Commands
+
+        public ReactiveCommand<Unit, Unit> CreateNewNoteCommand { get; }
+
+        void ExecuteCreateNewNote()
+        {
+            if (SelectedMainTabIndex != 0)
+                SelectedMainTabIndex = 0;
+            var newNote = new Note();
+            _unsortedNoteListSource.AddOrUpdate(newNote);
+            UnsortedNotesView.SelectNote(newNote);
+        }
+
+        #endregion
+
         #region Public Properties
 
         public string TitleBarText => "NoteEvolution v" + Assembly.GetEntryAssembly().GetName().Version;
+
+        private byte _selectedMainTabIndex;
+
+        public byte SelectedMainTabIndex
+        {
+            get => _selectedMainTabIndex;
+            set => this.RaiseAndSetIfChanged(ref _selectedMainTabIndex, value);
+        }
 
         private UnsortedNotesViewModel _unsortedNotesView;
 
@@ -39,7 +67,7 @@ namespace NoteEvolution.ViewModels
             get => _documentsView;
             set => this.RaiseAndSetIfChanged(ref _documentsView, value);
         }
-
+        
         #endregion
     }
 }

@@ -14,11 +14,15 @@
     <!--xmlns:ia="clr-namespace:Avalonia.Xaml.Interactions.Core;assembly=Avalonia.Xaml.Interactions"
         xmlns:iac="clr-namespace:Avalonia.Xaml.Interactions.Custom;assembly=Avalonia.Xaml.Interactions.Custom"-->
 
+  <Window.KeyBindings>
+    <KeyBinding Command="{Binding CreateNewNoteCommand}" Gesture="Ctrl+N"/>
+  </Window.KeyBindings>
+    
     <Design.DataContext>
         <vm:MainWindowViewModel/>
     </Design.DataContext>
 
-  <TabControl Margin="3" Padding="1">
+  <TabControl Margin="3" Padding="1" SelectedIndex="{Binding SelectedMainTabIndex}">
     
     <TabItem Header="Unsorted Notes">
       <v:UnsortedNotesView DataContext="{Binding UnsortedNotesView}"/>

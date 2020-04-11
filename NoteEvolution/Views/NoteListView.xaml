@@ -8,6 +8,10 @@
              mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
              x:Class="NoteEvolution.Views.NoteListView">
 
+  <UserControl.KeyBindings>
+    <KeyBinding Command="{Binding DeleteSelectedNoteCommand}" Gesture="Delete"/>
+  </UserControl.KeyBindings>
+  
   <UserControl.Resources>
     <c:SubstractValueConverter x:Key="SubstractValueConverterKey"/>
   </UserControl.Resources>
@@ -15,8 +19,8 @@
   <DockPanel LastChildFill="True">
     
     <StackPanel DockPanel.Dock="Top" Margin="1 0 0 0" Orientation="Horizontal">
-      <Button Margin="3" Padding="4 0 4 2" Content="+" ToolTip.Tip="Create new note" Command="{Binding CreateNewNoteCommand}"/>
-      <Button Margin="3" Padding="7 0 6 2" Content="-" ToolTip.Tip="Delete selected note" Command="{Binding DeleteSelectedNoteCommand}"/>
+      <Button Margin="3" Padding="4 0 4 2" Content="+" ToolTip.Tip="Create new note (Ctrl+N)" Command="{Binding CreateNewNoteCommand}"/>
+      <Button Margin="3" Padding="7 0 6 2" Content="-" ToolTip.Tip="Delete selected note (Del)" Command="{Binding DeleteSelectedNoteCommand}"/>
     </StackPanel>
     
     <ListBox x:Name="LvNoteList" VirtualizationMode="Simple" Items="{Binding Items}" SelectedItem="{Binding SelectedItem}">

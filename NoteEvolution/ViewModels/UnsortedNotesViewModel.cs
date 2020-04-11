@@ -22,6 +22,15 @@ namespace NoteEvolution.ViewModels
                 .Subscribe();
         }
 
+        #region Public Methods
+
+        public void SelectNote(Note note)
+        {
+            NoteListView.SelectNote(note);
+        }
+
+        #endregion
+
         #region Public Properties
 
         private NoteListViewModel _noteListView;
