@@ -1,14 +1,12 @@
 ﻿using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Markup.Xaml;
-using NoteEvolution.ViewModels;
-using System;
 
-namespace NoteEvolution.UserControls
+namespace NoteEvolution.Views
 {
-    public class NoteTreeControl : UserControl
+    public class TextUnitTreeView : UserControl
     {
-        public NoteTreeControl()
+        public TextUnitTreeView()
         {
             this.InitializeComponent();
         }

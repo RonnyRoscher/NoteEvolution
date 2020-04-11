@@ -1,0 +1,25 @@
+﻿<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
+             x:Class="NoteEvolution.Views.DocumentListView">
+
+  <DockPanel LastChildFill="True">
+    <StackPanel DockPanel.Dock="Top" Margin="1 0 0 0" Orientation="Horizontal">
+      <Button Margin="3" Padding="4 0 4 2" Content="+" ToolTip.Tip="Create new document" Command="{Binding CreateNewDocumentCommand}"/>
+      <Button Margin="3" Padding="7 0 6 2" Content="-" ToolTip.Tip="Delete selected document but keep notes" Command="{Binding DissolveSelectedDocumentCommand}"/>
+      <Button Margin="3" Padding="7 0 6 2" Content="-" ToolTip.Tip="Delete selected document and notes" Command="{Binding DeleteSelectedDocumentCommand}"/>
+    </StackPanel>
+    <ListBox Margin="3" Padding="1" VirtualizationMode="Simple" Items="{Binding Items}" SelectedItem="{Binding SelectedItem}">
+      <ListBox.ItemTemplate>
+        <DataTemplate>
+          <Border BorderBrush="Gray" Background="White" BorderThickness="1" Padding="4">
+            <TextBlock Text="{Binding Title}"/>
+          </Border>
+        </DataTemplate>
+      </ListBox.ItemTemplate>
+    </ListBox>
+  </DockPanel>
+  
+</UserControl>

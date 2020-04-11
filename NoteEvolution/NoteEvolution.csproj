@@ -2,8 +2,8 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>netcoreapp3.1</TargetFramework>
-    <AssemblyVersion>0.0.0.7</AssemblyVersion>
-    <FileVersion>0.0.0.7</FileVersion>
+    <AssemblyVersion>0.0.0.8</AssemblyVersion>
+    <FileVersion>0.0.0.8</FileVersion>
   </PropertyGroup>
   <ItemGroup>
     <Compile Update="**\*.xaml.cs">
@@ -15,17 +15,6 @@
     <AvaloniaResource Include="Assets\**" />
   </ItemGroup>
   <ItemGroup>
-    <AvaloniaResource Remove="UserControls\NoteListControl.xaml" />
-    <AvaloniaResource Remove="UserControls\NoteTreeControl.xaml" />
-  </ItemGroup>
-  <ItemGroup>
-    <Compile Remove="UserControls\NoteTreeControl - Copy.xaml.cs" />
-  </ItemGroup>
-  <ItemGroup>
-    <None Remove="UserControls\NoteListControl.xaml" />
-    <None Remove="UserControls\NoteTreeControl.xaml" />
-  </ItemGroup>
-  <ItemGroup>
     <PackageReference Include="Avalonia" Version="0.9.7" />
     <PackageReference Include="Avalonia.Desktop" Version="0.9.7" />
     <PackageReference Include="Avalonia.ReactiveUI" Version="0.9.7" />
@@ -34,16 +23,20 @@
     <PackageReference Include="Avalonia.Xaml.Interactivity" Version="0.9.7" />
   </ItemGroup>
   <ItemGroup>
-    <EmbeddedResource Include="UserControls\NoteListControl.xaml">
+    <EmbeddedResource Include="Views\NoteListView.xaml">
       <Generator>MSBuild:Compile</Generator>
     </EmbeddedResource>
-    <EmbeddedResource Include="UserControls\NoteTreeControl.xaml">
+    <EmbeddedResource Include="Views\TextUnitTreeView.xaml">
       <Generator>MSBuild:Compile</Generator>
     </EmbeddedResource>
-  </ItemGroup>
-  <ItemGroup>
-    <Compile Update="UserControls\NoteTreeControl.xaml.cs">
-      <DependentUpon>NoteTreeControl.xaml</DependentUpon>
-    </Compile>
+    <EmbeddedResource Include="Views\DocumentListView.xaml">
+      <Generator>MSBuild:Compile</Generator>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Views\UnsortedNotesView.xaml">
+      <Generator>MSBuild:Compile</Generator>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Views\DocumentsView.xaml">
+      <Generator>MSBuild:Compile</Generator>
+    </EmbeddedResource>
   </ItemGroup>
 </Project>

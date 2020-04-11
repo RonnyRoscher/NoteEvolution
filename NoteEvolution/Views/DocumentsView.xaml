@@ -1,0 +1,48 @@
+﻿<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:models="clr-namespace:NoteEvolution.Models;assembly=NoteEvolution"
+             xmlns:v="clr-namespace:NoteEvolution.Views;assembly=NoteEvolution"
+             xmlns:vm="clr-namespace:NoteEvolution.ViewModels;assembly=NoteEvolution"
+             xmlns:b="clr-namespace:NoteEvolution.Behaviors;assembly=NoteEvolution"
+             xmlns:i="clr-namespace:Avalonia.Xaml.Interactivity;assembly=Avalonia.Xaml.Interactivity"
+             mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
+             x:Class="NoteEvolution.Views.DocumentsView">
+  <Grid ColumnDefinitions="0.4*,0.6*" RowDefinitions="0.3*,0.7*">
+
+    <v:DocumentListView Grid.Row="0" Grid.Column="0" DataContext="{Binding DocumentListView}"/>
+
+    <DockPanel Grid.Row="0" Grid.Column="1" Margin="3" LastChildFill="True">
+      <TextBlock DockPanel.Dock="Top" Text="Document Name"/>
+      <TextBox AcceptsReturn="True" TextWrapping="Wrap" Text="{Binding DocumentListView.SelectedItem.Title}" Tag="{Binding LastAddedDocument}">
+        <i:Interaction.Behaviors>
+          <b:FocusOnTagChangedBehavior/>
+        </i:Interaction.Behaviors>
+      </TextBox>
+    </DockPanel>
+
+    <v:TextUnitTreeView Grid.Row="1" Grid.Column="0" DataContext="{Binding DocumentListView.SelectedItemContentTree}"/>
+
+    <DockPanel Grid.Row="1" Grid.Column="1" Margin="3" LastChildFill="True">
+      <TextBlock DockPanel.Dock="Top" Text="Note Text"/>
+      <ItemsControl Items="{Binding DocumentListView.SelectedItemContentTree.SelectedItem.Value.Content}">
+        <ItemsControl.ItemsPanel>
+          <ItemsPanelTemplate>
+            <UniformGrid/>
+          </ItemsPanelTemplate>
+        </ItemsControl.ItemsPanel>
+        <ItemsControl.DataTemplates>
+          <DataTemplate>
+            <TextBox AcceptsReturn="True" TextWrapping="Wrap" Text="{Binding Value}" Tag="{Binding $parent[ItemsControl].DataContext.LastAddedNote}">
+              <i:Interaction.Behaviors>
+                <b:FocusOnTagChangedBehavior/>
+              </i:Interaction.Behaviors>
+            </TextBox>
+          </DataTemplate>
+        </ItemsControl.DataTemplates>
+      </ItemsControl>
+    </DockPanel>
+
+  </Grid>
+</UserControl>

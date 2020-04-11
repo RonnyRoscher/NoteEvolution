@@ -1,11 +1,11 @@
 ﻿<Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:uc="clr-namespace:NoteEvolution.UserControls;assembly=NoteEvolution"
-        xmlns:models="clr-namespace:NoteEvolution.Models;assembly=NoteEvolution"
-        xmlns:vm="clr-namespace:NoteEvolution.ViewModels;assembly=NoteEvolution"
-        xmlns:b="clr-namespace:NoteEvolution.Behaviors;assembly=NoteEvolution"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:models="clr-namespace:NoteEvolution.Models;assembly=NoteEvolution"
+        xmlns:v="clr-namespace:NoteEvolution.Views;assembly=NoteEvolution"
+        xmlns:vm="clr-namespace:NoteEvolution.ViewModels;assembly=NoteEvolution"
+        xmlns:b="clr-namespace:NoteEvolution.Behaviors;assembly=NoteEvolution"
         xmlns:i="clr-namespace:Avalonia.Xaml.Interactivity;assembly=Avalonia.Xaml.Interactivity"
         mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
         x:Class="NoteEvolution.Views.MainWindow"
@@ -17,74 +17,16 @@
     <Design.DataContext>
         <vm:MainWindowViewModel/>
     </Design.DataContext>
-  
-  <Grid ColumnDefinitions="0.4*,0.6*" RowDefinitions="0.3*,0.7*">
+
+  <TabControl Margin="3" Padding="1">
     
-    <DockPanel Grid.Column="0" Grid.Row="0" LastChildFill="True">
-      <StackPanel DockPanel.Dock="Top" Margin="1 0 0 0" Orientation="Horizontal">
-        <Button Margin="3" Padding="4 0 4 2" Content="+" ToolTip.Tip="Create new document" Command="{Binding CreateNewDocumentCommand}"/>
-        <Button Margin="3" Padding="7 0 6 2" Content="-" ToolTip.Tip="Delete selected document but keep notes" Command="{Binding DeleteSelectedDocumentCommand}"/>
-        <Button Margin="3" Padding="7 0 6 2" Content="-" ToolTip.Tip="Delete selected document and notes" Command="{Binding DeleteSelectedDocumentAndNotesCommand}"/>
-      </StackPanel>
-      <ListBox Margin="3" Padding="1" VirtualizationMode="Simple" Items="{Binding DocumentListView}" SelectedItem="{Binding SelectedDocument}">
-        <ListBox.ItemTemplate>
-          <DataTemplate>
-            <Border BorderBrush="Gray" Background="White" BorderThickness="1" Padding="4">
-              <TextBlock Text="{Binding Title}"/>
-            </Border>
-          </DataTemplate>
-        </ListBox.ItemTemplate>
-      </ListBox>
-    </DockPanel>
-
-    <DockPanel Grid.Column="1" Grid.Row="0" Margin="3" LastChildFill="True">
-      <TextBlock DockPanel.Dock="Top" Text="Document Name"/>
-      <TextBox AcceptsReturn="True" TextWrapping="Wrap" Text="{Binding SelectedDocument.Title}" Tag="{Binding LastAddedDocument}">
-        <i:Interaction.Behaviors>
-          <b:FocusOnTagChangedBehavior/>
-        </i:Interaction.Behaviors>
-      </TextBox>
-    </DockPanel>
+    <TabItem Header="Unsorted Notes">
+      <v:UnsortedNotesView DataContext="{Binding UnsortedNotesView}"/>
+    </TabItem>
     
-    <DockPanel Grid.Column="0" Grid.Row="1" LastChildFill="True">
-      <StackPanel DockPanel.Dock="Top" Margin="1 0 0 0" Orientation="Horizontal">
-        <Button Margin="3" Padding="4 0 4 2" Content="+D" ToolTip.Tip="Create new note" Command="{Binding CreateNewNoteCommand}"/>
-        <Button Margin="3" Padding="4 0 4 2" Content="+S" ToolTip.Tip="Create new note" Command="{Binding CreateNewSuccessorNoteCommand}"/>
-        <Button Margin="3" Padding="4 0 4 2" Content="+C" ToolTip.Tip="Create new note" Command="{Binding CreateNewChildNoteCommand}"/>
-        <Button Margin="3" Padding="7 0 6 2" Content="-" ToolTip.Tip="Delete selected note" Command="{Binding DeleteSelectedNoteCommand}"/>
-      </StackPanel>
-      <TabControl Margin="3" Padding="1">
-        <TabItem Header="List">
-          <uc:NoteListControl DataContext="{Binding DocumentNoteListView}"/>
-        </TabItem>
-        <TabItem Header="Tree">
-          <uc:NoteTreeControl DataContext="{Binding DocumentNoteTreeView}"/>
-        </TabItem>
-      </TabControl>
-    </DockPanel>
-
-    <DockPanel Grid.Column="1" Grid.Row="1" Margin="3" LastChildFill="True">
-      <TextBlock DockPanel.Dock="Top" Text="Note Text"/>
-
-      <ItemsControl Items="{Binding SelectedNote.Content}">
-        <ItemsControl.ItemsPanel>
-          <ItemsPanelTemplate>
-            <UniformGrid/>
-          </ItemsPanelTemplate>
-        </ItemsControl.ItemsPanel>
-        <ItemsControl.DataTemplates>
-          <DataTemplate>
-            <TextBox AcceptsReturn="True" TextWrapping="Wrap" Text="{Binding Value}" Tag="{Binding $parent[ItemsControl].DataContext.LastAddedText}">
-              <i:Interaction.Behaviors>
-                <b:FocusOnTagChangedBehavior/>
-              </i:Interaction.Behaviors>
-            </TextBox>
-          </DataTemplate>
-        </ItemsControl.DataTemplates>
-      </ItemsControl>
-      
-    </DockPanel>
-
-  </Grid>
-
+    <TabItem Header="Documents">
+      <v:DocumentsView DataContext="{Binding DocumentsView}"/>
+    </TabItem>
+    
+  </TabControl>
 </Window>

@@ -13,50 +13,51 @@ namespace NoteEvolution.Models
         {
             DocumentId = Guid.NewGuid();
             CreationDate = DateTime.Now;
-            _noteListSource = new SourceCache<Note, Guid>(n => n.NoteId);
-            _rootNoteListSource = new SourceCache<Note, Guid>(n => n.NoteId);
+            _textUnitListSource = new SourceCache<TextUnit, Guid>(n => n.TextUnitId);
+            _textUnitRootListSource = new SourceCache<TextUnit, Guid>(n => n.TextUnitId);
 
-            var rootNote = new Note(this);
-            _noteListSource.AddOrUpdate(rootNote);
-            _rootNoteListSource.AddOrUpdate(rootNote);
+            var rootTextUnit = new TextUnit(this);
+            _textUnitListSource.AddOrUpdate(rootTextUnit);
+            _textUnitRootListSource.AddOrUpdate(rootTextUnit);
 
-            // update ModifiedDate on changes to local note properties
+            // update ModifiedDate on changes to local text unit properties
             this.WhenAnyValue(d => d.CreationDate, d => d.Title)
                 .Select(_ => DateTime.Now)
                 .ToProperty(this, d => d.ModificationDate, out _modificationDate);
-            // update ModifiedDate on ModifiedDate changes in any associated note
-            _noteListSource
+            // update ModifiedDate on ModifiedDate changes in any associated text unit
+            _textUnitListSource
                 .Connect()
-                .WhenPropertyChanged(n => n.ModificationDate)
+                .WhenPropertyChanged(tu => tu.ModificationDate)
                 .Throttle(TimeSpan.FromMilliseconds(250))
-                .Select(n => n.Value)
+                .Select(tu => tu.Value)
                 .ToProperty(this, d => d.ModificationDate, out _modificationDate);
         }
 
         #region Public Methods
 
-        public SourceCache<Note, Guid> GetRootNoteListSource()
+        public SourceCache<TextUnit, Guid> GetRootTextUnitListSource()
         {
-            return _rootNoteListSource;
+            return _textUnitRootListSource;
         }
 
-        public SourceCache<Note, Guid> GetNoteListSource()
+        public SourceCache<TextUnit, Guid> GetTextUnitListSource()
         {
-            return _noteListSource;
+            return _textUnitListSource;
         }
 
-        public Note AddNote()
+        // todo: AddExisting & CreateNew
+        public TextUnit AddTextUnit()
         {
-            var latestRootNote = RootNoteList.LastOrDefault();
-            if (latestRootNote != null)
-                return latestRootNote.AddSuccessor();
+            var latestRootTextUnit = TextUnitRootList.LastOrDefault();
+            if (latestRootTextUnit != null)
+                return latestRootTextUnit.AddSuccessor();
             return null;
         }
 
-        public void RemoveNote(Note oldNote)
+        public void RemoveTextUnit(TextUnit oldTextUnit)
         {
-            if (oldNote != null)
-                _noteListSource.Remove(oldNote);
+            if (oldTextUnit != null)
+                _textUnitListSource.Remove(oldTextUnit);
         }
 
         #endregion
@@ -91,13 +92,13 @@ namespace NoteEvolution.Models
             set => this.RaiseAndSetIfChanged(ref _title, value);
         }
 
-        public SourceCache<Note, Guid> _rootNoteListSource;
+        public SourceCache<TextUnit, Guid> _textUnitRootListSource;
 
-        public IEnumerable<Note> RootNoteList => _rootNoteListSource.Items;
+        public IEnumerable<TextUnit> TextUnitRootList => _textUnitRootListSource.Items;
 
-        public SourceCache<Note, Guid> _noteListSource;
+        public SourceCache<TextUnit, Guid> _textUnitListSource;
 
-        public IEnumerable<Note> NoteList => _noteListSource.Items;
+        public IEnumerable<TextUnit> TextUnitList => _textUnitListSource.Items;
 
         #endregion
     }

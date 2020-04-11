@@ -1,0 +1,40 @@
+﻿<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:models="clr-namespace:NoteEvolution.Models;assembly=NoteEvolution"
+             xmlns:vm="clr-namespace:NoteEvolution.ViewModels;assembly=NoteEvolution"
+             mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
+             x:Class="NoteEvolution.Views.TextUnitTreeView">
+
+  <DockPanel LastChildFill="True">
+    
+    <StackPanel DockPanel.Dock="Top" Margin="1 0 0 0" Orientation="Horizontal">
+      <Button Margin="3" Padding="4 0 4 2" Content="+S" ToolTip.Tip="Create new successor note" Command="{Binding CreateNewSuccessorCommand}"/>
+      <Button Margin="3" Padding="4 0 4 2" Content="+C" ToolTip.Tip="Create new child note" Command="{Binding CreateNewChildCommand}"/>
+      <Button Margin="3" Padding="7 0 6 2" Content="-R" ToolTip.Tip="Remove selected note" Command="{Binding RemoveSelectedCommand}"/>
+      <Button Margin="3" Padding="7 0 6 2" Content="-D" ToolTip.Tip="Delete selected note" Command="{Binding DeleteSelectedCommand}"/>
+    </StackPanel>
+
+    <TreeView Items="{Binding Items}" SelectedItem="{Binding SelectedItem, Mode=TwoWay}">
+      <TreeView.Styles>
+        <Style Selector="TreeViewItem">
+          <Setter Property="IsVisible" Value="{Binding IsVisible}"/>
+          <Setter Property="IsSelected" Value="{Binding IsSelected}"/>
+          <Setter Property="IsExpanded" Value="{Binding IsExpanded}"/>
+        </Style>
+      </TreeView.Styles>
+      <TreeView.DataTemplates>
+        <TreeDataTemplate DataType="vm:TextUnitViewModel" ItemsSource="{Binding ChildTextUnitListView}">
+          <StackPanel Orientation="Horizontal">
+            <TextBlock Text="{Binding Value.Header}"/>
+            <TextBlock Text=" ["/>
+            <TextBlock Text="{Binding Value.OrderNr}"/>
+            <TextBlock Text="]"/>
+          </StackPanel>
+        </TreeDataTemplate >
+      </TreeView.DataTemplates>
+    </TreeView>
+    
+  </DockPanel>
+</UserControl>

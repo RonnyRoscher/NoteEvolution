@@ -1,0 +1,29 @@
+﻿<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:models="clr-namespace:NoteEvolution.Models;assembly=NoteEvolution"
+             xmlns:v="clr-namespace:NoteEvolution.Views;assembly=NoteEvolution"
+             xmlns:vm="clr-namespace:NoteEvolution.ViewModels;assembly=NoteEvolution"
+             xmlns:b="clr-namespace:NoteEvolution.Behaviors;assembly=NoteEvolution"
+             xmlns:i="clr-namespace:Avalonia.Xaml.Interactivity;assembly=Avalonia.Xaml.Interactivity"
+             mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
+             x:Class="NoteEvolution.Views.UnsortedNotesView">
+
+  <Grid ColumnDefinitions="0.4*,0.6*">
+    <v:NoteListView Grid.Column="0" DataContext="{Binding NoteListView}"/>
+    
+    <DockPanel Grid.Column="1" Margin="6 10 0 0" LastChildFill="True">
+
+      <TextBlock DockPanel.Dock="Top" Text="Note Text"/>
+
+      <TextBox AcceptsReturn="True" TextWrapping="Wrap" Text="{Binding NoteListView.SelectedItem.Value}" Tag="{Binding LastAddedNote}">
+        <i:Interaction.Behaviors>
+          <b:FocusOnTagChangedBehavior/>
+        </i:Interaction.Behaviors>
+      </TextBox>
+
+    </DockPanel>
+  </Grid>
+  
+</UserControl>

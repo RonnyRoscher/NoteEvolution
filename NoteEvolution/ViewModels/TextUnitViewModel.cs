@@ -9,38 +9,38 @@ using NoteEvolution.Models;
 
 namespace NoteEvolution.ViewModels
 {
-    public class NoteViewModel : ViewModelBase
+    public class TextUnitViewModel : ViewModelBase
     {
         #region Private Properties
 
-        private SourceCache<Note, Guid> _childNoteListSource;
+        private SourceCache<TextUnit, Guid> _childTextUnitListSource;
 
-        private ReadOnlyObservableCollection<NoteViewModel> _childNoteListView;
+        private ReadOnlyObservableCollection<TextUnitViewModel> _childTextUnitListView;
 
         #endregion
 
-        public NoteViewModel(Note note)
+        public TextUnitViewModel(TextUnit textUnit)
         {
             IsVisible = true;
             IsSelected = false;
             IsExpanded = true;
 
-            Value = note;
-            _childNoteListSource = note.GetChildNoteListSource();
+            Value = textUnit;
+            _childTextUnitListSource = textUnit.GetChildTextUnitListSource();
 
-            var noteComparer = SortExpressionComparer<NoteViewModel>.Ascending(nvm => nvm.Value.OrderNr);
-            var noteWasModified = _childNoteListSource
+            var noteComparer = SortExpressionComparer<TextUnitViewModel>.Ascending(tuvm => tuvm.Value.OrderNr);
+            var noteWasModified = _childTextUnitListSource
                 .Connect()
-                .WhenPropertyChanged(n => n.ModificationDate)
+                .WhenPropertyChanged(tu => tu.ModificationDate)
                 .Select(_ => Unit.Default);
-            _childNoteListSource
+            _childTextUnitListSource
                 .Connect()
                 // without this delay, the treeview sometimes cause the item not to be added as well a a crash on bringing the treeview into view
                 .Throttle(TimeSpan.FromMilliseconds(250))
-                .Transform(x => new NoteViewModel(x))
+                .Transform(tu => new TextUnitViewModel(tu))
                 .Sort(noteComparer, noteWasModified)
                 .ObserveOn(RxApp.MainThreadScheduler)
-                .Bind(out _childNoteListView)
+                .Bind(out _childTextUnitListView)
                 .DisposeMany()
                 .Subscribe();
         }
@@ -71,15 +71,15 @@ namespace NoteEvolution.ViewModels
             set => this.RaiseAndSetIfChanged(ref _isExpanded, value);
         }
 
-        private Note _value;
+        private TextUnit _value;
 
-        public Note Value
+        public TextUnit Value
         {
             get => _value;
             set => this.RaiseAndSetIfChanged(ref _value, value);
         }
 
-        public ReadOnlyObservableCollection<NoteViewModel> ChildNoteListView => _childNoteListView;
+        public ReadOnlyObservableCollection<TextUnitViewModel> ChildTextUnitListView => _childTextUnitListView;
 
         #endregion
     }
