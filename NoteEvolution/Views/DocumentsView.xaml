@@ -34,7 +34,7 @@
         </ItemsControl.ItemsPanel>
         <ItemsControl.DataTemplates>
           <DataTemplate>
-            <TextBox AcceptsReturn="True" TextWrapping="Wrap" Text="{Binding Value}" Tag="{Binding $parent[ItemsControl].DataContext.LastAddedNote}">
+            <TextBox AcceptsReturn="True" TextWrapping="Wrap" Text="{Binding Text}" Tag="{Binding $parent[ItemsControl].DataContext.LastAddedNote}">
               <i:Interaction.Behaviors>
                 <b:FocusOnTagChangedBehavior/>
               </i:Interaction.Behaviors>

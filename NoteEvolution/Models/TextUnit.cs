@@ -22,14 +22,6 @@ namespace NoteEvolution.Models
                 .Select(_ => DateTime.Now)
                 .ToProperty(this, n => n.ModificationDate, out _modificationDate);
 
-            // update header on text changes
-            _contentSource
-                .Connect()
-                .WhenPropertyChanged(n => n.Value)
-                // FirstOrDefault(n => n.LanguageId == SelectedLanguageId)
-                .Select(n => (Content.FirstOrDefault()?.Value ?? "").Replace(Environment.NewLine, "").Substring(0, Math.Min((Content.FirstOrDefault()?.Value ?? "").Length, 200)))
-                .ToProperty(this, n => n.Header, out _header);
-
             // update hierarchie level on changes to parent hierarchy level
             this.WhenAnyValue(tu => tu.Parent.HierachyLevel)
                 .Select(h => h + 1)
@@ -88,6 +80,11 @@ namespace NoteEvolution.Models
         #endregion
 
         #region Public Methods
+
+        public SourceCache<Note, Guid> GetContentSource()
+        {
+            return _contentSource;
+        }
 
         public SourceCache<TextUnit, Guid> GetChildTextUnitListSource()
         {
@@ -262,9 +259,6 @@ namespace NoteEvolution.Models
         public SourceCache<Note, Guid> _contentSource;
 
         public IEnumerable<Note> Content => _contentSource.Items;
-
-        readonly ObservableAsPropertyHelper<string> _header;
-        public string Header => _header.Value;
 
         #endregion
     }

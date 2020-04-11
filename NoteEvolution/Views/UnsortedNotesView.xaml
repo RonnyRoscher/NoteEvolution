@@ -17,7 +17,7 @@
 
       <TextBlock DockPanel.Dock="Top" Text="Note Text"/>
 
-      <TextBox AcceptsReturn="True" TextWrapping="Wrap" Text="{Binding NoteListView.SelectedItem.Value}" Tag="{Binding LastAddedNote}">
+      <TextBox AcceptsReturn="True" TextWrapping="Wrap" Text="{Binding NoteListView.SelectedItem.Value.Text}" Tag="{Binding LastAddedNote}">
         <i:Interaction.Behaviors>
           <b:FocusOnTagChangedBehavior/>
         </i:Interaction.Behaviors>

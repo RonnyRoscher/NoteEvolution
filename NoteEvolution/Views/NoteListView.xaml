@@ -4,8 +4,13 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:models="clr-namespace:NoteEvolution.Models;assembly=NoteEvolution"
              xmlns:vm="clr-namespace:NoteEvolution.ViewModels;assembly=NoteEvolution"
+             xmlns:c="clr-namespace:NoteEvolution.Converter;assembly=NoteEvolution"
              mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
              x:Class="NoteEvolution.Views.NoteListView">
+
+  <UserControl.Resources>
+    <c:SubstractValueConverter x:Key="SubstractValueConverterKey"/>
+  </UserControl.Resources>
 
   <DockPanel LastChildFill="True">
     
@@ -14,11 +19,28 @@
       <Button Margin="3" Padding="7 0 6 2" Content="-" ToolTip.Tip="Delete selected note" Command="{Binding DeleteSelectedNoteCommand}"/>
     </StackPanel>
     
-    <ListBox VirtualizationMode="Simple" Items="{Binding Items}" SelectedItem="{Binding SelectedItem}">
+    <ListBox x:Name="LvNoteList" VirtualizationMode="Simple" Items="{Binding Items}" SelectedItem="{Binding SelectedItem}">
+      <ListBox.Styles>
+        <Style Selector="ListBoxItem">
+          <Setter Property="Margin" Value="-2 -2 -2 2"/>
+        </Style>
+      </ListBox.Styles>
       <ListBox.ItemTemplate>
         <DataTemplate>
-          <Border BorderBrush="Gray" Background="White" BorderThickness="1" Padding="4">
-            <TextBlock Text="{Binding Value}"/>
+          <Border BorderBrush="Gray" Background="White" BorderThickness="1" MinHeight="42" MaxHeight="56" Margin="0 1" Padding="4">
+            <StackPanel>
+              <DockPanel LastChildFill="True">
+                <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" HorizontalAlignment="Left">
+                  <TextBlock Margin="0 0 5 0" Text="Created:"/>
+                  <TextBlock Text="{Binding Value.CreationDate, StringFormat='\{0:yyyy/MM/dd HH:mm\}'}"/>
+                </StackPanel>
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" HorizontalAlignment="Right">
+                  <TextBlock Margin="0 0 5 0" Text="Modified:"/>
+                  <TextBlock Text="{Binding Value.ModificationDate, StringFormat='\{0:yyyy/MM/dd HH:mm\}'}"/>
+                </StackPanel>
+              </DockPanel>
+              <TextBlock TextWrapping="Wrap" Width="{Binding #LvNoteList.Bounds.Width, ConverterParameter=20, Converter={StaticResource SubstractValueConverterKey}}" Text="{Binding Header}"/>
+            </StackPanel>
           </Border>
         </DataTemplate>
       </ListBox.ItemTemplate>

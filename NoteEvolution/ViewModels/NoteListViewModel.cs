@@ -16,7 +16,7 @@ namespace NoteEvolution.ViewModels
 
         private SourceCache<Note, Guid> _noteListSource;
 
-        private ReadOnlyObservableCollection<Note> _noteListView;
+        private ReadOnlyObservableCollection<NoteViewModel> _noteListView;
 
         #endregion
 
@@ -27,7 +27,7 @@ namespace NoteEvolution.ViewModels
 
             _noteListSource = noteListSource;
 
-            var noteComparer = SortExpressionComparer<Note>.Descending(n => n.ModificationDate);
+            var noteComparer = SortExpressionComparer<NoteViewModel>.Descending(nvm => nvm.Value.ModificationDate);
             var noteWasModified = _noteListSource
                 .Connect()
                 .WhenPropertyChanged(n => n.ModificationDate)
@@ -35,6 +35,7 @@ namespace NoteEvolution.ViewModels
                 .Select(_ => Unit.Default);
             _noteListSource
                 .Connect()
+                .Transform(n => new NoteViewModel(n))
                 .Sort(noteComparer, noteWasModified)
                 .ObserveOn(RxApp.MainThreadScheduler)
                 .Bind(out _noteListView)
@@ -42,9 +43,9 @@ namespace NoteEvolution.ViewModels
                 .Subscribe();
 
             ChangedSelection = this
-                .WhenPropertyChanged(nvm => nvm.SelectedItem)
-                .Where(nvm => nvm.Value != null)
-                .Select(nvm => nvm.Value);
+                .WhenPropertyChanged(nlvm => nlvm.SelectedItem)
+                .Where(nlvm => nlvm.Value != null)
+                .Select(nlvm => nlvm.Value);
         }
 
         #region Commands
@@ -56,7 +57,7 @@ namespace NoteEvolution.ViewModels
             var newNote = new Note();
             _noteListSource.AddOrUpdate(newNote);
             if (newNote != null)
-                SelectedItem = newNote;
+                SelectNote(newNote);
         }
 
         public ReactiveCommand<Unit, Unit> DeleteSelectedNoteCommand { get; }
@@ -65,11 +66,11 @@ namespace NoteEvolution.ViewModels
         {
             if (SelectedItem != null)
             {
-                var closestItem = _noteListSource.Items.FirstOrDefault(note => note.ModificationDate > SelectedItem.ModificationDate);
+                var closestItem = _noteListSource.Items.FirstOrDefault(note => note.ModificationDate > SelectedItem.Value.ModificationDate);
                 if (closestItem == null)
-                    closestItem = _noteListSource.Items.LastOrDefault(note => note.ModificationDate < SelectedItem.ModificationDate);
-                _noteListSource.Remove(SelectedItem);
-                SelectedItem = (SelectedItem != closestItem) ? closestItem : null;
+                    closestItem = _noteListSource.Items.LastOrDefault(note => note.ModificationDate < SelectedItem.Value.ModificationDate);
+                _noteListSource.Remove(SelectedItem.Value);
+                SelectNote(closestItem);
             }
         }
 
@@ -79,9 +80,9 @@ namespace NoteEvolution.ViewModels
 
         public void SelectNote(Note note)
         {
-            if (note != null && SelectedItem?.NoteId != note.NoteId)
+            if (note != null && SelectedItem?.Value?.NoteId != note.NoteId)
             {
-                var newSelection = _noteListView.FirstOrDefault(t => t.NoteId == note.NoteId);
+                var newSelection = _noteListView.FirstOrDefault(t => t.Value.NoteId == note.NoteId);
                 if (newSelection != null)
                     SelectedItem = newSelection;
             }
@@ -91,11 +92,11 @@ namespace NoteEvolution.ViewModels
 
         #region Public Properties
 
-        public ReadOnlyObservableCollection<Note> Items => _noteListView;
+        public ReadOnlyObservableCollection<NoteViewModel> Items => _noteListView;
 
-        private Note _selectedItem;
+        private NoteViewModel _selectedItem;
 
-        public Note SelectedItem
+        public NoteViewModel SelectedItem
         {
             get => _selectedItem;
             set => this.RaiseAndSetIfChanged(ref _selectedItem, value);
@@ -105,7 +106,7 @@ namespace NoteEvolution.ViewModels
 
         #region Public Observables
 
-        public IObservable<Note> ChangedSelection { get; private set; }
+        public IObservable<NoteViewModel> ChangedSelection { get; private set; }
 
         #endregion
     }

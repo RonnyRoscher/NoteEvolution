@@ -22,7 +22,7 @@ namespace NoteEvolution.Models
             LanguageId = languageId;
 
             // update ModifiedDate on changes to local note properties
-            this.WhenAnyValue(n => n.CreationDate, n => n.Value, n => n._modificationDateUnlocked)
+            this.WhenAnyValue(n => n.CreationDate, n => n.Text, n => n._modificationDateUnlocked)
                 .Where(n => n.Item3)
                 .Select(_ => DateTime.Now)
                 .ToProperty(this, n => n.ModificationDate, out _modificationDate);
@@ -33,7 +33,7 @@ namespace NoteEvolution.Models
         public void SetValueWithoutModificationDateChange(string newValue)
         {
             _modificationDateUnlocked = false;
-            Value = newValue;
+            Text = newValue;
             _modificationDateUnlocked = true;
         }
 
@@ -68,12 +68,12 @@ namespace NoteEvolution.Models
         readonly ObservableAsPropertyHelper<DateTime> _modificationDate;
         public DateTime ModificationDate => _modificationDate.Value;
 
-        private string _value;
+        private string _text;
 
-        public string Value
+        public string Text
         {
-            get => _value;
-            set => this.RaiseAndSetIfChanged(ref _value, value);
+            get => _text;
+            set => this.RaiseAndSetIfChanged(ref _text, value);
         }
 
         private Dictionary<Guid, HashSet<Guid>> _usage;

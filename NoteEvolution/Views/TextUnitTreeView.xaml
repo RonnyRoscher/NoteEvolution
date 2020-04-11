@@ -27,7 +27,7 @@
       <TreeView.DataTemplates>
         <TreeDataTemplate DataType="vm:TextUnitViewModel" ItemsSource="{Binding ChildTextUnitListView}">
           <StackPanel Orientation="Horizontal">
-            <TextBlock Text="{Binding Value.Header}"/>
+            <TextBlock Text="{Binding Header}"/>
             <TextBlock Text=" ["/>
             <TextBlock Text="{Binding Value.OrderNr}"/>
             <TextBlock Text="]"/>

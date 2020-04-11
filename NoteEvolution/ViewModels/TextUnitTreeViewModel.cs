@@ -42,8 +42,8 @@ namespace NoteEvolution.ViewModels
                 .DisposeMany()
                 .Subscribe();
 
-            var noteComparer = SortExpressionComparer<TextUnitViewModel>.Ascending(tuvm => tuvm.Value.OrderNr);
-            var noteWasModified = _documentNoteListSource
+            var textUnitComparer = SortExpressionComparer<TextUnitViewModel>.Ascending(tuvm => tuvm.Value.OrderNr);
+            var textUnitWasModified = _documentNoteListSource
                 .Connect()
                 .WhenPropertyChanged(tu => tu.OrderNr)
                 .Select(_ => Unit.Default);
@@ -53,7 +53,7 @@ namespace NoteEvolution.ViewModels
                 .Throttle(TimeSpan.FromMilliseconds(250))
                 .Filter(tu => tu.Parent == null)
                 .Transform(tu => new TextUnitViewModel(tu))
-                .Sort(noteComparer, noteWasModified)
+                .Sort(textUnitComparer, textUnitWasModified)
                 .ObserveOn(RxApp.MainThreadScheduler)
                 .Bind(out _rootNoteListView)
                 .DisposeMany()
