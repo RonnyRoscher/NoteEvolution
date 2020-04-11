@@ -2,8 +2,8 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>netcoreapp3.1</TargetFramework>
-    <AssemblyVersion>0.0.0.8</AssemblyVersion>
-    <FileVersion>0.0.0.8</FileVersion>
+    <AssemblyVersion>0.0.0.9</AssemblyVersion>
+    <FileVersion>0.0.0.9</FileVersion>
   </PropertyGroup>
   <ItemGroup>
     <Compile Update="**\*.xaml.cs">
@@ -13,6 +13,13 @@
       <SubType>Designer</SubType>
     </AvaloniaResource>
     <AvaloniaResource Include="Assets\**" />
+  </ItemGroup>
+  <ItemGroup>
+    <AvaloniaResource Remove="Views\DocumentListView.xaml" />
+    <AvaloniaResource Remove="Views\DocumentsView.xaml" />
+    <AvaloniaResource Remove="Views\NoteListView.xaml" />
+    <AvaloniaResource Remove="Views\TextUnitTreeView.xaml" />
+    <AvaloniaResource Remove="Views\UnsortedNotesView.xaml" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Avalonia" Version="0.9.7" />
@@ -38,5 +45,22 @@
     <EmbeddedResource Include="Views\DocumentsView.xaml">
       <Generator>MSBuild:Compile</Generator>
     </EmbeddedResource>
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Update="Views\DocumentListView.xaml.cs">
+      <DependentUpon>DocumentListView.xaml</DependentUpon>
+    </Compile>
+    <Compile Update="Views\DocumentsView.xaml.cs">
+      <DependentUpon>DocumentsView.xaml</DependentUpon>
+    </Compile>
+    <Compile Update="Views\NoteListView.xaml.cs">
+      <DependentUpon>NoteListView.xaml</DependentUpon>
+    </Compile>
+    <Compile Update="Views\TextUnitTreeView.xaml.cs">
+      <DependentUpon>TextUnitTreeView.xaml</DependentUpon>
+    </Compile>
+    <Compile Update="Views\UnsortedNotesView.xaml.cs">
+      <DependentUpon>UnsortedNotesView.xaml</DependentUpon>
+    </Compile>
   </ItemGroup>
 </Project>
