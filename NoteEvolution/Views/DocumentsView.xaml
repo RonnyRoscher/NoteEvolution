@@ -11,20 +11,20 @@
              x:Class="NoteEvolution.Views.DocumentsView">
   <Grid ColumnDefinitions="0.4*,0.6*" RowDefinitions="0.3*,0.7*">
 
-    <v:DocumentListView Grid.Row="0" Grid.Column="0" DataContext="{Binding DocumentListView}"/>
+    <v:DocumentListView Grid.Row="0" Grid.Column="0" DataContext="{Binding }"/>
 
     <DockPanel Grid.Row="0" Grid.Column="1" Margin="3 10 3 3" LastChildFill="True">
       <TextBlock DockPanel.Dock="Top" Margin="0 0 0 3" Text="Document Name"/>
-      <TextBox AcceptsReturn="True" TextWrapping="Wrap" Text="{Binding DocumentListView.SelectedItem.Title}" Tag="{Binding LastAddedDocument}">
+      <TextBox AcceptsReturn="True" TextWrapping="Wrap" Text="{Binding SelectedItem.Title}" Tag="{Binding LastAddedDocument}">
         <i:Interaction.Behaviors>
           <b:FocusOnTagChangedBehavior/>
         </i:Interaction.Behaviors>
       </TextBox>
     </DockPanel>
 
-    <v:TextUnitTreeView Grid.Row="1" Grid.Column="0" DataContext="{Binding DocumentListView.SelectedItemContentTree}"/>
+    <v:TextUnitTreeView Grid.Row="1" Grid.Column="0" DataContext="{Binding SelectedItemContentTree}"/>
 
-    <v:TextUnitFlowView Grid.Row="1" Grid.Column="1" Margin="0 4 0 0" DataContext="{Binding DocumentListView.SelectedItemContentFlow}"/>
+    <v:TextUnitFlowView Grid.Row="1" Grid.Column="1" Margin="0 4 0 0" DataContext="{Binding SelectedItemContentFlow}"/>
 
   </Grid>
 </UserControl>
