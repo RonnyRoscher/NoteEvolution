@@ -34,7 +34,7 @@ namespace NoteEvolution.ViewModels
                 // Where(n => n.LanguageId == SelectedLanguageId)
                 .Where(_ => _firstAddedNote == null)
                 .OnItemAdded(n => {
-                    //_firstAddedNote = n
+                    _firstAddedNote = n;
                     n.WhenPropertyChanged(n => n.Text)
                         .Select(n => {
                             var text = (n.Value ?? "").Replace(Environment.NewLine, "");
