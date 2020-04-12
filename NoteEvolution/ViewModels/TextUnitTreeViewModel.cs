@@ -96,7 +96,7 @@ namespace NoteEvolution.ViewModels
         void ExecuteRemoveSelected()
         {
             // move related texts to unsorted notes before removing the note from the document
-            foreach (var note in SelectedItem.Value.Content)
+            foreach (var note in SelectedItem.Value.NoteList)
             {
                 _unsortedNoteListSource.AddOrUpdate(note);
             }

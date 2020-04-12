@@ -25,7 +25,7 @@
         </Style>
       </TreeView.Styles>
       <TreeView.DataTemplates>
-        <TreeDataTemplate DataType="vm:TextUnitViewModel" ItemsSource="{Binding ChildTextUnitListView}">
+        <TreeDataTemplate DataType="vm:TextUnitViewModel" ItemsSource="{Binding TextUnitChildListView}">
           <StackPanel Orientation="Horizontal">
             <TextBlock Text="{Binding Header}"/>
             <TextBlock Text=" ["/>

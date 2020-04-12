@@ -35,16 +35,6 @@ namespace NoteEvolution.Models
 
         #region Public Methods
 
-        public SourceCache<TextUnit, Guid> GetRootTextUnitListSource()
-        {
-            return _textUnitRootListSource;
-        }
-
-        public SourceCache<TextUnit, Guid> GetTextUnitListSource()
-        {
-            return _textUnitListSource;
-        }
-
         // todo: AddExisting & CreateNew
         public TextUnit AddTextUnit()
         {
@@ -94,9 +84,13 @@ namespace NoteEvolution.Models
 
         public SourceCache<TextUnit, Guid> _textUnitRootListSource;
 
+        public SourceCache<TextUnit, Guid> TextUnitRootListSource => _textUnitRootListSource;
+
         public IEnumerable<TextUnit> TextUnitRootList => _textUnitRootListSource.Items;
 
         public SourceCache<TextUnit, Guid> _textUnitListSource;
+
+        public SourceCache<TextUnit, Guid> TextUnitListSource => _textUnitListSource;
 
         public IEnumerable<TextUnit> TextUnitList => _textUnitListSource.Items;
 

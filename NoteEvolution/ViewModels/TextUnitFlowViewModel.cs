@@ -53,7 +53,7 @@ namespace NoteEvolution.ViewModels
             _documentNoteListSource
                 .Connect()
                 .Where(tu => _documentNoteListSource.Count > 1)
-                .OnItemAdded(tu => LastAddedNote = tu.Content.FirstOrDefault())
+                .OnItemAdded(tu => LastAddedNote = tu.NoteList.FirstOrDefault())
                 .DisposeMany()
                 .Subscribe();
 
@@ -88,7 +88,7 @@ namespace NoteEvolution.ViewModels
         void ExecuteRemoveSelected()
         {
             // move related texts to unsorted notes before removing the note from the document
-            foreach (var note in SelectedItem.Value.Content)
+            foreach (var note in SelectedItem.Value.NoteList)
             {
                 _unsortedNoteListSource.AddOrUpdate(note);
             }

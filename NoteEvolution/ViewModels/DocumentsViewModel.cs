@@ -26,7 +26,6 @@ namespace NoteEvolution.ViewModels
             _unsortedNoteListSource = unsortedNoteListSource;
             _documentListSource = documentListSource;
 
-
             // build sorted document list
             var documentComparer = SortExpressionComparer<Document>.Descending(d => d.ModificationDate);
             var documentWasModified = _documentListSource
@@ -52,8 +51,8 @@ namespace NoteEvolution.ViewModels
             ChangedSelection
                 .Where(d => SelectedItem != null)
                 .Do(d => {
-                    SelectedItemContentTree = new TextUnitTreeViewModel(_unsortedNoteListSource, d.GetTextUnitListSource());
-                    SelectedItemContentFlow = new TextUnitFlowViewModel(_unsortedNoteListSource, d.GetTextUnitListSource());
+                    SelectedItemContentTree = new TextUnitTreeViewModel(_unsortedNoteListSource, d.TextUnitListSource);
+                    SelectedItemContentFlow = new TextUnitFlowViewModel(_unsortedNoteListSource, d.TextUnitListSource);
                 })
                 .Subscribe();
 
@@ -85,7 +84,7 @@ namespace NoteEvolution.ViewModels
             {
                 foreach (var textUnit in SelectedItem.TextUnitList)
                 {
-                    foreach (var note in textUnit.Content)
+                    foreach (var note in textUnit.NoteList)
                     {
                         _unsortedNoteListSource.AddOrUpdate(note);
                     }

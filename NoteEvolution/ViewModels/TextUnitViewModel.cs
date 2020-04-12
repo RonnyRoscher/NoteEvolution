@@ -13,9 +13,9 @@ namespace NoteEvolution.ViewModels
     {
         #region Private Properties
 
-        private SourceCache<TextUnit, Guid> _childTextUnitListSource;
+        private SourceCache<TextUnit, Guid> _textUnitChildListSource;
 
-        private ReadOnlyObservableCollection<TextUnitViewModel> _childTextUnitListView;
+        private ReadOnlyObservableCollection<TextUnitViewModel> _textUnitChildListView;
 
         private Note _firstAddedNote = null;
 
@@ -30,7 +30,7 @@ namespace NoteEvolution.ViewModels
             Value = textUnit;
 
             // update header on text changes
-            Value.GetContentSource().Connect()
+            Value.NoteListSource.Connect()
                 // Where(n => n.LanguageId == SelectedLanguageId)
                 .Where(_ => _firstAddedNote == null)
                 .OnItemAdded(n => {
@@ -45,32 +45,21 @@ namespace NoteEvolution.ViewModels
                 .DisposeMany()
                 .Subscribe();
 
-            /*_contentSource
-                .Connect()
-                .WhenPropertyChanged(n => n.Text)
-                .Select(n => (Content.FirstOrDefault()?.Text ?? "").Replace(Environment.NewLine, "").Substring(0, Math.Min((Content.FirstOrDefault()?.Text ?? "").Length, 200)))
-                .ToProperty(this, n => n.Header, out _header);*/
-
-            /*Value.WhenPropertyChanged(n => n.Content)
-                // FirstOrDefault(n => n.LanguageId == SelectedLanguageId)
-                .Select(tu => tu.FirstOrDefault()?.Text ?? "").Replace(Environment.NewLine, "").Substring(0, Math.Min((Content.FirstOrDefault()?.Text ?? "").Length, 200)))
-                .ToProperty(this, n => n.Header, out _header);*/
-
-            _childTextUnitListSource = textUnit.GetChildTextUnitListSource();
+            _textUnitChildListSource = textUnit.TextUnitChildListSource;
 
             var noteComparer = SortExpressionComparer<TextUnitViewModel>.Ascending(tuvm => tuvm.Value.OrderNr);
-            var noteWasModified = _childTextUnitListSource
+            var noteWasModified = _textUnitChildListSource
                 .Connect()
                 .WhenPropertyChanged(tu => tu.ModificationDate)
                 .Select(_ => Unit.Default);
-            _childTextUnitListSource
+            _textUnitChildListSource
                 .Connect()
                 // without this delay, the treeview sometimes cause the item not to be added as well a a crash on bringing the treeview into view
                 .Throttle(TimeSpan.FromMilliseconds(250))
                 .Transform(tu => new TextUnitViewModel(tu))
                 .Sort(noteComparer, noteWasModified)
                 .ObserveOn(RxApp.MainThreadScheduler)
-                .Bind(out _childTextUnitListView)
+                .Bind(out _textUnitChildListView)
                 .DisposeMany()
                 .Subscribe();
         }
@@ -112,7 +101,7 @@ namespace NoteEvolution.ViewModels
         private ObservableAsPropertyHelper<string> _header;
         public string Header => _header.Value;
 
-        public ReadOnlyObservableCollection<TextUnitViewModel> ChildTextUnitListView => _childTextUnitListView;
+        public ReadOnlyObservableCollection<TextUnitViewModel> TextUnitChildListView => _textUnitChildListView;
 
         #endregion
     }

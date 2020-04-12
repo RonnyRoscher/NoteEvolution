@@ -13,12 +13,12 @@ namespace NoteEvolution.Models
         {
             TextUnitId = Guid.NewGuid();
             CreationDate = DateTime.Now;
-            _childTextUnitListSource = new SourceCache<TextUnit, Guid>(n => n.TextUnitId);
-            _contentSource = new SourceCache<Note, Guid>(t => t.NoteId);
-            _contentSource.AddOrUpdate(new Note());
+            _textUnitChildListSource = new SourceCache<TextUnit, Guid>(n => n.TextUnitId);
+            _noteListSource = new SourceCache<Note, Guid>(t => t.NoteId);
+            _noteListSource.AddOrUpdate(new Note());
 
             // update ModifiedDate on changes to local note properties
-            this.WhenAnyValue(n => n.CreationDate, n => n.RelatedDocument, n => n.Parent, n => n.Predecessor, n => n.Successor, n => n.Content)
+            this.WhenAnyValue(n => n.CreationDate, n => n.RelatedDocument, n => n.Parent, n => n.Predecessor, n => n.Successor, n => n.NoteList)
                 .Select(_ => DateTime.Now)
                 .ToProperty(this, n => n.ModificationDate, out _modificationDate);
 
@@ -28,7 +28,7 @@ namespace NoteEvolution.Models
                 .ToProperty(this, tu => tu.HierachyLevel, out _hierachyLevel);
 
             RelatedDocument = relatedDocument;
-            RelatedDocument.GetTextUnitListSource().AddOrUpdate(this);
+            RelatedDocument.TextUnitListSource.AddOrUpdate(this);
         }
 
         #region Private Methods
@@ -41,8 +41,8 @@ namespace NoteEvolution.Models
         private TextUnit GetLastSubtreeTextUnit(TextUnit subtreeRoot)
         {
             var result = subtreeRoot;
-            if (subtreeRoot.Children.Count() > 0)
-                result = GetLastSubtreeTextUnit(subtreeRoot.Children.OrderBy(n => n.OrderNr).LastOrDefault());
+            if (subtreeRoot.TextUnitChildList.Count() > 0)
+                result = GetLastSubtreeTextUnit(subtreeRoot.TextUnitChildList.OrderBy(n => n.OrderNr).LastOrDefault());
             return result;
         }
 
@@ -56,8 +56,8 @@ namespace NoteEvolution.Models
             var directPrecesessor = successor?.Predecessor;
             if (directPrecesessor != null)
             {
-                if (directPrecesessor.Children.Count() > 0)
-                    return GetLastSubtreeTextUnit(directPrecesessor.Children.OrderBy(n => n.OrderNr).LastOrDefault());
+                if (directPrecesessor.TextUnitChildList.Count() > 0)
+                    return GetLastSubtreeTextUnit(directPrecesessor.TextUnitChildList.OrderBy(n => n.OrderNr).LastOrDefault());
                 return directPrecesessor;
             }
             return successor?.Parent;
@@ -81,28 +81,18 @@ namespace NoteEvolution.Models
 
         #region Public Methods
 
-        public SourceCache<Note, Guid> GetContentSource()
-        {
-            return _contentSource;
-        }
-
-        public SourceCache<TextUnit, Guid> GetChildTextUnitListSource()
-        {
-            return _childTextUnitListSource;
-        }
-
         /// <summary>
         /// Create a new text unit and add it as child to this text unit. The child is always added as the first child.
         /// </summary>
         /// <returns>The created text unit if the creation was successful, or else null.</returns>
         public TextUnit AddChild()
         {
-            var previousFirstChild = Children.OrderBy(n => n.OrderNr).FirstOrDefault();
+            var previousFirstChild = TextUnitChildList.OrderBy(n => n.OrderNr).FirstOrDefault();
             // create text unit with document relations
             var newTextUnit = new TextUnit(RelatedDocument);
             // add hierarchical relations
             newTextUnit.Parent = this;
-            _childTextUnitListSource.AddOrUpdate(newTextUnit);
+            _textUnitChildListSource.AddOrUpdate(newTextUnit);
             // add sequencial relations
             if (previousFirstChild != null)
             {
@@ -139,7 +129,7 @@ namespace NoteEvolution.Models
             // add hierarchical relations
             newTextUnit.Parent = Parent;
             if (Parent != null)
-                newTextUnit.Parent.GetChildTextUnitListSource().AddOrUpdate(newTextUnit);
+                newTextUnit.Parent.TextUnitChildListSource.AddOrUpdate(newTextUnit);
             // add sequencial relations
             var previousSuccessor = Successor;
             newTextUnit.Predecessor = this;
@@ -168,14 +158,14 @@ namespace NoteEvolution.Models
                 }
             }
             if (newTextUnit.Parent == null)
-                RelatedDocument.GetRootTextUnitListSource().AddOrUpdate(newTextUnit);
+                RelatedDocument.TextUnitRootListSource.AddOrUpdate(newTextUnit);
             return newTextUnit;
         }
 
         public void RemoveTextUnit(TextUnit oldTextUnit)
         {
             if (oldTextUnit != null)
-                _childTextUnitListSource.Remove(oldTextUnit);
+                _textUnitChildListSource.Remove(oldTextUnit);
         }
 
         #endregion
@@ -233,9 +223,11 @@ namespace NoteEvolution.Models
             set => this.RaiseAndSetIfChanged(ref _successor, value);
         }
 
-        public SourceCache<TextUnit, Guid> _childTextUnitListSource;
+        public SourceCache<TextUnit, Guid> _textUnitChildListSource;
 
-        public IEnumerable<TextUnit> Children => _childTextUnitListSource.Items;
+        public SourceCache<TextUnit, Guid> TextUnitChildListSource => _textUnitChildListSource;
+
+        public IEnumerable<TextUnit> TextUnitChildList => _textUnitChildListSource.Items;
 
         readonly ObservableAsPropertyHelper<int> _hierachyLevel;
         public int HierachyLevel => _hierachyLevel.Value;
@@ -256,9 +248,11 @@ namespace NoteEvolution.Models
             set => this.RaiseAndSetIfChanged(ref _orderNr, value);
         }
 
-        public SourceCache<Note, Guid> _contentSource;
+        public SourceCache<Note, Guid> _noteListSource;
 
-        public IEnumerable<Note> Content => _contentSource.Items;
+        public SourceCache<Note, Guid> NoteListSource => _noteListSource;
+
+        public IEnumerable<Note> NoteList => _noteListSource.Items;
 
         #endregion
     }

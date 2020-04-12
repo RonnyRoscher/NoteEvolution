@@ -14,7 +14,7 @@
     <ItemsControl Items="{Binding Items}">
       <ItemsControl.DataTemplates>
         <DataTemplate>
-          <ItemsControl Items="{Binding Value.Content}">
+          <ItemsControl Items="{Binding Value.NoteList}">
             <ItemsControl.ItemsPanel>
               <ItemsPanelTemplate>
                 <UniformGrid/>
