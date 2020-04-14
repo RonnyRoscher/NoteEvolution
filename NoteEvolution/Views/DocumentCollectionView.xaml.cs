@@ -4,9 +4,9 @@ using Avalonia.Markup.Xaml;
 
 namespace NoteEvolution.Views
 {
-    public class DocumentsView : UserControl
+    public class DocumentCollectionView : UserControl
     {
-        public DocumentsView()
+        public DocumentCollectionView()
         {
             this.InitializeComponent();
         }

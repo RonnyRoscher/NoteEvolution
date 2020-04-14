@@ -22,7 +22,7 @@ namespace NoteEvolution.ViewModels
             UnsortedNotesView = new UnsortedNotesViewModel(_unsortedNoteListSource);
             
             _documentListSource = new SourceCache<Document, Guid>(d => d.DocumentId);
-            DocumentsView = new DocumentsViewModel(_unsortedNoteListSource, _documentListSource);
+            DocumentCollectionView = new DocumentCollectionViewModel(_unsortedNoteListSource, _documentListSource);
         }
 
         #region Commands
@@ -60,12 +60,12 @@ namespace NoteEvolution.ViewModels
             set => this.RaiseAndSetIfChanged(ref _unsortedNotesView, value);
         }
 
-        private DocumentsViewModel _documentsView;
+        private DocumentCollectionViewModel _documentCollectionView;
 
-        public DocumentsViewModel DocumentsView
+        public DocumentCollectionViewModel DocumentCollectionView
         {
-            get => _documentsView;
-            set => this.RaiseAndSetIfChanged(ref _documentsView, value);
+            get => _documentCollectionView;
+            set => this.RaiseAndSetIfChanged(ref _documentCollectionView, value);
         }
         
         #endregion

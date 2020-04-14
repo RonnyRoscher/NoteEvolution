@@ -14,11 +14,9 @@ namespace NoteEvolution.Models
             DocumentId = Guid.NewGuid();
             CreationDate = DateTime.Now;
             _textUnitListSource = new SourceCache<TextUnit, Guid>(n => n.TextUnitId);
-            _textUnitRootListSource = new SourceCache<TextUnit, Guid>(n => n.TextUnitId);
 
             var rootTextUnit = new TextUnit(this);
             _textUnitListSource.AddOrUpdate(rootTextUnit);
-            _textUnitRootListSource.AddOrUpdate(rootTextUnit);
 
             // update ModifiedDate on changes to local text unit properties
             this.WhenAnyValue(d => d.CreationDate, d => d.Title)
@@ -38,7 +36,7 @@ namespace NoteEvolution.Models
         // todo: AddExisting & CreateNew
         public TextUnit AddTextUnit()
         {
-            var latestRootTextUnit = TextUnitRootList.LastOrDefault();
+            var latestRootTextUnit = TextUnitList.LastOrDefault();
             if (latestRootTextUnit != null)
                 return latestRootTextUnit.AddSuccessor();
             return null;
@@ -81,12 +79,6 @@ namespace NoteEvolution.Models
             get => _title;
             set => this.RaiseAndSetIfChanged(ref _title, value);
         }
-
-        public SourceCache<TextUnit, Guid> _textUnitRootListSource;
-
-        public SourceCache<TextUnit, Guid> TextUnitRootListSource => _textUnitRootListSource;
-
-        public IEnumerable<TextUnit> TextUnitRootList => _textUnitRootListSource.Items;
 
         public SourceCache<TextUnit, Guid> _textUnitListSource;
 

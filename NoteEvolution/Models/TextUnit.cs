@@ -28,7 +28,6 @@ namespace NoteEvolution.Models
                 .ToProperty(this, tu => tu.HierachyLevel, out _hierachyLevel);
 
             RelatedDocument = relatedDocument;
-            RelatedDocument.TextUnitListSource.AddOrUpdate(this);
         }
 
         #region Private Methods
@@ -93,6 +92,7 @@ namespace NoteEvolution.Models
             // add hierarchical relations
             newTextUnit.Parent = this;
             _textUnitChildListSource.AddOrUpdate(newTextUnit);
+            RelatedDocument.TextUnitListSource.AddOrUpdate(newTextUnit);
             // add sequencial relations
             if (previousFirstChild != null)
             {
@@ -128,6 +128,7 @@ namespace NoteEvolution.Models
             var newTextUnit = new TextUnit(RelatedDocument);
             // add hierarchical relations
             newTextUnit.Parent = Parent;
+            RelatedDocument.TextUnitListSource.AddOrUpdate(newTextUnit);
             if (Parent != null)
                 newTextUnit.Parent.TextUnitChildListSource.AddOrUpdate(newTextUnit);
             // add sequencial relations
@@ -157,8 +158,6 @@ namespace NoteEvolution.Models
                     newTextUnit.OrderNr = RelatedDocument.TextUnitList.Max(n => n.OrderNr) + 1.0;
                 }
             }
-            if (newTextUnit.Parent == null)
-                RelatedDocument.TextUnitRootListSource.AddOrUpdate(newTextUnit);
             return newTextUnit;
         }
 

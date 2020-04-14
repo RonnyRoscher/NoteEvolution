@@ -10,52 +10,62 @@ using System.Linq;
 
 namespace NoteEvolution.ViewModels
 {
-    public class TextUnitTreeViewModel : ViewModelBase
+    public class DocumentViewModel : ViewModelBase
     {
         #region Private Properties
 
         private SourceCache<Note, Guid> _unsortedNoteListSource;
 
-        private SourceCache<TextUnit, Guid> _documentNoteListSource;
+        private SourceCache<TextUnit, Guid> _documentTextUnitListSource;
 
-        private ReadOnlyObservableCollection<TextUnitViewModel> _rootNoteListView;
+        private IObservableCache<TextUnitViewModel, Guid> _textUnitListSource;
 
-        private ReadOnlyObservableCollection<TextUnitViewModel> _noteListView;
+        private ReadOnlyObservableCollection<TextUnitViewModel> _textUnitListView;
+
+        private IObservableCache<TextUnitViewModel, Guid> _textUnitRootListSource;
+
+        private ReadOnlyObservableCollection<TextUnitViewModel> _textUnitRootListView;
 
         #endregion
 
-        public TextUnitTreeViewModel(SourceCache<Note, Guid> unsortedNoteListSource, SourceCache<TextUnit, Guid> documentNoteListSource)
+        public DocumentViewModel(SourceCache<Note, Guid> unsortedNoteListSource, Document documentSource)
         {
-            CreateNewSuccessorCommand = ReactiveCommand.Create(ExecuteCreateNewSuccessor);
-            CreateNewChildCommand = ReactiveCommand.Create(ExecuteCreateNewChild);
-            RemoveSelectedCommand = ReactiveCommand.Create(ExecuteRemoveSelected);
-            DeleteSelectedCommand = ReactiveCommand.Create(ExecuteDeleteSelected);
-
             _unsortedNoteListSource = unsortedNoteListSource;
+            DocumentSource = documentSource;
+            _documentTextUnitListSource = documentSource.TextUnitListSource;
 
-            _documentNoteListSource = documentNoteListSource;
-            _documentNoteListSource
+            _textUnitListSource = _documentTextUnitListSource
                 .Connect()
-                .Transform(n => new TextUnitViewModel(n))
+                .Transform(tu => new TextUnitViewModel(tu))
+                .DisposeMany()
+                .AsObservableCache();
+            var textUnitComparer = SortExpressionComparer<TextUnitViewModel>.Ascending(tuvm => tuvm.Value.OrderNr);
+            var textUnitWasModified = _textUnitListSource
+                .Connect()
+                .WhenPropertyChanged(tu => tu.Value.OrderNr)
+                .Select(_ => Unit.Default);
+            _textUnitListSource
+                .Connect()
+                .Sort(textUnitComparer, textUnitWasModified)
                 .ObserveOn(RxApp.MainThreadScheduler)
-                .Bind(out _noteListView)
+                .Bind(out _textUnitListView)
                 .DisposeMany()
                 .Subscribe();
 
-            var textUnitComparer = SortExpressionComparer<TextUnitViewModel>.Ascending(tuvm => tuvm.Value.OrderNr);
-            var textUnitWasModified = _documentNoteListSource
+            _textUnitRootListSource = _textUnitListSource
                 .Connect()
-                .WhenPropertyChanged(tu => tu.OrderNr)
+                .Filter(tu => tu.Value.Parent == null)
+                .DisposeMany()
+                .AsObservableCache();
+            var rootTextUnitWasModified = _textUnitRootListSource
+                .Connect()
+                .WhenPropertyChanged(tu => tu.Value.OrderNr)
                 .Select(_ => Unit.Default);
-            _documentNoteListSource
+            _textUnitRootListSource
                 .Connect()
-                // without this delay, the treeview sometimes cause the item not to be added as well a a crash on bringing the treeview into view
-                .Throttle(TimeSpan.FromMilliseconds(250))
-                .Filter(tu => tu.Parent == null)
-                .Transform(tu => new TextUnitViewModel(tu))
-                .Sort(textUnitComparer, textUnitWasModified)
+                .Sort(textUnitComparer, rootTextUnitWasModified)
                 .ObserveOn(RxApp.MainThreadScheduler)
-                .Bind(out _rootNoteListView)
+                .Bind(out _textUnitRootListView)
                 .DisposeMany()
                 .Subscribe();
 
@@ -63,6 +73,11 @@ namespace NoteEvolution.ViewModels
                 .WhenPropertyChanged(ntvm => ntvm.SelectedItem)
                 .Where(ntvm => ntvm.Value?.Value != null)
                 .Select(ntvm => ntvm.Value.Value);
+
+            CreateNewSuccessorCommand = ReactiveCommand.Create(ExecuteCreateNewSuccessor);
+            CreateNewChildCommand = ReactiveCommand.Create(ExecuteCreateNewChild);
+            RemoveSelectedCommand = ReactiveCommand.Create(ExecuteRemoveSelected);
+            DeleteSelectedCommand = ReactiveCommand.Create(ExecuteDeleteSelected);
         }
 
         #region Commands
@@ -109,9 +124,9 @@ namespace NoteEvolution.ViewModels
         {
             if (SelectedItem != null)
             {
-                var closestItem = _noteListView.FirstOrDefault(note => note.Value.OrderNr > SelectedItem.Value.OrderNr);
+                var closestItem = _textUnitListView.FirstOrDefault(note => note.Value.OrderNr > SelectedItem.Value.OrderNr);
                 if (closestItem == null)
-                    closestItem = _noteListView.LastOrDefault(note => note.Value.OrderNr < SelectedItem.Value.OrderNr);
+                    closestItem = _textUnitListView.LastOrDefault(note => note.Value.OrderNr < SelectedItem.Value.OrderNr);
                 SelectedItem.Value.RelatedDocument.RemoveTextUnit(SelectedItem.Value);
                 SelectedItem = (SelectedItem != closestItem) ? closestItem : null;
             }
@@ -125,22 +140,26 @@ namespace NoteEvolution.ViewModels
         {
             if (newTextUnitSelection != null && SelectedItem?.Value?.TextUnitId != newTextUnitSelection.TextUnitId)
             {
-                var newSelection = _noteListView.FirstOrDefault(nvm => nvm.Value.TextUnitId == newTextUnitSelection.TextUnitId);
+                var newSelection = _textUnitListView.FirstOrDefault(nvm => nvm.Value.TextUnitId == newTextUnitSelection.TextUnitId);
                 if (newSelection != null)
+                {
+                    //SelectedItem.IsSelected = false;
+                    //newSelection.IsSelected = true;
                     SelectedItem = newSelection;
+                    //newSelection.IsSelected = true;
+                }
             }
-        }
-
-        public SourceCache<TextUnit, Guid> GetDocumentNoteListSource()
-        {
-            return _documentNoteListSource;
         }
 
         #endregion
 
         #region Public Properties
 
-        public ReadOnlyObservableCollection<TextUnitViewModel> Items => _rootNoteListView;
+        public Document DocumentSource { get; }
+
+        public ReadOnlyObservableCollection<TextUnitViewModel> AllItems => _textUnitListView;
+
+        public ReadOnlyObservableCollection<TextUnitViewModel> RootItems => _textUnitRootListView;
 
         private TextUnitViewModel _selectedItem;
 

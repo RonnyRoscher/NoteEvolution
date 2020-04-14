@@ -16,12 +16,12 @@
       <Button Margin="3" Padding="7 0 6 2" Content="-D" ToolTip.Tip="Delete selected note" Command="{Binding DeleteSelectedCommand}"/>
     </StackPanel>
 
-    <TreeView Items="{Binding Items}" SelectedItem="{Binding SelectedItem, Mode=TwoWay}">
+    <TreeView Items="{Binding RootItems}" SelectionMode="AlwaysSelected" SelectedItem="{Binding SelectedItem, Mode=TwoWay}">
       <TreeView.Styles>
         <Style Selector="TreeViewItem">
           <Setter Property="IsVisible" Value="{Binding IsVisible}"/>
-          <Setter Property="IsSelected" Value="{Binding IsSelected}"/>
-          <Setter Property="IsExpanded" Value="{Binding IsExpanded}"/>
+          <Setter Property="IsSelected" Value="{Binding IsSelected, Mode=TwoWay}"/>
+          <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"/>
         </Style>
       </TreeView.Styles>
       <TreeView.DataTemplates>

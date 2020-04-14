@@ -11,13 +11,13 @@ using System.Collections.Generic;
 
 namespace NoteEvolution.ViewModels
 {
-    public class DocumentsViewModel : ViewModelBase
+    public class DocumentCollectionViewModel : ViewModelBase
     {
         private SourceCache<Note, Guid> _unsortedNoteListSource;
         private SourceCache<Document, Guid> _documentListSource;
-        private ReadOnlyObservableCollection<Document> _documentListView;
+        private ReadOnlyObservableCollection<DocumentViewModel> _documentListView;
 
-        public DocumentsViewModel(SourceCache<Note, Guid> unsortedNoteListSource, SourceCache<Document, Guid> documentListSource)
+        public DocumentCollectionViewModel(SourceCache<Note, Guid> unsortedNoteListSource, SourceCache<Document, Guid> documentListSource)
         {
             CreateNewDocumentCommand = ReactiveCommand.Create(ExecuteCreateNewDocument);
             DissolveSelectedDocumentCommand = ReactiveCommand.Create(ExecuteDissolveSelectedDocument);
@@ -27,7 +27,7 @@ namespace NoteEvolution.ViewModels
             _documentListSource = documentListSource;
 
             // build sorted document list
-            var documentComparer = SortExpressionComparer<Document>.Descending(d => d.ModificationDate);
+            var documentComparer = SortExpressionComparer<DocumentViewModel>.Descending(d => d.DocumentSource.ModificationDate);
             var documentWasModified = _documentListSource
                 .Connect()
                 .WhenPropertyChanged(d => d.ModificationDate)
@@ -35,6 +35,7 @@ namespace NoteEvolution.ViewModels
                 .Select(_ => Unit.Default);
             _documentListSource
                 .Connect()
+                .Transform(d => new DocumentViewModel(_unsortedNoteListSource, d))
                 .Sort(documentComparer, documentWasModified)
                 .ObserveOn(RxApp.MainThreadScheduler)
                 .Bind(out _documentListView)
@@ -46,15 +47,6 @@ namespace NoteEvolution.ViewModels
                 .WhenPropertyChanged(d => d.SelectedItem)
                 .Where(d => d.Value != null)
                 .Select(d => d.Value);
-
-            // load note list on document selection change
-            ChangedSelection
-                .Where(d => SelectedItem != null)
-                .Do(d => {
-                    SelectedItemContentTree = new TextUnitTreeViewModel(_unsortedNoteListSource, d.TextUnitListSource);
-                    SelectedItemContentFlow = new TextUnitFlowViewModel(_unsortedNoteListSource, d.TextUnitListSource);
-                })
-                .Subscribe();
 
             // set LastAddedDocument on new document added, used to auto focus the textbox
             _documentListSource
@@ -72,7 +64,7 @@ namespace NoteEvolution.ViewModels
         {
             var newDocument = new Document();
             _documentListSource.AddOrUpdate(newDocument);
-            SelectedItem = newDocument;
+            SelectDocument(newDocument);
         }
 
         public ReactiveCommand<Unit, Unit> DissolveSelectedDocumentCommand { get; }
@@ -80,9 +72,9 @@ namespace NoteEvolution.ViewModels
         void ExecuteDissolveSelectedDocument()
         {
             // move contained notes to unsorted notes
-            if (SelectedItem.TextUnitList.Count() > 0)
+            if (SelectedItem.DocumentSource.TextUnitList.Count() > 0)
             {
-                foreach (var textUnit in SelectedItem.TextUnitList)
+                foreach (var textUnit in SelectedItem.DocumentSource.TextUnitList)
                 {
                     foreach (var note in textUnit.NoteList)
                     {
@@ -97,11 +89,11 @@ namespace NoteEvolution.ViewModels
 
         void ExecuteDeleteSelectedDocument()
         {
-            var closestItem = _documentListSource.Items.FirstOrDefault(note => note.ModificationDate > SelectedItem?.ModificationDate);
+            var closestItem = _documentListSource.Items.FirstOrDefault(note => note.ModificationDate > SelectedItem?.DocumentSource.ModificationDate);
             if (closestItem == null)
-                closestItem = _documentListSource.Items.LastOrDefault(note => note.ModificationDate < SelectedItem?.ModificationDate);
-            _documentListSource.Remove(SelectedItem);
-            SelectedItem = closestItem;
+                closestItem = _documentListSource.Items.LastOrDefault(note => note.ModificationDate < SelectedItem?.DocumentSource.ModificationDate);
+            _documentListSource.Remove(SelectedItem.DocumentSource);
+            SelectDocument(closestItem);
         }
 
         #endregion
@@ -110,11 +102,9 @@ namespace NoteEvolution.ViewModels
 
         public void SelectDocument(Document document)
         {
-            if (document != null && SelectedItem?.DocumentId != document.DocumentId)
+            if (document != null && SelectedItem?.DocumentSource.DocumentId != document.DocumentId)
             {
-                var newSelection = Items.FirstOrDefault(d => d.DocumentId == document.DocumentId);
-                if (newSelection != null)
-                    SelectedItem = newSelection;
+                SelectedItem = _documentListView.FirstOrDefault(d => d.DocumentSource.DocumentId == document.DocumentId);
             }
         }
 
@@ -122,11 +112,11 @@ namespace NoteEvolution.ViewModels
 
         #region Public Properties
 
-        public ReadOnlyObservableCollection<Document> Items => _documentListView;
+        public ReadOnlyObservableCollection<DocumentViewModel> Items => _documentListView;
 
-        private Document _selectedItem;
+        private DocumentViewModel _selectedItem;
 
-        public Document SelectedItem
+        public DocumentViewModel SelectedItem
         {
             get => _selectedItem;
             set => this.RaiseAndSetIfChanged(ref _selectedItem, value);
@@ -140,27 +130,11 @@ namespace NoteEvolution.ViewModels
             set => this.RaiseAndSetIfChanged(ref _lastAddedDocument, value);
         }
 
-        private TextUnitTreeViewModel _selectedItemContentTree;
-
-        public TextUnitTreeViewModel SelectedItemContentTree
-        {
-            get => _selectedItemContentTree;
-            set => this.RaiseAndSetIfChanged(ref _selectedItemContentTree, value);
-        }
-
-        private TextUnitFlowViewModel _selectedItemContentFlow;
-
-        public TextUnitFlowViewModel SelectedItemContentFlow
-        {
-            get => _selectedItemContentFlow;
-            set => this.RaiseAndSetIfChanged(ref _selectedItemContentFlow, value);
-        }
-
         #endregion
 
         #region Public Observables
 
-        public IObservable<Document> ChangedSelection { get; private set; }
+        public IObservable<DocumentViewModel> ChangedSelection { get; private set; }
 
         #endregion
     }

@@ -2,8 +2,8 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>netcoreapp3.1</TargetFramework>
-    <AssemblyVersion>0.0.1.5</AssemblyVersion>
-    <FileVersion>0.0.1.5</FileVersion>
+    <AssemblyVersion>0.0.1.6</AssemblyVersion>
+    <FileVersion>0.0.1.6</FileVersion>
   </PropertyGroup>
   <ItemGroup>
     <Compile Update="**\*.xaml.cs">
@@ -15,8 +15,8 @@
     <AvaloniaResource Include="Assets\**" />
   </ItemGroup>
   <ItemGroup>
+    <AvaloniaResource Remove="Views\DocumentCollectionView.xaml" />
     <AvaloniaResource Remove="Views\DocumentListView.xaml" />
-    <AvaloniaResource Remove="Views\DocumentsView.xaml" />
     <AvaloniaResource Remove="Views\NoteListView.xaml" />
     <AvaloniaResource Remove="Views\TextUnitFlowView.xaml" />
     <AvaloniaResource Remove="Views\TextUnitTreeView.xaml" />
@@ -46,7 +46,7 @@
     <EmbeddedResource Include="Views\UnsortedNotesView.xaml">
       <Generator>MSBuild:Compile</Generator>
     </EmbeddedResource>
-    <EmbeddedResource Include="Views\DocumentsView.xaml">
+    <EmbeddedResource Include="Views\DocumentCollectionView.xaml">
       <Generator>MSBuild:Compile</Generator>
     </EmbeddedResource>
     <EmbeddedResource Include="Views\TextUnitFlowView.xaml">
@@ -57,8 +57,8 @@
     <Compile Update="Views\DocumentListView.xaml.cs">
       <DependentUpon>DocumentListView.xaml</DependentUpon>
     </Compile>
-    <Compile Update="Views\DocumentsView.xaml.cs">
-      <DependentUpon>DocumentsView.xaml</DependentUpon>
+    <Compile Update="Views\DocumentCollectionView.xaml.cs">
+      <DependentUpon>DocumentCollectionView.xaml</DependentUpon>
     </Compile>
     <Compile Update="Views\NoteListView.xaml.cs">
       <DependentUpon>NoteListView.xaml</DependentUpon>
@@ -72,5 +72,8 @@
     <Compile Update="Views\UnsortedNotesView.xaml.cs">
       <DependentUpon>UnsortedNotesView.xaml</DependentUpon>
     </Compile>
+  </ItemGroup>
+  <ItemGroup>
+    <Folder Include="Events\" />
   </ItemGroup>
 </Project>

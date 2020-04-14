@@ -11,7 +11,7 @@
 
   <DockPanel Margin="3" LastChildFill="True">
     <TextBlock DockPanel.Dock="Top" Margin="0 0 0 3" Text="Content"/>
-    <ItemsControl Items="{Binding Items}">
+    <ItemsControl Items="{Binding AllItems}">
       <ItemsControl.DataTemplates>
         <DataTemplate>
           <ItemsControl Items="{Binding Value.NoteList}">
@@ -22,7 +22,7 @@
             </ItemsControl.ItemsPanel>
             <ItemsControl.DataTemplates>
               <DataTemplate>
-                <TextBox AcceptsReturn="True" TextWrapping="Wrap" Text="{Binding Text}" Tag="{Binding $parent[UserControl].DataContext.LastAddedNote}">
+                <TextBox AcceptsReturn="True" TextWrapping="Wrap" Text="{Binding Text}" Tag="{Binding $parent[UserControl].DataContext.SelectedItem}">
                   <i:Interaction.Behaviors>
                     <b:FocusOnTagChangedBehavior/>
                   </i:Interaction.Behaviors>
