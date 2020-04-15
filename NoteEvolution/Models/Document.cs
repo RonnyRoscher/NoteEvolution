@@ -15,9 +15,6 @@ namespace NoteEvolution.Models
             CreationDate = DateTime.Now;
             _textUnitListSource = new SourceCache<TextUnit, Guid>(n => n.TextUnitId);
 
-            var rootTextUnit = new TextUnit(this);
-            _textUnitListSource.AddOrUpdate(rootTextUnit);
-
             // update ModifiedDate on changes to local text unit properties
             this.WhenAnyValue(d => d.CreationDate, d => d.Title)
                 .Select(_ => DateTime.Now)

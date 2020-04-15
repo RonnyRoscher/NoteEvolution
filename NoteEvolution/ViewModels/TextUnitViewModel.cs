@@ -19,10 +19,14 @@ namespace NoteEvolution.ViewModels
 
         private Note _firstAddedNote = null;
 
+        private DocumentViewModel _parent;
+
         #endregion
 
-        public TextUnitViewModel(TextUnit textUnit)
+        public TextUnitViewModel(TextUnit textUnit, DocumentViewModel parent)
         {
+            _parent = parent;
+
             IsVisible = true;
             IsSelected = false;
             IsExpanded = true;
@@ -47,21 +51,21 @@ namespace NoteEvolution.ViewModels
 
             _textUnitChildListSource = textUnit.TextUnitChildListSource;
 
-            var noteComparer = SortExpressionComparer<TextUnitViewModel>.Ascending(tuvm => tuvm.Value.OrderNr);
-            var noteWasModified = _textUnitChildListSource
-                .Connect()
-                .WhenPropertyChanged(tu => tu.ModificationDate)
-                .Select(_ => Unit.Default);
-            _textUnitChildListSource
-                .Connect()
-                // without this delay, the treeview sometimes cause the item not to be added as well a a crash on bringing the treeview into view
-                .Throttle(TimeSpan.FromMilliseconds(250))
-                .Transform(tu => new TextUnitViewModel(tu))
-                .Sort(noteComparer, noteWasModified)
-                .ObserveOn(RxApp.MainThreadScheduler)
-                .Bind(out _textUnitChildListView)
-                .DisposeMany()
-                .Subscribe();
+            if (_parent?.TextUnitListSource != null)
+            {
+                var noteComparer = SortExpressionComparer<TextUnitViewModel>.Ascending(tuvm => tuvm.Value.OrderNr);
+                var noteWasModified = _textUnitChildListSource
+                    .Connect()
+                    .WhenPropertyChanged(tu => tu.ModificationDate)
+                    .Select(_ => Unit.Default);
+                _parent.TextUnitListSource.Connect()
+                    .Filter(n => n.Value.Parent?.TextUnitId == Value.TextUnitId)
+                    .Sort(noteComparer, noteWasModified)
+                    .ObserveOn(RxApp.MainThreadScheduler)
+                    .Bind(out _textUnitChildListView)
+                    .DisposeMany()
+                    .Subscribe();
+            }
         }
 
         #region Public Properties

@@ -16,7 +16,7 @@
       <Button Margin="3" Padding="7 0 6 2" Content="-D" ToolTip.Tip="Delete selected note" Command="{Binding DeleteSelectedCommand}"/>
     </StackPanel>
 
-    <TreeView Items="{Binding RootItems}" SelectionMode="AlwaysSelected" SelectedItem="{Binding SelectedItem, Mode=TwoWay}">
+    <TreeView Items="{Binding RootItems}" SelectedItem="{Binding SelectedItem, Mode=TwoWay}" AutoScrollToSelectedItem="True">
       <TreeView.Styles>
         <Style Selector="TreeViewItem">
           <Setter Property="IsVisible" Value="{Binding IsVisible}"/>

@@ -6,13 +6,14 @@
              xmlns:vm="clr-namespace:NoteEvolution.ViewModels;assembly=NoteEvolution"
              xmlns:b="clr-namespace:NoteEvolution.Behaviors;assembly=NoteEvolution"
              xmlns:i="clr-namespace:Avalonia.Xaml.Interactivity;assembly=Avalonia.Xaml.Interactivity"
+             xmlns:ia="clr-namespace:Avalonia.Xaml.Interactions.Core;assembly=Avalonia.Xaml.Interactions"
              mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
              x:Class="NoteEvolution.Views.TextUnitFlowView">
 
   <DockPanel Margin="3" LastChildFill="True">
     <TextBlock DockPanel.Dock="Top" Margin="0 0 0 3" Text="Content"/>
-    <ItemsControl Items="{Binding AllItems}">
-      <ItemsControl.DataTemplates>
+    <ListBox Name="lbFlowDocument" Items="{Binding AllItems}" SelectedItem="{Binding SelectedItem, Mode=TwoWay}">
+      <ListBox.DataTemplates>
         <DataTemplate>
           <ItemsControl Items="{Binding Value.NoteList}">
             <ItemsControl.ItemsPanel>
@@ -24,15 +25,18 @@
               <DataTemplate>
                 <TextBox AcceptsReturn="True" TextWrapping="Wrap" Text="{Binding Text}" Tag="{Binding $parent[UserControl].DataContext.SelectedItem}">
                   <i:Interaction.Behaviors>
-                    <b:FocusOnTagChangedBehavior/>
+                    <!--<b:FocusOnTagChangedBehavior/>-->
+                    <ia:EventTriggerBehavior EventName="GotFocus">
+                      <ia:ChangePropertyAction TargetObject="{Binding #lbFlowDocument}" PropertyName="SelectedItem" Value="{Binding $parent[ListBoxItem].DataContext}"/>
+                    </ia:EventTriggerBehavior>
                   </i:Interaction.Behaviors>
                 </TextBox>
               </DataTemplate>
             </ItemsControl.DataTemplates>
           </ItemsControl>
         </DataTemplate>
-      </ItemsControl.DataTemplates>
-    </ItemsControl>
+      </ListBox.DataTemplates>
+    </ListBox>
   </DockPanel>
   
 </UserControl>

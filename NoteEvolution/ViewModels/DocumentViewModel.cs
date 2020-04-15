@@ -36,7 +36,7 @@ namespace NoteEvolution.ViewModels
 
             _textUnitListSource = _documentTextUnitListSource
                 .Connect()
-                .Transform(tu => new TextUnitViewModel(tu))
+                .Transform(tu => new TextUnitViewModel(tu, this))
                 .DisposeMany()
                 .AsObservableCache();
             var textUnitComparer = SortExpressionComparer<TextUnitViewModel>.Ascending(tuvm => tuvm.Value.OrderNr);
@@ -73,6 +73,9 @@ namespace NoteEvolution.ViewModels
                 .WhenPropertyChanged(ntvm => ntvm.SelectedItem)
                 .Where(ntvm => ntvm.Value?.Value != null)
                 .Select(ntvm => ntvm.Value.Value);
+
+            var rootTextUnit = new TextUnit(documentSource);
+            _documentTextUnitListSource.AddOrUpdate(rootTextUnit);
 
             CreateNewSuccessorCommand = ReactiveCommand.Create(ExecuteCreateNewSuccessor);
             CreateNewChildCommand = ReactiveCommand.Create(ExecuteCreateNewChild);
@@ -142,12 +145,7 @@ namespace NoteEvolution.ViewModels
             {
                 var newSelection = _textUnitListView.FirstOrDefault(nvm => nvm.Value.TextUnitId == newTextUnitSelection.TextUnitId);
                 if (newSelection != null)
-                {
-                    //SelectedItem.IsSelected = false;
-                    //newSelection.IsSelected = true;
                     SelectedItem = newSelection;
-                    //newSelection.IsSelected = true;
-                }
             }
         }
 
@@ -156,6 +154,8 @@ namespace NoteEvolution.ViewModels
         #region Public Properties
 
         public Document DocumentSource { get; }
+
+        public IObservableCache<TextUnitViewModel, Guid> TextUnitListSource => _textUnitListSource;
 
         public ReadOnlyObservableCollection<TextUnitViewModel> AllItems => _textUnitListView;
 
@@ -166,7 +166,11 @@ namespace NoteEvolution.ViewModels
         public TextUnitViewModel SelectedItem
         {
             get => _selectedItem;
-            set => this.RaiseAndSetIfChanged(ref _selectedItem, value);
+            set
+            {
+                if (value?.Value?.TextUnitId != null && value.Value.TextUnitId != _selectedItem?.Value?.TextUnitId)
+                    this.RaiseAndSetIfChanged(ref _selectedItem, value);
+            }
         }
 
         #endregion
