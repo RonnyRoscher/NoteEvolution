@@ -25,7 +25,7 @@
               <DataTemplate>
                 <TextBox AcceptsReturn="True" TextWrapping="Wrap" Text="{Binding Text}" Tag="{Binding $parent[UserControl].DataContext.SelectedItem}">
                   <i:Interaction.Behaviors>
-                    <!--<b:FocusOnTagChangedBehavior/>-->
+                    <b:FocusOnTagChangedBehavior/>
                     <ia:EventTriggerBehavior EventName="GotFocus">
                       <ia:ChangePropertyAction TargetObject="{Binding #lbFlowDocument}" PropertyName="SelectedItem" Value="{Binding $parent[ListBoxItem].DataContext}"/>
                     </ia:EventTriggerBehavior>
