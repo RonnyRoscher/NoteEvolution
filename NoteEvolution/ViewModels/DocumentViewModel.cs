@@ -166,11 +166,7 @@ namespace NoteEvolution.ViewModels
         public TextUnitViewModel SelectedItem
         {
             get => _selectedItem;
-            set
-            {
-                if (value?.Value?.TextUnitId != null && value.Value.TextUnitId != _selectedItem?.Value?.TextUnitId)
-                    this.RaiseAndSetIfChanged(ref _selectedItem, value);
-            }
+            set => this.RaiseAndSetIfChanged(ref _selectedItem, value);
         }
 
         #endregion
