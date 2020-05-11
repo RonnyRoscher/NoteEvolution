@@ -13,9 +13,9 @@ namespace NoteEvolution.ViewModels
 {
     public class DocumentCollectionViewModel : ViewModelBase
     {
-        private SourceCache<Note, Guid> _unsortedNoteListSource;
-        private SourceCache<Document, Guid> _documentListSource;
-        private ReadOnlyObservableCollection<DocumentViewModel> _documentListView;
+        private readonly SourceCache<Note, Guid> _unsortedNoteListSource;
+        private readonly SourceCache<Document, Guid> _documentListSource;
+        private readonly ReadOnlyObservableCollection<DocumentViewModel> _documentListView;
 
         public DocumentCollectionViewModel(SourceCache<Note, Guid> unsortedNoteListSource, SourceCache<Document, Guid> documentListSource)
         {

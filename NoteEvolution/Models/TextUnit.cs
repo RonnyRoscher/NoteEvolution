@@ -88,9 +88,11 @@ namespace NoteEvolution.Models
         {
             var previousFirstChild = TextUnitChildList.OrderBy(n => n.OrderNr).FirstOrDefault();
             // create text unit with document relations
-            var newTextUnit = new TextUnit(RelatedDocument);
-            // add hierarchical relations
-            newTextUnit.Parent = this;
+            var newTextUnit = new TextUnit(RelatedDocument)
+            {
+                // add hierarchical relations
+                Parent = this
+            };
             _textUnitChildListSource.AddOrUpdate(newTextUnit);
             RelatedDocument.TextUnitListSource.AddOrUpdate(newTextUnit);
             // add sequencial relations
@@ -125,9 +127,11 @@ namespace NoteEvolution.Models
         public TextUnit AddSuccessor()
         {
             // create text unit with document relations
-            var newTextUnit = new TextUnit(RelatedDocument);
-            // add hierarchical relations
-            newTextUnit.Parent = Parent;
+            var newTextUnit = new TextUnit(RelatedDocument)
+            {
+                // add hierarchical relations
+                Parent = Parent
+            };
             RelatedDocument.TextUnitListSource.AddOrUpdate(newTextUnit);
             if (Parent != null)
                 newTextUnit.Parent.TextUnitChildListSource.AddOrUpdate(newTextUnit);

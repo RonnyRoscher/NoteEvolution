@@ -14,17 +14,17 @@ namespace NoteEvolution.ViewModels
     {
         #region Private Properties
 
-        private SourceCache<Note, Guid> _unsortedNoteListSource;
+        private readonly SourceCache<Note, Guid> _unsortedNoteListSource;
 
-        private SourceCache<TextUnit, Guid> _documentTextUnitListSource;
+        private readonly SourceCache<TextUnit, Guid> _documentTextUnitListSource;
 
-        private IObservableCache<TextUnitViewModel, Guid> _textUnitListSource;
+        private readonly IObservableCache<TextUnitViewModel, Guid> _textUnitListSource;
 
-        private ReadOnlyObservableCollection<TextUnitViewModel> _textUnitListView;
+        private readonly ReadOnlyObservableCollection<TextUnitViewModel> _textUnitListView;
 
-        private IObservableCache<TextUnitViewModel, Guid> _textUnitRootListSource;
+        private readonly IObservableCache<TextUnitViewModel, Guid> _textUnitRootListSource;
 
-        private ReadOnlyObservableCollection<TextUnitViewModel> _textUnitRootListView;
+        private readonly ReadOnlyObservableCollection<TextUnitViewModel> _textUnitRootListView;
 
         #endregion
 

@@ -13,13 +13,13 @@ namespace NoteEvolution.ViewModels
     {
         #region Private Properties
 
-        private SourceCache<TextUnit, Guid> _textUnitChildListSource;
+        private readonly SourceCache<TextUnit, Guid> _textUnitChildListSource;
 
-        private ReadOnlyObservableCollection<TextUnitViewModel> _textUnitChildListView;
+        private readonly ReadOnlyObservableCollection<TextUnitViewModel> _textUnitChildListView;
 
         private Note _firstAddedNote = null;
 
-        private DocumentViewModel _parent;
+        private readonly DocumentViewModel _parent;
 
         #endregion
 

@@ -9,8 +9,8 @@ namespace NoteEvolution.ViewModels
 {
     public class MainWindowViewModel : ViewModelBase
     {
-        private SourceCache<Note, Guid> _unsortedNoteListSource;
-        private SourceCache<Document, Guid> _documentListSource;
+        private readonly SourceCache<Note, Guid> _unsortedNoteListSource;
+        private readonly SourceCache<Document, Guid> _documentListSource;
 
         public MainWindowViewModel()
         {

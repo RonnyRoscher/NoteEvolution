@@ -14,9 +14,9 @@ namespace NoteEvolution.ViewModels
     {
         #region Private Properties
 
-        private SourceCache<Note, Guid> _noteListSource;
+        private readonly SourceCache<Note, Guid> _noteListSource;
 
-        private ReadOnlyObservableCollection<NoteViewModel> _noteListView;
+        private readonly ReadOnlyObservableCollection<NoteViewModel> _noteListView;
 
         #endregion
 
