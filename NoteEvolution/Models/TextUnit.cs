@@ -146,7 +146,7 @@ namespace NoteEvolution.Models
                 previousSuccessor.Predecessor = newTextUnit;
             }
             // determine and set order number
-            if (Parent == null)
+            if (Parent == null && previousSuccessor == null)
             {
                 // case: insert as latest text unit on the document root level
                 newTextUnit.OrderNr = RelatedDocument.TextUnitList.Max(n => n.OrderNr) + 1.0;
