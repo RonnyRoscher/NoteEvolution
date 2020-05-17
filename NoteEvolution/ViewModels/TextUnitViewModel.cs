@@ -33,6 +33,15 @@ namespace NoteEvolution.ViewModels
 
             Value = textUnit;
 
+            // update current tree depth on changes of children
+            this.WhenAnyValue(tu => tu.Value.SubtreeDepth, tu => tu.Value.HierachyLevel)
+                .Select(cv => {
+                    if (cv.Item1 == 0)
+                        return 12;
+                    return parent.MaxFontSize - (cv.Item2 * 4.0);
+                })
+                .ToProperty(this, tu => tu.FontSize, out _fontSize);
+
             // update header on text changes
             Value.NoteListSource.Connect()
                 // Where(n => n.LanguageId == SelectedLanguageId)
@@ -93,6 +102,9 @@ namespace NoteEvolution.ViewModels
             get => _isExpanded;
             set => this.RaiseAndSetIfChanged(ref _isExpanded, value);
         }
+
+        readonly ObservableAsPropertyHelper<double> _fontSize;
+        public double FontSize => _fontSize.Value;
 
         private TextUnit _value;
 

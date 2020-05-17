@@ -69,6 +69,17 @@ namespace NoteEvolution.ViewModels
                 .DisposeMany()
                 .Subscribe();
 
+            // keep max tree depth updated in root text unit
+            _textUnitRootListSource
+                .Connect()
+                .WhenPropertyChanged(tu => tu.Value.SubtreeDepth)
+                .Select(cv => RootItems.Max(tu => tu.Value.SubtreeDepth))
+                .Where(nv => nv != TreeMaxDepth)
+                .ToProperty(this, tu => tu.TreeMaxDepth, out _treeMaxDepth);
+            this.WhenAnyValue(tu => tu.TreeMaxDepth)
+                .Select(cv => 12.0 + (TreeMaxDepth * 4.0))
+                .ToProperty(this, tu => tu.MaxFontSize, out _maxFontSize);
+
             ChangedSelection = this
                 .WhenPropertyChanged(ntvm => ntvm.SelectedItem)
                 .Where(ntvm => ntvm.Value?.Value != null)
@@ -160,6 +171,12 @@ namespace NoteEvolution.ViewModels
         public ReadOnlyObservableCollection<TextUnitViewModel> AllItems => _textUnitListView;
 
         public ReadOnlyObservableCollection<TextUnitViewModel> RootItems => _textUnitRootListView;
+
+        readonly ObservableAsPropertyHelper<int> _treeMaxDepth;
+        public int TreeMaxDepth => _treeMaxDepth.Value;
+
+        readonly ObservableAsPropertyHelper<double> _maxFontSize;
+        public double MaxFontSize => _maxFontSize.Value;
 
         private TextUnitViewModel _selectedItem;
 

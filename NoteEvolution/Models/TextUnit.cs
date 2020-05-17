@@ -13,6 +13,7 @@ namespace NoteEvolution.Models
         {
             TextUnitId = Guid.NewGuid();
             CreationDate = DateTime.Now;
+            // todo: set CurrentTreeDepth to 0 on TextUnit create
             _textUnitChildListSource = new SourceCache<TextUnit, Guid>(n => n.TextUnitId);
             _noteListSource = new SourceCache<Note, Guid>(t => t.NoteId);
             _noteListSource.AddOrUpdate(new Note());
@@ -22,10 +23,19 @@ namespace NoteEvolution.Models
                 .Select(_ => DateTime.Now)
                 .ToProperty(this, n => n.ModificationDate, out _modificationDate);
 
-            // update hierarchie level on changes to parent hierarchy level
+            // update hierarchy level on changes to parent hierarchy level
             this.WhenAnyValue(tu => tu.Parent.HierachyLevel)
                 .Select(h => h + 1)
+                .Where(nv => nv != HierachyLevel)
                 .ToProperty(this, tu => tu.HierachyLevel, out _hierachyLevel);
+
+            // update current tree depth on changes of children
+            _textUnitChildListSource
+                .Connect()
+                .WhenPropertyChanged(tu => tu.SubtreeDepth)
+                .Select(cv => TextUnitChildList.Max(tu => tu.SubtreeDepth) + 1)
+                .Where(nv => nv != SubtreeDepth)
+                .ToProperty(this, tu => tu.SubtreeDepth, out _subtreeDepth);
 
             RelatedDocument = relatedDocument;
         }
@@ -234,6 +244,9 @@ namespace NoteEvolution.Models
 
         readonly ObservableAsPropertyHelper<int> _hierachyLevel;
         public int HierachyLevel => _hierachyLevel.Value;
+
+        readonly ObservableAsPropertyHelper<int> _subtreeDepth;
+        public int SubtreeDepth => _subtreeDepth.Value;
 
         private int[] _treeMaxDepth;
 
