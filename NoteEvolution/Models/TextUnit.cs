@@ -11,6 +11,7 @@ namespace NoteEvolution.Models
     {
         public TextUnit(Document relatedDocument)
         {
+            RelatedDocument = relatedDocument;
             TextUnitId = Guid.NewGuid();
             CreationDate = DateTime.Now;
             // todo: set CurrentTreeDepth to 0 on TextUnit create
@@ -23,21 +24,15 @@ namespace NoteEvolution.Models
                 .Select(_ => DateTime.Now)
                 .ToProperty(this, n => n.ModificationDate, out _modificationDate);
 
-            // update hierarchy level on changes to parent hierarchy level
-            this.WhenAnyValue(tu => tu.Parent.HierachyLevel)
-                .Select(h => h + 1)
-                .Where(nv => nv != HierachyLevel)
-                .ToProperty(this, tu => tu.HierachyLevel, out _hierachyLevel);
-
+            SubtreeDepth = 0;
             // update current tree depth on changes of children
             _textUnitChildListSource
                 .Connect()
                 .WhenPropertyChanged(tu => tu.SubtreeDepth)
                 .Select(cv => TextUnitChildList.Max(tu => tu.SubtreeDepth) + 1)
                 .Where(nv => nv != SubtreeDepth)
-                .ToProperty(this, tu => tu.SubtreeDepth, out _subtreeDepth);
-
-            RelatedDocument = relatedDocument;
+                .Do(nstd => SubtreeDepth = nstd)
+                .Subscribe();
         }
 
         #region Private Methods
@@ -206,6 +201,9 @@ namespace NoteEvolution.Models
 
         private Document _relatedDocument;
 
+        /// <summary>
+        /// The document the textunit is associated with.
+        /// </summary>
         public Document RelatedDocument
         {
             get => _relatedDocument;
@@ -214,6 +212,9 @@ namespace NoteEvolution.Models
 
         private TextUnit _parent;
 
+        /// <summary>
+        /// The textunits parent or null if it is the root.
+        /// </summary>
         public TextUnit Parent
         {
             get => _parent;
@@ -222,6 +223,9 @@ namespace NoteEvolution.Models
 
         private TextUnit _predecessor;
 
+        /// <summary>
+        /// The textunits predecessor on the same hierarchy level if exists.
+        /// </summary>
         public TextUnit Predecessor
         {
             get => _predecessor;
@@ -230,6 +234,9 @@ namespace NoteEvolution.Models
 
         private TextUnit _successor;
 
+        /// <summary>
+        /// The textunits successor on the same hierarchy level if exists.
+        /// </summary>
         public TextUnit Successor
         {
             get => _successor;
@@ -242,22 +249,27 @@ namespace NoteEvolution.Models
 
         public IEnumerable<TextUnit> TextUnitChildList => _textUnitChildListSource.Items;
 
-        readonly ObservableAsPropertyHelper<int> _hierachyLevel;
-        public int HierachyLevel => _hierachyLevel.Value;
+        /// <summary>
+        /// The hierarchy level of the textunit. Starting with 0 on the root level and increasing by 1 on each deeper child level.
+        /// </summary>
+        public int HierarchyLevel => Parent?.HierarchyLevel + 1 ?? 0;
 
-        readonly ObservableAsPropertyHelper<int> _subtreeDepth;
-        public int SubtreeDepth => _subtreeDepth.Value;
+        private int _subtreeDepth;
 
-        private int[] _treeMaxDepth;
-
-        public int[] TreeMaxDepth
+        /// <summary>
+        /// The depth of the textunits subtree. Starting with 0 on the leaf level and increasing by 1 each higher level towards the root.
+        /// </summary>
+        public int SubtreeDepth
         {
-            get => _treeMaxDepth;
-            set => this.RaiseAndSetIfChanged(ref _treeMaxDepth, value);
+            get => _subtreeDepth;
+            set => this.RaiseAndSetIfChanged(ref _subtreeDepth, value);
         }
 
         private double _orderNr;
 
+        /// <summary>
+        /// A number between in predecessor and its successor used for sequencial ordering of textunits.
+        /// </summary>
         public double OrderNr
         {
             get => _orderNr;

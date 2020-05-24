@@ -23,7 +23,7 @@
             </ItemsControl.ItemsPanel>
             <ItemsControl.DataTemplates>
               <DataTemplate>
-                <TextBox AcceptsReturn="True" TextWrapping="Wrap" Text="{Binding $parent[ListBoxItem].DataContext.FontSize}" Tag="{Binding $parent[UserControl].DataContext.SelectedItem}">
+                <TextBox AcceptsReturn="True" TextWrapping="Wrap" Text="{Binding Text}" FontSize="{Binding $parent[ListBoxItem].DataContext.FontSize}" Tag="{Binding $parent[UserControl].DataContext.SelectedItem}">
                   <i:Interaction.Behaviors>
                     <b:FocusOnTagChangedBehavior/>
                     <ia:EventTriggerBehavior EventName="GotFocus">

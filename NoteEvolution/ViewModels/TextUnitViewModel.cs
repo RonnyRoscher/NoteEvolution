@@ -19,13 +19,11 @@ namespace NoteEvolution.ViewModels
 
         private Note _firstAddedNote = null;
 
-        private readonly DocumentViewModel _parent;
-
         #endregion
 
         public TextUnitViewModel(TextUnit textUnit, DocumentViewModel parent)
         {
-            _parent = parent;
+            Parent = parent;
 
             IsVisible = true;
             IsSelected = false;
@@ -33,14 +31,18 @@ namespace NoteEvolution.ViewModels
 
             Value = textUnit;
 
+            FontSize = 12.0;
             // update current tree depth on changes of children
-            this.WhenAnyValue(tu => tu.Value.SubtreeDepth, tu => tu.Value.HierachyLevel)
-                .Select(cv => {
+            this.WhenAnyValue(tu => tu.Value.SubtreeDepth, tu => tu.Value.HierarchyLevel, tu => tu.Parent.MaxFontSize)
+                .Select(cv =>
+                {
                     if (cv.Item1 == 0)
-                        return 12;
-                    return parent.MaxFontSize - (cv.Item2 * 4.0);
+                        return 12.0;
+                    return cv.Item3 - (cv.Item2 * 4.0);
                 })
-                .ToProperty(this, tu => tu.FontSize, out _fontSize);
+                .Where(nv => nv != FontSize)
+                .Do(nv => FontSize = nv)
+                .Subscribe();
 
             // update header on text changes
             Value.NoteListSource.Connect()
@@ -79,6 +81,14 @@ namespace NoteEvolution.ViewModels
 
         #region Public Properties
 
+        private DocumentViewModel _parent;
+
+        public DocumentViewModel Parent
+        {
+            get => _parent;
+            set => this.RaiseAndSetIfChanged(ref _parent, value);
+        }
+
         private bool _isVisible;
 
         public bool IsVisible
@@ -103,8 +113,13 @@ namespace NoteEvolution.ViewModels
             set => this.RaiseAndSetIfChanged(ref _isExpanded, value);
         }
 
-        readonly ObservableAsPropertyHelper<double> _fontSize;
-        public double FontSize => _fontSize.Value;
+        private double _fontSize;
+
+        public double FontSize
+        {
+            get => _fontSize;
+            set => this.RaiseAndSetIfChanged(ref _fontSize, value);
+        }
 
         private TextUnit _value;
 

@@ -75,10 +75,12 @@ namespace NoteEvolution.ViewModels
                 .WhenPropertyChanged(tu => tu.Value.SubtreeDepth)
                 .Select(cv => RootItems.Max(tu => tu.Value.SubtreeDepth))
                 .Where(nv => nv != TreeMaxDepth)
-                .ToProperty(this, tu => tu.TreeMaxDepth, out _treeMaxDepth);
+                .Do(nv => TreeMaxDepth = nv)
+                .Subscribe();
             this.WhenAnyValue(tu => tu.TreeMaxDepth)
                 .Select(cv => 12.0 + (TreeMaxDepth * 4.0))
-                .ToProperty(this, tu => tu.MaxFontSize, out _maxFontSize);
+                .Do(nv => MaxFontSize = nv)
+                .Subscribe();
 
             ChangedSelection = this
                 .WhenPropertyChanged(ntvm => ntvm.SelectedItem)
@@ -172,11 +174,21 @@ namespace NoteEvolution.ViewModels
 
         public ReadOnlyObservableCollection<TextUnitViewModel> RootItems => _textUnitRootListView;
 
-        readonly ObservableAsPropertyHelper<int> _treeMaxDepth;
-        public int TreeMaxDepth => _treeMaxDepth.Value;
+        private int _treeMaxDepth;
 
-        readonly ObservableAsPropertyHelper<double> _maxFontSize;
-        public double MaxFontSize => _maxFontSize.Value;
+        public int TreeMaxDepth
+        {
+            get => _treeMaxDepth;
+            set => this.RaiseAndSetIfChanged(ref _treeMaxDepth, value);
+        }
+
+        private double _maxFontSize;
+
+        public double MaxFontSize
+        {
+            get => _maxFontSize;
+            set => this.RaiseAndSetIfChanged(ref _maxFontSize, value);
+        }
 
         private TextUnitViewModel _selectedItem;
 

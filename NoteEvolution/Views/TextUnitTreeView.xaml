@@ -29,7 +29,9 @@
           <StackPanel Orientation="Horizontal">
             <TextBlock Text="{Binding Header}"/>
             <TextBlock Text=" ["/>
-            <TextBlock Text="{Binding Value.HierachyLevel}"/>
+            <TextBlock Text="{Binding Value.HierarchyLevel}"/>
+            <TextBlock Text=" | "/>
+            <TextBlock Text="{Binding Value.SubtreeDepth}"/>
             <TextBlock Text=" | "/>
             <TextBlock Text="{Binding Value.OrderNr}"/>
             <TextBlock Text="]"/>
