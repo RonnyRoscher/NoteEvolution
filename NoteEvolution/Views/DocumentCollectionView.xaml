@@ -22,7 +22,14 @@
       </TextBox>
     </DockPanel>
 
-    <v:TextUnitTreeView Grid.Row="1" Grid.Column="0" DataContext="{Binding SelectedItem}"/>
+    <TabControl Grid.Column="0" Grid.Row="1">
+      <TabItem Header="Overview">
+        <v:TextUnitTreeView DataContext="{Binding SelectedItem}"/>
+      </TabItem>
+      <TabItem Header="Unsorted">
+        <v:NoteListView DataContext="{Binding UnsortedNotesView.NoteListView}"/>
+      </TabItem>
+    </TabControl>
 
     <v:TextUnitFlowView Grid.Row="1" Grid.Column="1" Margin="0 4 0 0" DataContext="{Binding SelectedItem}"/>
 
