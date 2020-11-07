@@ -2,8 +2,8 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>netcoreapp3.1</TargetFramework>
-    <AssemblyVersion>0.0.2.3</AssemblyVersion>
-    <FileVersion>0.0.2.3</FileVersion>
+    <AssemblyVersion>0.0.2.4</AssemblyVersion>
+    <FileVersion>0.0.2.4</FileVersion>
   </PropertyGroup>
   <ItemGroup>
     <Compile Update="**\*.xaml.cs">
@@ -26,12 +26,12 @@
     <None Remove="Views\TextUnitFlowView.xaml" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="Avalonia" Version="0.9.10" />
-    <PackageReference Include="Avalonia.Desktop" Version="0.9.10" />
-    <PackageReference Include="Avalonia.ReactiveUI" Version="0.9.10" />
-    <PackageReference Include="Avalonia.Xaml.Behaviors" Version="0.9.9" />
-    <PackageReference Include="Avalonia.Xaml.Interactions.Custom" Version="0.9.9" />
-    <PackageReference Include="Avalonia.Xaml.Interactivity" Version="0.9.9" />
+    <PackageReference Include="Avalonia" Version="0.9.12" />
+    <PackageReference Include="Avalonia.Desktop" Version="0.9.12" />
+    <PackageReference Include="Avalonia.ReactiveUI" Version="0.9.12" />
+    <PackageReference Include="Avalonia.Xaml.Behaviors" Version="0.9.12" />
+    <PackageReference Include="Avalonia.Xaml.Interactions.Custom" Version="0.9.12" />
+    <PackageReference Include="Avalonia.Xaml.Interactivity" Version="0.9.12" />
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="Views\NoteListView.xaml">

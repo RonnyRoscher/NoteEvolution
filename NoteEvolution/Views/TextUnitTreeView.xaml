@@ -19,7 +19,7 @@
     <TreeView Items="{Binding RootItems}" SelectedItem="{Binding SelectedItem, Mode=TwoWay}" AutoScrollToSelectedItem="True">
       <TreeView.Styles>
         <Style Selector="TreeViewItem">
-          <Setter Property="IsVisible" Value="{Binding IsVisible}"/>
+          <Setter Property="IsVisible" Value="{Binding IsVisible, Mode=TwoWay}"/>
           <Setter Property="IsSelected" Value="{Binding IsSelected, Mode=TwoWay}"/>
           <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"/>
         </Style>
