@@ -6,15 +6,20 @@
              xmlns:v="clr-namespace:NoteEvolution.Views;assembly=NoteEvolution"
              xmlns:vm="clr-namespace:NoteEvolution.ViewModels;assembly=NoteEvolution"
              xmlns:b="clr-namespace:NoteEvolution.Behaviors;assembly=NoteEvolution"
+             xmlns:c="clr-namespace:NoteEvolution.Converter;assembly=NoteEvolution"
              xmlns:i="clr-namespace:Avalonia.Xaml.Interactivity;assembly=Avalonia.Xaml.Interactivity"
              mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
              x:Class="NoteEvolution.Views.UnsortedNotesView">
+
+  <UserControl.Resources>
+    <c:IsReadonlyColorConverter x:Key="IsReadonlyColorConverterKey"/>
+  </UserControl.Resources>
 
   <Grid ColumnDefinitions="0.4*,0.6*">
     <v:NoteListView Grid.Column="0" DataContext="{Binding NoteListView}"/>
     <DockPanel Grid.Column="1" Margin="6 7 0 0" LastChildFill="True">
       <TextBlock DockPanel.Dock="Top" Margin="0 0 0 3" Text="Note Text"/>
-      <TextBox AcceptsReturn="True" TextWrapping="Wrap" Text="{Binding NoteListView.SelectedItem.Value.Text}" Tag="{Binding LastAddedNote}">
+      <TextBox AcceptsReturn="True" TextWrapping="Wrap" Text="{Binding NoteListView.SelectedItem.Value.Text}" Tag="{Binding LastAddedNote}" IsReadOnly="{Binding NoteListView.SelectedItem.Value.IsReadonly}" Foreground="{Binding NoteListView.SelectedItem.Value.IsReadonly, Converter={StaticResource IsReadonlyColorConverterKey}}">
         <i:Interaction.Behaviors>
           <b:FocusOnTagChangedBehavior/>
         </i:Interaction.Behaviors>

@@ -10,9 +10,32 @@
              mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
              x:Class="NoteEvolution.Views.TextUnitFlowView">
 
+  <UserControl.Styles>
+
+    <!-- Drag + Drop -->
+    <Style Selector="ListBoxItem.BlackBottom">
+      <Setter Property="BorderThickness" Value="0,0,0,2"/>
+      <Setter Property="BorderBrush" Value="Black"/>
+      <Setter Property="Margin" Value="0,0,0,-2"/>
+    </Style>
+    <Style Selector="ListBoxItem.BlackTop">
+      <Setter Property="BorderThickness" Value="0,2,0,0"/>
+      <Setter Property="BorderBrush" Value="Black"/>
+      <Setter Property="Margin" Value="0,-2,0,0"/>
+    </Style>
+    <!-- List Destyling -->
+    <Style Selector="ListBoxItem:not(:pointerover):selected /template/ ContentPresenter">
+      <Setter Property="Background" Value="Transparent"/>
+    </Style>
+    <Style Selector="ListBoxItem:pointerover:selected /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource ThemeControlHighlightMidBrush}"/>
+    </Style>
+    
+  </UserControl.Styles>
+
   <DockPanel Margin="3" LastChildFill="True">
     <TextBlock DockPanel.Dock="Top" Margin="0 0 0 3" Text="Content"/>
-    <ListBox Name="lbFlowDocument" Items="{Binding AllItems}" SelectedItem="{Binding SelectedItem, Mode=TwoWay}">
+    <ListBox Name="lbFlowDocument" Items="{Binding AllItems}" SelectedItem="{Binding SelectedItem, Mode=TwoWay}" PointerReleased="EndMoveOperation" PointerMoved="MoveOperation">
       <ListBox.DataTemplates>
         <DataTemplate>
           <ItemsControl Items="{Binding Value.NoteList}">

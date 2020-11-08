@@ -162,6 +162,24 @@ namespace NoteEvolution.ViewModels
             }
         }
 
+        public void CreateNewSuccessor(NoteViewModel sourceNote)
+        {
+            if (SelectedItem != null)
+            {
+                var newTextUnit = SelectedItem.Value.AddSuccessor();
+                if (newTextUnit != null)
+                {
+                    SelectTextUnit(newTextUnit);
+                    newTextUnit.NoteList.FirstOrDefault().Text = sourceNote.Value.Text;
+                    if (!sourceNote.Value.Usage.ContainsKey(DocumentSource.DocumentId))
+                        sourceNote.Value.Usage.Add(DocumentSource.DocumentId, new System.Collections.Generic.HashSet<Guid>());
+                    if (!sourceNote.Value.Usage[DocumentSource.DocumentId].Contains(newTextUnit.TextUnitId))
+                        sourceNote.Value.Usage[DocumentSource.DocumentId].Add(newTextUnit.TextUnitId);
+                    sourceNote.Value.IsReadonly = true;
+                }
+            }
+        }
+
         #endregion
 
         #region Public Properties

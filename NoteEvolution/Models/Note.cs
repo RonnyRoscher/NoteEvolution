@@ -20,6 +20,8 @@ namespace NoteEvolution.Models
             NoteId = Guid.NewGuid();
             CreationDate = DateTime.Now;
             LanguageId = languageId;
+            IsReadonly = false;
+            Usage = new Dictionary<Guid, HashSet<Guid>>();
 
             // update ModifiedDate on changes to local note properties
             this.WhenAnyValue(n => n.CreationDate, n => n.Text, n => n._modificationDateUnlocked)
@@ -74,6 +76,14 @@ namespace NoteEvolution.Models
         {
             get => _text;
             set => this.RaiseAndSetIfChanged(ref _text, value);
+        }
+
+        private bool _isReadonly;
+
+        public bool IsReadonly
+        {
+            get => _isReadonly;
+            set => this.RaiseAndSetIfChanged(ref _isReadonly, value);
         }
 
         private Dictionary<Guid, HashSet<Guid>> _usage;
