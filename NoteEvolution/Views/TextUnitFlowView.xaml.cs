@@ -20,7 +20,9 @@ namespace NoteEvolution.Views
         public TextUnitFlowView()
         {
             _eventAggregator = Hub.Default;
+
             _eventAggregator.Subscribe<NotifyNewDragNotePickedUp>(this, newDragItem => { _dragItem = new ListBoxItem { DataContext = newDragItem.DragItem }; });
+            _eventAggregator.Subscribe<NotifyNewDragNotePickupCanceled>(this, newDragItem => { _dragItem = null ; });
 
             this.InitializeComponent();
         }

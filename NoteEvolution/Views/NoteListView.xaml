@@ -27,7 +27,7 @@
       </ListBox.Styles>
       <ListBox.ItemTemplate>
         <DataTemplate>
-          <Border BorderBrush="Gray" Background="White" BorderThickness="1" MinHeight="42" MaxHeight="56" Margin="0 1" Padding="4" PointerPressed="StartMoveOperation">
+          <Border BorderBrush="Gray" Background="White" BorderThickness="1" MinHeight="42" MaxHeight="56" Margin="0 1" Padding="4" PointerPressed="StartMoveOperation" PointerReleased="EndMoveOperation">
             <StackPanel>
               <DockPanel LastChildFill="True">
                 <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" HorizontalAlignment="Left">

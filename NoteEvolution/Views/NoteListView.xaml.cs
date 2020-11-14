@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.LogicalTree;
 using Avalonia.Markup.Xaml;
+using Avalonia.VisualTree;
 using NoteEvolution.Events;
 using NoteEvolution.ViewModels;
 using PubSub;
@@ -34,6 +35,13 @@ namespace NoteEvolution.Views
             var dragItem = _lbNoteList.GetLogicalChildren().Cast<ListBoxItem>().Single(x => x.IsPointerOver);
             if (dragItem?.DataContext is NoteViewModel dragNote)
                 _eventAggregator.Publish(new NotifyNewDragNotePickedUp(dragNote));
+        }
+
+        public void EndMoveOperation(object sender, PointerReleasedEventArgs e)
+        {
+            var hoveredItem = (ListBoxItem)_lbNoteList.GetLogicalChildren().FirstOrDefault(x => this.GetVisualsAt(e.GetPosition(this)).Contains(((IVisual)x).GetVisualChildren().First()));
+            if (hoveredItem != null)
+                _eventAggregator.Publish(new NotifyNewDragNotePickupCanceled());
         }
     }
 }
