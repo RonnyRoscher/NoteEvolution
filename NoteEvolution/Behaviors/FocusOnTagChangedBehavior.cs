@@ -19,7 +19,7 @@ namespace NoteEvolution.Behaviors
 		{
 			if (e.Property.Name == nameof(Control.Tag) && e.NewValue != null && AssociatedObject.DataContext != null)
 			{
-				if (e.NewValue is Document || (AssociatedObject.DataContext is Note cn && e.NewValue is TextUnitViewModel ntu && ntu.Value.NoteList.Any(n => n.NoteId == cn.NoteId) && !AssociatedObject.IsFocused))
+				if (AssociatedObject.DataContext is UnsortedNotesViewModel || e.NewValue is Document || (AssociatedObject.DataContext is Note cn && e.NewValue is TextUnitViewModel ntu && ntu.Value.NoteList.Any(n => n.NoteId == cn.NoteId) && !AssociatedObject.IsFocused))
 					Dispatcher.UIThread.Post(() => AssociatedObject?.Focus(), DispatcherPriority.Layout);
 			}
 		}

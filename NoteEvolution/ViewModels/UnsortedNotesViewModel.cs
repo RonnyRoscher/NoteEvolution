@@ -19,14 +19,6 @@ namespace NoteEvolution.ViewModels
 
             CreateNewNoteCommand = ReactiveCommand.Create(ExecuteCreateNewNote);
             DeleteSelectedNoteCommand = ReactiveCommand.Create(ExecuteDeleteSelectedNote);
-
-            // set LastAddedText on new unsorted note added, used to auto focus the textbox
-            // todo: prevent this firing on every initially loaded item
-            _noteListSource
-                .Connect()
-                .OnItemAdded(t => LastAddedNote = t)
-                .DisposeMany()
-                .Subscribe();
         }
 
         #region Commands
@@ -74,14 +66,6 @@ namespace NoteEvolution.ViewModels
         {
             get => _noteListView;
             set => this.RaiseAndSetIfChanged(ref _noteListView, value);
-        }
-
-        private Note _lastAddedNote;
-
-        public Note LastAddedNote
-        {
-            get => _lastAddedNote;
-            set => this.RaiseAndSetIfChanged(ref _lastAddedNote, value);
         }
 
         #endregion
