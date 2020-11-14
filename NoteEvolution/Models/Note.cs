@@ -27,7 +27,7 @@ namespace NoteEvolution.Models
             // update ModifiedDate on changes to local note properties
             this.WhenAnyValue(n => n.Text, n => n._modificationDateUnlocked)
                 .Skip(2)
-                .Throttle(TimeSpan.FromSeconds(3.0), RxApp.TaskpoolScheduler)
+                .Throttle(TimeSpan.FromSeconds(0.5), RxApp.TaskpoolScheduler)
                 .Where(n => n.Item2)
                 .Do(n => ModificationDate = DateTime.Now)
                 .Subscribe();
