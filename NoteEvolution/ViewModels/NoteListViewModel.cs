@@ -22,9 +22,6 @@ namespace NoteEvolution.ViewModels
 
         public NoteListViewModel(SourceCache<Note, Guid> noteListSource)
         {
-            CreateNewNoteCommand = ReactiveCommand.Create(ExecuteCreateNewNote);
-            DeleteSelectedNoteCommand = ReactiveCommand.Create(ExecuteDeleteSelectedNote);
-
             _noteListSource = noteListSource;
 
             var noteComparer = SortExpressionComparer<NoteViewModel>.Descending(nvm => nvm.Value.ModificationDate);
@@ -47,34 +44,6 @@ namespace NoteEvolution.ViewModels
                 .Where(nlvm => nlvm.Value != null)
                 .Select(nlvm => nlvm.Value);
         }
-
-        #region Commands
-
-        public ReactiveCommand<Unit, Unit> CreateNewNoteCommand { get; }
-
-        void ExecuteCreateNewNote()
-        {
-            var newNote = new Note();
-            _noteListSource.AddOrUpdate(newNote);
-            if (newNote != null)
-                SelectNote(newNote);
-        }
-
-        public ReactiveCommand<Unit, Unit> DeleteSelectedNoteCommand { get; }
-
-        void ExecuteDeleteSelectedNote()
-        {
-            if (SelectedItem != null)
-            {
-                var closestItem = _noteListSource.Items.FirstOrDefault(note => note.ModificationDate > SelectedItem.Value.ModificationDate);
-                if (closestItem == null)
-                    closestItem = _noteListSource.Items.LastOrDefault(note => note.ModificationDate < SelectedItem.Value.ModificationDate);
-                _noteListSource.Remove(SelectedItem.Value);
-                SelectNote(closestItem);
-            }
-        }
-
-        #endregion
 
         #region Public Methods
 

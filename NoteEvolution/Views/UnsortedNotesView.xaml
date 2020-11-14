@@ -16,14 +16,25 @@
   </UserControl.Resources>
 
   <Grid ColumnDefinitions="0.4*,0.6*">
-    <v:NoteListView Grid.Column="0" DataContext="{Binding NoteListView}"/>
+    <DockPanel Grid.Column="0" LastChildFill="True">
+
+      <StackPanel DockPanel.Dock="Top" Margin="1 0 0 0" Orientation="Horizontal">
+        <Button Margin="3" Padding="4 0 4 2" Content="+" ToolTip.Tip="Create new note (Ctrl+N)" Command="{Binding CreateNewNoteCommand}"/>
+        <Button Margin="3" Padding="7 0 6 2" Content="-" ToolTip.Tip="Delete selected note (Del)" Command="{Binding DeleteSelectedNoteCommand}"/>
+      </StackPanel>
+
+      <v:NoteListView DataContext="{Binding NoteListView}"/>
+      
+    </DockPanel>
     <DockPanel Grid.Column="1" Margin="6 7 0 0" LastChildFill="True">
+      
       <TextBlock DockPanel.Dock="Top" Margin="0 0 0 3" Text="Note Text"/>
       <TextBox AcceptsReturn="True" TextWrapping="Wrap" Text="{Binding NoteListView.SelectedItem.Value.Text}" Tag="{Binding LastAddedNote}" IsReadOnly="{Binding NoteListView.SelectedItem.Value.IsReadonly}" Foreground="{Binding NoteListView.SelectedItem.Value.IsReadonly, Converter={StaticResource IsReadonlyColorConverterKey}}">
         <i:Interaction.Behaviors>
           <b:FocusOnTagChangedBehavior/>
         </i:Interaction.Behaviors>
       </TextBox>
+      
     </DockPanel>
   </Grid>
   
