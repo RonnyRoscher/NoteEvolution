@@ -13,7 +13,24 @@ namespace NoteEvolution.Models
     {
         private bool _modificationDateUnlocked;
 
-        public Note(byte languageId = 1)
+        public Note()
+        {
+            _modificationDateUnlocked = true;
+
+            NoteId = Guid.NewGuid();
+            CreationDate = DateTime.Now;
+            LanguageId = 1;
+            IsReadonly = false;
+            Usage = new Dictionary<Guid, HashSet<Guid>>();
+
+            // update ModifiedDate on changes to local note properties
+            this.WhenAnyValue(n => n.CreationDate, n => n.Text, n => n._modificationDateUnlocked)
+                .Where(n => n.Item3)
+                .Select(_ => DateTime.Now)
+                .ToProperty(this, n => n.ModificationDate, out _modificationDate);
+        }
+
+        public Note(byte languageId)
         {
             _modificationDateUnlocked = true;
 

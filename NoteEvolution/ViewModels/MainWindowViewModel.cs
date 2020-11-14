@@ -4,25 +4,30 @@ using DynamicData;
 using ReactiveUI;
 using NoteEvolution.Models;
 using System.Reactive;
+using NoteEvolution.DataContext;
 
 namespace NoteEvolution.ViewModels
 {
     public class MainWindowViewModel : ViewModelBase
     {
+        private readonly DbContext _localDB;
+
         private readonly SourceCache<Note, Guid> _unsortedNoteListSource;
         private readonly SourceCache<Document, Guid> _documentListSource;
 
         public MainWindowViewModel()
         {
-            CreateNewNoteCommand = ReactiveCommand.Create(ExecuteCreateNewNote);
+            _localDB = new DbContext();
 
-            SelectedMainTabIndex = 0;
-
-            _unsortedNoteListSource = new SourceCache<Note, Guid>(n => n.NoteId);
+            _unsortedNoteListSource = _localDB.UnsortedNoteListSource;
             UnsortedNotesView = new UnsortedNotesViewModel(_unsortedNoteListSource);
             
             _documentListSource = new SourceCache<Document, Guid>(d => d.DocumentId);
             DocumentCollectionView = new DocumentCollectionViewModel(_unsortedNoteListSource, _documentListSource);
+
+            CreateNewNoteCommand = ReactiveCommand.Create(ExecuteCreateNewNote);
+
+            SelectedMainTabIndex = 0;
         }
 
         #region Commands
