@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Linq;
 using DynamicData;
 using ReactiveUI;
 using NoteEvolution.Models;
@@ -13,6 +14,7 @@ namespace NoteEvolution.ViewModels
         {
             _noteListSource = noteListSource;
             NoteListView = new NoteListViewModel(_noteListSource);
+            SelectNote(_noteListSource.Items.OrderByDescending(n => n.ModificationDate).FirstOrDefault());
 
             // set LastAddedText on new unsorted note added, used to auto focus the textbox
             _noteListSource
