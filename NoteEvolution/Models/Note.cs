@@ -19,32 +19,18 @@ namespace NoteEvolution.Models
 
             NoteId = Guid.NewGuid();
             CreationDate = DateTime.Now;
+            ModificationDate = DateTime.Now;
             LanguageId = 1;
             IsReadonly = false;
             Usage = new Dictionary<Guid, HashSet<Guid>>();
 
             // update ModifiedDate on changes to local note properties
-            this.WhenAnyValue(n => n.CreationDate, n => n.Text, n => n._modificationDateUnlocked)
-                .Where(n => n.Item3)
-                .Select(_ => DateTime.Now)
-                .ToProperty(this, n => n.ModificationDate, out _modificationDate);
-        }
-
-        public Note(byte languageId)
-        {
-            _modificationDateUnlocked = true;
-
-            NoteId = Guid.NewGuid();
-            CreationDate = DateTime.Now;
-            LanguageId = languageId;
-            IsReadonly = false;
-            Usage = new Dictionary<Guid, HashSet<Guid>>();
-
-            // update ModifiedDate on changes to local note properties
-            this.WhenAnyValue(n => n.CreationDate, n => n.Text, n => n._modificationDateUnlocked)
-                .Where(n => n.Item3)
-                .Select(_ => DateTime.Now)
-                .ToProperty(this, n => n.ModificationDate, out _modificationDate);
+            this.WhenAnyValue(n => n.Text, n => n._modificationDateUnlocked)
+                .Skip(2)
+                .Throttle(TimeSpan.FromSeconds(3.0), RxApp.TaskpoolScheduler)
+                .Where(n => n.Item2)
+                .Do(n => ModificationDate = DateTime.Now)
+                .Subscribe();
         }
 
         #region Public Methods
@@ -84,8 +70,13 @@ namespace NoteEvolution.Models
             set => this.RaiseAndSetIfChanged(ref _creationDate, value);
         }
 
-        readonly ObservableAsPropertyHelper<DateTime> _modificationDate;
-        public DateTime ModificationDate => _modificationDate.Value;
+        private DateTime _modificationDate;
+
+        public DateTime ModificationDate
+        {
+            get => _modificationDate;
+            set => this.RaiseAndSetIfChanged(ref _modificationDate, value);
+        }
 
         private string _text;
 
