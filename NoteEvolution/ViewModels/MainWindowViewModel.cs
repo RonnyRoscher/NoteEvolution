@@ -1,15 +1,21 @@
 ﻿using System;
+using System.Reactive;
 using System.Reflection;
 using DynamicData;
+using PubSub;
 using ReactiveUI;
-using NoteEvolution.Models;
-using System.Reactive;
 using NoteEvolution.DataContext;
+using NoteEvolution.Models;
+using NoteEvolution.Events;
 
 namespace NoteEvolution.ViewModels
 {
     public class MainWindowViewModel : ViewModelBase
     {
+        private readonly string _titleBarTextBase;
+
+        private readonly Hub _eventAggregator;
+
         private readonly DbContext _localDB;
 
         private readonly SourceCache<Note, Guid> _unsortedNoteListSource;
@@ -17,6 +23,12 @@ namespace NoteEvolution.ViewModels
 
         public MainWindowViewModel()
         {
+            _titleBarTextBase = "NoteEvolution v" + Assembly.GetEntryAssembly().GetName().Version + " ";
+            TitleBarText = _titleBarTextBase;
+
+            _eventAggregator = Hub.Default;
+            _eventAggregator.Subscribe<NotifySaveStateChanged>(this, saveStateChange => { TitleBarText = _titleBarTextBase + (saveStateChange.HasUnsavedChanged ? "*" : ""); });
+
             _localDB = new DbContext();
 
             _unsortedNoteListSource = _localDB.UnsortedNoteListSource;
@@ -47,7 +59,13 @@ namespace NoteEvolution.ViewModels
 
         #region Public Properties
 
-        public string TitleBarText => "NoteEvolution v" + Assembly.GetEntryAssembly().GetName().Version;
+        private string _titleBarText;
+
+        public string TitleBarText
+        {
+            get => _titleBarText;
+            set => this.RaiseAndSetIfChanged(ref _titleBarText, value);
+        }
 
         private byte _selectedMainTabIndex;
 

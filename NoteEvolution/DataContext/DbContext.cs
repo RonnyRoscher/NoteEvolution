@@ -4,13 +4,18 @@ using System.Reactive.Linq;
 using System.Timers;
 using DynamicData;
 using LiteDB;
+using PubSub;
 using NoteEvolution.Models;
+using NoteEvolution.Events;
 
 namespace NoteEvolution.DataContext
 {
     public class DbContext
     {
+        private readonly Hub _eventAggregator;
+
         private Timer _updateTimer;
+        private bool _isSaved;
 
         private LiteDatabase _db;
 
@@ -21,10 +26,14 @@ namespace NoteEvolution.DataContext
 
         public DbContext()
         {
+            _eventAggregator = Hub.Default;
+
             _updateTimer = new Timer(3000);
             _updateTimer.Elapsed += OnUpdateTimerElapsedEvent;
             _updateTimer.AutoReset = true;
             _updateTimer.Enabled = true;
+
+            _isSaved = true;
 
             _db = new LiteDatabase("local.db");
             _changedNotes = new ConcurrentDictionary<Guid, Note>();
@@ -49,6 +58,11 @@ namespace NoteEvolution.DataContext
                .Do(n => { 
                    _changedNotes.TryAdd(n.Sender.NoteId, n.Sender);
                    _updateTimer.Interval = 3000;
+                   if (_isSaved)
+                   {
+                       _isSaved = false;
+                       _eventAggregator.Publish(new NotifySaveStateChanged(true));
+                   }
                })
                .Subscribe();
         }
@@ -59,6 +73,11 @@ namespace NoteEvolution.DataContext
             {
                 _dbNotes.Update(_changedNotes.Values);
                 _changedNotes.Clear();
+            }
+            if (!_isSaved)
+            {
+                _isSaved = true;
+                _eventAggregator.Publish(new NotifySaveStateChanged(false));
             }
         }
     }
