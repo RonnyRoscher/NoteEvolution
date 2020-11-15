@@ -11,12 +11,12 @@
              x:Class="NoteEvolution.Views.SourceNotesView">
 
   <DockPanel Grid.Column="1" Margin="6 7 0 0" LastChildFill="True">
-    <TextBox DockPanel.Dock="Top" AcceptsReturn="True" TextWrapping="Wrap" IsReadOnly="True" Text="{Binding NoteListView.SelectedItem.Value.Text}" Tag="{Binding LastAddedNote}">
+    <TextBox DockPanel.Dock="Top" AcceptsReturn="True" TextWrapping="Wrap" IsReadOnly="True" Text="{Binding NoteList.SelectedItem.Value.Text}" Tag="{Binding LastAddedNote}">
       <i:Interaction.Behaviors>
         <b:FocusOnTagChangedBehavior/>
       </i:Interaction.Behaviors>
     </TextBox>
-    <v:NoteListView DockPanel.Dock="Bottom" DataContext="{Binding NoteListView}"/>
+    <v:NoteListView DockPanel.Dock="Bottom" DataContext="{Binding NoteList}"/>
   </DockPanel>
   
 </UserControl>

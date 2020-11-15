@@ -24,7 +24,7 @@ namespace NoteEvolution.ViewModels
             DeleteSelectedDocumentCommand = ReactiveCommand.Create(ExecuteDeleteSelectedDocument);
 
             _unsortedNoteListSource = unsortedNoteListSource;
-            UnsortedNotesView = new SourceNotesViewModel(_unsortedNoteListSource);
+            UnsortedNotes = new SourceNotesViewModel(_unsortedNoteListSource);
 
             _documentListSource = documentListSource;
 
@@ -114,12 +114,12 @@ namespace NoteEvolution.ViewModels
 
         #region Public Properties
 
-        private SourceNotesViewModel _unsortedNotesView;
+        private SourceNotesViewModel _unsortedNotes;
 
-        public SourceNotesViewModel UnsortedNotesView
+        public SourceNotesViewModel UnsortedNotes
         {
-            get => _unsortedNotesView;
-            set => this.RaiseAndSetIfChanged(ref _unsortedNotesView, value);
+            get => _unsortedNotes;
+            set => this.RaiseAndSetIfChanged(ref _unsortedNotes, value);
         }
 
         public ReadOnlyObservableCollection<DocumentViewModel> Items => _documentListView;

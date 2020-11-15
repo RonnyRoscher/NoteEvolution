@@ -14,7 +14,7 @@ namespace NoteEvolution.ViewModels
         public UnsortedNotesViewModel(SourceCache<Note, Guid> noteListSource)
         {
             _noteListSource = noteListSource;
-            NoteListView = new NoteListViewModel(_noteListSource);
+            NoteList = new NoteListViewModel(_noteListSource);
             SelectNote(_noteListSource.Items.OrderByDescending(n => n.ModificationDate).FirstOrDefault());
 
             CreateNewNoteCommand = ReactiveCommand.Create(ExecuteCreateNewNote);
@@ -37,11 +37,11 @@ namespace NoteEvolution.ViewModels
 
         void ExecuteDeleteSelectedNote()
         {
-            if (NoteListView.SelectedItem != null)
+            if (NoteList.SelectedItem != null)
             {
-                var delIdx = NoteListView.Items.IndexOf(NoteListView.SelectedItem);
-                var closestItem = (NoteListView.Items.Count > delIdx + 1) ? NoteListView.Items.ElementAt(delIdx + 1) : (delIdx > 0 ? NoteListView.Items.ElementAt(delIdx - 1) : null);
-                _noteListSource.Remove(NoteListView.SelectedItem.Value);
+                var delIdx = NoteList.Items.IndexOf(NoteList.SelectedItem);
+                var closestItem = (NoteList.Items.Count > delIdx + 1) ? NoteList.Items.ElementAt(delIdx + 1) : (delIdx > 0 ? NoteList.Items.ElementAt(delIdx - 1) : null);
+                _noteListSource.Remove(NoteList.SelectedItem.Value);
                 SelectNote(closestItem?.Value);
             }
         }
@@ -52,19 +52,19 @@ namespace NoteEvolution.ViewModels
 
         public void SelectNote(Note note)
         {
-            NoteListView.SelectNote(note);
+            NoteList.SelectNote(note);
         }
 
         #endregion
 
         #region Public Properties
 
-        private NoteListViewModel _noteListView;
+        private NoteListViewModel _noteList;
 
-        public NoteListViewModel NoteListView
+        public NoteListViewModel NoteList
         {
-            get => _noteListView;
-            set => this.RaiseAndSetIfChanged(ref _noteListView, value);
+            get => _noteList;
+            set => this.RaiseAndSetIfChanged(ref _noteList, value);
         }
 
         #endregion

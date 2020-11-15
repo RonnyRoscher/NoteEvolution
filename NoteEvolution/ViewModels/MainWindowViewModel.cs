@@ -32,10 +32,10 @@ namespace NoteEvolution.ViewModels
             _localDB = new DbContext();
 
             _unsortedNoteListSource = _localDB.UnsortedNoteListSource;
-            UnsortedNotesView = new UnsortedNotesViewModel(_unsortedNoteListSource);
+            UnsortedNotes = new UnsortedNotesViewModel(_unsortedNoteListSource);
             
             _documentListSource = new SourceCache<Document, Guid>(d => d.DocumentId);
-            DocumentCollectionView = new DocumentCollectionViewModel(_unsortedNoteListSource, _documentListSource);
+            DocumentCollection = new DocumentCollectionViewModel(_unsortedNoteListSource, _documentListSource);
 
             CreateNewNoteCommand = ReactiveCommand.Create(ExecuteCreateNewNote);
 
@@ -52,7 +52,7 @@ namespace NoteEvolution.ViewModels
                 SelectedMainTabIndex = 0;
             var newNote = new Note();
             _unsortedNoteListSource.AddOrUpdate(newNote);
-            UnsortedNotesView.SelectNote(newNote);
+            UnsortedNotes.SelectNote(newNote);
         }
 
         #endregion
@@ -75,20 +75,20 @@ namespace NoteEvolution.ViewModels
             set => this.RaiseAndSetIfChanged(ref _selectedMainTabIndex, value);
         }
 
-        private UnsortedNotesViewModel _unsortedNotesView;
+        private UnsortedNotesViewModel _unsortedNotes;
 
-        public UnsortedNotesViewModel UnsortedNotesView
+        public UnsortedNotesViewModel UnsortedNotes
         {
-            get => _unsortedNotesView;
-            set => this.RaiseAndSetIfChanged(ref _unsortedNotesView, value);
+            get => _unsortedNotes;
+            set => this.RaiseAndSetIfChanged(ref _unsortedNotes, value);
         }
 
-        private DocumentCollectionViewModel _documentCollectionView;
+        private DocumentCollectionViewModel _documentCollection;
 
-        public DocumentCollectionViewModel DocumentCollectionView
+        public DocumentCollectionViewModel DocumentCollection
         {
-            get => _documentCollectionView;
-            set => this.RaiseAndSetIfChanged(ref _documentCollectionView, value);
+            get => _documentCollection;
+            set => this.RaiseAndSetIfChanged(ref _documentCollection, value);
         }
         
         #endregion

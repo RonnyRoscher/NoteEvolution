@@ -25,11 +25,11 @@
   <TabControl Margin="3" Padding="1" SelectedIndex="{Binding SelectedMainTabIndex}">
     
     <TabItem Header="Unsorted Notes">
-      <v:UnsortedNotesView DataContext="{Binding UnsortedNotesView}"/>
+      <v:UnsortedNotesView DataContext="{Binding UnsortedNotes}"/>
     </TabItem>
     
     <TabItem Header="Documents">
-      <v:DocumentCollectionView DataContext="{Binding DocumentCollectionView}"/>
+      <v:DocumentCollectionView DataContext="{Binding DocumentCollection}"/>
     </TabItem>
     
   </TabControl>

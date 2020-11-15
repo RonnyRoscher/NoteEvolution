@@ -27,7 +27,7 @@
         <v:TextUnitTreeView DataContext="{Binding SelectedItem}"/>
       </TabItem>
       <TabItem Header="Unsorted">
-        <v:NoteListView DataContext="{Binding UnsortedNotesView.NoteListView}"/>
+        <v:NoteListView DataContext="{Binding UnsortedNotes.NoteList}"/>
       </TabItem>
     </TabControl>
 

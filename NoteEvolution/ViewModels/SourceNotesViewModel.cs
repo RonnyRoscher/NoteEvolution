@@ -12,7 +12,7 @@ namespace NoteEvolution.ViewModels
         public SourceNotesViewModel(SourceCache<Note, Guid> noteListSource)
         {
             _noteListSource = noteListSource;
-            NoteListView = new NoteListViewModel(_noteListSource);
+            NoteList = new NoteListViewModel(_noteListSource);
 
             // set LastAddedText on new unsorted note added, used to auto focus the textbox
             _noteListSource
@@ -26,19 +26,19 @@ namespace NoteEvolution.ViewModels
 
         public void SelectNote(Note note)
         {
-            NoteListView.SelectNote(note);
+            NoteList.SelectNote(note);
         }
 
         #endregion
 
         #region Public Properties
 
-        private NoteListViewModel _noteListView;
+        private NoteListViewModel _noteList;
 
-        public NoteListViewModel NoteListView
+        public NoteListViewModel NoteList
         {
-            get => _noteListView;
-            set => this.RaiseAndSetIfChanged(ref _noteListView, value);
+            get => _noteList;
+            set => this.RaiseAndSetIfChanged(ref _noteList, value);
         }
 
         private Note _lastAddedNote;
