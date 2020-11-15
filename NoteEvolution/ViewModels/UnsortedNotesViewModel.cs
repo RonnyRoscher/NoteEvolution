@@ -39,11 +39,10 @@ namespace NoteEvolution.ViewModels
         {
             if (NoteListView.SelectedItem != null)
             {
-                var closestItem = _noteListSource.Items.FirstOrDefault(note => note.ModificationDate > NoteListView.SelectedItem.Value.ModificationDate);
-                if (closestItem == null)
-                    closestItem = _noteListSource.Items.LastOrDefault(note => note.ModificationDate < NoteListView.SelectedItem.Value.ModificationDate);
+                var delIdx = NoteListView.Items.IndexOf(NoteListView.SelectedItem);
+                var closestItem = (NoteListView.Items.Count > delIdx + 1) ? NoteListView.Items.ElementAt(delIdx + 1) : (delIdx > 0 ? NoteListView.Items.ElementAt(delIdx - 1) : null);
                 _noteListSource.Remove(NoteListView.SelectedItem.Value);
-                SelectNote(closestItem);
+                SelectNote(closestItem?.Value);
             }
         }
 
