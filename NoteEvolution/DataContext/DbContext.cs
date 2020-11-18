@@ -45,18 +45,14 @@ namespace NoteEvolution.DataContext
             _unsortedNoteListSource
                 .Connect()
                 .OnItemAdded(n => { if (_dbNotes.FindById(n.NoteId) == null) _dbNotes.Insert(n); })
-                .DisposeMany()
-                .Subscribe();
-            _unsortedNoteListSource
-                .Connect()
                 .OnItemRemoved(n => { if (_dbNotes.FindById(n.NoteId) != null) _dbNotes.Delete(n.NoteId); })
                 .DisposeMany()
                 .Subscribe();
             _unsortedNoteListSource
                .Connect()
-               .WhenPropertyChanged(n => n.Text, notifyOnInitialValue: false)
+               .WhenAnyPropertyChanged(new[] { nameof(Note.Text) })
                .Do(n => { 
-                   _changedNotes.TryAdd(n.Sender.NoteId, n.Sender);
+                   _changedNotes.TryAdd(n.NoteId, n);
                    _updateTimer.Interval = 3000;
                    if (_isSaved)
                    {
