@@ -14,30 +14,13 @@ namespace NoteEvolution.ViewModels
     {
         #region Private Properties
 
-        private readonly SourceCache<Note, Guid> _noteListSource;
-
         private readonly ReadOnlyObservableCollection<NoteViewModel> _noteListView;
 
         #endregion
 
-        public NoteListViewModel(SourceCache<Note, Guid> noteListSource)
+        public NoteListViewModel(ReadOnlyObservableCollection<NoteViewModel> usnortedNoteListView)
         {
-            _noteListSource = noteListSource;
-
-            var noteComparer = SortExpressionComparer<NoteViewModel>.Descending(nvm => nvm.Value.ModificationDate);
-            var noteWasModified = _noteListSource
-                .Connect()
-                .WhenPropertyChanged(n => n.ModificationDate)
-                .Throttle(TimeSpan.FromMilliseconds(250))
-                .Select(_ => Unit.Default);
-            _noteListSource
-                .Connect()
-                .Transform(n => new NoteViewModel(n))
-                .Sort(noteComparer, noteWasModified)
-                .ObserveOn(RxApp.MainThreadScheduler)
-                .Bind(out _noteListView)
-                .DisposeMany()
-                .Subscribe();
+            _noteListView = usnortedNoteListView;
 
             ChangedSelection = this
                 .WhenPropertyChanged(nlvm => nlvm.SelectedItem)
@@ -49,9 +32,9 @@ namespace NoteEvolution.ViewModels
 
         public void SelectNote(Note note)
         {
-            if (note != null && SelectedItem?.Value?.NoteId != note.NoteId)
+            if (note != null && SelectedItem?.Value?.Id != note.Id)
             {
-                var newSelection = _noteListView.FirstOrDefault(t => t.Value.NoteId == note.NoteId);
+                var newSelection = _noteListView.FirstOrDefault(t => t.Value.Id == note.Id);
                 if (newSelection != null)
                     SelectedItem = newSelection;
             }

@@ -1,8 +1,10 @@
 ﻿using System;
 using System.Reactive.Linq;
 using System.Linq;
-using ReactiveUI;
 using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations.Schema;
+using System.ComponentModel.DataAnnotations;
+using ReactiveUI;
 
 namespace NoteEvolution.Models
 {
@@ -12,17 +14,16 @@ namespace NoteEvolution.Models
     public class Note : ReactiveObject
     {
         private bool _modificationDateUnlocked;
-
+        
         public Note()
         {
             _modificationDateUnlocked = true;
 
-            NoteId = Guid.NewGuid();
             CreationDate = DateTime.Now;
             ModificationDate = DateTime.Now;
             LanguageId = 1;
             IsReadonly = false;
-            Usage = new Dictionary<Guid, HashSet<Guid>>();
+            Usage = new Dictionary<int, HashSet<int>>();
 
             // update ModifiedDate on changes to local note properties
             this.WhenAnyValue(n => n.Text, n => n._modificationDateUnlocked)
@@ -46,12 +47,13 @@ namespace NoteEvolution.Models
 
         #region Public Properties
 
-        private Guid _noteId;
+        private int _id;
 
-        public Guid NoteId
+        [Key]
+        public int Id
         {
-            get => _noteId;
-            set => this.RaiseAndSetIfChanged(ref _noteId, value);
+            get => _id;
+            set => this.RaiseAndSetIfChanged(ref _id, value);
         }
 
         private byte _languageId;
@@ -86,6 +88,29 @@ namespace NoteEvolution.Models
             set => this.RaiseAndSetIfChanged(ref _text, value);
         }
 
+        private int? _relatedTextUnitId;
+
+        /// <summary>
+        /// The id of the textunit the note belongs to or null in case of an unsorted note.
+        /// </summary>
+        [ForeignKey("TextUnit")]
+        public int? RelatedTextUnitId
+        {
+            get => _relatedTextUnitId;
+            set => this.RaiseAndSetIfChanged(ref _relatedTextUnitId, value);
+        }
+
+        private TextUnit _relatedTextUnit;
+
+        /// <summary>
+        /// The textunit the note belongs to.
+        /// </summary>
+        public virtual TextUnit RelatedTextUnit
+        {
+            get => _relatedTextUnit;
+            set => this.RaiseAndSetIfChanged(ref _relatedTextUnit, value);
+        }
+
         private bool _isReadonly;
 
         public bool IsReadonly
@@ -94,12 +119,13 @@ namespace NoteEvolution.Models
             set => this.RaiseAndSetIfChanged(ref _isReadonly, value);
         }
 
-        private Dictionary<Guid, HashSet<Guid>> _usage;
+        private Dictionary<int, HashSet<int>> _usage;
 
         /// <summary>
         /// Usage of this note in documents and its text units.
         /// </summary>
-        public Dictionary<Guid, HashSet<Guid>> Usage
+        [NotMapped]
+        public Dictionary<int, HashSet<int>> Usage
         {
             get => _usage;
             set => this.RaiseAndSetIfChanged(ref _usage, value);

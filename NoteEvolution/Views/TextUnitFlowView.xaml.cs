@@ -1,13 +1,12 @@
-﻿using Avalonia;
+﻿using System.Linq;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.LogicalTree;
 using Avalonia.Markup.Xaml;
 using Avalonia.VisualTree;
+using PubSub;
 using NoteEvolution.Events;
 using NoteEvolution.ViewModels;
-using PubSub;
-using System.Linq;
 
 namespace NoteEvolution.Views
 {

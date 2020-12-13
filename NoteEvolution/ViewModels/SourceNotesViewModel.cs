@@ -1,5 +1,9 @@
 ﻿using System;
+using System.Collections.ObjectModel;
+using System.Reactive;
+using System.Reactive.Linq;
 using DynamicData;
+using DynamicData.Binding;
 using ReactiveUI;
 using NoteEvolution.Models;
 
@@ -7,12 +11,35 @@ namespace NoteEvolution.ViewModels
 {
     public class SourceNotesViewModel : ViewModelBase
     {
-        private SourceCache<Note, Guid> _noteListSource;
+        private SourceCache<Note, int> _noteListSource;
 
-        public SourceNotesViewModel(SourceCache<Note, Guid> noteListSource)
+        private readonly ReadOnlyObservableCollection<NoteViewModel> _noteListView;
+
+        public SourceNotesViewModel(SourceCache<Note, int> noteListSource)
         {
             _noteListSource = noteListSource;
-            NoteList = new NoteListViewModel(_noteListSource);
+
+            var unsortedNoteFilter = noteListSource
+                .Connect()
+                .WhenAnyPropertyChanged(new[] { nameof(Note.RelatedTextUnitId) })
+                .Select(BuildSourceNotesFilter);
+            var noteComparer = SortExpressionComparer<NoteViewModel>.Descending(nvm => nvm.Value.ModificationDate);
+            var noteWasModified = _noteListSource
+                .Connect()
+                .WhenPropertyChanged(n => n.ModificationDate)
+                .Throttle(TimeSpan.FromMilliseconds(250))
+                .Select(_ => Unit.Default);
+            _noteListSource
+                .Connect()
+                .Filter(unsortedNoteFilter)
+                .Transform(n => new NoteViewModel(n))
+                .Sort(noteComparer, noteWasModified)
+                .ObserveOn(RxApp.MainThreadScheduler)
+                .Bind(out _noteListView)
+                .DisposeMany()
+                .Subscribe();
+
+            NoteList = new NoteListViewModel(_noteListView);
 
             // set LastAddedText on new unsorted note added, used to auto focus the textbox
             _noteListSource
@@ -20,6 +47,14 @@ namespace NoteEvolution.ViewModels
                 .OnItemAdded(t => LastAddedNote = t)
                 .DisposeMany()
                 .Subscribe();
+        }
+
+        private Func<Note, bool> BuildSourceNotesFilter(object param)
+        {
+            return note =>
+            {
+                return note.RelatedTextUnitId == null;
+            };
         }
 
         #region Public Methods

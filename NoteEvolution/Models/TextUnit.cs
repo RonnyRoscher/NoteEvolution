@@ -1,7 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Reactive.Linq;
+using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
 using System.Linq;
+using System.Reactive.Linq;
 using DynamicData;
 using ReactiveUI;
 
@@ -9,29 +11,95 @@ namespace NoteEvolution.Models
 {
     public class TextUnit : ReactiveObject
     {
+        #region Private Properties
+
+        private SourceCache<Note, int> _globalNoteListSource;
+        public IObservable<IChangeSet<Note, int>> _noteListSource;
+
+        public SourceCache<TextUnit, int> _globalTextUnitListSource;
+        public IObservable<IChangeSet<TextUnit, int>> _textUnitListSource;
+
+        #endregion
+
+        public TextUnit()
+        {
+            _globalNoteListSource = new SourceCache<Note, int>(n => n.Id);
+            _globalTextUnitListSource = new SourceCache<TextUnit, int>(t => t.Id);
+
+            _noteListSource = _globalNoteListSource
+                .Connect()
+                .Filter(n => n.RelatedTextUnitId == Id);
+
+            _textUnitListSource = _globalTextUnitListSource
+                .Connect()
+                .Filter(t => t.ParentId == Id);
+
+            // update ModifiedDate on ModifiedDate changes in any associated notes
+            this.WhenAnyValue(n => n.CreationDate, n => n.RelatedDocument, n => n.Parent, n => n.Predecessor, n => n.Successor, n => n.NoteList)
+                .Throttle(TimeSpan.FromMilliseconds(250))
+                .Do(x => ModificationDate = DateTime.Now);
+
+            // load child textunits from db and keep updated when adding and deleting textunits, as well as update current tree depth on changes of children
+            SubtreeDepth = 0;
+            TextUnitChildList = new List<TextUnit>();
+            _textUnitListSource
+                .OnItemAdded(t => { TextUnitChildList.Add(t); })
+                .OnItemRemoved(t => { TextUnitChildList.Remove(t); })
+                .WhenPropertyChanged(t => t.SubtreeDepth)
+                .Select(cv => TextUnitChildList.Max(t => t.SubtreeDepth) + 1)
+                .Where(nv => nv != SubtreeDepth)
+                .Do(nstd => SubtreeDepth = nstd)
+                .Subscribe();
+
+            // load associated notes from db and keep updated when adding and deleting textunits
+            NoteList = new List<Note>();
+            _noteListSource
+                .OnItemAdded(n => { NoteList.Add(n); })
+                .OnItemRemoved(n => { NoteList.Remove(n); })
+                .DisposeMany()
+                .Subscribe();
+        }
+
         public TextUnit(Document relatedDocument)
         {
-            RelatedDocument = relatedDocument;
-            TextUnitId = Guid.NewGuid();
             CreationDate = DateTime.Now;
+
+            _globalNoteListSource = relatedDocument.GlobalNoteListSource;
+            _globalTextUnitListSource = relatedDocument.GlobalTextUnitListSource;
+            RelatedDocument = relatedDocument;
+
+            _noteListSource = relatedDocument.NoteListSource
+                .Filter(n => n.RelatedTextUnitId == Id);
+
+            _textUnitListSource = relatedDocument.TextUnitListSource
+                .Filter(t => t.ParentId == Id);
+
             // todo: set CurrentTreeDepth to 0 on TextUnit create
-            _textUnitChildListSource = new SourceCache<TextUnit, Guid>(n => n.TextUnitId);
-            _noteListSource = new SourceCache<Note, Guid>(t => t.NoteId);
-            _noteListSource.AddOrUpdate(new Note());
+            _globalNoteListSource.AddOrUpdate(new Note());
 
             // update ModifiedDate on changes to local note properties
             this.WhenAnyValue(n => n.CreationDate, n => n.RelatedDocument, n => n.Parent, n => n.Predecessor, n => n.Successor, n => n.NoteList)
-                .Select(_ => DateTime.Now)
-                .ToProperty(this, n => n.ModificationDate, out _modificationDate);
+                .Throttle(TimeSpan.FromMilliseconds(250))
+                .Do(x => ModificationDate = DateTime.Now);
 
+            // load child textunits from db and keep updated when adding and deleting textunits, as well as update current tree depth on changes of children
             SubtreeDepth = 0;
-            // update current tree depth on changes of children
-            _textUnitChildListSource
-                .Connect()
-                .WhenPropertyChanged(tu => tu.SubtreeDepth)
-                .Select(cv => TextUnitChildList.Max(tu => tu.SubtreeDepth) + 1)
+            TextUnitChildList = new List<TextUnit>();
+            _textUnitListSource
+                .OnItemAdded(t => { TextUnitChildList.Add(t); })
+                .OnItemRemoved(t => { TextUnitChildList.Remove(t); })
+                .WhenPropertyChanged(t => t.SubtreeDepth)
+                .Select(cv => TextUnitChildList.Max(t => t.SubtreeDepth) + 1)
                 .Where(nv => nv != SubtreeDepth)
                 .Do(nstd => SubtreeDepth = nstd)
+                .Subscribe();
+
+            // load associated notes from db and keep updated when adding and deleting textunits
+            NoteList = new List<Note>();
+            _noteListSource
+                .OnItemAdded(n => { NoteList.Add(n); })
+                .OnItemRemoved(n => { NoteList.Remove(n); })
+                .DisposeMany()
                 .Subscribe();
         }
 
@@ -98,8 +166,8 @@ namespace NoteEvolution.Models
                 // add hierarchical relations
                 Parent = this
             };
-            _textUnitChildListSource.AddOrUpdate(newTextUnit);
-            RelatedDocument.TextUnitListSource.AddOrUpdate(newTextUnit);
+            _globalTextUnitListSource.AddOrUpdate(newTextUnit);
+            RelatedDocument.GlobalTextUnitListSource.AddOrUpdate(newTextUnit);
             // add sequencial relations
             if (previousFirstChild != null)
             {
@@ -137,9 +205,10 @@ namespace NoteEvolution.Models
                 // add hierarchical relations
                 Parent = Parent
             };
-            RelatedDocument.TextUnitListSource.AddOrUpdate(newTextUnit);
-            if (Parent != null)
-                newTextUnit.Parent.TextUnitChildListSource.AddOrUpdate(newTextUnit);
+            RelatedDocument.GlobalTextUnitListSource.AddOrUpdate(newTextUnit);
+            // todo: this might not be necessary anymore with RX
+            //if (Parent != null)
+            //    newTextUnit.Parent.TextUnitListSource.AddOrUpdate(newTextUnit);
             // add sequencial relations
             var previousSuccessor = Successor;
             newTextUnit.Predecessor = this;
@@ -173,19 +242,20 @@ namespace NoteEvolution.Models
         public void RemoveTextUnit(TextUnit oldTextUnit)
         {
             if (oldTextUnit != null)
-                _textUnitChildListSource.Remove(oldTextUnit);
+                _globalTextUnitListSource.Remove(oldTextUnit);
         }
 
         #endregion
 
         #region Public Properties
 
-        private Guid _textUnitId;
+        private int _id;
 
-        public Guid TextUnitId
+        [Key]
+        public int Id
         {
-            get => _textUnitId;
-            set => this.RaiseAndSetIfChanged(ref _textUnitId, value);
+            get => _id;
+            set => this.RaiseAndSetIfChanged(ref _id, value);
         }
 
         private DateTime _creationDate;
@@ -196,18 +266,47 @@ namespace NoteEvolution.Models
             set => this.RaiseAndSetIfChanged(ref _creationDate, value);
         }
 
-        readonly ObservableAsPropertyHelper<DateTime> _modificationDate;
-        public DateTime ModificationDate => _modificationDate.Value;
+        private DateTime _modificationDate;
+
+        public DateTime ModificationDate
+        {
+            get => _modificationDate;
+            set => this.RaiseAndSetIfChanged(ref _modificationDate, value);
+        }
+
+        private int _relatedDocumentId;
+
+        /// <summary>
+        /// The id of the document the textunit is associated with.
+        /// </summary>
+        [ForeignKey("RelatedDocument")]
+        public int RelatedDocumentId
+        {
+            get => _relatedDocumentId;
+            set => this.RaiseAndSetIfChanged(ref _relatedDocumentId, value);
+        }
 
         private Document _relatedDocument;
 
         /// <summary>
         /// The document the textunit is associated with.
         /// </summary>
-        public Document RelatedDocument
+        public virtual Document RelatedDocument
         {
             get => _relatedDocument;
             set => this.RaiseAndSetIfChanged(ref _relatedDocument, value);
+        }
+
+        private int? _parentId;
+
+        /// <summary>
+        /// The id of the textunit's parent or null if it is the root.
+        /// </summary>
+        [ForeignKey("Parent")]
+        public int? ParentId
+        {
+            get => _parentId;
+            set => this.RaiseAndSetIfChanged(ref _parentId, value);
         }
 
         private TextUnit _parent;
@@ -215,10 +314,22 @@ namespace NoteEvolution.Models
         /// <summary>
         /// The textunits parent or null if it is the root.
         /// </summary>
-        public TextUnit Parent
+        public virtual TextUnit Parent
         {
             get => _parent;
             set => this.RaiseAndSetIfChanged(ref _parent, value);
+        }
+
+        private int? _predecessorId;
+
+        /// <summary>
+        /// The id of the textunit's predecessor on the same hierarchy level if exists.
+        /// </summary>
+        [ForeignKey("Predecessor")]
+        public int? PredecessorId
+        {
+            get => _predecessorId;
+            set => this.RaiseAndSetIfChanged(ref _predecessorId, value);
         }
 
         private TextUnit _predecessor;
@@ -226,10 +337,22 @@ namespace NoteEvolution.Models
         /// <summary>
         /// The textunits predecessor on the same hierarchy level if exists.
         /// </summary>
-        public TextUnit Predecessor
+        public virtual TextUnit Predecessor
         {
             get => _predecessor;
             set => this.RaiseAndSetIfChanged(ref _predecessor, value);
+        }
+
+        private int? _successorId;
+
+        /// <summary>
+        /// The id of the textunit's successor on the same hierarchy level if exists.
+        /// </summary>
+        [ForeignKey("Successor")]
+        public int? SuccessorId
+        {
+            get => _successorId;
+            set => this.RaiseAndSetIfChanged(ref _successorId, value);
         }
 
         private TextUnit _successor;
@@ -237,21 +360,27 @@ namespace NoteEvolution.Models
         /// <summary>
         /// The textunits successor on the same hierarchy level if exists.
         /// </summary>
-        public TextUnit Successor
+        public virtual TextUnit Successor
         {
             get => _successor;
             set => this.RaiseAndSetIfChanged(ref _successor, value);
         }
 
-        public SourceCache<TextUnit, Guid> _textUnitChildListSource;
+        private List<TextUnit> _textUnitChildList;
 
-        public SourceCache<TextUnit, Guid> TextUnitChildListSource => _textUnitChildListSource;
-
-        public IEnumerable<TextUnit> TextUnitChildList => _textUnitChildListSource.Items;
+        /// <summary>
+        /// List of direct child textunits in the hierarchical tree.
+        /// </summary>
+        public virtual List<TextUnit> TextUnitChildList
+        {
+            get => _textUnitChildList;
+            set => this.RaiseAndSetIfChanged(ref _textUnitChildList, value);
+        }
 
         /// <summary>
         /// The hierarchy level of the textunit. Starting with 0 on the root level and increasing by 1 on each deeper child level.
         /// </summary>
+        [NotMapped]
         public int HierarchyLevel => Parent?.HierarchyLevel + 1 ?? 0;
 
         private int _subtreeDepth;
@@ -259,6 +388,7 @@ namespace NoteEvolution.Models
         /// <summary>
         /// The depth of the textunits subtree. Starting with 0 on the leaf level and increasing by 1 each higher level towards the root.
         /// </summary>
+        [NotMapped]
         public int SubtreeDepth
         {
             get => _subtreeDepth;
@@ -276,11 +406,22 @@ namespace NoteEvolution.Models
             set => this.RaiseAndSetIfChanged(ref _orderNr, value);
         }
 
-        public SourceCache<Note, Guid> _noteListSource;
+        private List<Note> _noteList;
 
-        public SourceCache<Note, Guid> NoteListSource => _noteListSource;
+        /// <summary>
+        /// List of notes beloging to this textunit.
+        /// </summary>
+        public virtual List<Note> NoteList
+        {
+            get => _noteList;
+            set => this.RaiseAndSetIfChanged(ref _noteList, value);
+        }
 
-        public IEnumerable<Note> NoteList => _noteListSource.Items;
+        [NotMapped]
+        public IObservable<IChangeSet<Note, int>> NoteListSource => _noteListSource;
+
+        [NotMapped]
+        public SourceCache<TextUnit, int> TextUnitListSource => _globalTextUnitListSource;
 
         #endregion
     }

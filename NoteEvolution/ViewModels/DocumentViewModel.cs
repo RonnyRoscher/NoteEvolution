@@ -1,12 +1,12 @@
 ﻿using System;
 using System.Collections.ObjectModel;
+using System.Linq;
 using System.Reactive;
 using System.Reactive.Linq;
 using DynamicData;
 using DynamicData.Binding;
 using ReactiveUI;
 using NoteEvolution.Models;
-using System.Linq;
 
 namespace NoteEvolution.ViewModels
 {
@@ -14,35 +14,28 @@ namespace NoteEvolution.ViewModels
     {
         #region Private Properties
 
-        private readonly SourceCache<Note, Guid> _unsortedNoteListSource;
-
-        private readonly SourceCache<TextUnit, Guid> _documentTextUnitListSource;
-
-        private readonly IObservableCache<TextUnitViewModel, Guid> _textUnitListSource;
+        private readonly IObservableCache<TextUnitViewModel, int> _textUnitListSource;
 
         private readonly ReadOnlyObservableCollection<TextUnitViewModel> _textUnitListView;
 
-        private readonly IObservableCache<TextUnitViewModel, Guid> _textUnitRootListSource;
+        private readonly IObservableCache<TextUnitViewModel, int> _textUnitRootListSource;
 
         private readonly ReadOnlyObservableCollection<TextUnitViewModel> _textUnitRootListView;
 
         #endregion
 
-        public DocumentViewModel(SourceCache<Note, Guid> unsortedNoteListSource, Document documentSource)
+        public DocumentViewModel(Document documentSource)
         {
-            _unsortedNoteListSource = unsortedNoteListSource;
             DocumentSource = documentSource;
-            _documentTextUnitListSource = documentSource.TextUnitListSource;
 
-            _textUnitListSource = _documentTextUnitListSource
-                .Connect()
-                .Transform(tu => new TextUnitViewModel(tu, this))
+            _textUnitListSource = DocumentSource.TextUnitListSource
+                .Transform(t => new TextUnitViewModel(t, this))
                 .DisposeMany()
                 .AsObservableCache();
-            var textUnitComparer = SortExpressionComparer<TextUnitViewModel>.Ascending(tuvm => tuvm.Value.OrderNr);
+            var textUnitComparer = SortExpressionComparer<TextUnitViewModel>.Ascending(tvm => tvm.Value.OrderNr);
             var textUnitWasModified = _textUnitListSource
                 .Connect()
-                .WhenPropertyChanged(tu => tu.Value.OrderNr)
+                .WhenPropertyChanged(t => t.Value.OrderNr)
                 .Select(_ => Unit.Default);
             _textUnitListSource
                 .Connect()
@@ -54,12 +47,12 @@ namespace NoteEvolution.ViewModels
 
             _textUnitRootListSource = _textUnitListSource
                 .Connect()
-                .Filter(tu => tu.Value.Parent == null)
+                .Filter(t => t.Value.Parent == null)
                 .DisposeMany()
                 .AsObservableCache();
             var rootTextUnitWasModified = _textUnitRootListSource
                 .Connect()
-                .WhenPropertyChanged(tu => tu.Value.OrderNr)
+                .WhenPropertyChanged(t => t.Value.OrderNr)
                 .Select(_ => Unit.Default);
             _textUnitRootListSource
                 .Connect()
@@ -72,12 +65,12 @@ namespace NoteEvolution.ViewModels
             // keep max tree depth updated in root text unit
             _textUnitRootListSource
                 .Connect()
-                .WhenPropertyChanged(tu => tu.Value.SubtreeDepth)
-                .Select(cv => RootItems.Max(tu => tu.Value.SubtreeDepth))
+                .WhenPropertyChanged(t => t.Value.SubtreeDepth)
+                .Select(cv => RootItems.Max(t => t.Value.SubtreeDepth))
                 .Where(nv => nv != TreeMaxDepth)
                 .Do(nv => TreeMaxDepth = nv)
                 .Subscribe();
-            this.WhenAnyValue(tu => tu.TreeMaxDepth)
+            this.WhenAnyValue(t => t.TreeMaxDepth)
                 .Select(cv => 12.0 + (TreeMaxDepth * 4.0))
                 .Do(nv => MaxFontSize = nv)
                 .Subscribe();
@@ -88,7 +81,7 @@ namespace NoteEvolution.ViewModels
                 .Select(ntvm => ntvm.Value.Value);
 
             var rootTextUnit = new TextUnit(documentSource);
-            _documentTextUnitListSource.AddOrUpdate(rootTextUnit);
+            DocumentSource.GlobalTextUnitListSource.AddOrUpdate(rootTextUnit);
 
             CreateNewSuccessorCommand = ReactiveCommand.Create(ExecuteCreateNewSuccessor);
             CreateNewChildCommand = ReactiveCommand.Create(ExecuteCreateNewChild);
@@ -129,7 +122,7 @@ namespace NoteEvolution.ViewModels
             // move related texts to unsorted notes before removing the note from the document
             foreach (var note in SelectedItem.Value.NoteList)
             {
-                _unsortedNoteListSource.AddOrUpdate(note);
+                DocumentSource.GlobalNoteListSource.AddOrUpdate(note);
             }
             ExecuteDeleteSelected();
         }
@@ -154,9 +147,9 @@ namespace NoteEvolution.ViewModels
 
         public void SelectTextUnit(TextUnit newTextUnitSelection)
         {
-            if (newTextUnitSelection != null && SelectedItem?.Value?.TextUnitId != newTextUnitSelection.TextUnitId)
+            if (newTextUnitSelection != null && SelectedItem?.Value?.Id != newTextUnitSelection.Id)
             {
-                var newSelection = _textUnitListView.FirstOrDefault(nvm => nvm.Value.TextUnitId == newTextUnitSelection.TextUnitId);
+                var newSelection = _textUnitListView.FirstOrDefault(nvm => nvm.Value.Id == newTextUnitSelection.Id);
                 if (newSelection != null)
                     SelectedItem = newSelection;
             }
@@ -171,10 +164,10 @@ namespace NoteEvolution.ViewModels
                 {
                     SelectTextUnit(newTextUnit);
                     newTextUnit.NoteList.FirstOrDefault().Text = sourceNote.Value.Text;
-                    if (!sourceNote.Value.Usage.ContainsKey(DocumentSource.DocumentId))
-                        sourceNote.Value.Usage.Add(DocumentSource.DocumentId, new System.Collections.Generic.HashSet<Guid>());
-                    if (!sourceNote.Value.Usage[DocumentSource.DocumentId].Contains(newTextUnit.TextUnitId))
-                        sourceNote.Value.Usage[DocumentSource.DocumentId].Add(newTextUnit.TextUnitId);
+                    if (!sourceNote.Value.Usage.ContainsKey(DocumentSource.Id))
+                        sourceNote.Value.Usage.Add(DocumentSource.Id, new System.Collections.Generic.HashSet<int>());
+                    if (!sourceNote.Value.Usage[DocumentSource.Id].Contains(newTextUnit.Id))
+                        sourceNote.Value.Usage[DocumentSource.Id].Add(newTextUnit.Id);
                     sourceNote.Value.IsReadonly = true;
                 }
             }
@@ -186,7 +179,7 @@ namespace NoteEvolution.ViewModels
 
         public Document DocumentSource { get; }
 
-        public IObservableCache<TextUnitViewModel, Guid> TextUnitListSource => _textUnitListSource;
+        public IObservableCache<TextUnitViewModel, int> TextUnitListSource => _textUnitListSource;
 
         public ReadOnlyObservableCollection<TextUnitViewModel> AllItems => _textUnitListView;
 

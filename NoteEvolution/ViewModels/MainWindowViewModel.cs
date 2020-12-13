@@ -1,5 +1,4 @@
-﻿using System;
-using System.Reactive;
+﻿using System.Reactive;
 using System.Reflection;
 using DynamicData;
 using PubSub;
@@ -16,10 +15,11 @@ namespace NoteEvolution.ViewModels
 
         private readonly Hub _eventAggregator;
 
-        private readonly DbContext _localDB;
+        private readonly NoteEvolutionContext _localDB;
 
-        private readonly SourceCache<Note, Guid> _unsortedNoteListSource;
-        private readonly SourceCache<Document, Guid> _documentListSource;
+        private readonly SourceCache<Note, int> _globalNoteListSource;
+        private readonly SourceCache<TextUnit, int> _globalTextUnitListSource;
+        private readonly SourceCache<Document, int> _globalDocumentListSource;
 
         public MainWindowViewModel()
         {
@@ -29,13 +29,14 @@ namespace NoteEvolution.ViewModels
             _eventAggregator = Hub.Default;
             _eventAggregator.Subscribe<NotifySaveStateChanged>(this, saveStateChange => { TitleBarText = _titleBarTextBase + (saveStateChange.HasUnsavedChanged ? "*" : ""); });
 
-            _localDB = new DbContext();
+            _localDB = new NoteEvolutionContext();
 
-            _unsortedNoteListSource = _localDB.UnsortedNoteListSource;
-            UnsortedNotes = new UnsortedNotesViewModel(_unsortedNoteListSource);
-            
-            _documentListSource = new SourceCache<Document, Guid>(d => d.DocumentId);
-            DocumentCollection = new DocumentCollectionViewModel(_unsortedNoteListSource, _documentListSource);
+            _globalNoteListSource = _localDB.NoteListSource;
+            _globalTextUnitListSource = _localDB.TextUnitListSource;
+            _globalDocumentListSource = _localDB.DocumentListSource;
+
+            UnsortedNotes = new UnsortedNotesViewModel(_globalNoteListSource);
+            DocumentCollection = new DocumentCollectionViewModel(_globalNoteListSource, _globalTextUnitListSource, _globalDocumentListSource);
 
             CreateNewNoteCommand = ReactiveCommand.Create(ExecuteCreateNewNote);
 
@@ -51,7 +52,7 @@ namespace NoteEvolution.ViewModels
             if (SelectedMainTabIndex != 0)
                 SelectedMainTabIndex = 0;
             var newNote = new Note();
-            _unsortedNoteListSource.AddOrUpdate(newNote);
+            _globalNoteListSource.AddOrUpdate(newNote);
             UnsortedNotes.SelectNote(newNote);
         }
 

@@ -1,7 +1,10 @@
 ﻿using System;
+using System.Collections.ObjectModel;
 using System.Linq;
 using System.Reactive;
+using System.Reactive.Linq;
 using DynamicData;
+using DynamicData.Binding;
 using ReactiveUI;
 using NoteEvolution.Models;
 
@@ -9,16 +12,47 @@ namespace NoteEvolution.ViewModels
 {
     public class UnsortedNotesViewModel : ViewModelBase
     {
-        private SourceCache<Note, Guid> _noteListSource;
+        private SourceCache<Note, int> _noteListSource;
 
-        public UnsortedNotesViewModel(SourceCache<Note, Guid> noteListSource)
+        private readonly ReadOnlyObservableCollection<NoteViewModel> _noteListView;
+
+        public UnsortedNotesViewModel(SourceCache<Note, int> noteListSource)
         {
             _noteListSource = noteListSource;
-            NoteList = new NoteListViewModel(_noteListSource);
+
+            var unsortedNoteFilter = noteListSource
+                .Connect()
+                //.WhenAnyPropertyChanged(new[] { nameof(Note.RelatedTextUnitId) })
+                .Select(BuildUnsortedNotesFilter);
+            var noteComparer = SortExpressionComparer<NoteViewModel>.Descending(nvm => nvm.Value.ModificationDate);
+            var noteWasModified = _noteListSource
+                .Connect()
+                .WhenPropertyChanged(n => n.ModificationDate)
+                .Throttle(TimeSpan.FromMilliseconds(250))
+                .Select(_ => Unit.Default);
+            _noteListSource
+                .Connect()
+                .Filter(unsortedNoteFilter)
+                .Transform(n => new NoteViewModel(n))
+                .Sort(noteComparer, noteWasModified)
+                .ObserveOn(RxApp.MainThreadScheduler)
+                .Bind(out _noteListView)
+                .DisposeMany()
+                .Subscribe();
+
+            NoteList = new NoteListViewModel(_noteListView);
             SelectNote(_noteListSource.Items.OrderByDescending(n => n.ModificationDate).FirstOrDefault());
 
             CreateNewNoteCommand = ReactiveCommand.Create(ExecuteCreateNewNote);
             DeleteSelectedNoteCommand = ReactiveCommand.Create(ExecuteDeleteSelectedNote);
+        }
+
+        private Func<Note, bool> BuildUnsortedNotesFilter(object param)
+        {
+            return note =>
+            {
+                return note.RelatedTextUnitId == null;
+            };
         }
 
         #region Commands
@@ -29,8 +63,7 @@ namespace NoteEvolution.ViewModels
         {
             var newNote = new Note();
             _noteListSource.AddOrUpdate(newNote);
-            if (newNote != null)
-                SelectNote(newNote);
+            SelectNote(newNote);
         }
 
         public ReactiveCommand<Unit, Unit> DeleteSelectedNoteCommand { get; }

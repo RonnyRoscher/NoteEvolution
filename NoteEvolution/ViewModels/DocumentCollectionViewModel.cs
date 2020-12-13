@@ -1,49 +1,51 @@
 ﻿using System;
-using DynamicData;
-using ReactiveUI;
-using NoteEvolution.Models;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Linq;
 using System.Reactive.Linq;
-using System.Collections.ObjectModel;
 using System.Reactive;
+using DynamicData;
 using DynamicData.Binding;
-using System.Collections.Generic;
+using ReactiveUI;
+using NoteEvolution.Models;
 
 namespace NoteEvolution.ViewModels
 {
     public class DocumentCollectionViewModel : ViewModelBase
     {
-        private readonly SourceCache<Note, Guid> _unsortedNoteListSource;
-        private readonly SourceCache<Document, Guid> _documentListSource;
+        private readonly SourceCache<Note, int> _globalNoteListSource;
+        private readonly SourceCache<TextUnit, int> _globalTextUnitListSource;
+        private readonly SourceCache<Document, int> _globalDocumentListSource;
         private readonly ReadOnlyObservableCollection<DocumentViewModel> _documentListView;
 
-        public DocumentCollectionViewModel(SourceCache<Note, Guid> unsortedNoteListSource, SourceCache<Document, Guid> documentListSource)
+        public DocumentCollectionViewModel(SourceCache<Note, int> globalNoteListSource, SourceCache<TextUnit, int> globalTextUnitListSource, SourceCache<Document, int> globalDocumentListSource)
         {
             CreateNewDocumentCommand = ReactiveCommand.Create(ExecuteCreateNewDocument);
             DissolveSelectedDocumentCommand = ReactiveCommand.Create(ExecuteDissolveSelectedDocument);
             DeleteSelectedDocumentCommand = ReactiveCommand.Create(ExecuteDeleteSelectedDocument);
 
-            _unsortedNoteListSource = unsortedNoteListSource;
-            UnsortedNotes = new SourceNotesViewModel(_unsortedNoteListSource);
+            _globalNoteListSource = globalNoteListSource;
+            _globalTextUnitListSource = globalTextUnitListSource;
+            _globalDocumentListSource = globalDocumentListSource;
 
-            _documentListSource = documentListSource;
+            UnsortedNotes = new SourceNotesViewModel(_globalNoteListSource);
 
             // build sorted document list
             var documentComparer = SortExpressionComparer<DocumentViewModel>.Descending(d => d.DocumentSource.ModificationDate);
-            var documentWasModified = _documentListSource
+            var documentWasModified = _globalDocumentListSource
                 .Connect()
                 .WhenPropertyChanged(d => d.ModificationDate)
                 .Throttle(TimeSpan.FromMilliseconds(250))
                 .Select(_ => Unit.Default);
-            _documentListSource
+            _globalDocumentListSource
                 .Connect()
-                .Transform(d => new DocumentViewModel(_unsortedNoteListSource, d))
+                .Transform(d => new DocumentViewModel(d))
                 .Sort(documentComparer, documentWasModified)
                 .ObserveOn(RxApp.MainThreadScheduler)
                 .Bind(out _documentListView)
                 .DisposeMany()
                 .Subscribe();
-            _documentListSource.AddOrUpdate(new List<Document>());
+            _globalDocumentListSource.AddOrUpdate(new List<Document>());
 
             ChangedSelection = this
                 .WhenPropertyChanged(d => d.SelectedItem)
@@ -51,7 +53,7 @@ namespace NoteEvolution.ViewModels
                 .Select(d => d.Value);
 
             // set LastAddedDocument on new document added, used to auto focus the textbox
-            _documentListSource
+            _globalDocumentListSource
                 .Connect()
                 .OnItemAdded(d => LastAddedDocument = d)
                 .DisposeMany()
@@ -64,8 +66,8 @@ namespace NoteEvolution.ViewModels
 
         void ExecuteCreateNewDocument()
         {
-            var newDocument = new Document();
-            _documentListSource.AddOrUpdate(newDocument);
+            var newDocument = new Document(_globalNoteListSource, _globalTextUnitListSource);
+            _globalDocumentListSource.AddOrUpdate(newDocument);
             SelectDocument(newDocument);
         }
 
@@ -80,7 +82,8 @@ namespace NoteEvolution.ViewModels
                 {
                     foreach (var note in textUnit.NoteList)
                     {
-                        _unsortedNoteListSource.AddOrUpdate(note);
+                        // todo: should move now only mean change relations, as its the same source cache
+                        _globalNoteListSource.AddOrUpdate(note);
                     }
                 }
             }
@@ -91,10 +94,10 @@ namespace NoteEvolution.ViewModels
 
         void ExecuteDeleteSelectedDocument()
         {
-            var closestItem = _documentListSource.Items.FirstOrDefault(note => note.ModificationDate > SelectedItem?.DocumentSource.ModificationDate);
+            var closestItem = _globalDocumentListSource.Items.FirstOrDefault(note => note.ModificationDate > SelectedItem?.DocumentSource.ModificationDate);
             if (closestItem == null)
-                closestItem = _documentListSource.Items.LastOrDefault(note => note.ModificationDate < SelectedItem?.DocumentSource.ModificationDate);
-            _documentListSource.Remove(SelectedItem.DocumentSource);
+                closestItem = _globalDocumentListSource.Items.LastOrDefault(note => note.ModificationDate < SelectedItem?.DocumentSource.ModificationDate);
+            _globalDocumentListSource.Remove(SelectedItem.DocumentSource);
             SelectDocument(closestItem);
         }
 
@@ -104,9 +107,9 @@ namespace NoteEvolution.ViewModels
 
         public void SelectDocument(Document document)
         {
-            if (document != null && SelectedItem?.DocumentSource.DocumentId != document.DocumentId)
+            if (document != null && SelectedItem?.DocumentSource.Id != document.Id)
             {
-                SelectedItem = _documentListView.FirstOrDefault(d => d.DocumentSource.DocumentId == document.DocumentId);
+                SelectedItem = _documentListView.FirstOrDefault(d => d.DocumentSource.Id == document.Id);
             }
         }
 

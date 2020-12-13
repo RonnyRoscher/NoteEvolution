@@ -13,7 +13,7 @@ namespace NoteEvolution.ViewModels
     {
         #region Private Properties
 
-        private readonly SourceCache<TextUnit, Guid> _textUnitChildListSource;
+        private readonly SourceCache<TextUnit, int> _textUnitChildListSource;
 
         private readonly ReadOnlyObservableCollection<TextUnitViewModel> _textUnitChildListView;
 
@@ -33,7 +33,7 @@ namespace NoteEvolution.ViewModels
 
             FontSize = 12.0;
             // update current tree depth on changes of children
-            this.WhenAnyValue(tu => tu.Value.SubtreeDepth, tu => tu.Value.HierarchyLevel, tu => tu.Parent.MaxFontSize)
+            this.WhenAnyValue(t => t.Value.SubtreeDepth, t => t.Value.HierarchyLevel, t => t.Parent.MaxFontSize)
                 .Select(cv =>
                 {
                     if (cv.Item1 == 0)
@@ -45,7 +45,7 @@ namespace NoteEvolution.ViewModels
                 .Subscribe();
 
             // update header on text changes
-            Value.NoteListSource.Connect()
+            Value.NoteListSource
                 // Where(n => n.LanguageId == SelectedLanguageId)
                 .Where(_ => _firstAddedNote == null)
                 .OnItemAdded(n => {
@@ -55,22 +55,22 @@ namespace NoteEvolution.ViewModels
                             var text = (n.Value ?? "").Replace(Environment.NewLine, "");
                             return text.Substring(0, Math.Min(text.Length, 200));
                         })
-                        .ToProperty(this, tuvm => tuvm.Header, out _header);
+                        .ToProperty(this, tvm => tvm.Header, out _header);
                     })
                 .DisposeMany()
                 .Subscribe();
 
-            _textUnitChildListSource = textUnit.TextUnitChildListSource;
+            _textUnitChildListSource = textUnit.TextUnitListSource;
 
             if (_parent?.TextUnitListSource != null)
             {
-                var noteComparer = SortExpressionComparer<TextUnitViewModel>.Ascending(tuvm => tuvm.Value.OrderNr);
+                var noteComparer = SortExpressionComparer<TextUnitViewModel>.Ascending(tvm => tvm.Value.OrderNr);
                 var noteWasModified = _textUnitChildListSource
                     .Connect()
                     .WhenPropertyChanged(tu => tu.ModificationDate)
                     .Select(_ => Unit.Default);
                 _parent.TextUnitListSource.Connect()
-                    .Filter(n => n.Value.Parent?.TextUnitId == Value.TextUnitId)
+                    .Filter(n => n.Value.Parent?.Id == Value.Id)
                     .Sort(noteComparer, noteWasModified)
                     .ObserveOn(RxApp.MainThreadScheduler)
                     .Bind(out _textUnitChildListView)
