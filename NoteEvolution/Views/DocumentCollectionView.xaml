@@ -15,7 +15,7 @@
 
     <DockPanel Grid.Row="0" Grid.Column="1" Margin="3 10 3 3" LastChildFill="True">
       <TextBlock DockPanel.Dock="Top" Margin="0 0 0 3" Text="Document Name"/>
-      <TextBox AcceptsReturn="True" TextWrapping="Wrap" Text="{Binding SelectedItem.DocumentSource.Title}" Tag="{Binding LastAddedDocument}">
+      <TextBox AcceptsReturn="True" TextWrapping="Wrap" Text="{Binding SelectedItem.Value.Title}" Tag="{Binding LastAddedDocument}">
         <i:Interaction.Behaviors>
           <b:FocusOnTagChangedBehavior/>
         </i:Interaction.Behaviors>

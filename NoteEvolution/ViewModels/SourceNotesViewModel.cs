@@ -11,38 +11,38 @@ namespace NoteEvolution.ViewModels
 {
     public class SourceNotesViewModel : ViewModelBase
     {
-        private SourceCache<Note, int> _noteListSource;
+        private SourceCache<Note, Guid> _relatedNoteListSource;
 
-        private readonly ReadOnlyObservableCollection<NoteViewModel> _noteListView;
+        private readonly ReadOnlyObservableCollection<NoteViewModel> _relatedNoteListView;
 
-        public SourceNotesViewModel(SourceCache<Note, int> noteListSource)
+        public SourceNotesViewModel(SourceCache<Note, Guid> relatedNoteListSource)
         {
-            _noteListSource = noteListSource;
+            _relatedNoteListSource = relatedNoteListSource;
 
-            var unsortedNoteFilter = noteListSource
+            var relatedNoteFilter = relatedNoteListSource
                 .Connect()
                 .WhenAnyPropertyChanged(new[] { nameof(Note.RelatedTextUnitId) })
                 .Select(BuildSourceNotesFilter);
             var noteComparer = SortExpressionComparer<NoteViewModel>.Descending(nvm => nvm.Value.ModificationDate);
-            var noteWasModified = _noteListSource
+            var noteWasModified = _relatedNoteListSource
                 .Connect()
                 .WhenPropertyChanged(n => n.ModificationDate)
                 .Throttle(TimeSpan.FromMilliseconds(250))
                 .Select(_ => Unit.Default);
-            _noteListSource
+            _relatedNoteListSource
                 .Connect()
-                .Filter(unsortedNoteFilter)
+                .Filter(relatedNoteFilter)
                 .Transform(n => new NoteViewModel(n))
                 .Sort(noteComparer, noteWasModified)
                 .ObserveOn(RxApp.MainThreadScheduler)
-                .Bind(out _noteListView)
+                .Bind(out _relatedNoteListView)
                 .DisposeMany()
                 .Subscribe();
 
-            NoteList = new NoteListViewModel(_noteListView);
+            NoteList = new NoteListViewModel(_relatedNoteListView);
 
             // set LastAddedText on new unsorted note added, used to auto focus the textbox
-            _noteListSource
+            _relatedNoteListSource
                 .Connect()
                 .OnItemAdded(t => LastAddedNote = t)
                 .DisposeMany()

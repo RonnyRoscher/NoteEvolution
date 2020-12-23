@@ -1,4 +1,5 @@
-﻿using System.Reactive;
+﻿using System;
+using System.Reactive;
 using System.Reflection;
 using DynamicData;
 using PubSub;
@@ -17,9 +18,9 @@ namespace NoteEvolution.ViewModels
 
         private readonly NoteEvolutionContext _localDB;
 
-        private readonly SourceCache<Note, int> _globalNoteListSource;
-        private readonly SourceCache<TextUnit, int> _globalTextUnitListSource;
-        private readonly SourceCache<Document, int> _globalDocumentListSource;
+        private readonly SourceCache<Note, Guid> _globalNoteListSource;
+        private readonly SourceCache<TextUnit, Guid> _globalTextUnitListSource;
+        private readonly SourceCache<Document, Guid> _globalDocumentListSource;
 
         public MainWindowViewModel()
         {

@@ -14,11 +14,11 @@ namespace NoteEvolution.ViewModels
     {
         #region Private Properties
 
-        private readonly IObservableCache<TextUnitViewModel, int> _textUnitListSource;
+        private IObservableCache<TextUnitViewModel, Guid> _textUnitListSource;
 
         private readonly ReadOnlyObservableCollection<TextUnitViewModel> _textUnitListView;
 
-        private readonly IObservableCache<TextUnitViewModel, int> _textUnitRootListSource;
+        private readonly IObservableCache<TextUnitViewModel, Guid> _textUnitRootListSource;
 
         private readonly ReadOnlyObservableCollection<TextUnitViewModel> _textUnitRootListView;
 
@@ -26,9 +26,9 @@ namespace NoteEvolution.ViewModels
 
         public DocumentViewModel(Document documentSource)
         {
-            DocumentSource = documentSource;
+            Value = documentSource;
 
-            _textUnitListSource = DocumentSource.TextUnitListSource
+            TextUnitListSource = Value.TextUnitListSource
                 .Transform(t => new TextUnitViewModel(t, this))
                 .DisposeMany()
                 .AsObservableCache();
@@ -80,9 +80,6 @@ namespace NoteEvolution.ViewModels
                 .Where(ntvm => ntvm.Value?.Value != null)
                 .Select(ntvm => ntvm.Value.Value);
 
-            var rootTextUnit = new TextUnit(documentSource);
-            DocumentSource.GlobalTextUnitListSource.AddOrUpdate(rootTextUnit);
-
             CreateNewSuccessorCommand = ReactiveCommand.Create(ExecuteCreateNewSuccessor);
             CreateNewChildCommand = ReactiveCommand.Create(ExecuteCreateNewChild);
             RemoveSelectedCommand = ReactiveCommand.Create(ExecuteRemoveSelected);
@@ -122,7 +119,7 @@ namespace NoteEvolution.ViewModels
             // move related texts to unsorted notes before removing the note from the document
             foreach (var note in SelectedItem.Value.NoteList)
             {
-                DocumentSource.GlobalNoteListSource.AddOrUpdate(note);
+                Value.GlobalNoteListSource.AddOrUpdate(note);
             }
             ExecuteDeleteSelected();
         }
@@ -164,10 +161,10 @@ namespace NoteEvolution.ViewModels
                 {
                     SelectTextUnit(newTextUnit);
                     newTextUnit.NoteList.FirstOrDefault().Text = sourceNote.Value.Text;
-                    if (!sourceNote.Value.Usage.ContainsKey(DocumentSource.Id))
-                        sourceNote.Value.Usage.Add(DocumentSource.Id, new System.Collections.Generic.HashSet<int>());
-                    if (!sourceNote.Value.Usage[DocumentSource.Id].Contains(newTextUnit.Id))
-                        sourceNote.Value.Usage[DocumentSource.Id].Add(newTextUnit.Id);
+                    if (!sourceNote.Value.Usage.ContainsKey(Value.Id))
+                        sourceNote.Value.Usage.Add(Value.Id, new System.Collections.Generic.HashSet<int>());
+                    if (!sourceNote.Value.Usage[Value.Id].Contains(newTextUnit.Id))
+                        sourceNote.Value.Usage[Value.Id].Add(newTextUnit.Id);
                     sourceNote.Value.IsReadonly = true;
                 }
             }
@@ -177,9 +174,13 @@ namespace NoteEvolution.ViewModels
 
         #region Public Properties
 
-        public Document DocumentSource { get; }
+        public Document Value { get; }
 
-        public IObservableCache<TextUnitViewModel, int> TextUnitListSource => _textUnitListSource;
+        public IObservableCache<TextUnitViewModel, Guid> TextUnitListSource
+        {
+            get => _textUnitListSource;
+            set => this.RaiseAndSetIfChanged(ref _textUnitListSource, value);
+        }
 
         public ReadOnlyObservableCollection<TextUnitViewModel> AllItems => _textUnitListView;
 

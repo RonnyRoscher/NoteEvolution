@@ -13,70 +13,68 @@ namespace NoteEvolution.Models
     {
         #region Private Properties
 
-        private SourceCache<Note, int> _globalNoteListSource;
-        private readonly IObservable<IChangeSet<Note, int>> _noteListSource;
+        private SourceCache<Note, Guid> _globalNoteListSource;
+        private IObservable<IChangeSet<Note, Guid>> _noteListSource;
 
-        private SourceCache<TextUnit, int> _globalTextUnitListSource;
-        private readonly IObservable<IChangeSet<TextUnit, int>> _textUnitListSource;
+        private SourceCache<TextUnit, Guid> _globalTextUnitListSource;
+        private IObservable<IChangeSet<TextUnit, Guid>> _textUnitListSource;
 
         #endregion
 
         public Document()
         {
-            _globalNoteListSource = new SourceCache<Note, int>(n => n.Id);
-            _noteListSource = _globalNoteListSource
-                .Connect()
-                .Filter(n => n.RelatedTextUnit?.RelatedDocumentId == Id);
+            Id = 0;
+            LocalId = Guid.NewGuid();
 
-            _globalTextUnitListSource = new SourceCache<TextUnit, int>(t => t.Id);
-            _textUnitListSource = _globalTextUnitListSource
-                .Connect()
-                .Filter(t => t.RelatedDocumentId == Id);
-
-            // update ModifiedDate on changes to local text unit properties
-            this.WhenAnyValue(d => d.CreationDate, d => d.Title)
-                .Select(_ => DateTime.Now)
-                .Do(d => ModificationDate = d);
-
-            // load associated textunits from db and keep updated when adding and deleting textunits, as well as update ModifiedDate on ModifiedDate changes in any associated textunit
-            TextUnitList = new List<TextUnit>();
-            _textUnitListSource
-                .OnItemAdded(t => { TextUnitList.Add(t); })
-                .OnItemRemoved(t => { TextUnitList.Remove(t); })
-                .WhenPropertyChanged(t => t.ModificationDate)
-                .Throttle(TimeSpan.FromMilliseconds(250))
-                .Select(t => t.Value)
-                .Do(d => ModificationDate = d);
+            InitializeDataSources(new SourceCache<Note, Guid>(n => n.LocalId), new SourceCache<TextUnit, Guid>(t => t.LocalId));
         }
 
-        public Document(SourceCache<Note, int> globalNoteListSource, SourceCache<TextUnit, int> globalTextUnitListSource)
+        public Document(SourceCache<Note, Guid> globalNoteListSource, SourceCache<TextUnit, Guid> globalTextUnitListSource)
         {
             CreationDate = DateTime.Now;
+            Id = 0;
+            LocalId = Guid.NewGuid();
+            CreationDate = DateTime.Now;
+            ModificationDate = DateTime.Now;
 
-            _globalNoteListSource = globalNoteListSource;
-            _noteListSource = _globalNoteListSource
-                .Connect()
-                .Filter(n => n.RelatedTextUnit?.RelatedDocumentId == Id);
+            InitializeDataSources(globalNoteListSource, globalTextUnitListSource);
 
-            _globalTextUnitListSource = globalTextUnitListSource;
-            _textUnitListSource = _globalTextUnitListSource
-                .Connect()
-                .Filter(t => t.RelatedDocumentId == Id);
+            // add initial textunit when a new document is created (detected by it not having related textunits yet)
+            if (TextUnitList.FirstOrDefault() == null)
+                GlobalTextUnitListSource.AddOrUpdate(new TextUnit(this));
+        }
 
-            // update ModifiedDate on changes to local text unit properties
-            this.WhenAnyValue(d => d.CreationDate, d => d.Title)
-                .Select(_ => DateTime.Now)
-                .Do(d => ModificationDate = d);
-            
-            // load associated textunits from db and keep updated when adding and deleting textunits, as well as update ModifiedDate on ModifiedDate changes in any associated textunit
-            TextUnitList = new List<TextUnit>();
-            _textUnitListSource
-                .OnItemAdded(t => { TextUnitList.Add(t); })
-                .OnItemRemoved(t => { TextUnitList.Remove(t); })
-                .WhenPropertyChanged(t => t.ModificationDate)
-                .Throttle(TimeSpan.FromMilliseconds(250))
-                .Select(t => t.Value)
-                .Do(d => ModificationDate = d);
+        public void InitializeDataSources(SourceCache<Note, Guid> globalNoteListSource, SourceCache<TextUnit, Guid> globalTextUnitListSource)
+        {
+            // only set if not already set previously
+            //if (_globalNoteListSource?.Items.Any() != true)
+            {
+                _globalNoteListSource = globalNoteListSource;
+                _noteListSource = _globalNoteListSource
+                    .Connect()
+                    .Filter(n => n.RelatedTextUnit?.RelatedDocumentId == Id);
+
+                _globalTextUnitListSource = globalTextUnitListSource;
+                _textUnitListSource = _globalTextUnitListSource
+                    .Connect()
+                    .Filter(t => t.RelatedDocumentId == Id);
+
+                // update ModifiedDate on changes to local text unit properties
+                this.WhenAnyValue(d => d.CreationDate, d => d.Title)
+                    .Select(_ => DateTime.Now)
+                    .Do(d => ModificationDate = d);
+
+                // load associated textunits from db and keep updated when adding and deleting textunits, as well as update ModifiedDate on ModifiedDate changes in any associated textunit
+                TextUnitList = new List<TextUnit>();
+                _textUnitListSource
+                    // todo: check is that the solution to double add / crashes
+                    .OnItemAdded(t => { TextUnitList.Add(t); })
+                    .OnItemRemoved(t => { TextUnitList.Remove(t); })
+                    .WhenPropertyChanged(t => t.ModificationDate)
+                    .Throttle(TimeSpan.FromMilliseconds(250))
+                    .Select(t => t.Value)
+                    .Do(d => ModificationDate = d);
+            }
         }
 
         #region Public Methods
@@ -107,6 +105,15 @@ namespace NoteEvolution.Models
         {
             get => _id;
             set => this.RaiseAndSetIfChanged(ref _id, value);
+        }
+
+        private Guid _localId;
+
+        [NotMapped]
+        public Guid LocalId
+        {
+            get => _localId;
+            set => this.RaiseAndSetIfChanged(ref _localId, value);
         }
 
         private DateTime _creationDate;
@@ -142,16 +149,16 @@ namespace NoteEvolution.Models
         }
 
         [NotMapped]
-        public IObservable<IChangeSet<Note, int>> NoteListSource => _noteListSource;
+        public IObservable<IChangeSet<Note, Guid>> NoteListSource => _noteListSource;
 
         [NotMapped]
-        public SourceCache<Note, int> GlobalNoteListSource => _globalNoteListSource;
+        public SourceCache<Note, Guid> GlobalNoteListSource => _globalNoteListSource;
 
         [NotMapped]
-        public IObservable<IChangeSet<TextUnit, int>> TextUnitListSource => _textUnitListSource;
+        public IObservable<IChangeSet<TextUnit, Guid>> TextUnitListSource => _textUnitListSource;
 
         [NotMapped]
-        public SourceCache<TextUnit, int> GlobalTextUnitListSource => _globalTextUnitListSource;
+        public SourceCache<TextUnit, Guid> GlobalTextUnitListSource => _globalTextUnitListSource;
 
         #endregion
     }

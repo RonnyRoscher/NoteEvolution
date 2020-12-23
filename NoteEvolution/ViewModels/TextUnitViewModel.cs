@@ -13,9 +13,9 @@ namespace NoteEvolution.ViewModels
     {
         #region Private Properties
 
-        private readonly SourceCache<TextUnit, int> _textUnitChildListSource;
+        private readonly SourceCache<TextUnit, Guid> _textUnitChildListSource;
 
-        private readonly ReadOnlyObservableCollection<TextUnitViewModel> _textUnitChildListView;
+        private ReadOnlyObservableCollection<TextUnitViewModel> _textUnitChildListView;
 
         private Note _firstAddedNote = null;
 
@@ -62,19 +62,26 @@ namespace NoteEvolution.ViewModels
 
             _textUnitChildListSource = textUnit.TextUnitListSource;
 
-            if (_parent?.TextUnitListSource != null)
+            if (_parent != null)
             {
-                var noteComparer = SortExpressionComparer<TextUnitViewModel>.Ascending(tvm => tvm.Value.OrderNr);
-                var noteWasModified = _textUnitChildListSource
-                    .Connect()
-                    .WhenPropertyChanged(tu => tu.ModificationDate)
-                    .Select(_ => Unit.Default);
-                _parent.TextUnitListSource.Connect()
-                    .Filter(n => n.Value.Parent?.Id == Value.Id)
-                    .Sort(noteComparer, noteWasModified)
-                    .ObserveOn(RxApp.MainThreadScheduler)
-                    .Bind(out _textUnitChildListView)
-                    .DisposeMany()
+                _parent
+                    .WhenPropertyChanged(d => d.TextUnitListSource)
+                    .Where(p => p.Value != null)
+                    .Do(d =>
+                    {
+                        var noteComparer = SortExpressionComparer<TextUnitViewModel>.Ascending(tvm => tvm.Value.OrderNr);
+                        var noteWasModified = _textUnitChildListSource
+                            .Connect()
+                            .WhenPropertyChanged(tu => tu.OrderNr)
+                            .Select(_ => Unit.Default);
+                        _parent.TextUnitListSource.Connect()
+                            .Filter(n => n.Value.ParentId == Value.Id)
+                            .Sort(noteComparer, noteWasModified)
+                            .ObserveOn(RxApp.MainThreadScheduler)
+                            .Bind(out _textUnitChildListView)
+                            .DisposeMany()
+                            .Subscribe();
+                    })
                     .Subscribe();
             }
         }
@@ -130,7 +137,7 @@ namespace NoteEvolution.ViewModels
         }
 
         private ObservableAsPropertyHelper<string> _header;
-        public string Header => _header.Value;
+        public string Header => _header?.Value ?? "";
 
         public ReadOnlyObservableCollection<TextUnitViewModel> TextUnitChildListView => _textUnitChildListView;
 

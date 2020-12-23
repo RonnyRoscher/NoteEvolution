@@ -19,6 +19,8 @@ namespace NoteEvolution.Models
         {
             _modificationDateUnlocked = true;
 
+            Id = 0;
+            LocalId = Guid.NewGuid();
             CreationDate = DateTime.Now;
             ModificationDate = DateTime.Now;
             LanguageId = 1;
@@ -54,6 +56,15 @@ namespace NoteEvolution.Models
         {
             get => _id;
             set => this.RaiseAndSetIfChanged(ref _id, value);
+        }
+
+        private Guid _localId;
+
+        [NotMapped]
+        public Guid LocalId
+        {
+            get => _localId;
+            set => this.RaiseAndSetIfChanged(ref _localId, value);
         }
 
         private byte _languageId;

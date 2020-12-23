@@ -12,11 +12,11 @@ namespace NoteEvolution.ViewModels
 {
     public class UnsortedNotesViewModel : ViewModelBase
     {
-        private SourceCache<Note, int> _noteListSource;
+        private SourceCache<Note, Guid> _noteListSource;
 
         private readonly ReadOnlyObservableCollection<NoteViewModel> _noteListView;
 
-        public UnsortedNotesViewModel(SourceCache<Note, int> noteListSource)
+        public UnsortedNotesViewModel(SourceCache<Note, Guid> noteListSource)
         {
             _noteListSource = noteListSource;
 

@@ -13,12 +13,12 @@ namespace NoteEvolution.ViewModels
 {
     public class DocumentCollectionViewModel : ViewModelBase
     {
-        private readonly SourceCache<Note, int> _globalNoteListSource;
-        private readonly SourceCache<TextUnit, int> _globalTextUnitListSource;
-        private readonly SourceCache<Document, int> _globalDocumentListSource;
+        private readonly SourceCache<Note, Guid> _globalNoteListSource;
+        private readonly SourceCache<TextUnit, Guid> _globalTextUnitListSource;
+        private readonly SourceCache<Document, Guid> _globalDocumentListSource;
         private readonly ReadOnlyObservableCollection<DocumentViewModel> _documentListView;
 
-        public DocumentCollectionViewModel(SourceCache<Note, int> globalNoteListSource, SourceCache<TextUnit, int> globalTextUnitListSource, SourceCache<Document, int> globalDocumentListSource)
+        public DocumentCollectionViewModel(SourceCache<Note, Guid> globalNoteListSource, SourceCache<TextUnit, Guid> globalTextUnitListSource, SourceCache<Document, Guid> globalDocumentListSource)
         {
             CreateNewDocumentCommand = ReactiveCommand.Create(ExecuteCreateNewDocument);
             DissolveSelectedDocumentCommand = ReactiveCommand.Create(ExecuteDissolveSelectedDocument);
@@ -31,7 +31,7 @@ namespace NoteEvolution.ViewModels
             UnsortedNotes = new SourceNotesViewModel(_globalNoteListSource);
 
             // build sorted document list
-            var documentComparer = SortExpressionComparer<DocumentViewModel>.Descending(d => d.DocumentSource.ModificationDate);
+            var documentComparer = SortExpressionComparer<DocumentViewModel>.Descending(d => d.Value.ModificationDate);
             var documentWasModified = _globalDocumentListSource
                 .Connect()
                 .WhenPropertyChanged(d => d.ModificationDate)
@@ -76,9 +76,9 @@ namespace NoteEvolution.ViewModels
         void ExecuteDissolveSelectedDocument()
         {
             // move contained notes to unsorted notes
-            if (SelectedItem.DocumentSource.TextUnitList.Count() > 0)
+            if (SelectedItem?.Value.TextUnitList.Count() > 0)
             {
-                foreach (var textUnit in SelectedItem.DocumentSource.TextUnitList)
+                foreach (var textUnit in SelectedItem.Value.TextUnitList)
                 {
                     foreach (var note in textUnit.NoteList)
                     {
@@ -94,10 +94,10 @@ namespace NoteEvolution.ViewModels
 
         void ExecuteDeleteSelectedDocument()
         {
-            var closestItem = _globalDocumentListSource.Items.FirstOrDefault(note => note.ModificationDate > SelectedItem?.DocumentSource.ModificationDate);
+            var closestItem = _globalDocumentListSource.Items.FirstOrDefault(note => note.ModificationDate > SelectedItem?.Value.ModificationDate);
             if (closestItem == null)
-                closestItem = _globalDocumentListSource.Items.LastOrDefault(note => note.ModificationDate < SelectedItem?.DocumentSource.ModificationDate);
-            _globalDocumentListSource.Remove(SelectedItem.DocumentSource);
+                closestItem = _globalDocumentListSource.Items.LastOrDefault(note => note.ModificationDate < SelectedItem?.Value.ModificationDate);
+            _globalDocumentListSource.Remove(SelectedItem.Value);
             SelectDocument(closestItem);
         }
 
@@ -107,9 +107,9 @@ namespace NoteEvolution.ViewModels
 
         public void SelectDocument(Document document)
         {
-            if (document != null && SelectedItem?.DocumentSource.Id != document.Id)
+            if (document != null && SelectedItem?.Value.Id != document.Id)
             {
-                SelectedItem = _documentListView.FirstOrDefault(d => d.DocumentSource.Id == document.Id);
+                SelectedItem = _documentListView.FirstOrDefault(d => d.Value.Id == document.Id);
             }
         }
 

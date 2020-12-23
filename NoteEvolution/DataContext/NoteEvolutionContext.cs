@@ -34,15 +34,15 @@ namespace NoteEvolution.DataContext
 
         private int _localNoteId;
         private readonly ConcurrentDictionary<int, Note> _changedNotes;
-        private readonly SourceCache<Note, int> _noteListSource;
+        private readonly SourceCache<Note, Guid> _noteListSource;
 
         private int _localTextUnitId;
         private readonly ConcurrentDictionary<int, TextUnit> _changedTextUnits;
-        private readonly SourceCache<TextUnit, int> _textUnitListSource;
+        private readonly SourceCache<TextUnit, Guid> _textUnitListSource;
 
         private int _localDocumentId;
         private readonly ConcurrentDictionary<int, Document> _changedDocuments;
-        private readonly SourceCache<Document, int> _documentListSource;
+        private readonly SourceCache<Document, Guid> _documentListSource;
 
         #endregion
 
@@ -73,132 +73,158 @@ namespace NoteEvolution.DataContext
             _localTextUnitId = 1;
             _localDocumentId = 1;
 
-            _changedNotes = new ConcurrentDictionary<int, Note>();
-            _noteListSource = new SourceCache<Note, int>(n => n.Id);
-            _noteListSource
-                .Connect()
-                .OnItemAdded(n => {
-                    if (n.Id == 0)
-                        n.Id = _localNoteId++;
-                    if (Notes.Find(n.Id) == null)
-                    {
-                        Notes.Add(n);
-                        SaveChanges();
-                    }})
-                .OnItemRemoved(n => { 
-                    if (Notes.Find(n.Id) != null) 
-                        Notes.Remove(n); })
-                .DisposeMany()
-                .Subscribe(); 
-            _noteListSource
-                .Connect()
-                .WhenAnyPropertyChanged(new[] { nameof(Note.Text) })
-                .Do(n => {
-                    _changedNotes.TryAdd(n.Id, n);
-                    _updateTimer.Interval = 3000;
-                    if (_isSaved)
-                    {
-                        _isSaved = false;
-                        _eventAggregator.Publish(new NotifySaveStateChanged(true));
-                    }
-                })
-                .Subscribe();
-            GetNoteEntries()
-                .ToObservable()
-                .Subscribe(n => 
-                    { _noteListSource.AddOrUpdate(n); },
-                    e => { /* error */ },
-                    () => { /* success */
-                        if (_noteListSource.Items.Count() > 0)
-                            _localNoteId = _noteListSource.Items.Max(n => n.Id) + 1;
-                    }
-                );
-
-            _changedTextUnits = new ConcurrentDictionary<int, TextUnit>();
-            _textUnitListSource = new SourceCache<TextUnit, int>(t => t.Id);
-            _textUnitListSource
-                .Connect()
-                .OnItemAdded(t => {
-                    if (t.Id == 0)
-                        t.Id = _localTextUnitId++;
-                    if (TextUnits.Find(t.Id) == null)
-                    {
-                        TextUnits.Add(t);
-                        SaveChanges();
-                    }
-                })
-                .OnItemRemoved(t => {
-                    if (TextUnits.Find(t.Id) != null)
-                        TextUnits.Remove(t);
-                })
-                .DisposeMany()
-                .Subscribe();
-            _textUnitListSource
-                .Connect()
-                .WhenAnyPropertyChanged(new[] { nameof(Note.Text) })
-                .Do(t => {
-                    _changedTextUnits.TryAdd(t.Id, t);
-                    _updateTimer.Interval = 3000;
-                    if (_isSaved)
-                    {
-                        _isSaved = false;
-                        _eventAggregator.Publish(new NotifySaveStateChanged(true));
-                    }
-                })
-                .Subscribe();
-            GetTextUnitEntries()
-                .ToObservable()
-                .Subscribe(t =>
-                { _textUnitListSource.AddOrUpdate(t); },
-                    e => { /* error */ },
-                    () => { /* success */
-                        if (_textUnitListSource.Items.Count() > 0)
-                            _localTextUnitId = _textUnitListSource.Items.Max(t => t.Id) + 1;
-                    }
-                );
-
             _changedDocuments = new ConcurrentDictionary<int, Document>();
-            _documentListSource = new SourceCache<Document, int>(d => d.Id);
-            _documentListSource
-                .Connect()
-                .OnItemAdded(d => {
-                    if (d.Id == 0)
-                        d.Id = _localDocumentId++;
-                    if (Documents.Find(d.Id) == null)
-                    {
-                        Documents.Add(d);
-                        SaveChanges();
-                    }
-                })
-                .OnItemRemoved(d => {
-                    if (Documents.Find(d.Id) != null)
-                        Documents.Remove(d);
-                })
-                .DisposeMany()
-                .Subscribe();
-            _documentListSource
-               .Connect()
-               .WhenAnyPropertyChanged(new[] { nameof(Document.Title), nameof(Document.TextUnitList) /*nameof(Document.ModificationDate)*/ })
-               .Do(d => {
-                   _changedDocuments.TryAdd(d.Id, d);
-                   _updateTimer.Interval = 3000;
-                   if (_isSaved)
-                   {
-                       _isSaved = false;
-                       _eventAggregator.Publish(new NotifySaveStateChanged(true));
-                   }
-               })
-               .Subscribe();
+            _documentListSource = new SourceCache<Document, Guid>(d => d.LocalId);
+            _changedTextUnits = new ConcurrentDictionary<int, TextUnit>();
+            _textUnitListSource = new SourceCache<TextUnit, Guid>(t => t.LocalId);
+            _changedNotes = new ConcurrentDictionary<int, Note>();
+            _noteListSource = new SourceCache<Note, Guid>(n => n.LocalId);
+
             GetDocumentEntries()
                 .ToObservable()
                 .Subscribe(d =>
-                { _documentListSource.AddOrUpdate(d); },
-                    e => { /* error */ },
-                    () => { /* success */
-                        if (_documentListSource.Items.Count() > 0)
-                            _localDocumentId = _documentListSource.Items.Max(n => n.Id) + 1;
+                {
+                    d.InitializeDataSources(_noteListSource, _textUnitListSource);
+                    _documentListSource.AddOrUpdate(d);
+                },
+                e => { /* error */ },
+                () => { /* success */
+                    if (_documentListSource.Items.Count() > 0)
+                        _localDocumentId = _documentListSource.Items.Max(n => n.Id) + 1;
+                    _documentListSource
+                        .Connect()
+                        .OnItemAdded(d => {
+                            if (d.Id == 0)
+                                d.Id = _localDocumentId++;
+                            if (Documents.Find(d.Id) == null)
+                            {
+                                Documents.Add(d);
+                                SaveChanges();
+                            }
+                        })
+                        .OnItemRemoved(d => {
+                            if (Documents.Find(d.Id) != null)
+                            {
+                                Documents.Remove(d);
+                                SaveChanges();
+                            }
+                        })
+                        .DisposeMany()
+                        .Subscribe();
+                    _documentListSource
+                        .Connect()
+                        .WhenAnyPropertyChanged(new[] { nameof(Document.Title), nameof(Document.TextUnitList) /*nameof(Document.ModificationDate)*/ })
+                        .Do(d => {
+                            _changedDocuments.TryAdd(d.Id, d);
+                            _updateTimer.Interval = 3000;
+                            if (_isSaved)
+                            {
+                                _isSaved = false;
+                                _eventAggregator.Publish(new NotifySaveStateChanged(true));
+                            }
+                        })
+                        .Subscribe();
                     }
                 );
+
+            GetTextUnitEntries()
+                .ToObservable()
+                .Subscribe(t =>
+                {
+                    t.InitializeDataSources(_noteListSource, _textUnitListSource);
+                    _textUnitListSource.AddOrUpdate(t);
+                },
+                e => { /* error */ },
+                () => { /* success */
+                    if (_textUnitListSource.Items.Count() > 0)
+                    {
+                        _localTextUnitId = _textUnitListSource.Items.Max(t => t.Id) + 1;
+
+                        foreach (var textUnit in _textUnitListSource.Items)
+                        {
+                            if (textUnit.Successor != null)
+                                textUnit.Successor.Predecessor = textUnit;
+                        }
+                    }
+                    _textUnitListSource
+                        .Connect()
+                        .OnItemAdded(t => {
+                            if (t.Id == 0)
+                                t.Id = _localTextUnitId++;
+                            if (TextUnits.Find(t.Id) == null)
+                            {
+                                TextUnits.Add(t);
+                                SaveChanges();
+                            }
+                        })
+                        .OnItemRemoved(t => {
+                            if (TextUnits.Find(t.Id) != null)
+                            {
+                                TextUnits.Remove(t);
+                                SaveChanges();
+                            }
+                        })
+                        .DisposeMany()
+                        .Subscribe();
+                    _textUnitListSource
+                        .Connect()
+                        .WhenAnyPropertyChanged(new[] { nameof(Note.Text) })
+                        .Do(t => {
+                            _changedTextUnits.TryAdd(t.Id, t);
+                            _updateTimer.Interval = 3000;
+                            if (_isSaved)
+                            {
+                                _isSaved = false;
+                                _eventAggregator.Publish(new NotifySaveStateChanged(true));
+                            }
+                        })
+                        .Subscribe();
+                    }
+                );
+
+            GetNoteEntries()
+                .ToObservable()
+                .Subscribe(n =>
+                { _noteListSource.AddOrUpdate(n); },
+                e => { /* error */ },
+                () => { /* success */
+                    if (_noteListSource.Items.Count() > 0)
+                        _localNoteId = _noteListSource.Items.Max(n => n.Id) + 1;
+                    _noteListSource
+                        .Connect()
+                        .OnItemAdded(n => {
+                            if (n.Id == 0)
+                                n.Id = _localNoteId++;
+                            if (Notes.Find(n.Id) == null)
+                            {
+                                Notes.Add(n);
+                                SaveChanges();
+                            }
+                        })
+                        .OnItemRemoved(n => {
+                            if (Notes.Find(n.Id) != null)
+                            {
+                                Notes.Remove(n);
+                                SaveChanges();
+                            }
+                        })
+                        .DisposeMany()
+                        .Subscribe();
+                    _noteListSource
+                        .Connect()
+                        .WhenAnyPropertyChanged(new[] { nameof(Note.Text) })
+                        .Do(n => {
+                            _changedNotes.TryAdd(n.Id, n);
+                            _updateTimer.Interval = 3000;
+                            if (_isSaved)
+                            {
+                                _isSaved = false;
+                                _eventAggregator.Publish(new NotifySaveStateChanged(true));
+                            }
+                        })
+                        .Subscribe();
+                }
+            );
         }
 
         private void OnUpdateTimerElapsedEvent(object sender, ElapsedEventArgs e)
@@ -239,9 +265,7 @@ namespace NoteEvolution.DataContext
 
         private IEnumerable<Document> GetDocumentEntries()
         {
-            IQueryable dbDocumentsQuery = Documents.OrderByDescending(d => d.ModificationDate)
-                .Include(d => d.TextUnitList)
-                .ThenInclude(tu => tu.NoteList);
+            IQueryable dbDocumentsQuery = Documents.OrderByDescending(d => d.ModificationDate);
             foreach (Document dbDocument in dbDocumentsQuery)
                 yield return dbDocument;
         }
@@ -250,9 +274,9 @@ namespace NoteEvolution.DataContext
 
         #region Public Properties
 
-        public SourceCache<Note, int> NoteListSource => _noteListSource;
-        public SourceCache<TextUnit, int> TextUnitListSource => _textUnitListSource;
-        public SourceCache<Document, int> DocumentListSource => _documentListSource;
+        public SourceCache<Note, Guid> NoteListSource => _noteListSource;
+        public SourceCache<TextUnit, Guid> TextUnitListSource => _textUnitListSource;
+        public SourceCache<Document, Guid> DocumentListSource => _documentListSource;
 
         #endregion
     }
