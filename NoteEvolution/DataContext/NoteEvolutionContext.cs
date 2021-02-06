@@ -31,18 +31,23 @@ namespace NoteEvolution.DataContext
 
         private Timer _updateTimer;
         private bool _isSaved;
-
-        private int _localNoteId;
-        private readonly ConcurrentDictionary<int, Note> _changedNotes;
-        private readonly SourceCache<Note, Guid> _noteListSource;
-
-        private int _localTextUnitId;
-        private readonly ConcurrentDictionary<int, TextUnit> _changedTextUnits;
-        private readonly SourceCache<TextUnit, Guid> _textUnitListSource;
+        private bool _isSaving;
 
         private int _localDocumentId;
         private readonly ConcurrentDictionary<int, Document> _changedDocuments;
+        private readonly ConcurrentDictionary<int, Document> _deletedDocuments;
         private readonly SourceCache<Document, Guid> _documentListSource;
+
+        private int _localTextUnitId;
+        private readonly ConcurrentDictionary<int, TextUnit> _changedTextUnits;
+        private readonly ConcurrentDictionary<int, TextUnit> _deletedTextUnits;
+        private readonly SourceCache<TextUnit, Guid> _textUnitListSource;
+
+        private int _localNoteId;
+        private readonly ConcurrentDictionary<int, Note> _addedNotes;
+        private readonly ConcurrentDictionary<int, Note> _changedNotes;
+        private readonly ConcurrentDictionary<int, Note> _deletedNotes;
+        private readonly SourceCache<Note, Guid> _noteListSource;
 
         #endregion
 
@@ -68,16 +73,22 @@ namespace NoteEvolution.DataContext
             _updateTimer.Enabled = true;
 
             _isSaved = true;
+            _isSaving = false;
+
+            _localDocumentId = 1;
+            _changedDocuments = new ConcurrentDictionary<int, Document>();
+            _deletedDocuments = new ConcurrentDictionary<int, Document>();
+            _documentListSource = new SourceCache<Document, Guid>(d => d.LocalId);
+
+            _localTextUnitId = 1;
+            _changedTextUnits = new ConcurrentDictionary<int, TextUnit>();
+            _deletedTextUnits = new ConcurrentDictionary<int, TextUnit>();
+            _textUnitListSource = new SourceCache<TextUnit, Guid>(t => t.LocalId);
 
             _localNoteId = 1;
-            _localTextUnitId = 1;
-            _localDocumentId = 1;
-
-            _changedDocuments = new ConcurrentDictionary<int, Document>();
-            _documentListSource = new SourceCache<Document, Guid>(d => d.LocalId);
-            _changedTextUnits = new ConcurrentDictionary<int, TextUnit>();
-            _textUnitListSource = new SourceCache<TextUnit, Guid>(t => t.LocalId);
+            _addedNotes = new ConcurrentDictionary<int, Note>();
             _changedNotes = new ConcurrentDictionary<int, Note>();
+            _deletedNotes = new ConcurrentDictionary<int, Note>();
             _noteListSource = new SourceCache<Note, Guid>(n => n.LocalId);
 
             GetDocumentEntries()
@@ -105,8 +116,16 @@ namespace NoteEvolution.DataContext
                         .OnItemRemoved(d => {
                             if (Documents.Find(d.Id) != null)
                             {
+                                while (_isSaving)
+                                    System.Threading.Thread.Sleep(300);
+                                _deletedDocuments.TryAdd(d.Id, d);
                                 Documents.Remove(d);
-                                SaveChanges();
+                                _updateTimer.Interval = 3000;
+                                if (_isSaved)
+                                {
+                                    _isSaved = false;
+                                    _eventAggregator.Publish(new NotifySaveStateChanged(true));
+                                }
                             }
                         })
                         .DisposeMany()
@@ -115,6 +134,8 @@ namespace NoteEvolution.DataContext
                         .Connect()
                         .WhenAnyPropertyChanged(new[] { nameof(Document.Title), nameof(Document.TextUnitList) /*nameof(Document.ModificationDate)*/ })
                         .Do(d => {
+                            while (_isSaving)
+                                System.Threading.Thread.Sleep(300);
                             _changedDocuments.TryAdd(d.Id, d);
                             _updateTimer.Interval = 3000;
                             if (_isSaved)
@@ -160,8 +181,16 @@ namespace NoteEvolution.DataContext
                         .OnItemRemoved(t => {
                             if (TextUnits.Find(t.Id) != null)
                             {
+                                while (_isSaving)
+                                    System.Threading.Thread.Sleep(300);
+                                _deletedTextUnits.TryAdd(t.Id, t);
                                 TextUnits.Remove(t);
-                                SaveChanges();
+                                _updateTimer.Interval = 3000;
+                                if (_isSaved)
+                                {
+                                    _isSaved = false;
+                                    _eventAggregator.Publish(new NotifySaveStateChanged(true));
+                                }
                             }
                         })
                         .DisposeMany()
@@ -170,6 +199,8 @@ namespace NoteEvolution.DataContext
                         .Connect()
                         .WhenAnyPropertyChanged(new[] { nameof(Note.Text) })
                         .Do(t => {
+                            while (_isSaving)
+                                System.Threading.Thread.Sleep(300);
                             _changedTextUnits.TryAdd(t.Id, t);
                             _updateTimer.Interval = 3000;
                             if (_isSaved)
@@ -193,19 +224,35 @@ namespace NoteEvolution.DataContext
                     _noteListSource
                         .Connect()
                         .OnItemAdded(n => {
+                            while (_isSaving)
+                                System.Threading.Thread.Sleep(300);
                             if (n.Id == 0)
                                 n.Id = _localNoteId++;
                             if (Notes.Find(n.Id) == null)
                             {
                                 Notes.Add(n);
-                                SaveChanges();
+                                _addedNotes.TryAdd(n.Id, n);
+                                _updateTimer.Interval = 3000;
+                                if (_isSaved)
+                                {
+                                    _isSaved = false;
+                                    _eventAggregator.Publish(new NotifySaveStateChanged(true));
+                                }
                             }
                         })
                         .OnItemRemoved(n => {
                             if (Notes.Find(n.Id) != null)
                             {
+                                while (_isSaving)
+                                    System.Threading.Thread.Sleep(300);
+                                _deletedNotes.TryAdd(n.Id, n);
                                 Notes.Remove(n);
-                                SaveChanges();
+                                _updateTimer.Interval = 3000;
+                                if (_isSaved)
+                                {
+                                    _isSaved = false;
+                                    _eventAggregator.Publish(new NotifySaveStateChanged(true));
+                                }
                             }
                         })
                         .DisposeMany()
@@ -214,6 +261,8 @@ namespace NoteEvolution.DataContext
                         .Connect()
                         .WhenAnyPropertyChanged(new[] { nameof(Note.Text) })
                         .Do(n => {
+                            while (_isSaving)
+                                System.Threading.Thread.Sleep(300);
                             _changedNotes.TryAdd(n.Id, n);
                             _updateTimer.Interval = 3000;
                             if (_isSaved)
@@ -229,22 +278,52 @@ namespace NoteEvolution.DataContext
 
         private void OnUpdateTimerElapsedEvent(object sender, ElapsedEventArgs e)
         {
-            if (_changedNotes?.Count > 0)
-            {
-                Notes.UpdateRange(_changedNotes.Values);
-                _changedNotes.Clear();
-            }
+            _isSaving = true;
             if (_changedDocuments?.Count > 0)
             {
                 Documents.UpdateRange(_changedDocuments.Values);
                 _changedDocuments.Clear();
             }
+            if (_deletedDocuments?.Count > 0)
+            {
+                Documents.RemoveRange(_deletedDocuments.Values);
+                _deletedDocuments.Clear();
+            }
+
+            if (_changedTextUnits?.Count > 0)
+            {
+                TextUnits.UpdateRange(_changedTextUnits.Values);
+                _changedTextUnits.Clear();
+            }
+            if (_deletedTextUnits?.Count > 0)
+            {
+                TextUnits.RemoveRange(_deletedTextUnits.Values);
+                _deletedTextUnits.Clear();
+            }
+
+            if (_addedNotes?.Count > 0)
+            {
+                Notes.AddRange(_addedNotes.Values);
+                _addedNotes.Clear();
+            }
+            if (_changedNotes?.Count > 0)
+            {
+                Notes.UpdateRange(_changedNotes.Values);
+                _changedNotes.Clear();
+            }
+            if (_deletedNotes?.Count > 0)
+            {
+                Notes.RemoveRange(_deletedNotes.Values);
+                _deletedNotes.Clear();
+            }
+
             if (!_isSaved)
             {
                 SaveChanges();
                 _isSaved = true;
                 _eventAggregator.Publish(new NotifySaveStateChanged(false));
             }
+            _isSaving = false;
         }
 
         #region Database Access Functions
