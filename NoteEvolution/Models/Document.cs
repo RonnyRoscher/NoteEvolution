@@ -67,7 +67,6 @@ namespace NoteEvolution.Models
                 // load associated textunits from db and keep updated when adding and deleting textunits, as well as update ModifiedDate on ModifiedDate changes in any associated textunit
                 TextUnitList = new List<TextUnit>();
                 _textUnitListSource
-                    // todo: check is that the solution to double add / crashes
                     .OnItemAdded(t => { TextUnitList.Add(t); })
                     .OnItemRemoved(t => { TextUnitList.Remove(t); })
                     .WhenPropertyChanged(t => t.ModificationDate)
@@ -92,6 +91,15 @@ namespace NoteEvolution.Models
         {
             if (oldTextUnit != null)
                 _globalTextUnitListSource.Remove(oldTextUnit);
+        }
+
+        public void DeleteTextUnit(TextUnit oldTextUnit)
+        {
+            if (oldTextUnit != null)
+            {
+                _globalNoteListSource.RemoveKeys(oldTextUnit.NoteList.Select(n => n.LocalId).ToList());
+                _globalTextUnitListSource.Remove(oldTextUnit);
+            }
         }
 
         #endregion

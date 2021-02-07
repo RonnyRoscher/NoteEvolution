@@ -75,19 +75,14 @@ namespace NoteEvolution.ViewModels
 
         void ExecuteDissolveSelectedDocument()
         {
-            // move contained notes to unsorted notes
-            if (SelectedItem?.Value.TextUnitList.Count() > 0)
-            {
-                foreach (var textUnit in SelectedItem.Value.TextUnitList)
-                {
-                    foreach (var note in textUnit.NoteList)
-                    {
-                        // todo: should move now only mean change relations, as its the same source cache
-                        _globalNoteListSource.AddOrUpdate(note);
-                    }
-                }
-            }
-            ExecuteDeleteSelectedDocument();
+            var closestItem = _globalDocumentListSource.Items.FirstOrDefault(note => note.ModificationDate > SelectedItem?.Value.ModificationDate);
+            if (closestItem == null)
+                closestItem = _globalDocumentListSource.Items.LastOrDefault(note => note.ModificationDate < SelectedItem?.Value.ModificationDate);
+            var oldTextUnits = SelectedItem.Value.TextUnitList.ToList();
+            foreach (var oldTextUnit in oldTextUnits)
+                SelectedItem.Value.RemoveTextUnit(oldTextUnit);
+            _globalDocumentListSource.Remove(SelectedItem.Value);
+            SelectDocument(closestItem);
         }
 
         public ReactiveCommand<Unit, Unit> DeleteSelectedDocumentCommand { get; }
@@ -97,6 +92,9 @@ namespace NoteEvolution.ViewModels
             var closestItem = _globalDocumentListSource.Items.FirstOrDefault(note => note.ModificationDate > SelectedItem?.Value.ModificationDate);
             if (closestItem == null)
                 closestItem = _globalDocumentListSource.Items.LastOrDefault(note => note.ModificationDate < SelectedItem?.Value.ModificationDate);
+            var oldTextUnits = SelectedItem.Value.TextUnitList.ToList();
+            foreach (var oldTextUnit in oldTextUnits)
+                SelectedItem.Value.DeleteTextUnit(oldTextUnit);
             _globalDocumentListSource.Remove(SelectedItem.Value);
             SelectDocument(closestItem);
         }

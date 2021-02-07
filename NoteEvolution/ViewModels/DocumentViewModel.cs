@@ -116,12 +116,20 @@ namespace NoteEvolution.ViewModels
 
         void ExecuteRemoveSelected()
         {
-            // move related texts to unsorted notes before removing the note from the document
+            // move related texts to unsorted notes before removing the note from the document, by removing their document association
             foreach (var note in SelectedItem.Value.NoteList)
             {
-                Value.GlobalNoteListSource.AddOrUpdate(note);
+                note.RelatedTextUnitId = null;
+                note.RelatedTextUnit = null;
             }
-            ExecuteDeleteSelected();
+            if (SelectedItem != null)
+            {
+                var closestItem = _textUnitListView.FirstOrDefault(note => note.Value.OrderNr > SelectedItem.Value.OrderNr);
+                if (closestItem == null)
+                    closestItem = _textUnitListView.LastOrDefault(note => note.Value.OrderNr < SelectedItem.Value.OrderNr);
+                SelectedItem.Value.RelatedDocument.RemoveTextUnit(SelectedItem.Value);
+                SelectedItem = (SelectedItem != closestItem) ? closestItem : null;
+            }
         }
 
         public ReactiveCommand<Unit, Unit> DeleteSelectedCommand { get; }
@@ -133,7 +141,7 @@ namespace NoteEvolution.ViewModels
                 var closestItem = _textUnitListView.FirstOrDefault(note => note.Value.OrderNr > SelectedItem.Value.OrderNr);
                 if (closestItem == null)
                     closestItem = _textUnitListView.LastOrDefault(note => note.Value.OrderNr < SelectedItem.Value.OrderNr);
-                SelectedItem.Value.RelatedDocument.RemoveTextUnit(SelectedItem.Value);
+                SelectedItem.Value.RelatedDocument.DeleteTextUnit(SelectedItem.Value);
                 SelectedItem = (SelectedItem != closestItem) ? closestItem : null;
             }
         }
