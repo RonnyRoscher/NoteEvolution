@@ -263,12 +263,15 @@ namespace NoteEvolution.DataContext
                         .Do(n => {
                             while (_isSaving)
                                 System.Threading.Thread.Sleep(300);
-                            _changedNotes.TryAdd(n.Id, n);
-                            _updateTimer.Interval = 3000;
-                            if (_isSaved)
+                            if (!_addedNotes.ContainsKey(n.Id))
                             {
-                                _isSaved = false;
-                                _eventAggregator.Publish(new NotifySaveStateChanged(true));
+                                _changedNotes.TryAdd(n.Id, n);
+                                _updateTimer.Interval = 3000;
+                                if (_isSaved)
+                                {
+                                    _isSaved = false;
+                                    _eventAggregator.Publish(new NotifySaveStateChanged(true));
+                                }
                             }
                         })
                         .Subscribe();
@@ -278,52 +281,54 @@ namespace NoteEvolution.DataContext
 
         private void OnUpdateTimerElapsedEvent(object sender, ElapsedEventArgs e)
         {
-            _isSaving = true;
-            if (_changedDocuments?.Count > 0)
+            if (!_isSaved && !_isSaving)
             {
-                Documents.UpdateRange(_changedDocuments.Values);
-                _changedDocuments.Clear();
-            }
-            if (_deletedDocuments?.Count > 0)
-            {
-                Documents.RemoveRange(_deletedDocuments.Values);
-                _deletedDocuments.Clear();
-            }
+                _isSaving = true;
 
-            if (_changedTextUnits?.Count > 0)
-            {
-                TextUnits.UpdateRange(_changedTextUnits.Values);
-                _changedTextUnits.Clear();
-            }
-            if (_deletedTextUnits?.Count > 0)
-            {
-                TextUnits.RemoveRange(_deletedTextUnits.Values);
-                _deletedTextUnits.Clear();
-            }
+                if (_changedDocuments?.Count > 0)
+                {
+                    Documents.UpdateRange(_changedDocuments.Values);
+                    _changedDocuments.Clear();
+                }
+                if (_deletedDocuments?.Count > 0)
+                {
+                    Documents.RemoveRange(_deletedDocuments.Values);
+                    _deletedDocuments.Clear();
+                }
 
-            if (_addedNotes?.Count > 0)
-            {
-                Notes.AddRange(_addedNotes.Values);
-                _addedNotes.Clear();
-            }
-            if (_changedNotes?.Count > 0)
-            {
-                Notes.UpdateRange(_changedNotes.Values);
-                _changedNotes.Clear();
-            }
-            if (_deletedNotes?.Count > 0)
-            {
-                Notes.RemoveRange(_deletedNotes.Values);
-                _deletedNotes.Clear();
-            }
+                if (_changedTextUnits?.Count > 0)
+                {
+                    TextUnits.UpdateRange(_changedTextUnits.Values);
+                    _changedTextUnits.Clear();
+                }
+                if (_deletedTextUnits?.Count > 0)
+                {
+                    TextUnits.RemoveRange(_deletedTextUnits.Values);
+                    _deletedTextUnits.Clear();
+                }
 
-            if (!_isSaved)
-            {
+                // required to prevent crash on immediate text change before it was saved
+                if (_addedNotes?.Count > 0)
+                {
+                    _addedNotes.Clear();
+                }
+                if (_changedNotes?.Count > 0)
+                {
+                    Notes.UpdateRange(_changedNotes.Values);
+                    _changedNotes.Clear();
+                }
+                if (_deletedNotes?.Count > 0)
+                {
+                    Notes.RemoveRange(_deletedNotes.Values);
+                    _deletedNotes.Clear();
+                }
+
                 SaveChanges();
                 _isSaved = true;
                 _eventAggregator.Publish(new NotifySaveStateChanged(false));
+
+                _isSaving = false;
             }
-            _isSaving = false;
         }
 
         #region Database Access Functions
