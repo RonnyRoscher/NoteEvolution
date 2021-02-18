@@ -29,9 +29,9 @@ namespace NoteEvolution.Models
 
             // update ModifiedDate on changes to local note properties
             this.WhenAnyValue(n => n.Text, n => n._modificationDateUnlocked)
-                .Skip(2)
-                .Throttle(TimeSpan.FromSeconds(0.5), RxApp.TaskpoolScheduler)
+                .Skip(1)
                 .Where(n => n.Item2)
+                .Throttle(TimeSpan.FromSeconds(0.5), RxApp.MainThreadScheduler)
                 .Do(n => ModificationDate = DateTime.Now)
                 .Subscribe();
         }
@@ -108,7 +108,11 @@ namespace NoteEvolution.Models
         public int? RelatedTextUnitId
         {
             get => _relatedTextUnitId;
-            set => this.RaiseAndSetIfChanged(ref _relatedTextUnitId, value);
+            set
+            {
+                this.RaiseAndSetIfChanged(ref _relatedTextUnitId, value);
+                ModificationDate = DateTime.Now;
+            }
         }
 
         private TextUnit _relatedTextUnit;

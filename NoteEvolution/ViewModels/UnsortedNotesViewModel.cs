@@ -20,9 +20,12 @@ namespace NoteEvolution.ViewModels
         {
             _noteListSource = noteListSource;
 
-            var unsortedNoteFilter = noteListSource
+            var unsortedNoteFilterAddDel = noteListSource
                 .Connect()
-                //.WhenAnyPropertyChanged(new[] { nameof(Note.RelatedTextUnitId) })
+                .Select(BuildUnsortedNotesFilter);
+            var unsortedNoteFilterChange = noteListSource
+                .Connect()
+                .WhenAnyPropertyChanged(new[] { nameof(Note.RelatedTextUnitId) })
                 .Select(BuildUnsortedNotesFilter);
             var noteComparer = SortExpressionComparer<NoteViewModel>.Descending(nvm => nvm.Value.ModificationDate);
             var noteWasModified = _noteListSource
@@ -32,7 +35,8 @@ namespace NoteEvolution.ViewModels
                 .Select(_ => Unit.Default);
             _noteListSource
                 .Connect()
-                .Filter(unsortedNoteFilter)
+                .AutoRefreshOnObservable(_ => unsortedNoteFilterChange)
+                .Filter(unsortedNoteFilterAddDel)
                 .Transform(n => new NoteViewModel(n))
                 .Sort(noteComparer, noteWasModified)
                 .ObserveOn(RxApp.MainThreadScheduler)
@@ -49,10 +53,7 @@ namespace NoteEvolution.ViewModels
 
         private Func<Note, bool> BuildUnsortedNotesFilter(object param)
         {
-            return note =>
-            {
-                return note.RelatedTextUnitId == null;
-            };
+            return n => n.RelatedTextUnitId == null;
         }
 
         #region Commands
