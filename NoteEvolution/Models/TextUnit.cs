@@ -45,7 +45,12 @@ namespace NoteEvolution.Models
             // add initial note when a new textunit is created (detected by it not having related notes yet)
             // todo: set CurrentTreeDepth to 0 on TextUnit create
             if (NoteList.FirstOrDefault() == null)
-                _globalNoteListSource.AddOrUpdate(new Note { RelatedTextUnit = this, RelatedTextUnitId = Id });
+            {
+                var initialNote = new Note();
+                _globalNoteListSource.AddOrUpdate(initialNote);
+                initialNote.RelatedTextUnit = this;
+                initialNote.RelatedTextUnitId = Id;
+            }
         }
 
         public void InitializeDataSources(SourceCache<Note, Guid> globalNoteListSource, SourceCache<TextUnit, Guid> globalTextUnitListSource)
