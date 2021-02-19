@@ -245,14 +245,25 @@ namespace NoteEvolution.DataContext
                             {
                                 while (_isSaving)
                                     System.Threading.Thread.Sleep(300);
-                                _deletedNotes.TryAdd(n.Id, n);
+                                if (_addedNotes.ContainsKey(n.Id))
+                                {
+                                    _addedNotes.TryRemove(n.Id, out var _);
+                                    var isSaved = HasChanges();
+                                    if (isSaved != _isSaved)
+                                    {
+                                        _isSaved = isSaved;
+                                        _eventAggregator.Publish(new NotifySaveStateChanged(true));
+                                    }
+                                } else {
+                                    _deletedNotes.TryAdd(n.Id, n);
+                                    if (_isSaved)
+                                    {
+                                        _isSaved = false;
+                                        _eventAggregator.Publish(new NotifySaveStateChanged(true));
+                                    }
+                                }
                                 Notes.Remove(n);
                                 _updateTimer.Interval = 3000;
-                                if (_isSaved)
-                                {
-                                    _isSaved = false;
-                                    _eventAggregator.Publish(new NotifySaveStateChanged(true));
-                                }
                             }
                         })
                         .DisposeMany()
@@ -277,6 +288,19 @@ namespace NoteEvolution.DataContext
                         .Subscribe();
                 }
             );
+        }
+
+        private bool HasChanges()
+        {
+            if (_addedNotes?.Count > 0 ||
+                _changedNotes?.Count > 0 ||
+                _deletedNotes?.Count > 0 ||
+                _changedTextUnits?.Count > 0 ||
+                _deletedTextUnits?.Count > 0 ||
+                _changedDocuments?.Count > 0 ||
+                _deletedDocuments?.Count > 0)
+                return true;
+            return false;
         }
 
         private void OnUpdateTimerElapsedEvent(object sender, ElapsedEventArgs e)
