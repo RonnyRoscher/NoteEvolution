@@ -19,7 +19,10 @@ namespace NoteEvolution.ViewModels
         {
             _relatedNoteListSource = relatedNoteListSource;
 
-            var relatedNoteFilter = relatedNoteListSource
+            var relatedNoteFilterAddDel = relatedNoteListSource
+                .Connect()
+                .Select(BuildSourceNotesFilter);
+            var relatedNoteFilterChange = relatedNoteListSource
                 .Connect()
                 .WhenAnyPropertyChanged(new[] { nameof(Note.RelatedTextUnitId) })
                 .Select(BuildSourceNotesFilter);
@@ -31,7 +34,8 @@ namespace NoteEvolution.ViewModels
                 .Select(_ => Unit.Default);
             _relatedNoteListSource
                 .Connect()
-                .Filter(relatedNoteFilter)
+                .AutoRefreshOnObservable(_ => relatedNoteFilterChange)
+                .Filter(relatedNoteFilterAddDel)
                 .Transform(n => new NoteViewModel(n))
                 .Sort(noteComparer, noteWasModified)
                 .ObserveOn(RxApp.MainThreadScheduler)
@@ -51,10 +55,7 @@ namespace NoteEvolution.ViewModels
 
         private Func<Note, bool> BuildSourceNotesFilter(object param)
         {
-            return note =>
-            {
-                return note.RelatedTextUnitId == null;
-            };
+            return note => note.RelatedTextUnitId == null;
         }
 
         #region Public Methods
