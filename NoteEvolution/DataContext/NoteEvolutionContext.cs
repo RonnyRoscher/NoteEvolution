@@ -228,6 +228,7 @@ namespace NoteEvolution.DataContext
                                 System.Threading.Thread.Sleep(300);
                             if (n.Id == 0)
                                 n.Id = _localNoteId++;
+                            n.IsReadonly = n.DerivedNoteId != null;
                             if (Notes.Find(n.Id) == null)
                             {
                                 Notes.Add(n);

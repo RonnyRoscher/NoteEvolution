@@ -97,7 +97,8 @@ namespace NoteEvolution.Models
         {
             if (oldTextUnit != null)
             {
-                _globalNoteListSource.RemoveKeys(oldTextUnit.NoteList.Select(n => n.LocalId).ToList());
+                if (oldTextUnit.NoteList.Count > 0)
+                    _globalNoteListSource.Remove(oldTextUnit.NoteList.ToList());
                 _globalTextUnitListSource.Remove(oldTextUnit);
             }
         }

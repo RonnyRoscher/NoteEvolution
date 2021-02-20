@@ -7,6 +7,7 @@ using DynamicData;
 using DynamicData.Binding;
 using ReactiveUI;
 using NoteEvolution.Models;
+using System.Collections.Generic;
 
 namespace NoteEvolution.ViewModels
 {
@@ -116,14 +117,26 @@ namespace NoteEvolution.ViewModels
 
         void ExecuteRemoveSelected()
         {
-            // move related texts to unsorted notes before removing the note from the document, by removing their document association
-            foreach (var note in SelectedItem.Value.NoteList)
-            {
-                note.RelatedTextUnitId = null;
-                note.RelatedTextUnit = null;
-            }
             if (SelectedItem != null)
             {
+                var delNotes = new List<Note>();
+                foreach (var note in SelectedItem.Value.NoteList)
+                {
+                    var sourceNote = Value.GlobalNoteListSource.Items.FirstOrDefault(n => n.DerivedNoteId == note.Id);
+                    // if source note exists, unlock it and delete the derived one
+                    if (sourceNote != null)
+                    {
+                        sourceNote.DerivedNote = null;
+                        sourceNote.DerivedNoteId = null;
+                        delNotes.Add(note);
+                    }
+                    // move related texts to unsorted notes before removing the note from the document (by removing their document association)
+                    note.RelatedTextUnitId = null;
+                    note.RelatedTextUnit = null;
+                }
+                if (delNotes.Count > 0)
+                    Value.GlobalNoteListSource.Remove(delNotes);
+                SelectedItem.Value.NoteList.Clear();
                 var closestItem = _textUnitListView.FirstOrDefault(note => note.Value.OrderNr > SelectedItem.Value.OrderNr);
                 if (closestItem == null)
                     closestItem = _textUnitListView.LastOrDefault(note => note.Value.OrderNr < SelectedItem.Value.OrderNr);
@@ -173,7 +186,8 @@ namespace NoteEvolution.ViewModels
                         sourceNote.Value.Usage.Add(Value.Id, new System.Collections.Generic.HashSet<int>());
                     if (!sourceNote.Value.Usage[Value.Id].Contains(newTextUnit.Id))
                         sourceNote.Value.Usage[Value.Id].Add(newTextUnit.Id);
-                    sourceNote.Value.IsReadonly = true;
+                    sourceNote.Value.DerivedNote = newTextUnit.NoteList.FirstOrDefault();
+                    sourceNote.Value.DerivedNoteId = sourceNote.Value.DerivedNote?.Id;
                 }
             }
         }

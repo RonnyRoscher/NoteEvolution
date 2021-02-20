@@ -24,7 +24,6 @@ namespace NoteEvolution.Models
             CreationDate = DateTime.Now;
             ModificationDate = DateTime.Now;
             LanguageId = 1;
-            IsReadonly = false;
             Usage = new Dictionary<int, HashSet<int>>();
 
             // update ModifiedDate on changes to local note properties
@@ -126,8 +125,36 @@ namespace NoteEvolution.Models
             set => this.RaiseAndSetIfChanged(ref _relatedTextUnit, value);
         }
 
+        private int? _derivedNoteId;
+
+        /// <summary>
+        /// The id of the note that is directly derived from this one or null if this note is not a source note.
+        /// </summary>
+        [ForeignKey("DerivedNote")]
+        public int? DerivedNoteId
+        {
+            get => _derivedNoteId;
+            set
+            {
+                this.RaiseAndSetIfChanged(ref _derivedNoteId, value);
+                IsReadonly = _derivedNoteId != null;
+            }
+        }
+
+        private Note _derivedNote;
+
+        /// <summary>
+        /// The note that is directly derived from this one.
+        /// </summary>
+        public virtual Note DerivedNote
+        {
+            get => _derivedNote;
+            set => this.RaiseAndSetIfChanged(ref _derivedNote, value);
+        }
+
         private bool _isReadonly;
 
+        [NotMapped]
         public bool IsReadonly
         {
             get => _isReadonly;
