@@ -393,6 +393,7 @@ namespace NoteEvolution.Models
         /// <summary>
         /// A number between in predecessor and its successor used for sequencial ordering of textunits.
         /// </summary>
+        [NotMapped]
         public double OrderNr
         {
             get => _orderNr;

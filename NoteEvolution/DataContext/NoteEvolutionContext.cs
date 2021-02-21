@@ -159,6 +159,8 @@ namespace NoteEvolution.DataContext
                 () => { /* success */
                     if (_textUnitListSource.Items.Count() > 0)
                     {
+                        InitializeOrderNumbers();
+
                         _localTextUnitId = _textUnitListSource.Items.Max(t => t.Id) + 1;
 
                         foreach (var textUnit in _textUnitListSource.Items)
@@ -290,6 +292,39 @@ namespace NoteEvolution.DataContext
                 }
             );
         }
+
+        void InitializeOrderNumbers()
+        {
+            var documentsContent = _textUnitListSource.Items.GroupBy(t => t.RelatedDocumentId);
+            foreach (var documentTextUnits in documentsContent)
+            {
+                var documentOrderNr = 0;
+                var rootLevelTextUnits = documentTextUnits.Where(t => t.ParentId == null).ToList();
+                SetOrderNrR(GetSortedList(rootLevelTextUnits), ref documentOrderNr);
+            }
+        }
+
+        void SetOrderNrR(List<TextUnit> sortedLocalLevelGroupTextUnits, ref int currentOrderNr, int? parentId = null)
+        {
+            foreach (var currentTextUnit in sortedLocalLevelGroupTextUnits)
+            {
+                currentTextUnit.OrderNr = currentOrderNr++;
+                SetOrderNrR(GetSortedList(currentTextUnit.TextUnitChildList), ref currentOrderNr, currentTextUnit.Id);
+            }
+        }
+
+        List<TextUnit> GetSortedList(List<TextUnit> localLevelGroupTextUnits)
+        {
+            var sortedList = new List<TextUnit>();
+            var currentElement = localLevelGroupTextUnits.FirstOrDefault(t => t.SuccessorId == null);
+            while(currentElement != null)
+            {
+                sortedList.Insert(0, currentElement);
+                currentElement = localLevelGroupTextUnits.FirstOrDefault(t => t.SuccessorId == currentElement.Id);
+            }
+            return sortedList;
+        }
+
 
         private bool HasChanges()
         {
