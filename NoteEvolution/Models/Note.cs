@@ -1,10 +1,10 @@
 ﻿using System;
 using System.Reactive.Linq;
 using System.Linq;
-using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations.Schema;
 using System.ComponentModel.DataAnnotations;
 using ReactiveUI;
+using System.Collections.ObjectModel;
 
 namespace NoteEvolution.Models
 {
@@ -24,7 +24,11 @@ namespace NoteEvolution.Models
             CreationDate = DateTime.Now;
             ModificationDate = DateTime.Now;
             LanguageId = 1;
-            Usage = new Dictionary<int, HashSet<int>>();
+
+            SourceNotes = new ObservableCollection<Note>();
+            DerivedNotes = new ObservableCollection<Note>();
+
+            this.DerivedNotes.CollectionChanged += DerivedNotes_CollectionChanged;
 
             // update ModifiedDate on changes to local note properties
             this.WhenAnyValue(n => n.Text, n => n._modificationDateUnlocked)
@@ -33,6 +37,11 @@ namespace NoteEvolution.Models
                 .Throttle(TimeSpan.FromSeconds(0.5), RxApp.MainThreadScheduler)
                 .Do(n => ModificationDate = DateTime.Now)
                 .Subscribe();
+        }
+
+        private void DerivedNotes_CollectionChanged(object sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
+        {
+            IsReadonly = DerivedNotes.Count > 0;
         }
 
         #region Public Methods
@@ -125,33 +134,6 @@ namespace NoteEvolution.Models
             set => this.RaiseAndSetIfChanged(ref _relatedTextUnit, value);
         }
 
-        private int? _derivedNoteId;
-
-        /// <summary>
-        /// The id of the note that is directly derived from this one or null if this note is not a source note.
-        /// </summary>
-        [ForeignKey("DerivedNote")]
-        public int? DerivedNoteId
-        {
-            get => _derivedNoteId;
-            set
-            {
-                this.RaiseAndSetIfChanged(ref _derivedNoteId, value);
-                IsReadonly = _derivedNoteId != null;
-            }
-        }
-
-        private Note _derivedNote;
-
-        /// <summary>
-        /// The note that is directly derived from this one.
-        /// </summary>
-        public virtual Note DerivedNote
-        {
-            get => _derivedNote;
-            set => this.RaiseAndSetIfChanged(ref _derivedNote, value);
-        }
-
         private bool _isReadonly;
 
         [NotMapped]
@@ -161,16 +143,20 @@ namespace NoteEvolution.Models
             set => this.RaiseAndSetIfChanged(ref _isReadonly, value);
         }
 
-        private Dictionary<int, HashSet<int>> _usage;
+        private ObservableCollection<Note> _sourceNotes;
 
-        /// <summary>
-        /// Usage of this note in documents and its text units.
-        /// </summary>
-        [NotMapped]
-        public Dictionary<int, HashSet<int>> Usage
+        public virtual ObservableCollection<Note> SourceNotes
         {
-            get => _usage;
-            set => this.RaiseAndSetIfChanged(ref _usage, value);
+            get => _sourceNotes;
+            set => this.RaiseAndSetIfChanged(ref _sourceNotes, value);
+        }
+
+        private ObservableCollection<Note> _derivedNotes;
+
+        public virtual ObservableCollection<Note> DerivedNotes
+        {
+            get => _derivedNotes;
+            set => this.RaiseAndSetIfChanged(ref _derivedNotes, value);
         }
 
         #endregion

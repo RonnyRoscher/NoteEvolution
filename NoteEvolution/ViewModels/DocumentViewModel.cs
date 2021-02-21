@@ -122,13 +122,14 @@ namespace NoteEvolution.ViewModels
                 var delNotes = new List<Note>();
                 foreach (var note in SelectedItem.Value.NoteList)
                 {
-                    var sourceNote = Value.GlobalNoteListSource.Items.FirstOrDefault(n => n.DerivedNoteId == note.Id);
+                    var sourceNote = Value.GlobalNoteListSource.Items.FirstOrDefault(n => n.DerivedNotes.Contains(note));
                     // if source note exists, unlock it and delete the derived one
                     if (sourceNote != null)
                     {
-                        sourceNote.DerivedNote = null;
-                        sourceNote.DerivedNoteId = null;
-                        delNotes.Add(note);
+                        note.SourceNotes.Remove(sourceNote);
+                        sourceNote.DerivedNotes.Remove(note);
+                        if (sourceNote.SourceNotes.Count == 0)
+                            delNotes.Add(note);
                     }
                     // move related texts to unsorted notes before removing the note from the document (by removing their document association)
                     note.RelatedTextUnitId = null;
@@ -181,13 +182,13 @@ namespace NoteEvolution.ViewModels
                 if (newTextUnit != null)
                 {
                     SelectTextUnit(newTextUnit);
-                    newTextUnit.NoteList.FirstOrDefault().Text = sourceNote.Value.Text;
-                    if (!sourceNote.Value.Usage.ContainsKey(Value.Id))
-                        sourceNote.Value.Usage.Add(Value.Id, new System.Collections.Generic.HashSet<int>());
-                    if (!sourceNote.Value.Usage[Value.Id].Contains(newTextUnit.Id))
-                        sourceNote.Value.Usage[Value.Id].Add(newTextUnit.Id);
-                    sourceNote.Value.DerivedNote = newTextUnit.NoteList.FirstOrDefault();
-                    sourceNote.Value.DerivedNoteId = sourceNote.Value.DerivedNote?.Id;
+                    var initialNote = newTextUnit.NoteList.FirstOrDefault();
+                    if (initialNote != null)
+                    {
+                        initialNote.Text = sourceNote.Value.Text;
+                        initialNote.SourceNotes.Add(sourceNote.Value);
+                        sourceNote.Value.DerivedNotes.Add(initialNote);
+                    }
                 }
             }
         }

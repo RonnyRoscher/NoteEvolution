@@ -230,7 +230,7 @@ namespace NoteEvolution.DataContext
                                 System.Threading.Thread.Sleep(300);
                             if (n.Id == 0)
                                 n.Id = _localNoteId++;
-                            n.IsReadonly = n.DerivedNoteId != null;
+                            n.IsReadonly = n.DerivedNotes.Any();
                             if (Notes.Find(n.Id) == null)
                             {
                                 Notes.Add(n);
@@ -395,7 +395,7 @@ namespace NoteEvolution.DataContext
 
         private IEnumerable<Note> GetNoteEntries()
         {
-            IQueryable dbNotesQuery = Notes.OrderByDescending(n => n.ModificationDate);
+            IQueryable dbNotesQuery = Notes.Include(n => n.DerivedNotes).Include(n => n.SourceNotes).OrderByDescending(n => n.ModificationDate);
             foreach (Note dbNote in dbNotesQuery)
                 yield return dbNote;
         }
