@@ -2,8 +2,8 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>netcoreapp3.1</TargetFramework>
-    <AssemblyVersion>0.0.5.1</AssemblyVersion>
-    <FileVersion>0.0.5.1</FileVersion>
+    <AssemblyVersion>0.0.5.2</AssemblyVersion>
+    <FileVersion>0.0.5.2</FileVersion>
     <ApplicationIcon>Assets\logo.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
@@ -25,14 +25,15 @@
     <AvaloniaResource Remove="Views\UnsortedNotesView.xaml" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="Avalonia" Version="0.9.12" />
-    <PackageReference Include="Avalonia.Desktop" Version="0.9.12" />
-    <PackageReference Include="Avalonia.ReactiveUI" Version="0.9.12" />
-    <PackageReference Include="Avalonia.Xaml.Behaviors" Version="0.9.12" />
-    <PackageReference Include="Avalonia.Xaml.Interactions.Custom" Version="0.9.12" />
-    <PackageReference Include="Avalonia.Xaml.Interactivity" Version="0.9.12" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="5.0.1" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="5.0.1" />
+    <PackageReference Include="Avalonia" Version="0.10.0" />
+    <PackageReference Include="Avalonia.Desktop" Version="0.10.0" />
+    <PackageReference Include="Avalonia.Diagnostics" Version="0.10.0" />
+    <PackageReference Include="Avalonia.ReactiveUI" Version="0.10.0" />
+    <PackageReference Include="Avalonia.Xaml.Behaviors" Version="0.10.0" />
+    <PackageReference Include="Avalonia.Xaml.Interactions.Custom" Version="0.10.0" />
+    <PackageReference Include="Avalonia.Xaml.Interactivity" Version="0.10.0" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="5.0.3" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="5.0.3" />
     <PackageReference Include="PubSub" Version="4.0.1" />
   </ItemGroup>
   <ItemGroup>
