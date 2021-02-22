@@ -19,12 +19,7 @@
 
   <DockPanel LastChildFill="True">
     
-    <ListBox x:Name="LvNoteList" VirtualizationMode="Simple" Items="{Binding Items}" SelectedItem="{Binding SelectedItem}">
-      <ListBox.Styles>
-        <Style Selector="ListBoxItem">
-          <Setter Property="Margin" Value="-2 -2 -2 2"/>
-        </Style>
-      </ListBox.Styles>
+    <ListBox x:Name="LvNoteList" Padding="0" VirtualizationMode="Simple" Items="{Binding Items}" SelectedItem="{Binding SelectedItem}">
       <ListBox.ItemTemplate>
         <DataTemplate>
           <Border BorderBrush="Gray" Background="White" BorderThickness="1" MinHeight="42" MaxHeight="56" Margin="0 1" Padding="4" PointerPressed="StartMoveOperation" PointerReleased="EndMoveOperation">
