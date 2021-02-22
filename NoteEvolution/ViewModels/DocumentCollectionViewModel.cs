@@ -58,6 +58,8 @@ namespace NoteEvolution.ViewModels
                 .OnItemAdded(d => LastAddedDocument = d)
                 .DisposeMany()
                 .Subscribe();
+
+            SelectDocument(_globalDocumentListSource.Items.OrderByDescending(n => n.ModificationDate).FirstOrDefault());
         }
 
         #region Commands
