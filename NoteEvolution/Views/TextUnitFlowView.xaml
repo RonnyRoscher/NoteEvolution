@@ -33,8 +33,8 @@
     
   </UserControl.Styles>
 
-  <DockPanel Margin="3" LastChildFill="True">
-    <TextBlock DockPanel.Dock="Top" Margin="0 0 0 3" Text="Content"/>
+  <DockPanel Margin="3 3 6 0" LastChildFill="True">
+    <TextBlock DockPanel.Dock="Top" Margin="0 0 0 5" Text="Content"/>
     <ListBox Name="lbFlowDocument" Items="{Binding AllItems}" SelectedItem="{Binding SelectedItem, Mode=TwoWay}" PointerReleased="EndMoveOperation" PointerMoved="MoveOperation">
       <ListBox.DataTemplates>
         <DataTemplate>

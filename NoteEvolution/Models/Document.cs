@@ -19,6 +19,8 @@ namespace NoteEvolution.Models
         private SourceCache<TextUnit, Guid> _globalTextUnitListSource;
         private IObservable<IChangeSet<TextUnit, Guid>> _textUnitListSource;
 
+        private SourceCache<ContentSource, Guid> _globalContentSourceListSource;
+
         #endregion
 
         public Document()
@@ -26,10 +28,10 @@ namespace NoteEvolution.Models
             Id = 0;
             LocalId = Guid.NewGuid();
 
-            InitializeDataSources(new SourceCache<Note, Guid>(n => n.LocalId), new SourceCache<TextUnit, Guid>(t => t.LocalId));
+            InitializeDataSources(new SourceCache<Note, Guid>(n => n.LocalId), new SourceCache<TextUnit, Guid>(t => t.LocalId), new SourceCache<ContentSource, Guid>(t => t.LocalId));
         }
 
-        public Document(SourceCache<Note, Guid> globalNoteListSource, SourceCache<TextUnit, Guid> globalTextUnitListSource)
+        public Document(SourceCache<Note, Guid> globalNoteListSource, SourceCache<TextUnit, Guid> globalTextUnitListSource, SourceCache<ContentSource, Guid> contentSourceListSource)
         {
             CreationDate = DateTime.Now;
             Id = 0;
@@ -37,14 +39,14 @@ namespace NoteEvolution.Models
             CreationDate = DateTime.Now;
             ModificationDate = DateTime.Now;
 
-            InitializeDataSources(globalNoteListSource, globalTextUnitListSource);
+            InitializeDataSources(globalNoteListSource, globalTextUnitListSource, contentSourceListSource);
 
             // add initial textunit when a new document is created (detected by it not having related textunits yet)
             if (TextUnitList.FirstOrDefault() == null)
                 GlobalTextUnitListSource.AddOrUpdate(new TextUnit(this));
         }
 
-        public void InitializeDataSources(SourceCache<Note, Guid> globalNoteListSource, SourceCache<TextUnit, Guid> globalTextUnitListSource)
+        public void InitializeDataSources(SourceCache<Note, Guid> globalNoteListSource, SourceCache<TextUnit, Guid> globalTextUnitListSource, SourceCache<ContentSource, Guid> contentSourceListSource)
         {
             // only set if not already set previously
             //if (_globalNoteListSource?.Items.Any() != true)
@@ -73,6 +75,8 @@ namespace NoteEvolution.Models
                     .Throttle(TimeSpan.FromMilliseconds(250))
                     .Select(t => t.Value)
                     .Do(d => ModificationDate = d);
+
+                _globalContentSourceListSource = contentSourceListSource;
             }
         }
 
@@ -168,6 +172,9 @@ namespace NoteEvolution.Models
 
         [NotMapped]
         public SourceCache<TextUnit, Guid> GlobalTextUnitListSource => _globalTextUnitListSource;
+
+        [NotMapped]
+        public SourceCache<ContentSource, Guid> GlobalContentSourceListSource => _globalContentSourceListSource;
 
         #endregion
     }

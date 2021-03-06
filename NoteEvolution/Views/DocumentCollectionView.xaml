@@ -9,17 +9,21 @@
              xmlns:i="clr-namespace:Avalonia.Xaml.Interactivity;assembly=Avalonia.Xaml.Interactivity"
              mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
              x:Class="NoteEvolution.Views.DocumentCollectionView">
-  <Grid ColumnDefinitions="0.4*,0.6*" RowDefinitions="0.3*,0.7*">
+  <Grid ColumnDefinitions="0.25*,0.5*,0.25*" RowDefinitions="0.3*,0.7*">
 
-    <v:DocumentListView Grid.Row="0" Grid.Column="0" DataContext="{Binding }"/>
+    <DockPanel Grid.Row="0" Grid.Column="0" LastChildFill="True">
 
-    <DockPanel Grid.Row="0" Grid.Column="1" Margin="3 10 3 3" LastChildFill="True">
-      <TextBlock DockPanel.Dock="Top" Margin="0 0 0 3" Text="Document Name"/>
-      <TextBox AcceptsReturn="True" TextWrapping="Wrap" Text="{Binding SelectedItem.Value.Title}" Tag="{Binding LastAddedDocument}">
-        <i:Interaction.Behaviors>
-          <b:FocusOnTagChangedBehavior/>
-        </i:Interaction.Behaviors>
-      </TextBox>
+      <DockPanel DockPanel.Dock="Bottom" Margin="3 0 3 10" LastChildFill="True">
+        <TextBlock DockPanel.Dock="Top" Margin="0 0 0 3" Text="Document Name"/>
+        <TextBox AcceptsReturn="True" TextWrapping="Wrap" Text="{Binding SelectedItem.Value.Title}" Tag="{Binding LastAddedDocument}">
+          <i:Interaction.Behaviors>
+            <b:FocusOnTagChangedBehavior/>
+          </i:Interaction.Behaviors>
+        </TextBox>
+      </DockPanel>
+      
+      <v:DocumentListView DataContext="{Binding }"/>  
+      
     </DockPanel>
 
     <TabControl Grid.Column="0" Grid.Row="1">
@@ -31,7 +35,9 @@
       </TabItem>
     </TabControl>
 
-    <v:TextUnitFlowView Grid.Row="1" Grid.Column="1" Margin="0 4 0 0" DataContext="{Binding SelectedItem}"/>
+    <v:TextUnitFlowView Grid.Row="0" Grid.Column="1" Grid.RowSpan="3" Margin="0 4 0 0" DataContext="{Binding SelectedItem}"/>
+
+    <v:ContentPropertiesView Grid.Row="0" Grid.Column="2" Grid.RowSpan="3" DataContext="{Binding TextUnitProperties}"/>
 
   </Grid>
 </UserControl>

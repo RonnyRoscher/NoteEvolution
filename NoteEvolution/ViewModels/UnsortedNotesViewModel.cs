@@ -7,18 +7,28 @@ using DynamicData;
 using DynamicData.Binding;
 using ReactiveUI;
 using NoteEvolution.Models;
+using PubSub;
+using NoteEvolution.Events;
 
 namespace NoteEvolution.ViewModels
 {
     public class UnsortedNotesViewModel : ViewModelBase
     {
-        private SourceCache<Note, Guid> _noteListSource;
+        private readonly Hub _eventAggregator;
+
+        private readonly SourceCache<ContentSource, Guid> _contentSourceListSource;
+        private readonly SourceCache<Note, Guid> _noteListSource;
 
         private readonly ReadOnlyObservableCollection<NoteViewModel> _noteListView;
 
-        public UnsortedNotesViewModel(SourceCache<Note, Guid> noteListSource)
+        public UnsortedNotesViewModel(SourceCache<Note, Guid> noteListSource, SourceCache<ContentSource, Guid> contentSourceListSource)
         {
+            _eventAggregator = Hub.Default;
+
+            _contentSourceListSource = contentSourceListSource;
             _noteListSource = noteListSource;
+
+            NoteProperties = new NotePropertiesViewModel(_contentSourceListSource);
 
             var unsortedNoteFilterAddDel = noteListSource
                 .Connect()
@@ -45,6 +55,7 @@ namespace NoteEvolution.ViewModels
                 .Subscribe();
 
             NoteList = new NoteListViewModel(_noteListView);
+            NoteList.ChangedSelection.Do(nvm => { _eventAggregator.Publish(new NotifySelectedUnsortedNoteChanged(nvm)); }).Subscribe();
             SelectNote(_noteListSource.Items.OrderByDescending(n => n.ModificationDate).FirstOrDefault());
 
             CreateNewNoteCommand = ReactiveCommand.Create(ExecuteCreateNewNote);
@@ -99,6 +110,14 @@ namespace NoteEvolution.ViewModels
         {
             get => _noteList;
             set => this.RaiseAndSetIfChanged(ref _noteList, value);
+        }
+
+        private NotePropertiesViewModel _noteProperties;
+
+        public NotePropertiesViewModel NoteProperties
+        {
+            get => _noteProperties;
+            set => this.RaiseAndSetIfChanged(ref _noteProperties, value);
         }
 
         #endregion

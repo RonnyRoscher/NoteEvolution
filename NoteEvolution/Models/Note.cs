@@ -27,6 +27,7 @@ namespace NoteEvolution.Models
 
             SourceNotes = new ObservableCollection<Note>();
             DerivedNotes = new ObservableCollection<Note>();
+            RelatedSources = new ObservableCollection<ContentSource>();
 
             this.DerivedNotes.CollectionChanged += DerivedNotes_CollectionChanged;
 
@@ -112,7 +113,7 @@ namespace NoteEvolution.Models
         /// <summary>
         /// The id of the textunit the note belongs to or null in case of an unsorted note.
         /// </summary>
-        [ForeignKey("TextUnit")]
+        [ForeignKey("RelatedTextUnit")]
         public int? RelatedTextUnitId
         {
             get => _relatedTextUnitId;
@@ -157,6 +158,14 @@ namespace NoteEvolution.Models
         {
             get => _derivedNotes;
             set => this.RaiseAndSetIfChanged(ref _derivedNotes, value);
+        }
+
+        private ObservableCollection<ContentSource> _relatedSources;
+
+        public virtual ObservableCollection<ContentSource> RelatedSources
+        {
+            get => _relatedSources;
+            set => this.RaiseAndSetIfChanged(ref _relatedSources, value);
         }
 
         #endregion

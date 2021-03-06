@@ -18,6 +18,7 @@ namespace NoteEvolution.ViewModels
 
         private readonly NoteEvolutionContext _localDB;
 
+        private readonly SourceCache<ContentSource, Guid> _globalContentSourceListSource;
         private readonly SourceCache<Note, Guid> _globalNoteListSource;
         private readonly SourceCache<TextUnit, Guid> _globalTextUnitListSource;
         private readonly SourceCache<Document, Guid> _globalDocumentListSource;
@@ -32,12 +33,13 @@ namespace NoteEvolution.ViewModels
 
             _localDB = new NoteEvolutionContext();
 
+            _globalContentSourceListSource = _localDB.ContentSourceListSource;
             _globalNoteListSource = _localDB.NoteListSource;
             _globalTextUnitListSource = _localDB.TextUnitListSource;
             _globalDocumentListSource = _localDB.DocumentListSource;
 
-            UnsortedNotes = new UnsortedNotesViewModel(_globalNoteListSource);
-            DocumentCollection = new DocumentCollectionViewModel(_globalNoteListSource, _globalTextUnitListSource, _globalDocumentListSource);
+            UnsortedNotes = new UnsortedNotesViewModel(_globalNoteListSource, _globalContentSourceListSource);
+            DocumentCollection = new DocumentCollectionViewModel(_globalNoteListSource, _globalTextUnitListSource, _globalDocumentListSource, _globalContentSourceListSource);
 
             CreateNewNoteCommand = ReactiveCommand.Create(ExecuteCreateNewNote);
 

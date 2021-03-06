@@ -2,8 +2,8 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net5.0</TargetFramework>
-    <AssemblyVersion>0.0.5.5</AssemblyVersion>
-    <FileVersion>0.0.5.4</FileVersion>
+    <AssemblyVersion>0.0.5.6</AssemblyVersion>
+    <FileVersion>0.0.5.6</FileVersion>
     <ApplicationIcon>Assets\logo.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
@@ -16,6 +16,7 @@
     <AvaloniaResource Include="Assets\**" />
   </ItemGroup>
   <ItemGroup>
+    <AvaloniaResource Remove="Views\ContentPropertiesView.xaml" />
     <AvaloniaResource Remove="Views\DocumentCollectionView.xaml" />
     <AvaloniaResource Remove="Views\DocumentListView.xaml" />
     <AvaloniaResource Remove="Views\NoteListView.xaml" />
@@ -23,6 +24,9 @@
     <AvaloniaResource Remove="Views\TextUnitFlowView.xaml" />
     <AvaloniaResource Remove="Views\TextUnitTreeView.xaml" />
     <AvaloniaResource Remove="Views\UnsortedNotesView.xaml" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Remove="Views\ContentPropertiesView.xaml" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Avalonia" Version="0.10.0" />
@@ -37,6 +41,9 @@
     <PackageReference Include="PubSub" Version="4.0.1" />
   </ItemGroup>
   <ItemGroup>
+    <EmbeddedResource Include="Views\ContentPropertiesView.xaml">
+      <Generator>MSBuild:Compile</Generator>
+    </EmbeddedResource>
     <EmbeddedResource Include="Views\NoteListView.xaml">
       <Generator>MSBuild:Compile</Generator>
     </EmbeddedResource>
@@ -66,8 +73,14 @@
     <Compile Update="Views\DocumentCollectionView.xaml.cs">
       <DependentUpon>DocumentCollectionView.xaml</DependentUpon>
     </Compile>
+    <Compile Update="Views\NoteListView - Copy.xaml.cs">
+      <DependentUpon>NoteListView.xaml</DependentUpon>
+    </Compile>
     <Compile Update="Views\NoteListView.xaml.cs">
       <DependentUpon>NoteListView.xaml</DependentUpon>
+    </Compile>
+    <Compile Update="Views\ContentPropertiesView.xaml.cs">
+      <DependentUpon>ContentPropertiesView.xaml</DependentUpon>
     </Compile>
     <Compile Update="Views\TextUnitFlowView.xaml.cs">
       <DependentUpon>TextUnitFlowView.xaml</DependentUpon>

@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 using System.Linq;
@@ -41,6 +42,8 @@ namespace NoteEvolution.Models
 
             RelatedDocument = relatedDocument;
             RelatedDocumentId = relatedDocument.Id;
+
+            RelatedSources = new ObservableCollection<ContentSource>();
 
             // add initial note when a new textunit is created (detected by it not having related notes yet)
             // todo: set CurrentTreeDepth to 0 on TextUnit create
@@ -409,6 +412,14 @@ namespace NoteEvolution.Models
         {
             get => _noteList;
             set => this.RaiseAndSetIfChanged(ref _noteList, value);
+        }
+
+        private ObservableCollection<ContentSource> _relatedSources;
+
+        public virtual ObservableCollection<ContentSource> RelatedSources
+        {
+            get => _relatedSources;
+            set => this.RaiseAndSetIfChanged(ref _relatedSources, value);
         }
 
         [NotMapped]

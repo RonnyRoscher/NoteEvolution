@@ -29,6 +29,7 @@
     <DockPanel Grid.Column="1" Margin="6 7 0 0" LastChildFill="True">
       
       <TextBlock DockPanel.Dock="Top" Margin="0 0 0 3" Text="Note Text"/>
+      <v:ContentPropertiesView DockPanel.Dock="Bottom" DataContext="{Binding NoteProperties}"/>
       <TextBox AcceptsReturn="True" TextWrapping="Wrap" Text="{Binding NoteList.SelectedItem.Value.Text}" Tag="{Binding NoteList.SelectedItem.Value}" IsReadOnly="{Binding NoteList.SelectedItem.Value.IsReadonly}" Foreground="{Binding NoteList.SelectedItem.Value.IsReadonly, Converter={StaticResource IsReadonlyColorConverterKey}}">
         <i:Interaction.Behaviors>
           <b:FocusOnTagChangedBehavior/>

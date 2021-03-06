@@ -17,18 +17,17 @@ namespace NoteEvolution.ViewModels
         private readonly SourceCache<TextUnit, Guid> _globalTextUnitListSource;
         private readonly SourceCache<Document, Guid> _globalDocumentListSource;
         private readonly ReadOnlyObservableCollection<DocumentViewModel> _documentListView;
+        private readonly SourceCache<ContentSource, Guid> _contentSourceListSource;
 
-        public DocumentCollectionViewModel(SourceCache<Note, Guid> globalNoteListSource, SourceCache<TextUnit, Guid> globalTextUnitListSource, SourceCache<Document, Guid> globalDocumentListSource)
+        public DocumentCollectionViewModel(SourceCache<Note, Guid> globalNoteListSource, SourceCache<TextUnit, Guid> globalTextUnitListSource, SourceCache<Document, Guid> globalDocumentListSource, SourceCache<ContentSource, Guid> contentSourceListSource)
         {
-            CreateNewDocumentCommand = ReactiveCommand.Create(ExecuteCreateNewDocument);
-            DissolveSelectedDocumentCommand = ReactiveCommand.Create(ExecuteDissolveSelectedDocument);
-            DeleteSelectedDocumentCommand = ReactiveCommand.Create(ExecuteDeleteSelectedDocument);
-
             _globalNoteListSource = globalNoteListSource;
             _globalTextUnitListSource = globalTextUnitListSource;
             _globalDocumentListSource = globalDocumentListSource;
+            _contentSourceListSource = contentSourceListSource;
 
             UnsortedNotes = new SourceNotesViewModel(_globalNoteListSource);
+            TextUnitProperties = new TextUnitPropertiesViewModel(_contentSourceListSource);
 
             // build sorted document list
             var documentComparer = SortExpressionComparer<DocumentViewModel>.Descending(d => d.Value.ModificationDate);
@@ -59,6 +58,10 @@ namespace NoteEvolution.ViewModels
                 .DisposeMany()
                 .Subscribe();
 
+            CreateNewDocumentCommand = ReactiveCommand.Create(ExecuteCreateNewDocument);
+            DissolveSelectedDocumentCommand = ReactiveCommand.Create(ExecuteDissolveSelectedDocument);
+            DeleteSelectedDocumentCommand = ReactiveCommand.Create(ExecuteDeleteSelectedDocument);
+
             SelectDocument(_globalDocumentListSource.Items.OrderByDescending(n => n.ModificationDate).FirstOrDefault());
         }
 
@@ -68,7 +71,7 @@ namespace NoteEvolution.ViewModels
 
         void ExecuteCreateNewDocument()
         {
-            var newDocument = new Document(_globalNoteListSource, _globalTextUnitListSource);
+            var newDocument = new Document(_globalNoteListSource, _globalTextUnitListSource, _contentSourceListSource);
             _globalDocumentListSource.AddOrUpdate(newDocument);
             SelectDocument(newDocument);
         }
@@ -141,6 +144,14 @@ namespace NoteEvolution.ViewModels
         {
             get => _lastAddedDocument;
             set => this.RaiseAndSetIfChanged(ref _lastAddedDocument, value);
+        }
+
+        private TextUnitPropertiesViewModel _textUnitProperties;
+
+        public TextUnitPropertiesViewModel TextUnitProperties
+        {
+            get => _textUnitProperties;
+            set => this.RaiseAndSetIfChanged(ref _textUnitProperties, value);
         }
 
         #endregion

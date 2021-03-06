@@ -8,12 +8,15 @@ using DynamicData.Binding;
 using ReactiveUI;
 using NoteEvolution.Models;
 using System.Collections.Generic;
+using PubSub;
+using NoteEvolution.Events;
 
 namespace NoteEvolution.ViewModels
 {
     public class DocumentViewModel : ViewModelBase
     {
         #region Private Properties
+        private readonly Hub _eventAggregator;
 
         private IObservableCache<TextUnitViewModel, Guid> _textUnitListSource;
 
@@ -27,6 +30,8 @@ namespace NoteEvolution.ViewModels
 
         public DocumentViewModel(Document documentSource)
         {
+            _eventAggregator = Hub.Default;
+
             Value = documentSource;
 
             TextUnitListSource = Value.TextUnitListSource
@@ -80,6 +85,7 @@ namespace NoteEvolution.ViewModels
                 .WhenPropertyChanged(ntvm => ntvm.SelectedItem)
                 .Where(ntvm => ntvm.Value?.Value != null)
                 .Select(ntvm => ntvm.Value.Value);
+            ChangedSelection.Do(tvm => { _eventAggregator.Publish(new NotifySelectedTextUnitChanged(tvm)); }).Subscribe();
 
             CreateNewSuccessorCommand = ReactiveCommand.Create(ExecuteCreateNewSuccessor);
             CreateNewChildCommand = ReactiveCommand.Create(ExecuteCreateNewChild);
@@ -181,14 +187,23 @@ namespace NoteEvolution.ViewModels
                 var newTextUnit = SelectedItem.Value.AddSuccessor();
                 if (newTextUnit != null)
                 {
-                    SelectTextUnit(newTextUnit);
-                    var initialNote = newTextUnit.NoteList.FirstOrDefault();
-                    if (initialNote != null)
+                    var newInitialNote = newTextUnit.NoteList.FirstOrDefault();
+                    if (newInitialNote != null)
                     {
-                        initialNote.Text = sourceNote.Value.Text;
-                        initialNote.SourceNotes.Add(sourceNote.Value);
-                        sourceNote.Value.DerivedNotes.Add(initialNote);
+                        newInitialNote.Text = sourceNote.Value.Text;
+                        newInitialNote.SourceNotes.Add(sourceNote.Value);
+                        sourceNote.Value.DerivedNotes.Add(newInitialNote);
+                        if (sourceNote.Value.RelatedSources.Count > 0)
+                        {
+                            foreach (var relatedSource in sourceNote.Value.RelatedSources)
+                            {
+                                var newTextUnitSource = relatedSource.Copy(false);
+                                newTextUnitSource.RelatedTextUnit = newTextUnit;
+                                Value.GlobalContentSourceListSource.AddOrUpdate(newTextUnitSource);
+                            }
+                        }
                     }
+                    SelectTextUnit(newTextUnit);
                 }
             }
         }

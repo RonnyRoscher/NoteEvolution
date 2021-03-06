@@ -17,9 +17,15 @@ namespace NoteEvolution.Behaviors
 
 		private void AssociatedObject_PropertyChanged(object sender, Avalonia.AvaloniaPropertyChangedEventArgs e)
 		{
-			if (e.Property.Name == nameof(Control.Tag) && e.NewValue != null && AssociatedObject.DataContext != null)
+			if (e.Property.Name == nameof(Control.Tag) && e.NewValue != null && AssociatedObject != null)
 			{
-				if (AssociatedObject.DataContext is UnsortedNotesViewModel || e.NewValue is Document || (AssociatedObject.DataContext is Note cn && e.NewValue is TextUnitViewModel ntu && ntu.Value.NoteList.Any(n => n.Id == cn.Id) && !AssociatedObject.IsFocused))
+				if ((AssociatedObject.DataContext != null && 
+						(AssociatedObject.DataContext is UnsortedNotesViewModel || 
+						e.NewValue is Document || 
+						(AssociatedObject.DataContext is Note cn && e.NewValue is TextUnitViewModel ntu && ntu.Value.NoteList.Any(n => n.Id == cn.Id) && !AssociatedObject.IsFocused))) ||
+					(AssociatedObject.DataContext == null && 
+						(e.NewValue is ContentSource)
+					))
 					Dispatcher.UIThread.Post(() => AssociatedObject?.Focus(), DispatcherPriority.Layout);
 			}
 		}

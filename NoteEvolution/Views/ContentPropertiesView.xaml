@@ -1,0 +1,62 @@
+﻿<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:models="clr-namespace:NoteEvolution.Models;assembly=NoteEvolution"
+             xmlns:vm="clr-namespace:NoteEvolution.ViewModels;assembly=NoteEvolution"
+             xmlns:b="clr-namespace:NoteEvolution.Behaviors;assembly=NoteEvolution"
+             xmlns:c="clr-namespace:NoteEvolution.Converter;assembly=NoteEvolution"
+             xmlns:i="clr-namespace:Avalonia.Xaml.Interactivity;assembly=Avalonia.Xaml.Interactivity"
+             mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
+             x:Class="NoteEvolution.Views.ContentPropertiesView">
+  
+  <UserControl.Resources>
+    <c:SubstractValueConverter x:Key="SubstractValueConverterKey"/>
+    <c:IsReadonlyColorConverter x:Key="IsReadonlyColorConverterKey"/>
+  </UserControl.Resources>
+
+  <Grid RowDefinitions="Auto,*">
+
+    <DockPanel Grid.Row="0" LastChildFill="True">
+      <Button DockPanel.Dock="Right" Margin="1" Content="Add" Command="{Binding AddContentSourceCommand}"/>
+      <Label Margin="0 3 0 0" Content="Content Sources:"/>
+    </DockPanel>
+
+    <ListBox Grid.Row="1" x:Name="lbContentSourceList" Padding="0" VirtualizationMode="Simple" Items="{Binding CurrentContentSourceList}">
+      <ListBox.ItemsPanel>
+        <ItemsPanelTemplate>
+          <WrapPanel Orientation="{Binding ContentSourceListOrientation}"/>
+        </ItemsPanelTemplate>
+      </ListBox.ItemsPanel>
+      <ListBox.ItemTemplate>
+        <DataTemplate>
+          <Border BorderBrush="Gray" Background="White" BorderThickness="1" Margin="0 1" Padding="4">
+            <StackPanel>
+              <DockPanel LastChildFill="True">
+                <Button DockPanel.Dock="Right" Margin="1" Content="Del" Command="{Binding #lbContentSourceList.DataContext.DeleteContentSourceCommand}" CommandParameter="{Binding .}"/>
+                <Label DockPanel.Dock="Left" Content="Author"/>  
+              </DockPanel>
+              <TextBox Text="{Binding Author}" Tag="{Binding #lbContentSourceList.DataContext.LastAddedContentSource}">
+                <i:Interaction.Behaviors>
+                  <b:FocusOnTagChangedBehavior/>
+                </i:Interaction.Behaviors>
+              </TextBox>
+              <Label Content="Title"/>
+              <TextBox Text="{Binding Title}"/>
+              <Label Content="Chapter"/>
+              <TextBox Text="{Binding Chapter}"/>
+              <Label Content="Page number"/>
+              <NumericUpDown Text="{Binding PageNumber}"/>
+              <Label Content="Url"/>
+              <TextBox Text="{Binding Url}"/>
+              <Label Content="Starts at"/>
+              <TimePicker SelectedTime="{Binding Timestamp}"/>
+            </StackPanel>
+          </Border>
+        </DataTemplate>
+      </ListBox.ItemTemplate>
+    </ListBox>
+  
+  </Grid>
+  
+</UserControl>

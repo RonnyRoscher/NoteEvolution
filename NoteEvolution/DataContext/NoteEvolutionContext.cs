@@ -22,6 +22,7 @@ namespace NoteEvolution.DataContext
         public virtual DbSet<Document> Documents { get; set; }
         public virtual DbSet<TextUnit> TextUnits { get; set; }
         public virtual DbSet<Note> Notes { get; set; }
+        public virtual DbSet<ContentSource> ContentSources { get; set; }
 
         #endregion
 
@@ -49,6 +50,12 @@ namespace NoteEvolution.DataContext
         private readonly ConcurrentDictionary<int, Note> _deletedNotes;
         private readonly SourceCache<Note, Guid> _noteListSource;
 
+        private int _localSourceId;
+        private readonly ConcurrentDictionary<int, ContentSource> _addedContentSources;
+        private readonly ConcurrentDictionary<int, ContentSource> _changedContentSources;
+        private readonly ConcurrentDictionary<int, ContentSource> _deletedContentSources;
+        private readonly SourceCache<ContentSource, Guid> _contentSourceListSource;
+
         #endregion
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -57,6 +64,16 @@ namespace NoteEvolution.DataContext
                 .HasMany(parent => parent.TextUnitChildList)
                 .WithOne(child => child.Parent)
                 .HasForeignKey(child => child.ParentId);
+
+            modelBuilder.Entity<TextUnit>()
+                .HasMany(item => item.RelatedSources)
+                .WithOne(source => source.RelatedTextUnit)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<Note>()
+                .HasMany(item => item.RelatedSources)
+                .WithOne(source => source.RelatedNote)
+                .OnDelete(DeleteBehavior.Cascade);
 
             base.OnModelCreating(modelBuilder);
         }
@@ -91,11 +108,17 @@ namespace NoteEvolution.DataContext
             _deletedNotes = new ConcurrentDictionary<int, Note>();
             _noteListSource = new SourceCache<Note, Guid>(n => n.LocalId);
 
+            _localSourceId = 1;
+            _addedContentSources = new ConcurrentDictionary<int, ContentSource>();
+            _changedContentSources = new ConcurrentDictionary<int, ContentSource>();
+            _deletedContentSources = new ConcurrentDictionary<int, ContentSource>();
+            _contentSourceListSource = new SourceCache<ContentSource, Guid>(n => n.LocalId);
+
             GetDocumentEntries()
                 .ToObservable()
                 .Subscribe(d =>
                 {
-                    d.InitializeDataSources(_noteListSource, _textUnitListSource);
+                    d.InitializeDataSources(_noteListSource, _textUnitListSource, _contentSourceListSource);
                     _documentListSource.AddOrUpdate(d);
                 },
                 e => { /* error */ },
@@ -291,6 +314,82 @@ namespace NoteEvolution.DataContext
                         .Subscribe();
                 }
             );
+
+            GetContentSourceEntries()
+                .ToObservable()
+                .Subscribe(cs =>
+                { _contentSourceListSource.AddOrUpdate(cs); },
+                e => { /* error */ },
+                () => { /* success */
+                    if (_contentSourceListSource.Items.Count() > 0)
+                        _localSourceId = _contentSourceListSource.Items.Max(s => s.Id) + 1;
+                    _contentSourceListSource
+                        .Connect()
+                        .OnItemAdded(cs => {
+                            while (_isSaving)
+                                System.Threading.Thread.Sleep(300);
+                            if (cs.Id == 0)
+                                cs.Id = _localSourceId++;
+                            if (ContentSources.Find(cs.Id) == null)
+                            {
+                                ContentSources.Add(cs);
+                                _addedContentSources.TryAdd(cs.Id, cs);
+                                _updateTimer.Interval = 3000;
+                                if (_isSaved)
+                                {
+                                    _isSaved = false;
+                                    _eventAggregator.Publish(new NotifySaveStateChanged(true));
+                                }
+                            }
+                        })
+                        .OnItemRemoved(cs => {
+                            if (ContentSources.Find(cs.Id) != null)
+                            {
+                                while (_isSaving)
+                                    System.Threading.Thread.Sleep(300);
+                                if (_addedContentSources.ContainsKey(cs.Id))
+                                {
+                                    _addedContentSources.TryRemove(cs.Id, out var _);
+                                    var isSaved = HasChanges();
+                                    if (isSaved != _isSaved)
+                                    {
+                                        _isSaved = isSaved;
+                                        _eventAggregator.Publish(new NotifySaveStateChanged(true));
+                                    }
+                                } else {
+                                    _deletedContentSources.TryAdd(cs.Id, cs);
+                                    if (_isSaved)
+                                    {
+                                        _isSaved = false;
+                                        _eventAggregator.Publish(new NotifySaveStateChanged(true));
+                                    }
+                                }
+                                ContentSources.Remove(cs);
+                                _updateTimer.Interval = 3000;
+                            }
+                        })
+                        .DisposeMany()
+                        .Subscribe();
+                    _contentSourceListSource
+                        .Connect()
+                        .WhenAnyPropertyChanged(new[] { nameof(ContentSource.Author), nameof(ContentSource.Title), nameof(ContentSource.Chapter), nameof(ContentSource.PageNumber), nameof(ContentSource.Url), nameof(ContentSource.Timestamp) })
+                        .Do(cs => {
+                            while (_isSaving)
+                                System.Threading.Thread.Sleep(300);
+                            if (!_addedContentSources.ContainsKey(cs.Id))
+                            {
+                                _changedContentSources.TryAdd(cs.Id, cs);
+                                _updateTimer.Interval = 3000;
+                                if (_isSaved)
+                                {
+                                    _isSaved = false;
+                                    _eventAggregator.Publish(new NotifySaveStateChanged(true));
+                                }
+                            }
+                        })
+                        .Subscribe();
+                }
+            );
         }
 
         void InitializeOrderNumbers()
@@ -367,7 +466,6 @@ namespace NoteEvolution.DataContext
                     _deletedTextUnits.Clear();
                 }
 
-                // required to prevent crash on immediate text change before it was saved
                 if (_addedNotes?.Count > 0)
                 {
                     _addedNotes.Clear();
@@ -383,6 +481,21 @@ namespace NoteEvolution.DataContext
                     _deletedNotes.Clear();
                 }
 
+                if (_addedContentSources?.Count > 0)
+                {
+                    _addedContentSources.Clear();
+                }
+                if (_changedContentSources?.Count > 0)
+                {
+                    ContentSources.UpdateRange(_changedContentSources.Values);
+                    _changedContentSources.Clear();
+                }
+                if (_deletedContentSources?.Count > 0)
+                {
+                    ContentSources.RemoveRange(_deletedContentSources.Values);
+                    _deletedContentSources.Clear();
+                }
+
                 SaveChanges();
                 _isSaved = true;
                 _eventAggregator.Publish(new NotifySaveStateChanged(false));
@@ -392,6 +505,13 @@ namespace NoteEvolution.DataContext
         }
 
         #region Database Access Functions
+
+        private IEnumerable<ContentSource> GetContentSourceEntries()
+        {
+            IQueryable dbContentSourcesQuery = ContentSources;
+            foreach (ContentSource dbContentSource in dbContentSourcesQuery)
+                yield return dbContentSource;
+        }
 
         private IEnumerable<Note> GetNoteEntries()
         {
@@ -418,9 +538,10 @@ namespace NoteEvolution.DataContext
 
         #region Public Properties
 
-        public SourceCache<Note, Guid> NoteListSource => _noteListSource;
-        public SourceCache<TextUnit, Guid> TextUnitListSource => _textUnitListSource;
         public SourceCache<Document, Guid> DocumentListSource => _documentListSource;
+        public SourceCache<TextUnit, Guid> TextUnitListSource => _textUnitListSource;
+        public SourceCache<Note, Guid> NoteListSource => _noteListSource;
+        public SourceCache<ContentSource, Guid> ContentSourceListSource => _contentSourceListSource;
 
         #endregion
     }
