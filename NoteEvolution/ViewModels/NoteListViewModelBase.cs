@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Linq;
 using DynamicData.Binding;
 using ReactiveUI;
 using NoteEvolution.Enums;
@@ -48,7 +47,7 @@ namespace NoteEvolution.ViewModels
                 if (n.RelatedTextUnitId != null)
                     return false;
                 return HideUsedNotes
-                    ? !n.DerivedNotes.Any()
+                    ? !n.IsReadonly
                     : true;
             };
         }

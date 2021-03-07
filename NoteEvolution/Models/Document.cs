@@ -40,10 +40,6 @@ namespace NoteEvolution.Models
             ModificationDate = DateTime.Now;
 
             InitializeDataSources(globalNoteListSource, globalTextUnitListSource, contentSourceListSource);
-
-            // add initial textunit when a new document is created (detected by it not having related textunits yet)
-            if (TextUnitList.FirstOrDefault() == null)
-                GlobalTextUnitListSource.AddOrUpdate(new TextUnit(this));
         }
 
         public void InitializeDataSources(SourceCache<Note, Guid> globalNoteListSource, SourceCache<TextUnit, Guid> globalTextUnitListSource, SourceCache<ContentSource, Guid> contentSourceListSource)

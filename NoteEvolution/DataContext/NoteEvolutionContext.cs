@@ -35,11 +35,13 @@ namespace NoteEvolution.DataContext
         private bool _isSaving;
 
         private int _localDocumentId;
+        private readonly ConcurrentDictionary<int, Document> _addedDocuments;
         private readonly ConcurrentDictionary<int, Document> _changedDocuments;
         private readonly ConcurrentDictionary<int, Document> _deletedDocuments;
         private readonly SourceCache<Document, Guid> _documentListSource;
 
         private int _localTextUnitId;
+        private readonly ConcurrentDictionary<int, TextUnit> _addedTextUnits;
         private readonly ConcurrentDictionary<int, TextUnit> _changedTextUnits;
         private readonly ConcurrentDictionary<int, TextUnit> _deletedTextUnits;
         private readonly SourceCache<TextUnit, Guid> _textUnitListSource;
@@ -93,11 +95,13 @@ namespace NoteEvolution.DataContext
             _isSaving = false;
 
             _localDocumentId = 1;
+            _addedDocuments = new ConcurrentDictionary<int, Document>();
             _changedDocuments = new ConcurrentDictionary<int, Document>();
             _deletedDocuments = new ConcurrentDictionary<int, Document>();
             _documentListSource = new SourceCache<Document, Guid>(d => d.LocalId);
 
             _localTextUnitId = 1;
+            _addedTextUnits = new ConcurrentDictionary<int, TextUnit>();
             _changedTextUnits = new ConcurrentDictionary<int, TextUnit>();
             _deletedTextUnits = new ConcurrentDictionary<int, TextUnit>();
             _textUnitListSource = new SourceCache<TextUnit, Guid>(t => t.LocalId);
@@ -128,12 +132,22 @@ namespace NoteEvolution.DataContext
                     _documentListSource
                         .Connect()
                         .OnItemAdded(d => {
+                            while (_isSaving)
+                                System.Threading.Thread.Sleep(300);
                             if (d.Id == 0)
                                 d.Id = _localDocumentId++;
                             if (Documents.Find(d.Id) == null)
                             {
                                 Documents.Add(d);
-                                SaveChanges();
+                                _addedDocuments.TryAdd(d.Id, d);
+                                _updateTimer.Interval = 3000;
+                                if (_isSaved)
+                                {
+                                    _isSaved = false;
+                                    _eventAggregator.Publish(new NotifySaveStateChanged(true));
+                                }
+                                // add initial textunit when a new document is created
+                                _textUnitListSource.AddOrUpdate(new TextUnit(d));
                             }
                         })
                         .OnItemRemoved(d => {
@@ -141,14 +155,25 @@ namespace NoteEvolution.DataContext
                             {
                                 while (_isSaving)
                                     System.Threading.Thread.Sleep(300);
-                                _deletedDocuments.TryAdd(d.Id, d);
+                                if (_addedDocuments.ContainsKey(d.Id))
+                                {
+                                    _addedDocuments.TryRemove(d.Id, out var _);
+                                    var isSaved = HasChanges();
+                                    if (isSaved != _isSaved)
+                                    {
+                                        _isSaved = isSaved;
+                                        _eventAggregator.Publish(new NotifySaveStateChanged(true));
+                                    }
+                                } else {
+                                    _deletedDocuments.TryAdd(d.Id, d);
+                                    if (_isSaved)
+                                    {
+                                        _isSaved = false;
+                                        _eventAggregator.Publish(new NotifySaveStateChanged(true));
+                                    }
+                                }
                                 Documents.Remove(d);
                                 _updateTimer.Interval = 3000;
-                                if (_isSaved)
-                                {
-                                    _isSaved = false;
-                                    _eventAggregator.Publish(new NotifySaveStateChanged(true));
-                                }
                             }
                         })
                         .DisposeMany()
@@ -159,12 +184,15 @@ namespace NoteEvolution.DataContext
                         .Do(d => {
                             while (_isSaving)
                                 System.Threading.Thread.Sleep(300);
-                            _changedDocuments.TryAdd(d.Id, d);
-                            _updateTimer.Interval = 3000;
-                            if (_isSaved)
+                            if (!_addedDocuments.ContainsKey(d.Id))
                             {
-                                _isSaved = false;
-                                _eventAggregator.Publish(new NotifySaveStateChanged(true));
+                                _changedDocuments.TryAdd(d.Id, d);
+                                _updateTimer.Interval = 3000;
+                                if (_isSaved)
+                                {
+                                    _isSaved = false;
+                                    _eventAggregator.Publish(new NotifySaveStateChanged(true));
+                                }
                             }
                         })
                         .Subscribe();
@@ -195,19 +223,25 @@ namespace NoteEvolution.DataContext
                     _textUnitListSource
                         .Connect()
                         .OnItemAdded(t => {
+                            while (_isSaving)
+                                System.Threading.Thread.Sleep(300);
                             if (t.Id == 0)
-                            {
                                 t.Id = _localTextUnitId++;
-                                // add initial note 
+                            if (TextUnits.Find(t.Id) == null)
+                            {
+                                TextUnits.Add(t);
+                                _addedTextUnits.TryAdd(t.Id, t);
+                                _updateTimer.Interval = 3000;
+                                if (_isSaved)
+                                {
+                                    _isSaved = false;
+                                    _eventAggregator.Publish(new NotifySaveStateChanged(true));
+                                }
+                                // add initial note when a new textunit is created
                                 var initialNote = new Note();
                                 initialNote.RelatedTextUnit = t;
                                 initialNote.RelatedTextUnitId = t.Id;
                                 _noteListSource.AddOrUpdate(initialNote);
-                            }
-                            if (TextUnits.Find(t.Id) == null)
-                            {
-                                TextUnits.Add(t);
-                                SaveChanges();
                             }
                         })
                         .OnItemRemoved(t => {
@@ -215,14 +249,25 @@ namespace NoteEvolution.DataContext
                             {
                                 while (_isSaving)
                                     System.Threading.Thread.Sleep(300);
-                                _deletedTextUnits.TryAdd(t.Id, t);
+                                if (_addedTextUnits.ContainsKey(t.Id))
+                                {
+                                    _addedTextUnits.TryRemove(t.Id, out var _);
+                                    var isSaved = HasChanges();
+                                    if (isSaved != _isSaved)
+                                    {
+                                        _isSaved = isSaved;
+                                        _eventAggregator.Publish(new NotifySaveStateChanged(true));
+                                    }
+                                } else {
+                                    _deletedTextUnits.TryAdd(t.Id, t);
+                                    if (_isSaved)
+                                    {
+                                        _isSaved = false;
+                                        _eventAggregator.Publish(new NotifySaveStateChanged(true));
+                                    }
+                                }
                                 TextUnits.Remove(t);
                                 _updateTimer.Interval = 3000;
-                                if (_isSaved)
-                                {
-                                    _isSaved = false;
-                                    _eventAggregator.Publish(new NotifySaveStateChanged(true));
-                                }
                             }
                         })
                         .DisposeMany()
@@ -233,12 +278,15 @@ namespace NoteEvolution.DataContext
                         .Do(t => {
                             while (_isSaving)
                                 System.Threading.Thread.Sleep(300);
-                            _changedTextUnits.TryAdd(t.Id, t);
-                            _updateTimer.Interval = 3000;
-                            if (_isSaved)
+                            if (!_addedTextUnits.ContainsKey(t.Id))
                             {
-                                _isSaved = false;
-                                _eventAggregator.Publish(new NotifySaveStateChanged(true));
+                                _changedTextUnits.TryAdd(t.Id, t);
+                                _updateTimer.Interval = 3000;
+                                if (_isSaved)
+                                {
+                                    _isSaved = false;
+                                    _eventAggregator.Publish(new NotifySaveStateChanged(true));
+                                }
                             }
                         })
                         .Subscribe();
@@ -451,6 +499,10 @@ namespace NoteEvolution.DataContext
             {
                 _isSaving = true;
 
+                if (_addedDocuments?.Count > 0)
+                {
+                    _addedDocuments.Clear();
+                }
                 if (_changedDocuments?.Count > 0)
                 {
                     Documents.UpdateRange(_changedDocuments.Values);
@@ -462,6 +514,10 @@ namespace NoteEvolution.DataContext
                     _deletedDocuments.Clear();
                 }
 
+                if (_addedTextUnits?.Count > 0)
+                {
+                    _addedTextUnits.Clear();
+                }
                 if (_changedTextUnits?.Count > 0)
                 {
                     TextUnits.UpdateRange(_changedTextUnits.Values);
