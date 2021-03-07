@@ -29,7 +29,7 @@ namespace NoteEvolution.ViewModels
                 .Select(BuildNotesFilter);
             var relatedNoteFilterChange = relatedNoteListSource
                 .Connect()
-                .WhenAnyPropertyChanged(new[] { nameof(Note.RelatedTextUnitId) })
+                .WhenAnyPropertyChanged(new[] { nameof(Note.RelatedTextUnitId), nameof(Note.IsReadonly) })
                 .Select(BuildNotesFilter);
             var filterUpdateRequired = this.WhenValueChanged(t => t.HideUsedNotes).Select(_ => Unit.Default);
             var noteComparer = this.WhenValueChanged(t => t.SortOrder).Select(BuildNotesComparer);
