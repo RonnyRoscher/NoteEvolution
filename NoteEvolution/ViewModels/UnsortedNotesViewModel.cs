@@ -6,13 +6,14 @@ using System.Reactive.Linq;
 using DynamicData;
 using DynamicData.Binding;
 using ReactiveUI;
-using NoteEvolution.Models;
 using PubSub;
+using NoteEvolution.Enums;
 using NoteEvolution.Events;
+using NoteEvolution.Models;
 
 namespace NoteEvolution.ViewModels
 {
-    public class UnsortedNotesViewModel : ViewModelBase
+    public class UnsortedNotesViewModel : NoteListViewModelBase
     {
         private readonly Hub _eventAggregator;
 
@@ -28,17 +29,21 @@ namespace NoteEvolution.ViewModels
             _contentSourceListSource = contentSourceListSource;
             _noteListSource = noteListSource;
 
+            HideUsedNotes = true;
+            SortOrder = NoteSortOrderType.ModifiedDesc;
+
             NoteProperties = new NotePropertiesViewModel(_contentSourceListSource);
 
             var unsortedNoteFilterAddDel = noteListSource
                 .Connect()
-                .Select(BuildUnsortedNotesFilter);
+                .Select(BuildNotesFilter);
             var unsortedNoteFilterChange = noteListSource
                 .Connect()
                 .WhenAnyPropertyChanged(new[] { nameof(Note.RelatedTextUnitId) })
-                .Select(BuildUnsortedNotesFilter);
-            var noteComparer = SortExpressionComparer<NoteViewModel>.Descending(nvm => nvm.Value.ModificationDate);
-            var noteWasModified = _noteListSource
+                .Select(BuildNotesFilter);
+            var filterUpdateRequired = this.WhenValueChanged(t => t.HideUsedNotes).Select(_ => Unit.Default);
+            var noteComparer = this.WhenValueChanged(t => t.SortOrder).Select(BuildNotesComparer);
+            var sortUpdateRequired = _noteListSource
                 .Connect()
                 .WhenPropertyChanged(n => n.ModificationDate)
                 .Throttle(TimeSpan.FromMilliseconds(250))
@@ -46,25 +51,20 @@ namespace NoteEvolution.ViewModels
             _noteListSource
                 .Connect()
                 .AutoRefreshOnObservable(_ => unsortedNoteFilterChange)
-                .Filter(unsortedNoteFilterAddDel)
+                .Filter(unsortedNoteFilterAddDel, filterUpdateRequired)
                 .Transform(n => new NoteViewModel(n))
-                .Sort(noteComparer, noteWasModified)
+                .Sort(noteComparer, sortUpdateRequired)
                 .ObserveOn(RxApp.MainThreadScheduler)
                 .Bind(out _noteListView)
                 .DisposeMany()
                 .Subscribe();
 
-            NoteList = new NoteListViewModel(_noteListView);
+            NoteList = new NoteListViewModel(_noteListView, this);
             NoteList.ChangedSelection.Do(nvm => { _eventAggregator.Publish(new NotifySelectedUnsortedNoteChanged(nvm)); }).Subscribe();
             SelectNote(_noteListSource.Items.OrderByDescending(n => n.ModificationDate).FirstOrDefault());
 
             CreateNewNoteCommand = ReactiveCommand.Create(ExecuteCreateNewNote);
             DeleteSelectedNoteCommand = ReactiveCommand.Create(ExecuteDeleteSelectedNote);
-        }
-
-        private Func<Note, bool> BuildUnsortedNotesFilter(object param)
-        {
-            return n => n.RelatedTextUnitId == null;
         }
 
         #region Commands

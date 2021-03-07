@@ -1,11 +1,11 @@
 ﻿using System;
 using System.Collections.ObjectModel;
+using System.Linq;
 using System.Reactive.Linq;
 using DynamicData;
 using DynamicData.Binding;
 using ReactiveUI;
 using NoteEvolution.Models;
-using System.Linq;
 
 namespace NoteEvolution.ViewModels
 {
@@ -17,9 +17,10 @@ namespace NoteEvolution.ViewModels
 
         #endregion
 
-        public NoteListViewModel(ReadOnlyObservableCollection<NoteViewModel> usnortedNoteListView)
+        public NoteListViewModel(ReadOnlyObservableCollection<NoteViewModel> usnortedNoteListView, NoteListViewModelBase parent)
         {
             _noteListView = usnortedNoteListView;
+            _parent = parent;
 
             ChangedSelection = this
                 .WhenPropertyChanged(nlvm => nlvm.SelectedItem)
@@ -51,6 +52,14 @@ namespace NoteEvolution.ViewModels
         {
             get => _selectedItem;
             set => this.RaiseAndSetIfChanged(ref _selectedItem, value);
+        }
+
+        private NoteListViewModelBase _parent;
+
+        public NoteListViewModelBase Parent
+        {
+            get => _parent;
+            set => this.RaiseAndSetIfChanged(ref _parent, value);
         }
 
         #endregion

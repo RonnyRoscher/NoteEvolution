@@ -5,11 +5,13 @@ using System.Reactive.Linq;
 using DynamicData;
 using DynamicData.Binding;
 using ReactiveUI;
+using NoteEvolution.Enums;
 using NoteEvolution.Models;
+using System.Linq;
 
 namespace NoteEvolution.ViewModels
 {
-    public class SourceNotesViewModel : ViewModelBase
+    public class SourceNotesViewModel : NoteListViewModelBase
     {
         private SourceCache<Note, Guid> _relatedNoteListSource;
 
@@ -19,15 +21,19 @@ namespace NoteEvolution.ViewModels
         {
             _relatedNoteListSource = relatedNoteListSource;
 
+            HideUsedNotes = true;
+            SortOrder = NoteSortOrderType.ModifiedDesc;
+
             var relatedNoteFilterAddDel = relatedNoteListSource
                 .Connect()
-                .Select(BuildSourceNotesFilter);
+                .Select(BuildNotesFilter);
             var relatedNoteFilterChange = relatedNoteListSource
                 .Connect()
                 .WhenAnyPropertyChanged(new[] { nameof(Note.RelatedTextUnitId) })
-                .Select(BuildSourceNotesFilter);
-            var noteComparer = SortExpressionComparer<NoteViewModel>.Descending(nvm => nvm.Value.ModificationDate);
-            var noteWasModified = _relatedNoteListSource
+                .Select(BuildNotesFilter);
+            var filterUpdateRequired = this.WhenValueChanged(t => t.HideUsedNotes).Select(_ => Unit.Default);
+            var noteComparer = this.WhenValueChanged(t => t.SortOrder).Select(BuildNotesComparer);
+            var sortUpdateRequired = _relatedNoteListSource
                 .Connect()
                 .WhenPropertyChanged(n => n.ModificationDate)
                 .Throttle(TimeSpan.FromMilliseconds(250))
@@ -35,15 +41,15 @@ namespace NoteEvolution.ViewModels
             _relatedNoteListSource
                 .Connect()
                 .AutoRefreshOnObservable(_ => relatedNoteFilterChange)
-                .Filter(relatedNoteFilterAddDel)
+                .Filter(relatedNoteFilterAddDel, filterUpdateRequired)
                 .Transform(n => new NoteViewModel(n))
-                .Sort(noteComparer, noteWasModified)
+                .Sort(noteComparer, sortUpdateRequired)
                 .ObserveOn(RxApp.MainThreadScheduler)
                 .Bind(out _relatedNoteListView)
                 .DisposeMany()
                 .Subscribe();
 
-            NoteList = new NoteListViewModel(_relatedNoteListView);
+            NoteList = new NoteListViewModel(_relatedNoteListView, this);
 
             // set LastAddedText on new unsorted note added, used to auto focus the textbox
             _relatedNoteListSource
@@ -51,11 +57,6 @@ namespace NoteEvolution.ViewModels
                 .OnItemAdded(t => LastAddedNote = t)
                 .DisposeMany()
                 .Subscribe();
-        }
-
-        private Func<Note, bool> BuildSourceNotesFilter(object param)
-        {
-            return note => note.RelatedTextUnitId == null;
         }
 
         #region Public Methods

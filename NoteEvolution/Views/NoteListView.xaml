@@ -5,6 +5,7 @@
              xmlns:models="clr-namespace:NoteEvolution.Models;assembly=NoteEvolution"
              xmlns:vm="clr-namespace:NoteEvolution.ViewModels;assembly=NoteEvolution"
              xmlns:c="clr-namespace:NoteEvolution.Converter;assembly=NoteEvolution"
+             xmlns:e="clr-namespace:NoteEvolution.Enums;assembly=NoteEvolution"
              mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
              x:Class="NoteEvolution.Views.NoteListView">
 
@@ -15,9 +16,19 @@
   <UserControl.Resources>
     <c:SubstractValueConverter x:Key="SubstractValueConverterKey"/>
     <c:IsReadonlyColorConverter x:Key="IsReadonlyColorConverterKey"/>
+    <c:RadioButtonConverter x:Key="RadioButtonConverterKey"/>
   </UserControl.Resources>
 
   <DockPanel LastChildFill="True">
+
+    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal">
+      <CheckBox Margin="3" Content="Hide used" IsChecked="{Binding Parent.HideUsedNotes}"/>
+      <Label Margin="0 1 0 0" Content="Sort by:"/>
+      <ToggleButton Margin="2" Padding="2 0" Content="Created &#x2193;" IsChecked="{Binding Parent.SortOrder, Converter={StaticResource RadioButtonConverterKey}, ConverterParameter={x:Static e:NoteSortOrderType.CreatedDesc}}"/>
+      <ToggleButton Margin="2" Padding="2 0" Content="Created &#x2191;" IsChecked="{Binding Parent.SortOrder, Converter={StaticResource RadioButtonConverterKey}, ConverterParameter={x:Static e:NoteSortOrderType.CreatedAsc}}"/>
+      <ToggleButton Margin="2" Padding="2 0" Content="Modified &#x2193;" IsChecked="{Binding Parent.SortOrder, Converter={StaticResource RadioButtonConverterKey}, ConverterParameter={x:Static e:NoteSortOrderType.ModifiedDesc}}"/>
+      <ToggleButton Margin="2" Padding="2 0" Content="Modified &#x2191;" IsChecked="{Binding Parent.SortOrder, Converter={StaticResource RadioButtonConverterKey}, ConverterParameter={x:Static e:NoteSortOrderType.ModifiedAsc}}"/>
+    </StackPanel>
     
     <ListBox x:Name="LvNoteList" Padding="0" VirtualizationMode="Simple" Items="{Binding Items}" SelectedItem="{Binding SelectedItem}">
       <ListBox.ItemTemplate>
