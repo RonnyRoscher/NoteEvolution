@@ -155,7 +155,7 @@ namespace NoteEvolution.DataContext
                         .Subscribe();
                     _documentListSource
                         .Connect()
-                        .WhenAnyPropertyChanged(new[] { nameof(Document.Title), nameof(Document.TextUnitList) /*nameof(Document.ModificationDate)*/ })
+                        .WhenAnyPropertyChanged(new[] { nameof(Document.Title), nameof(Document.TextUnitList), nameof(Document.ModificationDate) })
                         .Do(d => {
                             while (_isSaving)
                                 System.Threading.Thread.Sleep(300);
@@ -196,7 +196,14 @@ namespace NoteEvolution.DataContext
                         .Connect()
                         .OnItemAdded(t => {
                             if (t.Id == 0)
+                            {
                                 t.Id = _localTextUnitId++;
+                                // add initial note 
+                                var initialNote = new Note();
+                                initialNote.RelatedTextUnit = t;
+                                initialNote.RelatedTextUnitId = t.Id;
+                                _noteListSource.AddOrUpdate(initialNote);
+                            }
                             if (TextUnits.Find(t.Id) == null)
                             {
                                 TextUnits.Add(t);
@@ -222,7 +229,7 @@ namespace NoteEvolution.DataContext
                         .Subscribe();
                     _textUnitListSource
                         .Connect()
-                        .WhenAnyPropertyChanged(new[] { nameof(Note.Text) })
+                        .WhenAnyPropertyChanged(new[] { nameof(TextUnit.ModificationDate) })
                         .Do(t => {
                             while (_isSaving)
                                 System.Threading.Thread.Sleep(300);

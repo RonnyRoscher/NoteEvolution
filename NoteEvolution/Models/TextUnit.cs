@@ -44,16 +44,6 @@ namespace NoteEvolution.Models
             RelatedDocumentId = relatedDocument.Id;
 
             RelatedSources = new ObservableCollection<ContentSource>();
-
-            // add initial note when a new textunit is created (detected by it not having related notes yet)
-            // todo: set CurrentTreeDepth to 0 on TextUnit create
-            if (NoteList.FirstOrDefault() == null)
-            {
-                var initialNote = new Note();
-                _globalNoteListSource.AddOrUpdate(initialNote);
-                initialNote.RelatedTextUnit = this;
-                initialNote.RelatedTextUnitId = Id;
-            }
         }
 
         public void InitializeDataSources(SourceCache<Note, Guid> globalNoteListSource, SourceCache<TextUnit, Guid> globalTextUnitListSource)
@@ -70,11 +60,6 @@ namespace NoteEvolution.Models
                 _textUnitListSource = _globalTextUnitListSource
                     .Connect()
                     .Filter(t => t.ParentId == Id);
-
-                // update ModifiedDate on ModifiedDate changes in any associated notes
-                this.WhenAnyValue(n => n.CreationDate, n => n.RelatedDocument, n => n.Parent, n => n.Predecessor, n => n.Successor, n => n.NoteList)
-                    .Throttle(TimeSpan.FromMilliseconds(250))
-                    .Do(x => ModificationDate = DateTime.Now);
 
                 // load child textunits from db and keep updated when adding and deleting textunits, as well as update current tree depth on changes of children
                 SubtreeDepth = 0;
@@ -98,6 +83,17 @@ namespace NoteEvolution.Models
                     //})
                     .OnItemRemoved(n => { NoteList.Remove(n); })
                     .DisposeMany()
+                    .Subscribe();
+
+                // update ModifiedDate on ModifiedDate changes
+                this.WhenAnyValue(n => n.CreationDate, n => n.RelatedDocument, n => n.Parent, n => n.Predecessor, n => n.Successor, n => n.NoteList)
+                    .Throttle(TimeSpan.FromMilliseconds(250))
+                    .Do(x => ModificationDate = DateTime.Now);
+                _noteListSource
+                    .WhenPropertyChanged(t => t.ModificationDate)
+                    .Skip(1)
+                    .Throttle(TimeSpan.FromMilliseconds(250))
+                    .Do(n => ModificationDate = DateTime.Now)
                     .Subscribe();
             }
         }

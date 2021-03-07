@@ -61,7 +61,7 @@ namespace NoteEvolution.Models
                     .Connect()
                     .Filter(t => t.RelatedDocumentId == Id);
 
-                // update ModifiedDate on changes to local text unit properties
+                // update ModifiedDate on changes
                 this.WhenAnyValue(d => d.CreationDate, d => d.Title)
                     .Select(_ => DateTime.Now)
                     .Do(d => ModificationDate = d);
@@ -70,11 +70,16 @@ namespace NoteEvolution.Models
                 TextUnitList = new List<TextUnit>();
                 _textUnitListSource
                     .OnItemAdded(t => { TextUnitList.Add(t); })
-                    .OnItemRemoved(t => { TextUnitList.Remove(t); })
+                    .OnItemRemoved(t => {
+                        TextUnitList.Remove(t);
+                        ModificationDate = DateTime.Now;
+                    });
+                _textUnitListSource
                     .WhenPropertyChanged(t => t.ModificationDate)
+                    .Where(t => t.Sender.ModificationDate > ModificationDate)
                     .Throttle(TimeSpan.FromMilliseconds(250))
-                    .Select(t => t.Value)
-                    .Do(d => ModificationDate = d);
+                    .Do(t => ModificationDate = t.Value)
+                    .Subscribe();
 
                 _globalContentSourceListSource = contentSourceListSource;
             }
