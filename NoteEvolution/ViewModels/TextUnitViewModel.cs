@@ -128,6 +128,14 @@ namespace NoteEvolution.ViewModels
             set => this.RaiseAndSetIfChanged(ref _fontSize, value);
         }
 
+        private Note _selectedNote;
+
+        public Note SelectedNote
+        {
+            get => _selectedNote;
+            set => this.RaiseAndSetIfChanged(ref _selectedNote, value);
+        }
+
         private TextUnit _value;
 
         public TextUnit Value

@@ -1,0 +1,37 @@
+﻿<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:models="clr-namespace:NoteEvolution.Models;assembly=NoteEvolution"
+             xmlns:vm="clr-namespace:NoteEvolution.ViewModels;assembly=NoteEvolution"
+             xmlns:b="clr-namespace:NoteEvolution.Behaviors;assembly=NoteEvolution"
+             xmlns:c="clr-namespace:NoteEvolution.Converter;assembly=NoteEvolution"
+             xmlns:e="clr-namespace:NoteEvolution.Enums;assembly=NoteEvolution"
+             xmlns:i="clr-namespace:Avalonia.Xaml.Interactivity;assembly=Avalonia.Xaml.Interactivity"
+             mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
+             x:Class="NoteEvolution.Views.SettingsView">
+
+  <DockPanel LastChildFill="True">
+
+    <DockPanel DockPanel.Dock="Top" LastChildFill="True">
+      <Label DockPanel.Dock="Left" Margin="3 4 0 2" Content="Selected Language"/>
+      <!--<Button DockPanel.Dock="Right" HorizontalAlignment="Left" Margin="3 5" Padding="7 0 7 2" Command="{Binding DeleteSelectedLanguageCommand}" Content="-" ToolTip.Tip="Delete Selected"/>-->
+      <Button DockPanel.Dock="Right" HorizontalAlignment="Left" Margin="3 5" Padding="5 0 5 2" Command="{Binding AddNewLanguageCommand}" Content="+" ToolTip.Tip="Add New"/>
+      <TextBox Margin="3" Text="{Binding SelectedLanguage.Name}" Tag="{Binding SelectedLanguage}">
+        <i:Interaction.Behaviors>
+          <b:FocusOnTagChangedBehavior/>
+        </i:Interaction.Behaviors>
+      </TextBox>
+    </DockPanel>
+
+    <ListBox SelectedItem="{Binding SelectedLanguage}" Items="{Binding Languages}">
+      <ListBox.ItemTemplate>
+        <DataTemplate>
+          <TextBlock Text="{Binding Name}"/>
+        </DataTemplate>
+      </ListBox.ItemTemplate>
+    </ListBox>
+  
+  </DockPanel>
+  
+</UserControl>

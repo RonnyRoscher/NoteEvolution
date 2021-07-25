@@ -18,13 +18,15 @@ namespace NoteEvolution.ViewModels
         private readonly SourceCache<Document, Guid> _globalDocumentListSource;
         private readonly ReadOnlyObservableCollection<DocumentViewModel> _documentListView;
         private readonly SourceCache<ContentSource, Guid> _contentSourceListSource;
+        private readonly SourceCache<Language, Guid> _languageListSource;
 
-        public DocumentCollectionViewModel(SourceCache<Note, Guid> globalNoteListSource, SourceCache<TextUnit, Guid> globalTextUnitListSource, SourceCache<Document, Guid> globalDocumentListSource, SourceCache<ContentSource, Guid> contentSourceListSource)
+        public DocumentCollectionViewModel(SourceCache<Note, Guid> globalNoteListSource, SourceCache<TextUnit, Guid> globalTextUnitListSource, SourceCache<Document, Guid> globalDocumentListSource, SourceCache<ContentSource, Guid> contentSourceListSource, SourceCache<Language, Guid> languageListSource)
         {
             _globalNoteListSource = globalNoteListSource;
             _globalTextUnitListSource = globalTextUnitListSource;
             _globalDocumentListSource = globalDocumentListSource;
             _contentSourceListSource = contentSourceListSource;
+            _languageListSource = languageListSource;
 
             UnsortedNotes = new SourceNotesViewModel(_globalNoteListSource);
             TextUnitProperties = new TextUnitPropertiesViewModel(_contentSourceListSource);
@@ -38,7 +40,7 @@ namespace NoteEvolution.ViewModels
                 .Select(_ => Unit.Default);
             _globalDocumentListSource
                 .Connect()
-                .Transform(d => new DocumentViewModel(d))
+                .Transform(d => new DocumentViewModel(d, _languageListSource))
                 .Sort(documentComparer, documentWasModified)
                 .ObserveOn(RxApp.MainThreadScheduler)
                 .Bind(out _documentListView)

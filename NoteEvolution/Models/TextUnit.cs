@@ -4,8 +4,10 @@ using System.Collections.ObjectModel;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 using System.Linq;
+using System.Reactive;
 using System.Reactive.Linq;
 using DynamicData;
+using DynamicData.Binding;
 using ReactiveUI;
 
 namespace NoteEvolution.Models
@@ -16,6 +18,7 @@ namespace NoteEvolution.Models
 
         private SourceCache<Note, Guid> _globalNoteListSource;
         public IObservable<IChangeSet<Note, Guid>> _noteListSource;
+        private ReadOnlyObservableCollection<Note> _noteListView;
 
         public SourceCache<TextUnit, Guid> _globalTextUnitListSource;
         public IObservable<IChangeSet<TextUnit, Guid>> _textUnitListSource;
@@ -74,7 +77,7 @@ namespace NoteEvolution.Models
                     .Subscribe();
 
                 // load associated notes from db and keep updated when adding and deleting textunits
-                NoteList = new List<Note>();
+                NoteList = new ObservableCollection<Note>();
                 _noteListSource
                     // todo: check is that the solution to double add / crashes
                     //.OnItemAdded(n => { 
@@ -85,12 +88,27 @@ namespace NoteEvolution.Models
                     .DisposeMany()
                     .Subscribe();
 
+                var noteComparer = SortExpressionComparer<Note>.Ascending(n => n.LanguageId);
+                var rootTextUnitWasModified = _globalNoteListSource
+                    .Connect()
+                    .WhenPropertyChanged(n => n.LanguageId)
+                    .Select(_ => Unit.Default);
+                _globalNoteListSource
+                    .Connect()
+                    .Filter(n => n.RelatedTextUnitId == Id)
+                    .Sort(noteComparer, rootTextUnitWasModified)
+                    .ObserveOn(RxApp.MainThreadScheduler)
+                    .Bind(out _noteListView)
+                    .DisposeMany()
+                    .Subscribe();
+
                 // update ModifiedDate on ModifiedDate changes
-                this.WhenAnyValue(n => n.CreationDate, n => n.RelatedDocument, n => n.Parent, n => n.Predecessor, n => n.Successor, n => n.NoteList)
+                this.WhenAnyValue(n => n.CreationDate, n => n.RelatedDocument, n => n.Parent, n => n.Predecessor, n => n.Successor)
                     .Throttle(TimeSpan.FromMilliseconds(250))
                     .Do(x => ModificationDate = DateTime.Now);
                 _noteListSource
-                    .WhenPropertyChanged(t => t.ModificationDate)
+                    .WhenPropertyChanged(n => n.ModificationDate)
+                    .Where(n => n.Sender.ModificationDate > ModificationDate)
                     .Skip(1)
                     .Throttle(TimeSpan.FromMilliseconds(250))
                     .Do(n => ModificationDate = DateTime.Now)
@@ -399,16 +417,19 @@ namespace NoteEvolution.Models
             set => this.RaiseAndSetIfChanged(ref _orderNr, value);
         }
 
-        private List<Note> _noteList;
+        private ObservableCollection<Note> _noteList;
 
         /// <summary>
         /// List of notes beloging to this textunit.
         /// </summary>
-        public virtual List<Note> NoteList
+        public virtual ObservableCollection<Note> NoteList
         {
             get => _noteList;
             set => this.RaiseAndSetIfChanged(ref _noteList, value);
         }
+
+        [NotMapped]
+        public ReadOnlyObservableCollection<Note> NoteListView => _noteListView;
 
         private ObservableCollection<ContentSource> _relatedSources;
 

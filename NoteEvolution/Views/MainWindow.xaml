@@ -32,5 +32,9 @@
       <v:DocumentCollectionView DataContext="{Binding DocumentCollection}"/>
     </TabItem>
     
+    <TabItem Header="Settings">
+      <v:SettingsView DataContext="{Binding SettingsData}"/>
+    </TabItem>
+    
   </TabControl>
 </Window>

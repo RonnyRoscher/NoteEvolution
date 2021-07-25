@@ -18,6 +18,7 @@ namespace NoteEvolution.ViewModels
 
         private readonly NoteEvolutionContext _localDB;
 
+        private readonly SourceCache<Language, Guid> _languageListSource;
         private readonly SourceCache<ContentSource, Guid> _globalContentSourceListSource;
         private readonly SourceCache<Note, Guid> _globalNoteListSource;
         private readonly SourceCache<TextUnit, Guid> _globalTextUnitListSource;
@@ -33,13 +34,15 @@ namespace NoteEvolution.ViewModels
 
             _localDB = new NoteEvolutionContext();
 
+            _languageListSource = _localDB.LanguageListSource;
             _globalContentSourceListSource = _localDB.ContentSourceListSource;
             _globalNoteListSource = _localDB.NoteListSource;
             _globalTextUnitListSource = _localDB.TextUnitListSource;
             _globalDocumentListSource = _localDB.DocumentListSource;
 
             UnsortedNotes = new UnsortedNotesViewModel(_globalNoteListSource, _globalContentSourceListSource);
-            DocumentCollection = new DocumentCollectionViewModel(_globalNoteListSource, _globalTextUnitListSource, _globalDocumentListSource, _globalContentSourceListSource);
+            DocumentCollection = new DocumentCollectionViewModel(_globalNoteListSource, _globalTextUnitListSource, _globalDocumentListSource, _globalContentSourceListSource, _languageListSource);
+            SettingsData = new SettingsViewModel(_languageListSource);
 
             CreateNewNoteCommand = ReactiveCommand.Create(ExecuteCreateNewNote);
 
@@ -93,6 +96,14 @@ namespace NoteEvolution.ViewModels
         {
             get => _documentCollection;
             set => this.RaiseAndSetIfChanged(ref _documentCollection, value);
+        }
+
+        private SettingsViewModel _settingsData;
+
+        public SettingsViewModel SettingsData
+        {
+            get => _settingsData;
+            set => this.RaiseAndSetIfChanged(ref _settingsData, value);
         }
         
         #endregion

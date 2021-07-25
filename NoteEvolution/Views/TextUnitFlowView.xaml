@@ -34,14 +34,33 @@
   </UserControl.Styles>
 
   <DockPanel Margin="3 3 6 0" LastChildFill="True">
-    <TextBlock DockPanel.Dock="Top" Margin="0 0 0 5" Text="Content"/>
+    <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto Auto * Auto * Auto">
+      <TextBlock Grid.Column="0" Margin="2 7 5 2" Text="Content"/>
+      <TextBlock Grid.Column="1" Margin="25 7 3 2" Text="Active Text Language:"/>
+      <ComboBox Grid.Column="2" Margin="3" Height="26" Items="{Binding AvailableAndCurrentLanguages}" SelectedItem="{Binding CurrentLanguage}">
+        <ComboBox.ItemTemplate>
+          <DataTemplate>
+            <TextBlock Text="{Binding Name}"/>
+          </DataTemplate>
+        </ComboBox.ItemTemplate>
+      </ComboBox>
+      <Button Grid.Column="3" Margin="25 3 3 3" Padding="4 0 4 2" Content="Add Language" ToolTip.Tip="Add new language text for selected element" Command="{Binding AddLanguageCommand}"/>
+      <ComboBox Grid.Column="4" Margin="3" Height="26" Items="{Binding AvailableLanguages}" SelectedItem="{Binding SelectedAvailableLanguage}">
+        <ComboBox.ItemTemplate>
+          <DataTemplate>
+            <TextBlock Text="{Binding Name}"/>
+          </DataTemplate>
+        </ComboBox.ItemTemplate>
+      </ComboBox>
+      <Button Grid.Column="5" Margin="25 3 0 3" Padding="4 0 4 2" Content="Del Language" ToolTip.Tip="Delete currently selected language text" Command="{Binding DelLanguageCommand}"/>
+    </Grid>
     <ListBox Name="lbFlowDocument" Items="{Binding AllItems}" SelectedItem="{Binding SelectedItem, Mode=TwoWay}" PointerReleased="EndMoveOperation" PointerMoved="MoveOperation">
       <ListBox.DataTemplates>
         <DataTemplate>
-          <ItemsControl Items="{Binding Value.NoteList}">
+          <ItemsControl Items="{Binding Value.NoteListView}">
             <ItemsControl.ItemsPanel>
               <ItemsPanelTemplate>
-                <UniformGrid/>
+                <UniformGrid Rows="1"/>
               </ItemsPanelTemplate>
             </ItemsControl.ItemsPanel>
             <ItemsControl.DataTemplates>
@@ -51,6 +70,7 @@
                     <b:FocusOnTagChangedBehavior/>
                     <ia:EventTriggerBehavior EventName="GotFocus">
                       <ia:ChangePropertyAction TargetObject="{Binding #lbFlowDocument}" PropertyName="SelectedItem" Value="{Binding $parent[ListBoxItem].DataContext}"/>
+                      <ia:ChangePropertyAction TargetObject="{Binding $parent[ListBoxItem].DataContext}" PropertyName="SelectedNote" Value="{Binding }"/>
                     </ia:EventTriggerBehavior>
                   </i:Interaction.Behaviors>
                 </TextBox>

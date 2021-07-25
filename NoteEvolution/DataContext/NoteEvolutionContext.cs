@@ -23,6 +23,7 @@ namespace NoteEvolution.DataContext
         public virtual DbSet<TextUnit> TextUnits { get; set; }
         public virtual DbSet<Note> Notes { get; set; }
         public virtual DbSet<ContentSource> ContentSources { get; set; }
+        public virtual DbSet<Language> Languages { get; set; }
 
         #endregion
 
@@ -33,6 +34,12 @@ namespace NoteEvolution.DataContext
         private Timer _updateTimer;
         private bool _isSaved;
         private bool _isSaving;
+
+        private int _localLanguageId;
+        private readonly ConcurrentDictionary<int, Language> _addedLanguages;
+        private readonly ConcurrentDictionary<int, Language> _changedLanguages;
+        private readonly ConcurrentDictionary<int, Language> _deletedLanguages;
+        private readonly SourceCache<Language, Guid> _languageListSource;
 
         private int _localDocumentId;
         private readonly ConcurrentDictionary<int, Document> _addedDocuments;
@@ -118,6 +125,90 @@ namespace NoteEvolution.DataContext
             _deletedContentSources = new ConcurrentDictionary<int, ContentSource>();
             _contentSourceListSource = new SourceCache<ContentSource, Guid>(n => n.LocalId);
 
+            _localLanguageId = 1;
+            _addedLanguages = new ConcurrentDictionary<int, Language>();
+            _changedLanguages = new ConcurrentDictionary<int, Language>();
+            _deletedLanguages = new ConcurrentDictionary<int, Language>();
+            _languageListSource = new SourceCache<Language, Guid>(d => d.LocalId);
+
+            GetLanguageEntries()
+                .ToObservable()
+                .Subscribe(l =>
+                {
+                    _languageListSource.AddOrUpdate(l);
+                },
+                e => { /* error */ },
+                () => { /* success */
+                    if (_languageListSource.Items.Count() > 0)
+                        _localLanguageId = _languageListSource.Items.Max(n => n.Id) + 1;
+                    _languageListSource
+                        .Connect()
+                        .OnItemAdded(l => {
+                            while (_isSaving)
+                                System.Threading.Thread.Sleep(300);
+                            if (l.Id == 0)
+                                l.Id = _localLanguageId++;
+                            if (Languages.Find(l.Id) == null)
+                            {
+                                Languages.Add(l);
+                                _addedLanguages.TryAdd(l.Id, l);
+                                _updateTimer.Interval = 3000;
+                                if (_isSaved)
+                                {
+                                    _isSaved = false;
+                                    _eventAggregator.Publish(new NotifySaveStateChanged(true));
+                                }
+                            }
+                        })
+                        .OnItemRemoved(l => {
+                            if (Languages.Find(l.Id) != null)
+                            {
+                                while (_isSaving)
+                                    System.Threading.Thread.Sleep(300);
+                                if (_addedLanguages.ContainsKey(l.Id))
+                                {
+                                    _addedLanguages.TryRemove(l.Id, out var _);
+                                    var isSaved = HasChanges();
+                                    if (isSaved != _isSaved)
+                                    {
+                                        _isSaved = isSaved;
+                                        _eventAggregator.Publish(new NotifySaveStateChanged(true));
+                                    }
+                                } else {
+                                    _deletedLanguages.TryAdd(l.Id, l);
+                                    if (_isSaved)
+                                    {
+                                        _isSaved = false;
+                                        _eventAggregator.Publish(new NotifySaveStateChanged(true));
+                                    }
+                                }
+                                Languages.Remove(l);
+                                _updateTimer.Interval = 3000;
+                            }
+                        })
+                        .DisposeMany()
+                        .Subscribe();
+                    _languageListSource
+                        .Connect()
+                        .WhenAnyPropertyChanged(new[] { nameof(Language.Name), nameof(Language.OrderNr) })
+                        .Do(l => {
+                            while (_isSaving)
+                                System.Threading.Thread.Sleep(300);
+                            if (!_addedLanguages.ContainsKey(l.Id))
+                            {
+                                _changedLanguages.TryAdd(l.Id, l);
+                                _updateTimer.Interval = 3000;
+                                if (_isSaved)
+                                {
+                                    _isSaved = false;
+                                    _eventAggregator.Publish(new NotifySaveStateChanged(true));
+                                }
+                            }
+                        })
+                        .Subscribe();
+                    }
+                );
+
             GetDocumentEntries()
                 .ToObservable()
                 .Subscribe(d =>
@@ -180,7 +271,7 @@ namespace NoteEvolution.DataContext
                         .Subscribe();
                     _documentListSource
                         .Connect()
-                        .WhenAnyPropertyChanged(new[] { nameof(Document.Title), nameof(Document.TextUnitList), nameof(Document.ModificationDate) })
+                        .WhenAnyPropertyChanged(new[] { nameof(Document.Title), nameof(Document.ModificationDate) })
                         .Do(d => {
                             while (_isSaving)
                                 System.Threading.Thread.Sleep(300);
@@ -238,9 +329,11 @@ namespace NoteEvolution.DataContext
                                     _eventAggregator.Publish(new NotifySaveStateChanged(true));
                                 }
                                 // add initial note when a new textunit is created
-                                var initialNote = new Note();
-                                initialNote.RelatedTextUnit = t;
-                                initialNote.RelatedTextUnitId = t.Id;
+                                var initialNote = new Note
+                                {
+                                    RelatedTextUnit = t,
+                                    RelatedTextUnitId = t.Id
+                                };
                                 _noteListSource.AddOrUpdate(initialNote);
                             }
                         })
@@ -351,7 +444,7 @@ namespace NoteEvolution.DataContext
                         .Subscribe();
                     _noteListSource
                         .Connect()
-                        .WhenAnyPropertyChanged(new[] { nameof(Note.Text) })
+                        .WhenAnyPropertyChanged(new[] { nameof(Note.Text), nameof(Note.LanguageId) })
                         .Do(n => {
                             while (_isSaving)
                                 System.Threading.Thread.Sleep(300);
@@ -559,6 +652,21 @@ namespace NoteEvolution.DataContext
                     _deletedContentSources.Clear();
                 }
 
+                if (_addedLanguages?.Count > 0)
+                {
+                    _addedLanguages.Clear();
+                }
+                if (_changedLanguages?.Count > 0)
+                {
+                    Languages.UpdateRange(_changedLanguages.Values);
+                    _changedLanguages.Clear();
+                }
+                if (_deletedLanguages?.Count > 0)
+                {
+                    Languages.RemoveRange(_deletedLanguages.Values);
+                    _deletedLanguages.Clear();
+                }
+
                 SaveChanges();
                 _isSaved = true;
                 _eventAggregator.Publish(new NotifySaveStateChanged(false));
@@ -568,6 +676,13 @@ namespace NoteEvolution.DataContext
         }
 
         #region Database Access Functions
+
+        private IEnumerable<Language> GetLanguageEntries()
+        {
+            IQueryable dbLanguageQuery = Languages;
+            foreach (Language dbLanguage in dbLanguageQuery)
+                yield return dbLanguage;
+        }
 
         private IEnumerable<ContentSource> GetContentSourceEntries()
         {
@@ -605,6 +720,7 @@ namespace NoteEvolution.DataContext
         public SourceCache<TextUnit, Guid> TextUnitListSource => _textUnitListSource;
         public SourceCache<Note, Guid> NoteListSource => _noteListSource;
         public SourceCache<ContentSource, Guid> ContentSourceListSource => _contentSourceListSource;
+        public SourceCache<Language, Guid> LanguageListSource => _languageListSource;
 
         #endregion
     }

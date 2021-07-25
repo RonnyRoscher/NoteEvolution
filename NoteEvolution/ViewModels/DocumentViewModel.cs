@@ -26,11 +26,21 @@ namespace NoteEvolution.ViewModels
 
         private readonly ReadOnlyObservableCollection<TextUnitViewModel> _textUnitRootListView;
 
+        private readonly SourceCache<Language, Guid> _languageListSource;
+
+        private bool _ignoreLanguageChange;
+
         #endregion
 
-        public DocumentViewModel(Document documentSource)
+        public DocumentViewModel(Document documentSource, SourceCache<Language, Guid> languageListSource)
         {
             _eventAggregator = Hub.Default;
+
+            _ignoreLanguageChange = false;
+
+            _languageListSource = languageListSource;
+            AvailableLanguages = new ObservableCollection<Language>();
+            AvailableLanguages.AddRange(_languageListSource.Items);
 
             Value = documentSource;
 
@@ -83,14 +93,41 @@ namespace NoteEvolution.ViewModels
 
             ChangedSelection = this
                 .WhenPropertyChanged(ntvm => ntvm.SelectedItem)
-                .Where(ntvm => ntvm.Value?.Value != null)
-                .Select(ntvm => ntvm.Value.Value);
-            ChangedSelection.Do(tvm => { _eventAggregator.Publish(new NotifySelectedTextUnitChanged(tvm)); }).Subscribe();
+                .Where(ntvm => ntvm.Value != null)
+                .Select(ntvm => ntvm.Value);
+            ChangedSelection.Do(tvm => 
+            {
+                SelectedItem.PropertyChanged -= SelectedItem_PropertyChanged;
+                tvm.PropertyChanged += SelectedItem_PropertyChanged;
+                // notify other modules about the selection change
+                _eventAggregator.Publish(new NotifySelectedTextUnitChanged(tvm.Value));
+                // update available languages
+                UpdateAvailableLanguages();
+            }).Subscribe();
 
             CreateNewSuccessorCommand = ReactiveCommand.Create(ExecuteCreateNewSuccessor);
             CreateNewChildCommand = ReactiveCommand.Create(ExecuteCreateNewChild);
             RemoveSelectedCommand = ReactiveCommand.Create(ExecuteRemoveSelected);
             DeleteSelectedCommand = ReactiveCommand.Create(ExecuteDeleteSelected);
+            AddLanguageCommand = ReactiveCommand.Create(ExecuteAddLanguage);
+            DelLanguageCommand = ReactiveCommand.Create(ExecuteDelLanguage);
+        }
+
+        private void UpdateAvailableLanguages()
+        {
+            AvailableLanguages = new ObservableCollection<Language>(_languageListSource.Items.Where(l => !SelectedItem.Value.NoteList.Any(n => l.Id == n.LanguageId)).ToList());
+            SelectedAvailableLanguage = AvailableLanguages.FirstOrDefault();
+        }
+
+        private void SelectedItem_PropertyChanged(object sender, System.ComponentModel.PropertyChangedEventArgs e)
+        {
+            if ((e.PropertyName == nameof(TextUnitViewModel.SelectedNote) || e.PropertyName == nameof(TextUnitViewModel.IsSelected)) && sender is TextUnitViewModel tvm)
+            {
+                _ignoreLanguageChange = true;
+                AvailableAndCurrentLanguages = new ObservableCollection<Language>(_languageListSource.Items.Where(l => l.Id == tvm.SelectedNote?.LanguageId || SelectedItem?.Value.NoteList.Any(n => l.Id == n.LanguageId) == false).ToList());
+                CurrentLanguage = _languageListSource.Items.FirstOrDefault(l => l.Id == tvm.SelectedNote?.LanguageId);
+                _ignoreLanguageChange = false;
+            }
         }
 
         #region Commands
@@ -163,6 +200,39 @@ namespace NoteEvolution.ViewModels
                     closestItem = _textUnitListView.LastOrDefault(note => note.Value.OrderNr < SelectedItem.Value.OrderNr);
                 SelectedItem.Value.RelatedDocument.DeleteTextUnit(SelectedItem.Value);
                 SelectedItem = (SelectedItem != closestItem) ? closestItem : null;
+            }
+        }
+
+        public ReactiveCommand<Unit, Unit> AddLanguageCommand { get; }
+
+        void ExecuteAddLanguage()
+        {
+            if (SelectedAvailableLanguage != null && SelectedItem != null)
+            {
+                var additionalNote = new Note
+                {
+                    RelatedTextUnit = SelectedItem.Value,
+                    RelatedTextUnitId = SelectedItem.Value.Id,
+                    LanguageId = (byte)SelectedAvailableLanguage.Id
+                };
+                Value.GlobalNoteListSource.AddOrUpdate(additionalNote);
+                UpdateAvailableLanguages();
+            }
+        }
+
+        public ReactiveCommand<Unit, Unit> DelLanguageCommand { get; }
+
+        void ExecuteDelLanguage()
+        {
+            if (SelectedItem?.SelectedNote != null)
+            {
+                if (SelectedItem.Value.NoteList.Count == 1)
+                {
+                    ExecuteDeleteSelected();
+                } else {
+                    Value.GlobalNoteListSource.Remove(SelectedItem.SelectedNote);
+                    UpdateAvailableLanguages();
+                }
             }
         }
 
@@ -248,11 +318,51 @@ namespace NoteEvolution.ViewModels
             set => this.RaiseAndSetIfChanged(ref _selectedItem, value);
         }
 
+        private ObservableCollection<Language> _availableLanguages;
+
+        public ObservableCollection<Language> AvailableLanguages
+        {
+            get => _availableLanguages;
+            set => this.RaiseAndSetIfChanged(ref _availableLanguages, value);
+        }
+
+        private ObservableCollection<Language> _availableAndCurrentLanguages;
+
+        public ObservableCollection<Language> AvailableAndCurrentLanguages
+        {
+            get => _availableAndCurrentLanguages;
+            set => this.RaiseAndSetIfChanged(ref _availableAndCurrentLanguages, value);
+        }
+
+        private Language _currentLanguage;
+
+        public Language CurrentLanguage
+        {
+            get => _currentLanguage;
+            set
+            {
+                this.RaiseAndSetIfChanged(ref _currentLanguage, value);
+                if (!_ignoreLanguageChange && value != null && SelectedItem?.SelectedNote != null && SelectedItem.SelectedNote.LanguageId != value.Id)
+                {
+                    SelectedItem.SelectedNote.LanguageId = (byte)value.Id;
+                    UpdateAvailableLanguages();
+                }
+            }
+        }
+
+        private Language _selectedAvailableLanguage;
+
+        public Language SelectedAvailableLanguage
+        {
+            get => _selectedAvailableLanguage;
+            set => this.RaiseAndSetIfChanged(ref _selectedAvailableLanguage, value);
+        }
+
         #endregion
 
         #region Public Observables
 
-        public IObservable<TextUnit> ChangedSelection { get; private set; }
+        public IObservable<TextUnitViewModel> ChangedSelection { get; private set; }
 
         #endregion
     }
