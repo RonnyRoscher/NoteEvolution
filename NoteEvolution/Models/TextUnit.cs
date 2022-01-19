@@ -251,10 +251,15 @@ namespace NoteEvolution.Models
             return newTextUnit;
         }
 
-        public void RemoveTextUnit(TextUnit oldTextUnit)
+        public void RemoveTextUnit()
         {
-            if (oldTextUnit != null)
-                _globalTextUnitListSource.Remove(oldTextUnit);
+            var oldPredecessor = Predecessor;
+            var oldSuccessor = Successor;
+            _globalTextUnitListSource.Remove(this);
+            if (oldPredecessor != null)
+                oldPredecessor.Successor = oldSuccessor;
+            if (oldSuccessor != null)
+                oldSuccessor.Predecessor = oldPredecessor;
         }
 
         #endregion

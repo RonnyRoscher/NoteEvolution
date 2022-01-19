@@ -95,15 +95,23 @@ namespace NoteEvolution.Models
         public void RemoveTextUnit(TextUnit oldTextUnit)
         {
             if (oldTextUnit != null)
+            {
+                while (oldTextUnit.TextUnitChildList.Count > 0)
+                    RemoveTextUnit(oldTextUnit.TextUnitChildList.FirstOrDefault());
+                oldTextUnit.RemoveTextUnit();
                 _globalTextUnitListSource.Remove(oldTextUnit);
+            }
         }
 
         public void DeleteTextUnit(TextUnit oldTextUnit)
         {
             if (oldTextUnit != null)
             {
+                while (oldTextUnit.TextUnitChildList.Count > 0)
+                    DeleteTextUnit(oldTextUnit.TextUnitChildList.FirstOrDefault());
                 if (oldTextUnit.NoteList.Count > 0)
                     _globalNoteListSource.Remove(oldTextUnit.NoteList.ToList());
+                oldTextUnit.RemoveTextUnit();
                 _globalTextUnitListSource.Remove(oldTextUnit);
             }
         }
