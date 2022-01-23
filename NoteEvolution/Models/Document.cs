@@ -98,6 +98,11 @@ namespace NoteEvolution.Models
             {
                 while (oldTextUnit.TextUnitChildList.Count > 0)
                     RemoveTextUnit(oldTextUnit.TextUnitChildList.FirstOrDefault());
+                foreach (var note in oldTextUnit.NoteList)
+                {
+                    note.RelatedTextUnitId = null;
+                    note.RelatedTextUnit = null;
+                }
                 oldTextUnit.RemoveTextUnit();
                 _globalTextUnitListSource.Remove(oldTextUnit);
             }
