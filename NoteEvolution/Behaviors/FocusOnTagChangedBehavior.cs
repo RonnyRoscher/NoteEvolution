@@ -19,12 +19,12 @@ namespace NoteEvolution.Behaviors
 		{
 			if (e.Property.Name == nameof(Control.Tag) && e.NewValue != null && AssociatedObject != null)
 			{
-				if ((AssociatedObject.DataContext != null && 
-						(AssociatedObject.DataContext is UnsortedNotesViewModel || 
-						e.NewValue is Document || 
-						(AssociatedObject.DataContext is Note cn && e.NewValue is TextUnitViewModel ntu && ntu.Value.NoteList.Any(n => n.Id == cn.Id) && !AssociatedObject.IsFocused) ||
+				if ((AssociatedObject.DataContext != null &&
+						(AssociatedObject.DataContext is UnsortedNotesViewModel ||
+						e.NewValue is Document ||
+						(AssociatedObject.DataContext is Note cn && e.NewValue is TextUnitViewModel ntu && ntu.Value.NoteList.Any(n => n.Id == cn.Id) && !AssociatedObject.Parent.Parent.IsKeyboardFocusWithin) ||
 						(AssociatedObject.DataContext is SettingsViewModel && e.NewValue is Language))) ||
-					(AssociatedObject.DataContext == null && 
+					(AssociatedObject.DataContext == null &&
 						(e.NewValue is ContentSource)
 					))
 					Dispatcher.UIThread.Post(() => AssociatedObject?.Focus(), DispatcherPriority.Layout);
