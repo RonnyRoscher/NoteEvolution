@@ -17,9 +17,9 @@ namespace NoteEvolution.ViewModels
 
         #endregion
 
-        public NoteListViewModel(ReadOnlyObservableCollection<NoteViewModel> unsortedNoteListView, NoteListViewModelBase parent)
+        public NoteListViewModel(ReadOnlyObservableCollection<NoteViewModel> noteListView, NoteListViewModelBase parent)
         {
-            _noteListView = unsortedNoteListView;
+            _noteListView = noteListView;
             _parent = parent;
 
             ChangedSelection = this
