@@ -6,7 +6,7 @@ using System.ComponentModel.DataAnnotations;
 using ReactiveUI;
 using System.Collections.ObjectModel;
 
-namespace NoteEvolution.Models
+namespace NoteEvolution.DAL.Models
 {
     /// <summary>
     /// Class describing a simple unstructured note object.
@@ -40,9 +40,9 @@ namespace NoteEvolution.Models
                 .Subscribe();
         }
 
-        private void DerivedNotes_CollectionChanged(object sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
+        private void DerivedNotes_CollectionChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
         {
-            IsReadonly = DerivedNotes.Count > 0;
+            IsReadonly = DerivedNotes?.Any() == true;
         }
 
         #region Public Methods
@@ -100,9 +100,9 @@ namespace NoteEvolution.Models
             set => this.RaiseAndSetIfChanged(ref _modificationDate, value);
         }
 
-        private string _text;
+        private string? _text;
 
-        public string Text
+        public string? Text
         {
             get => _text;
             set => this.RaiseAndSetIfChanged(ref _text, value);
@@ -124,12 +124,12 @@ namespace NoteEvolution.Models
             }
         }
 
-        private TextUnit _relatedTextUnit;
+        private TextUnit? _relatedTextUnit;
 
         /// <summary>
         /// The textunit the note belongs to.
         /// </summary>
-        public virtual TextUnit RelatedTextUnit
+        public virtual TextUnit? RelatedTextUnit
         {
             get => _relatedTextUnit;
             set => this.RaiseAndSetIfChanged(ref _relatedTextUnit, value);
@@ -144,25 +144,25 @@ namespace NoteEvolution.Models
             set => this.RaiseAndSetIfChanged(ref _isReadonly, value);
         }
 
-        private ObservableCollection<Note> _sourceNotes;
+        private ObservableCollection<Note>? _sourceNotes;
 
-        public virtual ObservableCollection<Note> SourceNotes
+        public virtual ObservableCollection<Note>? SourceNotes
         {
             get => _sourceNotes;
             set => this.RaiseAndSetIfChanged(ref _sourceNotes, value);
         }
 
-        private ObservableCollection<Note> _derivedNotes;
+        private ObservableCollection<Note>? _derivedNotes;
 
-        public virtual ObservableCollection<Note> DerivedNotes
+        public virtual ObservableCollection<Note>? DerivedNotes
         {
             get => _derivedNotes;
             set => this.RaiseAndSetIfChanged(ref _derivedNotes, value);
         }
 
-        private ObservableCollection<ContentSource> _relatedSources;
+        private ObservableCollection<ContentSource>? _relatedSources;
 
-        public virtual ObservableCollection<ContentSource> RelatedSources
+        public virtual ObservableCollection<ContentSource>? RelatedSources
         {
             get => _relatedSources;
             set => this.RaiseAndSetIfChanged(ref _relatedSources, value);

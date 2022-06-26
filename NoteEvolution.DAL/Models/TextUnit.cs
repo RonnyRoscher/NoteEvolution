@@ -10,18 +10,18 @@ using DynamicData;
 using DynamicData.Binding;
 using ReactiveUI;
 
-namespace NoteEvolution.Models
+namespace NoteEvolution.DAL.Models
 {
     public class TextUnit : ReactiveObject
     {
         #region Private Properties
 
-        private SourceCache<Note, Guid> _globalNoteListSource;
-        public IObservable<IChangeSet<Note, Guid>> _noteListSource;
-        private ReadOnlyObservableCollection<Note> _noteListView;
+        private SourceCache<Note, Guid>? _globalNoteListSource;
+        public IObservable<IChangeSet<Note, Guid>>? _noteListSource;
+        private ReadOnlyObservableCollection<Note>? _noteListView;
 
-        public SourceCache<TextUnit, Guid> _globalTextUnitListSource;
-        public IObservable<IChangeSet<TextUnit, Guid>> _textUnitListSource;
+        public SourceCache<TextUnit, Guid>? _globalTextUnitListSource;
+        public IObservable<IChangeSet<TextUnit, Guid>>? _textUnitListSource;
 
         #endregion
 
@@ -33,7 +33,7 @@ namespace NoteEvolution.Models
             InitializeDataSources(new SourceCache<Note, Guid>(n => n.LocalId), new SourceCache<TextUnit, Guid>(t => t.LocalId));
         }
 
-        public TextUnit(Document relatedDocument)
+        public TextUnit(Document? relatedDocument)
         {
             CreationDate = DateTime.Now;
             Id = 0;
@@ -41,10 +41,11 @@ namespace NoteEvolution.Models
             CreationDate = DateTime.Now;
             ModificationDate = DateTime.Now;
 
-            InitializeDataSources(relatedDocument.GlobalNoteListSource, relatedDocument.GlobalTextUnitListSource);
+            if (relatedDocument != null)
+                InitializeDataSources(relatedDocument.GlobalNoteListSource ?? new SourceCache<Note, Guid>(n => n.LocalId), relatedDocument.GlobalTextUnitListSource ?? new SourceCache<TextUnit, Guid>(t => t.LocalId));
 
             RelatedDocument = relatedDocument;
-            RelatedDocumentId = relatedDocument.Id;
+            RelatedDocumentId = relatedDocument?.Id ?? 0;
 
             RelatedSources = new ObservableCollection<ContentSource>();
         }
@@ -71,7 +72,7 @@ namespace NoteEvolution.Models
                     .OnItemAdded(t => { TextUnitChildList.Add(t); })
                     .OnItemRemoved(t => { TextUnitChildList.Remove(t); })
                     .WhenPropertyChanged(t => t.SubtreeDepth)
-                    .Select(cv => TextUnitChildList.Max(t => t.SubtreeDepth) + 1)
+                    .Select(cv => TextUnitChildList.Select(t => t.SubtreeDepth).DefaultIfEmpty(0).Max() + 1)
                     .Where(nv => nv != SubtreeDepth)
                     .Do(nstd => SubtreeDepth = nstd)
                     .Subscribe();
@@ -123,10 +124,10 @@ namespace NoteEvolution.Models
         /// </summary>
         /// <param name="successor">The root of the subtree.</param>
         /// <returns>The last sequencial text unit of the subtree or the subtree root text unit if it does not have any children.</returns>
-        private TextUnit GetLastSubtreeTextUnit(TextUnit subtreeRoot)
+        private TextUnit? GetLastSubtreeTextUnit(TextUnit? subtreeRoot)
         {
             var result = subtreeRoot;
-            if (subtreeRoot.TextUnitChildList.Count() > 0)
+            if (subtreeRoot?.TextUnitChildList?.Any() == true)
                 result = GetLastSubtreeTextUnit(subtreeRoot.TextUnitChildList.OrderBy(n => n.OrderNr).LastOrDefault());
             return result;
         }
@@ -136,12 +137,12 @@ namespace NoteEvolution.Models
         /// </summary>
         /// <param name="successor">The text unit which's predecessor is requested.</param>
         /// <returns>The sequencial predecessor text unit. If the given text unit is null or the first text unit of the document null is returned.</returns>
-        private TextUnit GetSequencialPredecessor(TextUnit successor)
+        private TextUnit? GetSequencialPredecessor(TextUnit? successor)
         {
             var directPrecesessor = successor?.Predecessor;
             if (directPrecesessor != null)
             {
-                if (directPrecesessor.TextUnitChildList.Count() > 0)
+                if (directPrecesessor?.TextUnitChildList?.Any() == true)
                     return GetLastSubtreeTextUnit(directPrecesessor.TextUnitChildList.OrderBy(n => n.OrderNr).LastOrDefault());
                 return directPrecesessor;
             }
@@ -153,7 +154,7 @@ namespace NoteEvolution.Models
         /// </summary>
         /// <param name="predecessor">The text unit which's successor is requested.</param>
         /// <returns>The sequencial successor text unit. If the given text unit is null or the last sequencial text unit of the document null is returned.</returns>
-        private TextUnit GetSequencialSuccessor(TextUnit predecessor)
+        private TextUnit? GetSequencialSuccessor(TextUnit? predecessor)
         {
             if (predecessor == null)
                 return null;
@@ -172,7 +173,7 @@ namespace NoteEvolution.Models
         /// <returns>The created text unit if the creation was successful, or else null.</returns>
         public TextUnit AddChild()
         {
-            var previousFirstChild = TextUnitChildList.OrderBy(n => n.OrderNr).FirstOrDefault();
+            var previousFirstChild = TextUnitChildList?.OrderBy(n => n.OrderNr).FirstOrDefault();
             // create text unit with document relations
             var newTextUnit = new TextUnit(RelatedDocument)
             {
@@ -180,8 +181,7 @@ namespace NoteEvolution.Models
                 ParentId = Id,
                 Parent = this
             };
-            _globalTextUnitListSource.AddOrUpdate(newTextUnit);
-            RelatedDocument.GlobalTextUnitListSource.AddOrUpdate(newTextUnit);
+            RelatedDocument?.GlobalTextUnitListSource?.AddOrUpdate(newTextUnit);
             // add sequencial relations
             if (previousFirstChild != null)
             {
@@ -220,32 +220,35 @@ namespace NoteEvolution.Models
                 ParentId = ParentId,
                 Parent = Parent
             };
-            RelatedDocument.GlobalTextUnitListSource.AddOrUpdate(newTextUnit);
-            // add sequencial relations
-            var previousSuccessor = Successor;
-            newTextUnit.Predecessor = this;
-            Successor = newTextUnit;
-            // handle insert inbetween if predecessor had predecessor
-            if (previousSuccessor != null)
+            if (RelatedDocument != null)
             {
-                newTextUnit.Successor = previousSuccessor;
-                previousSuccessor.Predecessor = newTextUnit;
-            }
-            // determine and set order number
-            if (Parent == null && previousSuccessor == null)
-            {
-                // case: insert as latest text unit on the document root level
-                newTextUnit.OrderNr = RelatedDocument.TextUnitList.Max(n => n.OrderNr) + 1.0;
-            } else {
-                var sequencialSuccessor = GetSequencialSuccessor(newTextUnit);
-                if (sequencialSuccessor != null)
+                RelatedDocument.GlobalTextUnitListSource?.AddOrUpdate(newTextUnit);
+                // add sequencial relations
+                var previousSuccessor = Successor;
+                newTextUnit.Predecessor = this;
+                Successor = newTextUnit;
+                // handle insert inbetween if predecessor had predecessor
+                if (previousSuccessor != null)
                 {
-                    // case: insert in between the new text unit's sequencial predecessor and successor
-                    var sequencialPredecessor = GetSequencialPredecessor(newTextUnit);
-                    newTextUnit.OrderNr = (sequencialPredecessor.OrderNr + sequencialSuccessor.OrderNr) / 2.0;
+                    newTextUnit.Successor = previousSuccessor;
+                    previousSuccessor.Predecessor = newTextUnit;
+                }
+                // determine and set order number
+                if (Parent == null && previousSuccessor == null)
+                {
+                    // case: insert as latest text unit on the document root level
+                    newTextUnit.OrderNr = (RelatedDocument.TextUnitList?.Select(n => OrderNr).DefaultIfEmpty(0).Max() ?? 0) + 1.0;
                 } else {
-                    // case: insert as last text unit at the end of the document
-                    newTextUnit.OrderNr = RelatedDocument.TextUnitList.Max(n => n.OrderNr) + 1.0;
+                    var sequencialSuccessor = GetSequencialSuccessor(newTextUnit);
+                    if (sequencialSuccessor != null)
+                    {
+                        // case: insert in between the new text unit's sequencial predecessor and successor
+                        var sequencialPredecessor = GetSequencialPredecessor(newTextUnit);
+                        newTextUnit.OrderNr = sequencialPredecessor != null ? (sequencialPredecessor.OrderNr + sequencialSuccessor.OrderNr) / 2.0 : 0;
+                    } else {
+                        // case: insert as last text unit at the end of the document
+                        newTextUnit.OrderNr = (RelatedDocument.TextUnitList?.Select(n => n.OrderNr).DefaultIfEmpty(0).Max() ?? 0) + 1.0;
+                    }
                 }
             }
             return newTextUnit;
@@ -255,7 +258,7 @@ namespace NoteEvolution.Models
         {
             var oldPredecessor = Predecessor;
             var oldSuccessor = Successor;
-            _globalTextUnitListSource.Remove(this);
+            _globalTextUnitListSource?.Remove(this);
             if (oldPredecessor != null)
                 oldPredecessor.Successor = oldSuccessor;
             if (oldSuccessor != null)
@@ -300,24 +303,24 @@ namespace NoteEvolution.Models
             set => this.RaiseAndSetIfChanged(ref _modificationDate, value);
         }
 
-        private int _relatedDocumentId;
+        private int? _relatedDocumentId;
 
         /// <summary>
         /// The id of the document the textunit is associated with.
         /// </summary>
         [ForeignKey("RelatedDocument")]
-        public int RelatedDocumentId
+        public int? RelatedDocumentId
         {
             get => _relatedDocumentId;
             set => this.RaiseAndSetIfChanged(ref _relatedDocumentId, value);
         }
 
-        private Document _relatedDocument;
+        private Document? _relatedDocument;
 
         /// <summary>
         /// The document the textunit is associated with.
         /// </summary>
-        public virtual Document RelatedDocument
+        public virtual Document? RelatedDocument
         {
             get => _relatedDocument;
             set => this.RaiseAndSetIfChanged(ref _relatedDocument, value);
@@ -335,24 +338,24 @@ namespace NoteEvolution.Models
             set => this.RaiseAndSetIfChanged(ref _parentId, value);
         }
 
-        private TextUnit _parent;
+        private TextUnit? _parent;
 
         /// <summary>
         /// The textunits parent or null if it is the root.
         /// </summary>
-        public virtual TextUnit Parent
+        public virtual TextUnit? Parent
         {
             get => _parent;
             set => this.RaiseAndSetIfChanged(ref _parent, value);
         }
 
-        private TextUnit _predecessor;
+        private TextUnit? _predecessor;
 
         /// <summary>
         /// The textunits predecessor on the same hierarchy level if exists.
         /// </summary>
         [NotMapped]
-        public virtual TextUnit Predecessor
+        public virtual TextUnit? Predecessor
         {
             get => _predecessor;
             set => this.RaiseAndSetIfChanged(ref _predecessor, value);
@@ -370,23 +373,23 @@ namespace NoteEvolution.Models
             set => this.RaiseAndSetIfChanged(ref _successorId, value);
         }
 
-        private TextUnit _successor;
+        private TextUnit? _successor;
 
         /// <summary>
         /// The textunits successor on the same hierarchy level if exists.
         /// </summary>
-        public virtual TextUnit Successor
+        public virtual TextUnit? Successor
         {
             get => _successor;
             set => this.RaiseAndSetIfChanged(ref _successor, value);
         }
 
-        private List<TextUnit> _textUnitChildList;
+        private List<TextUnit>? _textUnitChildList;
 
         /// <summary>
         /// List of direct child textunits in the hierarchical tree.
         /// </summary>
-        public virtual List<TextUnit> TextUnitChildList
+        public virtual List<TextUnit>? TextUnitChildList
         {
             get => _textUnitChildList;
             set => this.RaiseAndSetIfChanged(ref _textUnitChildList, value);
@@ -422,33 +425,33 @@ namespace NoteEvolution.Models
             set => this.RaiseAndSetIfChanged(ref _orderNr, value);
         }
 
-        private ObservableCollection<Note> _noteList;
+        private ObservableCollection<Note>? _noteList;
 
         /// <summary>
         /// List of notes beloging to this textunit.
         /// </summary>
-        public virtual ObservableCollection<Note> NoteList
+        public virtual ObservableCollection<Note>? NoteList
         {
             get => _noteList;
             set => this.RaiseAndSetIfChanged(ref _noteList, value);
         }
 
         [NotMapped]
-        public ReadOnlyObservableCollection<Note> NoteListView => _noteListView;
+        public ReadOnlyObservableCollection<Note>? NoteListView => _noteListView;
 
-        private ObservableCollection<ContentSource> _relatedSources;
+        private ObservableCollection<ContentSource>? _relatedSources;
 
-        public virtual ObservableCollection<ContentSource> RelatedSources
+        public virtual ObservableCollection<ContentSource>? RelatedSources
         {
             get => _relatedSources;
             set => this.RaiseAndSetIfChanged(ref _relatedSources, value);
         }
 
         [NotMapped]
-        public IObservable<IChangeSet<Note, Guid>> NoteListSource => _noteListSource;
+        public IObservable<IChangeSet<Note, Guid>>? NoteListSource => _noteListSource;
 
         [NotMapped]
-        public SourceCache<TextUnit, Guid> TextUnitListSource => _globalTextUnitListSource;
+        public SourceCache<TextUnit, Guid>? TextUnitListSource => _globalTextUnitListSource;
 
         #endregion
     }

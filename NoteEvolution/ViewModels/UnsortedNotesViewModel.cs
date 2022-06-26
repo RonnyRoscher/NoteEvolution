@@ -9,7 +9,7 @@ using ReactiveUI;
 using PubSub;
 using NoteEvolution.Enums;
 using NoteEvolution.Events;
-using NoteEvolution.Models;
+using NoteEvolution.DAL.Models;
 
 namespace NoteEvolution.ViewModels
 {

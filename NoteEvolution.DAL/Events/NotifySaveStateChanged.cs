@@ -1,4 +1,4 @@
-﻿namespace NoteEvolution.Events
+﻿namespace NoteEvolution.DAL.Events
 {
     public class NotifySaveStateChanged
     {

@@ -4,9 +4,10 @@ using System.Reflection;
 using DynamicData;
 using PubSub;
 using ReactiveUI;
-using NoteEvolution.DataContext;
-using NoteEvolution.Models;
+using NoteEvolution.DAL.DataContext;
+using NoteEvolution.DAL.Models;
 using NoteEvolution.Events;
+using NoteEvolution.DAL.Events;
 
 namespace NoteEvolution.ViewModels
 {

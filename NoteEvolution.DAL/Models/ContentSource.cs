@@ -3,7 +3,7 @@ using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 using ReactiveUI;
 
-namespace NoteEvolution.Models
+namespace NoteEvolution.DAL.Models
 {
     public class ContentSource : ReactiveObject
     {
@@ -51,34 +51,34 @@ namespace NoteEvolution.Models
             set => this.RaiseAndSetIfChanged(ref _modificationDate, value);
         }
 
-        private string _author;
+        private string? _author;
 
         /// <summary>
         /// The author of the source.
         /// </summary>
-        public string Author
+        public string? Author
         {
             get => _author;
             set => this.RaiseAndSetIfChanged(ref _author, value);
         }
 
-        private string _title;
+        private string? _title;
 
         /// <summary>
         /// The main title of the document source
         /// </summary>
-        public string Title
+        public string? Title
         {
             get => _title;
             set => this.RaiseAndSetIfChanged(ref _title, value);
         }
 
-        private string _chapter;
+        private string? _chapter;
 
         /// <summary>
         /// The chapter title of the document source.
         /// </summary>
-        public string Chapter
+        public string? Chapter
         {
             get => _chapter;
             set => this.RaiseAndSetIfChanged(ref _chapter, value);
@@ -95,12 +95,12 @@ namespace NoteEvolution.Models
             set => this.RaiseAndSetIfChanged(ref _pageNumber, value);
         }
 
-        private string _url;
+        private string? _url;
 
         /// <summary>
         /// The url of the website or video in case the source is from the internet.
         /// </summary>
-        public string Url
+        public string? Url
         {
             get => _url;
             set => this.RaiseAndSetIfChanged(ref _url, value);
@@ -133,12 +133,12 @@ namespace NoteEvolution.Models
             }
         }
 
-        private Note _relatedNote;
+        private Note? _relatedNote;
 
         /// <summary>
         /// The note the source belongs to.
         /// </summary>
-        public virtual Note RelatedNote
+        public virtual Note? RelatedNote
         {
             get => _relatedNote;
             set => this.RaiseAndSetIfChanged(ref _relatedNote, value);
@@ -160,12 +160,12 @@ namespace NoteEvolution.Models
             }
         }
 
-        private TextUnit _relatedTextUnit;
+        private TextUnit? _relatedTextUnit;
 
         /// <summary>
         /// The textunit the source belongs to.
         /// </summary>
-        public virtual TextUnit RelatedTextUnit
+        public virtual TextUnit? RelatedTextUnit
         {
             get => _relatedTextUnit;
             set => this.RaiseAndSetIfChanged(ref _relatedTextUnit, value);

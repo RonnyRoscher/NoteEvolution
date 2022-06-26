@@ -1,7 +1,7 @@
 ﻿using Avalonia.Controls;
 using Avalonia.Threading;
 using Avalonia.Xaml.Interactivity;
-using NoteEvolution.Models;
+using NoteEvolution.DAL.Models;
 using NoteEvolution.ViewModels;
 using System.Linq;
 

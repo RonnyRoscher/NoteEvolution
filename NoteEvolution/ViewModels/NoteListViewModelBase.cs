@@ -2,7 +2,7 @@
 using DynamicData.Binding;
 using ReactiveUI;
 using NoteEvolution.Enums;
-using NoteEvolution.Models;
+using NoteEvolution.DAL.Models;
 
 namespace NoteEvolution.ViewModels
 {

@@ -7,9 +7,7 @@ using DynamicData;
 using DynamicData.Binding;
 using ReactiveUI;
 using PubSub;
-using NoteEvolution.Enums;
-using NoteEvolution.Events;
-using NoteEvolution.Models;
+using NoteEvolution.DAL.Models;
 
 namespace NoteEvolution.ViewModels
 {
@@ -51,7 +49,7 @@ namespace NoteEvolution.ViewModels
 
         void ExecuteAddNewLanguage()
         {
-            var newLanguage = new Language { OrderNr = _languageListSource.Count == 0 ? 0 : _languageListSource.Items.Max(l => l.OrderNr) + 1 };
+            var newLanguage = new Language { OrderNr = _languageListSource.Count == 0 ? 0 : _languageListSource.Items.Select(l => l.OrderNr).DefaultIfEmpty(0).Max() + 1 };
             _languageListSource.AddOrUpdate(newLanguage);
             SelectedLanguage = newLanguage;
         }

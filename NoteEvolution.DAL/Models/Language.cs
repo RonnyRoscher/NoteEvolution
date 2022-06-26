@@ -3,7 +3,7 @@ using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 using ReactiveUI;
 
-namespace NoteEvolution.Models
+namespace NoteEvolution.DAL.Models
 {
     public class Language : ReactiveObject
     {
@@ -51,12 +51,12 @@ namespace NoteEvolution.Models
             set => this.RaiseAndSetIfChanged(ref _modificationDate, value);
         }
 
-        private string _name;
+        private string? _name;
 
         /// <summary>
         /// The name of the language.
         /// </summary>
-        public string Name
+        public string? Name
         {
             get => _name;
             set => this.RaiseAndSetIfChanged(ref _name, value);

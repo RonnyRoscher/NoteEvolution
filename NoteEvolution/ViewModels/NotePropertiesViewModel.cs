@@ -8,7 +8,7 @@ using DynamicData.Binding;
 using PubSub;
 using ReactiveUI;
 using NoteEvolution.Events;
-using NoteEvolution.Models;
+using NoteEvolution.DAL.Models;
 using Avalonia.Layout;
 
 namespace NoteEvolution.ViewModels

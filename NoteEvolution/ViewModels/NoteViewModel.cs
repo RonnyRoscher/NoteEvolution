@@ -3,7 +3,7 @@ using System.Reactive.Linq;
 using DynamicData;
 using DynamicData.Binding;
 using ReactiveUI;
-using NoteEvolution.Models;
+using NoteEvolution.DAL.Models;
 
 namespace NoteEvolution.ViewModels
 {

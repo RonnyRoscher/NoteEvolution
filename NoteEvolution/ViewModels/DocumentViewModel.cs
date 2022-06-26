@@ -6,7 +6,7 @@ using System.Reactive.Linq;
 using DynamicData;
 using DynamicData.Binding;
 using ReactiveUI;
-using NoteEvolution.Models;
+using NoteEvolution.DAL.Models;
 using System.Collections.Generic;
 using PubSub;
 using NoteEvolution.Events;
@@ -82,7 +82,7 @@ namespace NoteEvolution.ViewModels
             _textUnitRootListSource
                 .Connect()
                 .WhenPropertyChanged(t => t.Value.SubtreeDepth)
-                .Select(cv => RootItems.Max(t => t.Value.SubtreeDepth))
+                .Select(cv => RootItems.Select(t => t.Value.SubtreeDepth).DefaultIfEmpty(0).Max())
                 .Where(nv => nv != TreeMaxDepth)
                 .Do(nv => TreeMaxDepth = nv)
                 .Subscribe();

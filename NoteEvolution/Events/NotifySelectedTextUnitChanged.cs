@@ -1,4 +1,4 @@
-﻿using NoteEvolution.Models;
+﻿using NoteEvolution.DAL.Models;
 
 namespace NoteEvolution.Events
 {

@@ -7,19 +7,19 @@ using System.Reactive.Linq;
 using DynamicData;
 using ReactiveUI;
 
-namespace NoteEvolution.Models
+namespace NoteEvolution.DAL.Models
 {
     public class Document : ReactiveObject
     {
         #region Private Properties
 
-        private SourceCache<Note, Guid> _globalNoteListSource;
-        private IObservable<IChangeSet<Note, Guid>> _noteListSource;
+        private SourceCache<Note, Guid>? _globalNoteListSource;
+        private IObservable<IChangeSet<Note, Guid>>? _noteListSource;
 
-        private SourceCache<TextUnit, Guid> _globalTextUnitListSource;
-        private IObservable<IChangeSet<TextUnit, Guid>> _textUnitListSource;
+        private SourceCache<TextUnit, Guid>? _globalTextUnitListSource;
+        private IObservable<IChangeSet<TextUnit, Guid>>? _textUnitListSource;
 
-        private SourceCache<ContentSource, Guid> _globalContentSourceListSource;
+        private SourceCache<ContentSource, Guid>? _globalContentSourceListSource;
 
         #endregion
 
@@ -84,40 +84,41 @@ namespace NoteEvolution.Models
         #region Public Methods
 
         // todo: AddExisting & CreateNew
-        public TextUnit AddTextUnit()
+        public TextUnit? AddTextUnit()
         {
-            var latestRootTextUnit = TextUnitList.LastOrDefault();
+            var latestRootTextUnit = TextUnitList?.LastOrDefault();
             if (latestRootTextUnit != null)
                 return latestRootTextUnit.AddSuccessor();
             return null;
         }
 
-        public void RemoveTextUnit(TextUnit oldTextUnit)
+        public void RemoveTextUnit(TextUnit? oldTextUnit)
         {
             if (oldTextUnit != null)
             {
-                while (oldTextUnit.TextUnitChildList.Count > 0)
-                    RemoveTextUnit(oldTextUnit.TextUnitChildList.FirstOrDefault());
-                foreach (var note in oldTextUnit.NoteList)
-                {
-                    note.RelatedTextUnitId = null;
-                    note.RelatedTextUnit = null;
-                }
+                while (oldTextUnit.TextUnitChildList?.Any() == true)
+                    RemoveTextUnit(oldTextUnit.TextUnitChildList?.FirstOrDefault());
+                if (oldTextUnit.NoteList != null)
+                    foreach (var note in oldTextUnit.NoteList)
+                    {
+                        note.RelatedTextUnitId = null;
+                        note.RelatedTextUnit = null;
+                    }
                 oldTextUnit.RemoveTextUnit();
-                _globalTextUnitListSource.Remove(oldTextUnit);
+                _globalTextUnitListSource?.Remove(oldTextUnit);
             }
         }
 
-        public void DeleteTextUnit(TextUnit oldTextUnit)
+        public void DeleteTextUnit(TextUnit? oldTextUnit)
         {
             if (oldTextUnit != null)
             {
-                while (oldTextUnit.TextUnitChildList.Count > 0)
-                    DeleteTextUnit(oldTextUnit.TextUnitChildList.FirstOrDefault());
-                if (oldTextUnit.NoteList.Count > 0)
-                    _globalNoteListSource.Remove(oldTextUnit.NoteList.ToList());
+                while (oldTextUnit.TextUnitChildList?.Any() == true)
+                    DeleteTextUnit(oldTextUnit.TextUnitChildList?.FirstOrDefault());
+                if (oldTextUnit.NoteList?.Any() == true)
+                    _globalNoteListSource?.Remove(oldTextUnit.NoteList.ToList());
                 oldTextUnit.RemoveTextUnit();
-                _globalTextUnitListSource.Remove(oldTextUnit);
+                _globalTextUnitListSource?.Remove(oldTextUnit);
             }
         }
 
@@ -159,36 +160,36 @@ namespace NoteEvolution.Models
             set => this.RaiseAndSetIfChanged(ref _modificationDate, value);
         }
 
-        private string _title;
+        private string? _title;
 
-        public string Title
+        public string? Title
         {
             get => _title;
             set => this.RaiseAndSetIfChanged(ref _title, value);
         }
 
-        private List<TextUnit> _textUnitList;
+        private List<TextUnit>? _textUnitList;
 
-        public virtual List<TextUnit> TextUnitList
+        public virtual List<TextUnit>? TextUnitList
         {
             get => _textUnitList;
             set => this.RaiseAndSetIfChanged(ref _textUnitList, value);
         }
 
         [NotMapped]
-        public IObservable<IChangeSet<Note, Guid>> NoteListSource => _noteListSource;
+        public IObservable<IChangeSet<Note, Guid>>? NoteListSource => _noteListSource;
 
         [NotMapped]
-        public SourceCache<Note, Guid> GlobalNoteListSource => _globalNoteListSource;
+        public SourceCache<Note, Guid>? GlobalNoteListSource => _globalNoteListSource;
 
         [NotMapped]
-        public IObservable<IChangeSet<TextUnit, Guid>> TextUnitListSource => _textUnitListSource;
+        public IObservable<IChangeSet<TextUnit, Guid>>? TextUnitListSource => _textUnitListSource;
 
         [NotMapped]
-        public SourceCache<TextUnit, Guid> GlobalTextUnitListSource => _globalTextUnitListSource;
+        public SourceCache<TextUnit, Guid>? GlobalTextUnitListSource => _globalTextUnitListSource;
 
         [NotMapped]
-        public SourceCache<ContentSource, Guid> GlobalContentSourceListSource => _globalContentSourceListSource;
+        public SourceCache<ContentSource, Guid>? GlobalContentSourceListSource => _globalContentSourceListSource;
 
         #endregion
     }

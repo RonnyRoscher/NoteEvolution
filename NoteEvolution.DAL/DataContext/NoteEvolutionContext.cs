@@ -1,16 +1,15 @@
 ﻿using System;
 using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.Linq;
 using System.Reactive.Linq;
 using System.Timers;
 using Microsoft.EntityFrameworkCore;
 using DynamicData;
 using PubSub;
-using NoteEvolution.Events;
-using NoteEvolution.Models;
+using NoteEvolution.DAL.Events;
+using NoteEvolution.DAL.Models;
+using Timer = System.Timers.Timer;
 
-namespace NoteEvolution.DataContext
+namespace NoteEvolution.DAL.DataContext
 {
     public class NoteEvolutionContext : DbContext
     {
@@ -19,11 +18,11 @@ namespace NoteEvolution.DataContext
 
         #region Virtual Database Tables
 
-        public virtual DbSet<Document> Documents { get; set; }
-        public virtual DbSet<TextUnit> TextUnits { get; set; }
-        public virtual DbSet<Note> Notes { get; set; }
-        public virtual DbSet<ContentSource> ContentSources { get; set; }
-        public virtual DbSet<Language> Languages { get; set; }
+        public virtual DbSet<Document>? Documents { get; set; }
+        public virtual DbSet<TextUnit>? TextUnits { get; set; }
+        public virtual DbSet<Note>? Notes { get; set; }
+        public virtual DbSet<ContentSource>? ContentSources { get; set; }
+        public virtual DbSet<Language>? Languages { get; set; }
 
         #endregion
 
@@ -31,7 +30,7 @@ namespace NoteEvolution.DataContext
 
         private readonly Hub _eventAggregator;
 
-        private Timer _updateTimer;
+        private readonly Timer _updateTimer;
         private bool _isSaved;
         private bool _isSaving;
 
@@ -139,16 +138,16 @@ namespace NoteEvolution.DataContext
                 },
                 e => { /* error */ },
                 () => { /* success */
-                    if (_languageListSource.Items.Count() > 0)
-                        _localLanguageId = _languageListSource.Items.Max(n => n.Id) + 1;
+                    if (_languageListSource.Items.Any())
+                        _localLanguageId = _languageListSource.Items.Select(n => n.Id).DefaultIfEmpty(0).Max() + 1;
                     _languageListSource
                         .Connect()
                         .OnItemAdded(l => {
                             while (_isSaving)
-                                System.Threading.Thread.Sleep(300);
+                                Thread.Sleep(300);
                             if (l.Id == 0)
                                 l.Id = _localLanguageId++;
-                            if (Languages.Find(l.Id) == null)
+                            if (Languages != null && Languages.Find(l.Id) == null)
                             {
                                 Languages.Add(l);
                                 _addedLanguages.TryAdd(l.Id, l);
@@ -161,10 +160,10 @@ namespace NoteEvolution.DataContext
                             }
                         })
                         .OnItemRemoved(l => {
-                            if (Languages.Find(l.Id) != null)
+                            if (Languages != null && Languages.Find(l.Id) != null)
                             {
                                 while (_isSaving)
-                                    System.Threading.Thread.Sleep(300);
+                                    Thread.Sleep(300);
                                 if (_addedLanguages.ContainsKey(l.Id))
                                 {
                                     _addedLanguages.TryRemove(l.Id, out var _);
@@ -192,8 +191,10 @@ namespace NoteEvolution.DataContext
                         .Connect()
                         .WhenAnyPropertyChanged(new[] { nameof(Language.Name), nameof(Language.OrderNr) })
                         .Do(l => {
+                            if (l == null)
+                                return;
                             while (_isSaving)
-                                System.Threading.Thread.Sleep(300);
+                                Thread.Sleep(300);
                             if (!_addedLanguages.ContainsKey(l.Id))
                             {
                                 _changedLanguages.TryAdd(l.Id, l);
@@ -218,16 +219,16 @@ namespace NoteEvolution.DataContext
                 },
                 e => { /* error */ },
                 () => { /* success */
-                    if (_documentListSource.Items.Count() > 0)
-                        _localDocumentId = _documentListSource.Items.Max(n => n.Id) + 1;
+                    if (_documentListSource.Items.Any())
+                        _localDocumentId = _documentListSource.Items.Select(n => n.Id).DefaultIfEmpty(0).Max() + 1;
                     _documentListSource
                         .Connect()
                         .OnItemAdded(d => {
                             while (_isSaving)
-                                System.Threading.Thread.Sleep(300);
+                                Thread.Sleep(300);
                             if (d.Id == 0)
                                 d.Id = _localDocumentId++;
-                            if (Documents.Find(d.Id) == null)
+                            if (Documents != null && Documents.Find(d.Id) == null)
                             {
                                 Documents.Add(d);
                                 _addedDocuments.TryAdd(d.Id, d);
@@ -242,10 +243,10 @@ namespace NoteEvolution.DataContext
                             }
                         })
                         .OnItemRemoved(d => {
-                            if (Documents.Find(d.Id) != null)
+                            if (Documents != null && Documents.Find(d.Id) != null)
                             {
                                 while (_isSaving)
-                                    System.Threading.Thread.Sleep(300);
+                                    Thread.Sleep(300);
                                 if (_addedDocuments.ContainsKey(d.Id))
                                 {
                                     _addedDocuments.TryRemove(d.Id, out var _);
@@ -273,8 +274,10 @@ namespace NoteEvolution.DataContext
                         .Connect()
                         .WhenAnyPropertyChanged(new[] { nameof(Document.Title), nameof(Document.ModificationDate) })
                         .Do(d => {
+                            if (d == null)
+                                return;
                             while (_isSaving)
-                                System.Threading.Thread.Sleep(300);
+                                Thread.Sleep(300);
                             if (!_addedDocuments.ContainsKey(d.Id))
                             {
                                 _changedDocuments.TryAdd(d.Id, d);
@@ -299,11 +302,11 @@ namespace NoteEvolution.DataContext
                 },
                 e => { /* error */ },
                 () => { /* success */
-                    if (_textUnitListSource.Items.Count() > 0)
+                    if (_textUnitListSource.Items.Any())
                     {
                         InitializeOrderNumbers();
 
-                        _localTextUnitId = _textUnitListSource.Items.Max(t => t.Id) + 1;
+                        _localTextUnitId = _textUnitListSource.Items.Select(t => t.Id).DefaultIfEmpty(0).Max() + 1;
 
                         foreach (var textUnit in _textUnitListSource.Items)
                         {
@@ -315,10 +318,10 @@ namespace NoteEvolution.DataContext
                         .Connect()
                         .OnItemAdded(t => {
                             while (_isSaving)
-                                System.Threading.Thread.Sleep(300);
+                                Thread.Sleep(300);
                             if (t.Id == 0)
                                 t.Id = _localTextUnitId++;
-                            if (TextUnits.Find(t.Id) == null)
+                            if (TextUnits != null && TextUnits.Find(t.Id) == null)
                             {
                                 TextUnits.Add(t);
                                 _addedTextUnits.TryAdd(t.Id, t);
@@ -338,10 +341,10 @@ namespace NoteEvolution.DataContext
                             }
                         })
                         .OnItemRemoved(t => {
-                            if (TextUnits.Find(t.Id) != null)
+                            if (TextUnits != null && TextUnits.Find(t.Id) != null)
                             {
                                 while (_isSaving)
-                                    System.Threading.Thread.Sleep(300);
+                                    Thread.Sleep(300);
                                 if (_addedTextUnits.ContainsKey(t.Id))
                                 {
                                     _addedTextUnits.TryRemove(t.Id, out var _);
@@ -369,8 +372,10 @@ namespace NoteEvolution.DataContext
                         .Connect()
                         .WhenAnyPropertyChanged(new[] { nameof(TextUnit.ModificationDate) })
                         .Do(t => {
+                            if (t == null)
+                                return;
                             while (_isSaving)
-                                System.Threading.Thread.Sleep(300);
+                                Thread.Sleep(300);
                             if (!_addedTextUnits.ContainsKey(t.Id))
                             {
                                 _changedTextUnits.TryAdd(t.Id, t);
@@ -392,17 +397,19 @@ namespace NoteEvolution.DataContext
                 { _noteListSource.AddOrUpdate(n); },
                 e => { /* error */ },
                 () => { /* success */
-                    if (_noteListSource.Items.Count() > 0)
-                        _localNoteId = _noteListSource.Items.Max(n => n.Id) + 1;
+                    if (_noteListSource.Items.Any())
+                        _localNoteId = _noteListSource.Items.Select(n => n.Id).DefaultIfEmpty(0).Max() + 1;
                     _noteListSource
                         .Connect()
                         .OnItemAdded(n => {
+                            if (n == null)
+                                return;
                             while (_isSaving)
-                                System.Threading.Thread.Sleep(300);
+                                Thread.Sleep(300);
                             if (n.Id == 0)
                                 n.Id = _localNoteId++;
-                            n.IsReadonly = n.DerivedNotes.Any();
-                            if (Notes.Find(n.Id) == null)
+                            n.IsReadonly = n.DerivedNotes?.Any() == true;
+                            if (Notes != null && Notes.Find(n.Id) == null)
                             {
                                 Notes.Add(n);
                                 _addedNotes.TryAdd(n.Id, n);
@@ -415,10 +422,10 @@ namespace NoteEvolution.DataContext
                             }
                         })
                         .OnItemRemoved(n => {
-                            if (Notes.Find(n.Id) != null)
+                            if (Notes != null && Notes.Find(n.Id) != null)
                             {
                                 while (_isSaving)
-                                    System.Threading.Thread.Sleep(300);
+                                    Thread.Sleep(300);
                                 if (_addedNotes.ContainsKey(n.Id))
                                 {
                                     _addedNotes.TryRemove(n.Id, out var _);
@@ -446,8 +453,10 @@ namespace NoteEvolution.DataContext
                         .Connect()
                         .WhenAnyPropertyChanged(new[] { nameof(Note.Text), nameof(Note.LanguageId) })
                         .Do(n => {
+                            if (n == null)
+                                return;
                             while (_isSaving)
-                                System.Threading.Thread.Sleep(300);
+                                Thread.Sleep(300);
                             if (!_addedNotes.ContainsKey(n.Id))
                             {
                                 _changedNotes.TryAdd(n.Id, n);
@@ -469,16 +478,16 @@ namespace NoteEvolution.DataContext
                 { _contentSourceListSource.AddOrUpdate(cs); },
                 e => { /* error */ },
                 () => { /* success */
-                    if (_contentSourceListSource.Items.Count() > 0)
-                        _localSourceId = _contentSourceListSource.Items.Max(s => s.Id) + 1;
+                    if (_contentSourceListSource.Items.Any())
+                        _localSourceId = _contentSourceListSource.Items.Select(s => s.Id).DefaultIfEmpty(0).Max() + 1;
                     _contentSourceListSource
                         .Connect()
                         .OnItemAdded(cs => {
                             while (_isSaving)
-                                System.Threading.Thread.Sleep(300);
+                                Thread.Sleep(300);
                             if (cs.Id == 0)
                                 cs.Id = _localSourceId++;
-                            if (ContentSources.Find(cs.Id) == null)
+                            if (ContentSources != null && ContentSources.Find(cs.Id) == null)
                             {
                                 ContentSources.Add(cs);
                                 _addedContentSources.TryAdd(cs.Id, cs);
@@ -491,10 +500,10 @@ namespace NoteEvolution.DataContext
                             }
                         })
                         .OnItemRemoved(cs => {
-                            if (ContentSources.Find(cs.Id) != null)
+                            if (ContentSources != null && ContentSources.Find(cs.Id) != null)
                             {
                                 while (_isSaving)
-                                    System.Threading.Thread.Sleep(300);
+                                    Thread.Sleep(300);
                                 if (_addedContentSources.ContainsKey(cs.Id))
                                 {
                                     _addedContentSources.TryRemove(cs.Id, out var _);
@@ -522,8 +531,10 @@ namespace NoteEvolution.DataContext
                         .Connect()
                         .WhenAnyPropertyChanged(new[] { nameof(ContentSource.Author), nameof(ContentSource.Title), nameof(ContentSource.Chapter), nameof(ContentSource.PageNumber), nameof(ContentSource.Url), nameof(ContentSource.Timestamp) })
                         .Do(cs => {
+                            if (cs == null)
+                                return;
                             while (_isSaving)
-                                System.Threading.Thread.Sleep(300);
+                                Thread.Sleep(300);
                             if (!_addedContentSources.ContainsKey(cs.Id))
                             {
                                 _changedContentSources.TryAdd(cs.Id, cs);
@@ -551,16 +562,17 @@ namespace NoteEvolution.DataContext
             }
         }
 
-        void SetOrderNrR(List<TextUnit> sortedLocalLevelGroupTextUnits, ref int currentOrderNr, int? parentId = null)
+        void SetOrderNrR(List<TextUnit> sortedLocalLevelGroupTextUnits, ref int currentOrderNr)
         {
             foreach (var currentTextUnit in sortedLocalLevelGroupTextUnits)
             {
                 currentTextUnit.OrderNr = currentOrderNr++;
-                SetOrderNrR(GetSortedList(currentTextUnit.TextUnitChildList), ref currentOrderNr, currentTextUnit.Id);
+                if (currentTextUnit.TextUnitChildList != null)
+                    SetOrderNrR(GetSortedList(currentTextUnit.TextUnitChildList), ref currentOrderNr);
             }
         }
 
-        List<TextUnit> GetSortedList(List<TextUnit> localLevelGroupTextUnits)
+        static List<TextUnit> GetSortedList(List<TextUnit> localLevelGroupTextUnits)
         {
             var sortedList = new List<TextUnit>();
             var currentElement = localLevelGroupTextUnits.FirstOrDefault(t => t.SuccessorId == null);
@@ -575,96 +587,111 @@ namespace NoteEvolution.DataContext
 
         private bool HasChanges()
         {
-            if (_addedNotes?.Count > 0 ||
-                _changedNotes?.Count > 0 ||
-                _deletedNotes?.Count > 0 ||
-                _changedTextUnits?.Count > 0 ||
-                _deletedTextUnits?.Count > 0 ||
-                _changedDocuments?.Count > 0 ||
-                _deletedDocuments?.Count > 0)
+            if (_addedNotes?.Any() == true ||
+                _changedNotes?.Any() == true ||
+                _deletedNotes?.Any() == true ||
+                _changedTextUnits?.Any() == true ||
+                _deletedTextUnits?.Any() == true ||
+                _changedDocuments?.Any() == true ||
+                _deletedDocuments?.Any() == true)
                 return true;
             return false;
         }
 
-        private void OnUpdateTimerElapsedEvent(object sender, ElapsedEventArgs e)
+        private void OnUpdateTimerElapsedEvent(object? sender, ElapsedEventArgs e)
         {
             if (!_isSaved && !_isSaving)
             {
                 _isSaving = true;
 
-                if (_addedDocuments?.Count > 0)
+                if (_addedDocuments?.Any() == true)
                 {
                     _addedDocuments.Clear();
                 }
-                if (_changedDocuments?.Count > 0)
+                if (Documents != null)
                 {
-                    Documents.UpdateRange(_changedDocuments.Values);
-                    _changedDocuments.Clear();
-                }
-                if (_deletedDocuments?.Count > 0)
-                {
-                    Documents.RemoveRange(_deletedDocuments.Values);
-                    _deletedDocuments.Clear();
+                    if (_changedDocuments?.Any() == true)
+                    {
+                        Documents.UpdateRange(_changedDocuments.Values);
+                        _changedDocuments.Clear();
+                    }
+                    if (_deletedDocuments?.Any() == true)
+                    {
+                        Documents.RemoveRange(_deletedDocuments.Values);
+                        _deletedDocuments.Clear();
+                    }
                 }
 
-                if (_addedTextUnits?.Count > 0)
+                if (_addedTextUnits?.Any() == true)
                 {
                     _addedTextUnits.Clear();
                 }
-                if (_changedTextUnits?.Count > 0)
+                if (TextUnits != null)
                 {
-                    TextUnits.UpdateRange(_changedTextUnits.Values);
-                    _changedTextUnits.Clear();
-                }
-                if (_deletedTextUnits?.Count > 0)
-                {
-                    TextUnits.RemoveRange(_deletedTextUnits.Values);
-                    _deletedTextUnits.Clear();
+                    if (_changedTextUnits?.Any() == true)
+                    {
+                        TextUnits.UpdateRange(_changedTextUnits.Values);
+                        _changedTextUnits.Clear();
+                    }
+                    if (_deletedTextUnits?.Any() == true)
+                    {
+                        TextUnits.RemoveRange(_deletedTextUnits.Values);
+                        _deletedTextUnits.Clear();
+                    }
                 }
 
-                if (_addedNotes?.Count > 0)
+                if (_addedNotes?.Any() == true)
                 {
                     _addedNotes.Clear();
                 }
-                if (_changedNotes?.Count > 0)
+                if (Notes != null)
                 {
-                    Notes.UpdateRange(_changedNotes.Values);
-                    _changedNotes.Clear();
-                }
-                if (_deletedNotes?.Count > 0)
-                {
-                    Notes.RemoveRange(_deletedNotes.Values);
-                    _deletedNotes.Clear();
+                    if (_changedNotes?.Any() == true)
+                    {
+                        Notes.UpdateRange(_changedNotes.Values);
+                        _changedNotes.Clear();
+                    }
+                    if (_deletedNotes?.Any() == true)
+                    {
+                        Notes.RemoveRange(_deletedNotes.Values);
+                        _deletedNotes.Clear();
+                    }
                 }
 
-                if (_addedContentSources?.Count > 0)
+                if (_addedContentSources?.Any() == true)
                 {
                     _addedContentSources.Clear();
                 }
-                if (_changedContentSources?.Count > 0)
+                if (ContentSources != null)
                 {
-                    ContentSources.UpdateRange(_changedContentSources.Values);
-                    _changedContentSources.Clear();
-                }
-                if (_deletedContentSources?.Count > 0)
-                {
-                    ContentSources.RemoveRange(_deletedContentSources.Values);
-                    _deletedContentSources.Clear();
+                    if (_changedContentSources?.Any() == true)
+                    {
+                        ContentSources.UpdateRange(_changedContentSources.Values);
+                        _changedContentSources.Clear();
+                    }
+                    if (_deletedContentSources?.Any() == true)
+                    {
+                        ContentSources.RemoveRange(_deletedContentSources.Values);
+                        _deletedContentSources.Clear();
+                    }
                 }
 
-                if (_addedLanguages?.Count > 0)
+                if (_addedLanguages?.Any() == true)
                 {
                     _addedLanguages.Clear();
                 }
-                if (_changedLanguages?.Count > 0)
+                if (Languages != null)
                 {
-                    Languages.UpdateRange(_changedLanguages.Values);
-                    _changedLanguages.Clear();
-                }
-                if (_deletedLanguages?.Count > 0)
-                {
-                    Languages.RemoveRange(_deletedLanguages.Values);
-                    _deletedLanguages.Clear();
+                    if (_changedLanguages?.Any() == true)
+                    {
+                        Languages.UpdateRange(_changedLanguages.Values);
+                        _changedLanguages.Clear();
+                    }
+                    if (_deletedLanguages?.Any() == true)
+                    {
+                        Languages.RemoveRange(_deletedLanguages.Values);
+                        _deletedLanguages.Clear();
+                    }
                 }
 
                 SaveChanges();
@@ -679,6 +706,8 @@ namespace NoteEvolution.DataContext
 
         private IEnumerable<Language> GetLanguageEntries()
         {
+            if (Languages == null)
+                yield break;
             IQueryable dbLanguageQuery = Languages;
             foreach (Language dbLanguage in dbLanguageQuery)
                 yield return dbLanguage;
@@ -686,6 +715,8 @@ namespace NoteEvolution.DataContext
 
         private IEnumerable<ContentSource> GetContentSourceEntries()
         {
+            if (ContentSources == null)
+                yield break;
             IQueryable dbContentSourcesQuery = ContentSources;
             foreach (ContentSource dbContentSource in dbContentSourcesQuery)
                 yield return dbContentSource;
@@ -693,6 +724,8 @@ namespace NoteEvolution.DataContext
 
         private IEnumerable<Note> GetNoteEntries()
         {
+            if (Notes == null)
+                yield break;
             IQueryable dbNotesQuery = Notes.Include(n => n.DerivedNotes).Include(n => n.SourceNotes).OrderByDescending(n => n.ModificationDate);
             foreach (Note dbNote in dbNotesQuery)
                 yield return dbNote;
@@ -700,6 +733,8 @@ namespace NoteEvolution.DataContext
 
         private IEnumerable<TextUnit> GetTextUnitEntries()
         {
+            if (TextUnits == null)
+                yield break;
             IQueryable dbTextUnitsQuery = TextUnits.OrderByDescending(t => t.ModificationDate);
             foreach (TextUnit dbTextUnit in dbTextUnitsQuery)
                 yield return dbTextUnit;
@@ -707,6 +742,8 @@ namespace NoteEvolution.DataContext
 
         private IEnumerable<Document> GetDocumentEntries()
         {
+            if (Documents == null)
+                yield break;
             IQueryable dbDocumentsQuery = Documents.OrderByDescending(d => d.ModificationDate);
             foreach (Document dbDocument in dbDocumentsQuery)
                 yield return dbDocument;
