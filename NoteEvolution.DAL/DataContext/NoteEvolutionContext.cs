@@ -86,9 +86,11 @@ namespace NoteEvolution.DAL.DataContext
             base.OnModelCreating(modelBuilder);
         }
 
+        // dotnet ef migrations add MigrationName
+
         public NoteEvolutionContext()
         {
-            Database.EnsureCreated();
+            Database.Migrate();
 
             _eventAggregator = Hub.Default;
 
