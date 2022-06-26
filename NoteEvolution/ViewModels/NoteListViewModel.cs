@@ -34,7 +34,7 @@ namespace NoteEvolution.ViewModels
         {
             if (note != null && SelectedItem?.Value?.Id != note.Id)
             {
-                var newSelection = _noteListView.FirstOrDefault(t => t.Value.Id == note.Id);
+                var newSelection = _noteListView?.FirstOrDefault(t => t.Value.Id == note.Id);
                 if (newSelection != null)
                     SelectedItem = newSelection;
             }

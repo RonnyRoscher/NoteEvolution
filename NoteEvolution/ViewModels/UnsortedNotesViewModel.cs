@@ -41,7 +41,9 @@ namespace NoteEvolution.ViewModels
                 .Connect()
                 .WhenAnyPropertyChanged(new[] { nameof(Note.RelatedTextUnitId), nameof(Note.IsReadonly) })
                 .Select(BuildNotesFilter);
-            var filterUpdateRequired = this.WhenValueChanged(t => t.HideUsedNotes).Select(_ => Unit.Default);
+            var filterUpdateRequired = this
+                .WhenValueChanged(t => t.HideUsedNotes)
+                .Select(_ => Unit.Default);
             var noteComparer = this.WhenValueChanged(t => t.SortOrder).Select(BuildNotesComparer);
             var sortUpdateRequired = _noteListSource
                 .Connect()
@@ -50,7 +52,7 @@ namespace NoteEvolution.ViewModels
                 .Select(_ => Unit.Default);
             _noteListSource
                 .Connect()
-                .AutoRefreshOnObservable(_ => unsortedNoteFilterChange)
+                //.AutoRefreshOnObservable(_ => unsortedNoteFilterChange)
                 .Filter(unsortedNoteFilterAddDel, filterUpdateRequired)
                 .Transform(n => new NoteViewModel(n))
                 .Sort(noteComparer, sortUpdateRequired)
@@ -86,7 +88,7 @@ namespace NoteEvolution.ViewModels
             {
                 var delIdx = NoteList.Items.IndexOf(NoteList.SelectedItem);
                 var closestItem = (NoteList.Items.Count > delIdx + 1) ? NoteList.Items.ElementAt(delIdx + 1) : (delIdx > 0 ? NoteList.Items.ElementAt(delIdx - 1) : null);
-                _noteListSource.Remove(NoteList.SelectedItem.Value);
+                _noteListSource.RemoveKey(NoteList.SelectedItem.Value.LocalId);
                 SelectNote(closestItem?.Value);
             }
         }

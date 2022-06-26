@@ -43,7 +43,7 @@ namespace NoteEvolution.ViewModels
 
             UnsortedNotes = new UnsortedNotesViewModel(_globalNoteListSource, _globalContentSourceListSource);
             DocumentCollection = new DocumentCollectionViewModel(_globalNoteListSource, _globalTextUnitListSource, _globalDocumentListSource, _globalContentSourceListSource, _languageListSource);
-            SettingsData = new SettingsViewModel(_languageListSource);
+            SettingsData = new SettingsViewModel(_languageListSource, _localDB);
 
             CreateNewNoteCommand = ReactiveCommand.Create(ExecuteCreateNewNote);
 

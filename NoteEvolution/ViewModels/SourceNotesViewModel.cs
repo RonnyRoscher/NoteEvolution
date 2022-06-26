@@ -32,7 +32,9 @@ namespace NoteEvolution.ViewModels
                 .WhenAnyPropertyChanged(new[] { nameof(Note.RelatedTextUnitId), nameof(Note.IsReadonly) })
                 .Select(BuildNotesFilter);
             var filterUpdateRequired = this.WhenValueChanged(t => t.HideUsedNotes).Select(_ => Unit.Default);
-            var noteComparer = this.WhenValueChanged(t => t.SortOrder).Select(BuildNotesComparer);
+            var noteComparer = this
+                .WhenValueChanged(t => t.SortOrder)
+                .Select(BuildNotesComparer);
             var sortUpdateRequired = _relatedNoteListSource
                 .Connect()
                 .WhenPropertyChanged(n => n.ModificationDate)
@@ -40,7 +42,7 @@ namespace NoteEvolution.ViewModels
                 .Select(_ => Unit.Default);
             _relatedNoteListSource
                 .Connect()
-                .AutoRefreshOnObservable(_ => relatedNoteFilterChange)
+                //.AutoRefreshOnObservable(_ => relatedNoteFilterChange)
                 .Filter(relatedNoteFilterAddDel, filterUpdateRequired)
                 .Transform(n => new NoteViewModel(n))
                 .Sort(noteComparer, sortUpdateRequired)

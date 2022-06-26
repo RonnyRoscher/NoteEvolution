@@ -132,6 +132,13 @@ namespace NoteEvolution.DAL.DataContext
             _deletedLanguages = new ConcurrentDictionary<int, Language>();
             _languageListSource = new SourceCache<Language, Guid>(d => d.LocalId);
 
+            //Task.Run(() =>
+            LoadData();
+            //);
+        }
+
+        private void LoadData()
+        {
             GetLanguageEntries()
                 .ToObservable()
                 .Subscribe(l =>
@@ -139,12 +146,14 @@ namespace NoteEvolution.DAL.DataContext
                     _languageListSource.AddOrUpdate(l);
                 },
                 e => { /* error */ },
-                () => { /* success */
+                () =>
+                { /* success */
                     if (_languageListSource.Items.Any())
                         _localLanguageId = _languageListSource.Items.Select(n => n.Id).DefaultIfEmpty(0).Max() + 1;
                     _languageListSource
                         .Connect()
-                        .OnItemAdded(l => {
+                        .OnItemAdded(l =>
+                        {
                             while (_isSaving)
                                 Thread.Sleep(300);
                             if (l.Id == 0)
@@ -161,7 +170,8 @@ namespace NoteEvolution.DAL.DataContext
                                 }
                             }
                         })
-                        .OnItemRemoved(l => {
+                        .OnItemRemoved(l =>
+                        {
                             if (Languages != null && Languages.Find(l.Id) != null)
                             {
                                 while (_isSaving)
@@ -175,7 +185,9 @@ namespace NoteEvolution.DAL.DataContext
                                         _isSaved = isSaved;
                                         _eventAggregator.Publish(new NotifySaveStateChanged(true));
                                     }
-                                } else {
+                                }
+                                else
+                                {
                                     _deletedLanguages.TryAdd(l.Id, l);
                                     if (_isSaved)
                                     {
@@ -192,7 +204,8 @@ namespace NoteEvolution.DAL.DataContext
                     _languageListSource
                         .Connect()
                         .WhenAnyPropertyChanged(new[] { nameof(Language.Name), nameof(Language.OrderNr) })
-                        .Do(l => {
+                        .Do(l =>
+                        {
                             if (l == null)
                                 return;
                             while (_isSaving)
@@ -209,7 +222,7 @@ namespace NoteEvolution.DAL.DataContext
                             }
                         })
                         .Subscribe();
-                    }
+                }
                 );
 
             GetDocumentEntries()
@@ -220,12 +233,14 @@ namespace NoteEvolution.DAL.DataContext
                     _documentListSource.AddOrUpdate(d);
                 },
                 e => { /* error */ },
-                () => { /* success */
+                () =>
+                { /* success */
                     if (_documentListSource.Items.Any())
                         _localDocumentId = _documentListSource.Items.Select(n => n.Id).DefaultIfEmpty(0).Max() + 1;
                     _documentListSource
                         .Connect()
-                        .OnItemAdded(d => {
+                        .OnItemAdded(d =>
+                        {
                             while (_isSaving)
                                 Thread.Sleep(300);
                             if (d.Id == 0)
@@ -244,7 +259,8 @@ namespace NoteEvolution.DAL.DataContext
                                 _textUnitListSource.AddOrUpdate(new TextUnit(d));
                             }
                         })
-                        .OnItemRemoved(d => {
+                        .OnItemRemoved(d =>
+                        {
                             if (Documents != null && Documents.Find(d.Id) != null)
                             {
                                 while (_isSaving)
@@ -258,7 +274,9 @@ namespace NoteEvolution.DAL.DataContext
                                         _isSaved = isSaved;
                                         _eventAggregator.Publish(new NotifySaveStateChanged(true));
                                     }
-                                } else {
+                                }
+                                else
+                                {
                                     _deletedDocuments.TryAdd(d.Id, d);
                                     if (_isSaved)
                                     {
@@ -275,7 +293,8 @@ namespace NoteEvolution.DAL.DataContext
                     _documentListSource
                         .Connect()
                         .WhenAnyPropertyChanged(new[] { nameof(Document.Title), nameof(Document.ModificationDate) })
-                        .Do(d => {
+                        .Do(d =>
+                        {
                             if (d == null)
                                 return;
                             while (_isSaving)
@@ -292,7 +311,7 @@ namespace NoteEvolution.DAL.DataContext
                             }
                         })
                         .Subscribe();
-                    }
+                }
                 );
 
             GetTextUnitEntries()
@@ -303,7 +322,8 @@ namespace NoteEvolution.DAL.DataContext
                     _textUnitListSource.AddOrUpdate(t);
                 },
                 e => { /* error */ },
-                () => { /* success */
+                () =>
+                { /* success */
                     if (_textUnitListSource.Items.Any())
                     {
                         InitializeOrderNumbers();
@@ -318,7 +338,8 @@ namespace NoteEvolution.DAL.DataContext
                     }
                     _textUnitListSource
                         .Connect()
-                        .OnItemAdded(t => {
+                        .OnItemAdded(t =>
+                        {
                             while (_isSaving)
                                 Thread.Sleep(300);
                             if (t.Id == 0)
@@ -342,7 +363,8 @@ namespace NoteEvolution.DAL.DataContext
                                 _noteListSource.AddOrUpdate(initialNote);
                             }
                         })
-                        .OnItemRemoved(t => {
+                        .OnItemRemoved(t =>
+                        {
                             if (TextUnits != null && TextUnits.Find(t.Id) != null)
                             {
                                 while (_isSaving)
@@ -356,7 +378,9 @@ namespace NoteEvolution.DAL.DataContext
                                         _isSaved = isSaved;
                                         _eventAggregator.Publish(new NotifySaveStateChanged(true));
                                     }
-                                } else {
+                                }
+                                else
+                                {
                                     _deletedTextUnits.TryAdd(t.Id, t);
                                     if (_isSaved)
                                     {
@@ -373,7 +397,8 @@ namespace NoteEvolution.DAL.DataContext
                     _textUnitListSource
                         .Connect()
                         .WhenAnyPropertyChanged(new[] { nameof(TextUnit.ModificationDate) })
-                        .Do(t => {
+                        .Do(t =>
+                        {
                             if (t == null)
                                 return;
                             while (_isSaving)
@@ -390,7 +415,7 @@ namespace NoteEvolution.DAL.DataContext
                             }
                         })
                         .Subscribe();
-                    }
+                }
                 );
 
             GetNoteEntries()
@@ -398,12 +423,14 @@ namespace NoteEvolution.DAL.DataContext
                 .Subscribe(n =>
                 { _noteListSource.AddOrUpdate(n); },
                 e => { /* error */ },
-                () => { /* success */
+                () =>
+                { /* success */
                     if (_noteListSource.Items.Any())
                         _localNoteId = _noteListSource.Items.Select(n => n.Id).DefaultIfEmpty(0).Max() + 1;
                     _noteListSource
                         .Connect()
-                        .OnItemAdded(n => {
+                        .OnItemAdded(n =>
+                        {
                             if (n == null)
                                 return;
                             while (_isSaving)
@@ -423,7 +450,8 @@ namespace NoteEvolution.DAL.DataContext
                                 }
                             }
                         })
-                        .OnItemRemoved(n => {
+                        .OnItemRemoved(n =>
+                        {
                             if (Notes != null && Notes.Find(n.Id) != null)
                             {
                                 while (_isSaving)
@@ -437,7 +465,9 @@ namespace NoteEvolution.DAL.DataContext
                                         _isSaved = isSaved;
                                         _eventAggregator.Publish(new NotifySaveStateChanged(true));
                                     }
-                                } else {
+                                }
+                                else
+                                {
                                     _deletedNotes.TryAdd(n.Id, n);
                                     if (_isSaved)
                                     {
@@ -454,7 +484,8 @@ namespace NoteEvolution.DAL.DataContext
                     _noteListSource
                         .Connect()
                         .WhenAnyPropertyChanged(new[] { nameof(Note.Text), nameof(Note.LanguageId) })
-                        .Do(n => {
+                        .Do(n =>
+                        {
                             if (n == null)
                                 return;
                             while (_isSaving)
@@ -479,12 +510,14 @@ namespace NoteEvolution.DAL.DataContext
                 .Subscribe(cs =>
                 { _contentSourceListSource.AddOrUpdate(cs); },
                 e => { /* error */ },
-                () => { /* success */
+                () =>
+                { /* success */
                     if (_contentSourceListSource.Items.Any())
                         _localSourceId = _contentSourceListSource.Items.Select(s => s.Id).DefaultIfEmpty(0).Max() + 1;
                     _contentSourceListSource
                         .Connect()
-                        .OnItemAdded(cs => {
+                        .OnItemAdded(cs =>
+                        {
                             while (_isSaving)
                                 Thread.Sleep(300);
                             if (cs.Id == 0)
@@ -501,7 +534,8 @@ namespace NoteEvolution.DAL.DataContext
                                 }
                             }
                         })
-                        .OnItemRemoved(cs => {
+                        .OnItemRemoved(cs =>
+                        {
                             if (ContentSources != null && ContentSources.Find(cs.Id) != null)
                             {
                                 while (_isSaving)
@@ -515,7 +549,9 @@ namespace NoteEvolution.DAL.DataContext
                                         _isSaved = isSaved;
                                         _eventAggregator.Publish(new NotifySaveStateChanged(true));
                                     }
-                                } else {
+                                }
+                                else
+                                {
                                     _deletedContentSources.TryAdd(cs.Id, cs);
                                     if (_isSaved)
                                     {
@@ -532,7 +568,8 @@ namespace NoteEvolution.DAL.DataContext
                     _contentSourceListSource
                         .Connect()
                         .WhenAnyPropertyChanged(new[] { nameof(ContentSource.Author), nameof(ContentSource.Title), nameof(ContentSource.Chapter), nameof(ContentSource.PageNumber), nameof(ContentSource.Url), nameof(ContentSource.Timestamp) })
-                        .Do(cs => {
+                        .Do(cs =>
+                        {
                             if (cs == null)
                                 return;
                             while (_isSaving)
