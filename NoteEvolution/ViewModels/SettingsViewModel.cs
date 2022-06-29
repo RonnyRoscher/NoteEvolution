@@ -11,6 +11,9 @@ using NoteEvolution.DAL.Models;
 using System.IO;
 using NoteEvolution.DAL.DataContext;
 using System.Threading.Tasks;
+using System.Xml.Linq;
+using System.Collections.Generic;
+using System.Globalization;
 
 namespace NoteEvolution.ViewModels
 {
@@ -46,6 +49,7 @@ namespace NoteEvolution.ViewModels
                 .Subscribe();
 
             ImportOldNoteEvolutionDbCommand = ReactiveCommand.Create(ExecuteImportOldNoteEvolutionDb);
+            ImportEvernoteEnexFileCommand = ReactiveCommand.Create(ExecuteImportEvernoteEnexFile);
             AddNewLanguageCommand = ReactiveCommand.Create(ExecuteAddNewLanguage);
             DeleteSelectedLanguageCommand = ReactiveCommand.Create(ExecuteDeleteSelectedLanguage);
         }
@@ -137,6 +141,116 @@ namespace NoteEvolution.ViewModels
                     }    
                 }
             });
+        }
+
+        public ReactiveCommand<Unit, Unit> ImportEvernoteEnexFileCommand { get; }
+
+        void ExecuteImportEvernoteEnexFile()
+        {
+            Task.Run(() =>
+            {
+                if (File.Exists("Evernote.enex"))
+                {
+                    var evernoteFile = XElement.Load("Evernote.enex");
+
+                    string text;
+                    string tmp;
+                    var provider = CultureInfo.InvariantCulture;
+
+                    foreach (var note in evernoteFile.Elements("note"))
+                    {
+                        var newNote = new Note();
+                        ContentSource contentSource = null;
+                        foreach (var noteProperty in note.Elements())
+                        {
+                            switch (noteProperty.Name.LocalName)
+                            {
+                                case "title":
+                                    if (noteProperty.Value != "Unbenannte Notiz")
+                                        newNote.Text = noteProperty.Value + Environment.NewLine + Environment.NewLine;
+                                    break;
+                                case "created":
+                                    if (DateTime.TryParseExact(noteProperty.Value, "yyyyMMddTHHmmssZ", provider, DateTimeStyles.AssumeLocal, out var creationDate))
+                                        newNote.CreationDate = newNote.ModificationDate = creationDate;
+                                    break;
+                                case "note-attributes":
+                                    var url = noteProperty.Elements("source-url").FirstOrDefault()?.Value;
+                                    if (!string.IsNullOrWhiteSpace(url))
+                                        contentSource = new ContentSource { Url = url, CreationDate = newNote.CreationDate, ModificationDate = newNote.ModificationDate };
+                                    break;
+                                case "content":
+                                    tmp = noteProperty.Value.Substring(noteProperty.Value.IndexOf("<?xml "))
+                                        .Replace("<div>&nbsp;</div>", "<br/>").Replace("&nbsp;"," ");
+                                    var xmlContent = XDocument.Parse(tmp).Elements("en-note").FirstOrDefault();
+                                    text = "";
+                                    AddFullTagContentR(ref text, xmlContent);
+                                    newNote.Text += text;
+                                    break;
+                            }
+                        }
+                        if (!_context.NoteListSource.Items.Any(n => n.CreationDate == newNote.CreationDate && n.Text == newNote.Text))
+                        {
+                            _context.NoteListSource.AddOrUpdate(newNote);
+                            if (contentSource != null)
+                            {
+                                contentSource.RelatedNoteId = newNote.Id;
+                                _context.ContentSourceListSource.AddOrUpdate(contentSource);
+                                contentSource = null;
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        private void AddFullTagContentR(ref string output, XElement tag, int indentationCnt = -1)
+        {
+            foreach (var node in tag.Nodes())
+            {
+                if (node is XElement subElement)
+                {
+                    if (subElement.Descendants().Any())
+                    {
+                        if (subElement.Name.LocalName == "ul" || subElement.Name.LocalName == "ol")
+                        {
+                            AddFullTagContentR(ref output, subElement, indentationCnt + 1);
+                        } else { 
+                            var content = "";
+                            AddFullTagContentR(ref content, subElement, indentationCnt);
+                            if (subElement.Name.LocalName == "li" && !content.Contains("\u2022"))
+                                output += new string('\t', indentationCnt) + "\u2022" + " " + content;
+                            else output += content;
+                        }
+                    } else {
+                        if (subElement.Name.LocalName == "br")
+                        {
+                            output += Environment.NewLine;
+                        }
+                        else if (subElement.Name.LocalName == "hr")
+                        {
+                            output += "---" + Environment.NewLine;
+                        }
+                        else if (subElement.Name.LocalName == "li")
+                        {
+                            var content = "";
+                            AddFullTagContentR(ref content, subElement, indentationCnt);
+                            if (subElement.Name.LocalName == "li" && !content.Contains("\u2022"))
+                                output += new string('\t', indentationCnt) + "\u2022" + " " + content;
+                            else output += content;
+                        } else {
+                            if (!string.IsNullOrWhiteSpace(output))
+                                output += " ";
+                            output += subElement.Value.Replace("\n", "").Replace("\r", "") + ((subElement.NextNode is XElement next && next.Name.LocalName == "a") || subElement.Name.LocalName == "a" || subElement.Name.LocalName == "i" || subElement.Name.LocalName == "b" ? "" : Environment.NewLine);
+                        }
+                    }
+                } 
+                else if (node is XText textElement)
+                {
+                    if (!string.IsNullOrWhiteSpace(output))
+                        output += " ";
+                    output += textElement.Value.Replace("\n", "").Replace("\r", "") + ((textElement.NextNode is XElement next && (next.Name.LocalName == "a" || next.Name.LocalName == "br")) || textElement.Parent?.Name.LocalName == "div" || textElement.Parent?.Name.LocalName == "span" ? "" : Environment.NewLine);
+                }
+            }
         }
 
         public ReactiveCommand<Unit, Unit> AddNewLanguageCommand { get; }
