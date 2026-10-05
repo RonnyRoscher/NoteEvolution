@@ -49,10 +49,13 @@ public sealed class Block
 
     public IReadOnlyList<BlockProperty> Properties => D.Properties;
 
-    /// <summary>The <c>id::</c> property if it parses as a Guid, otherwise <c>null</c>.</summary>
-    public Guid? Id => Guid.TryParse(GetProperty("id"), out var id) ? id : null;
+    /// <summary>The <c>id::</c> property if it parses as a Guid in format <c>D</c>, otherwise <c>null</c>.</summary>
+    public Guid? Id => Guid.TryParseExact(GetProperty("id"), "D", out var id) ? id : null;
 
     public bool IsDirty { get; internal set; }
+
+    /// <summary>Where the property lines are within <see cref="Lines"/>, and where a new one is inserted.</summary>
+    internal PropertySection PropertySection => D.Section;
 
     /// <summary>1-based line number of the bullet line in the file when it was parsed.</summary>
     public int SourceLineNumber { get; internal set; }
@@ -85,7 +88,8 @@ public sealed class Block
 
     private Derived D => _derived ??= Derived.From(_lines);
 
-    private sealed record Derived(char Bullet, string Indent, string Content, IReadOnlyList<BlockProperty> Properties)
+    private sealed record Derived(
+        char Bullet, string Indent, string Content, IReadOnlyList<BlockProperty> Properties, PropertySection Section)
     {
         public static Derived From(IReadOnlyList<RawLine> lines)
         {
@@ -94,21 +98,19 @@ public sealed class Block
                 (indent, bullet, text) = ("", '-', lines[0].Text);
             }
 
+            var section = LogseqSyntax.FindPropertySection(lines, 0);
             var properties = new List<BlockProperty>();
-            var index = 1;
-            if (LogseqSyntax.FenceOpening(text) == 0)
-            {
-                while (index < lines.Count && LogseqSyntax.TryParseProperty(lines[index].Text) is { } property)
-                {
-                    properties.Add(property);
-                    index++;
-                }
-            }
-
             var content = new List<string> { text };
-            for (; index < lines.Count; index++)
+            for (var index = 1; index < lines.Count; index++)
             {
-                content.Add(StripContinuation(lines[index].Text, indent));
+                if (index >= section.Start && index < section.InsertIndex)
+                {
+                    properties.Add(LogseqSyntax.TryParseProperty(lines[index].Text)!);
+                }
+                else
+                {
+                    content.Add(StripContinuation(lines[index].Text, indent));
+                }
             }
 
             var count = content.Count;
@@ -117,7 +119,7 @@ public sealed class Block
                 count--;
             }
 
-            return new Derived(bullet, indent, string.Join("\n", content.Take(count)), properties);
+            return new Derived(bullet, indent, string.Join("\n", content.Take(count)), properties, section);
         }
 
         private static string StripContinuation(string line, string indent)

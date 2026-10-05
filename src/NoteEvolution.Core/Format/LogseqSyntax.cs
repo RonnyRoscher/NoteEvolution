@@ -12,7 +12,7 @@ internal static partial class LogseqSyntax
     [GeneratedRegex(@"^(?<indent>[ \t]*)(?<bullet>[-*])( (?<text>.*))?$")]
     private static partial Regex BulletRegex();
 
-    [GeneratedRegex(@"^\s*(?<key>[A-Za-z0-9_-]+)::( (?<value>.*))?$")]
+    [GeneratedRegex(@"^\s*(?<key>[^\s:]+)::( (?<value>.*))?$")]
     private static partial Regex PropertyRegex();
 
     public static bool TryParseBullet(string line, out string indent, out char bullet, out string text)
@@ -40,6 +40,40 @@ internal static partial class LogseqSyntax
         return match.Success
             ? new BlockProperty(match.Groups["key"].Value, match.Groups["value"].Value.Trim())
             : null;
+    }
+
+    /// <summary>
+    /// Locates the property section of the block whose bullet line is <c>lines[bulletIndex]</c>:
+    /// the run of property lines directly after the bullet line or, if the bullet line opens a
+    /// code fence, directly after the line that closes that fence. Indices are relative to the bullet line.
+    /// </summary>
+    public static PropertySection FindPropertySection(IReadOnlyList<RawLine> lines, int bulletIndex)
+    {
+        var bulletText = TryParseBullet(lines[bulletIndex].Text, out _, out _, out var text) ? text : lines[bulletIndex].Text;
+        var start = bulletIndex + 1;
+        var run = FenceOpening(bulletText);
+        if (run > 0)
+        {
+            while (start < lines.Count && !IsFenceClosing(lines[start].Text, run))
+            {
+                start++;
+            }
+
+            if (start == lines.Count)
+            {
+                return new PropertySection(start - bulletIndex, 0, FenceUnclosed: true);
+            }
+
+            start++;
+        }
+
+        var end = start;
+        while (end < lines.Count && TryParseProperty(lines[end].Text) is not null)
+        {
+            end++;
+        }
+
+        return new PropertySection(start - bulletIndex, end - start, FenceUnclosed: false);
     }
 
     public static int IndentWidth(string indent)

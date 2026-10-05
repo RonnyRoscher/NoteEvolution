@@ -71,6 +71,58 @@ public class LogseqParserTests
     }
 
     [Fact]
+    public void Parse_FenceOpenedOnBulletLine_PropertiesFollowClosingFence()
+    {
+        var p = Parse("- ```js\n  code\n  ```\n  id:: 6650a1c2-1b7e-4c1d-9a0f-2b3c4d5e6f70");
+
+        var b = p.Roots.Single();
+        Assert.False(p.IsReadOnly);
+        Assert.Equal(Guid.Parse("6650a1c2-1b7e-4c1d-9a0f-2b3c4d5e6f70"), b.Id);
+        Assert.Equal("```js\ncode\n```", b.Content);
+        Assert.Equal(3, b.PropertySection.Start);
+        Assert.Equal(1, b.PropertySection.Count);
+        Assert.Equal(4, b.PropertySection.InsertIndex);
+    }
+
+    [Fact]
+    public void PropertySection_InsertIndex_ForBothLayouts()
+    {
+        var p = Parse("- a\n  x:: 1\n  y:: 2\n  text\n- b\n  text\n- ```\n  code\n  ```\n  text\n- c");
+
+        Assert.Equal(3, p.Roots[0].PropertySection.InsertIndex); // after the last property line
+        Assert.Equal(1, p.Roots[1].PropertySection.InsertIndex); // directly after the bullet line
+        Assert.Equal(3, p.Roots[2].PropertySection.InsertIndex); // directly after the closing fence
+        Assert.Equal(0, p.Roots[2].PropertySection.Count);
+        Assert.Equal(1, p.Roots[3].PropertySection.InsertIndex); // block that is only its bullet line
+    }
+
+    [Fact]
+    public void Parse_DottedAndSlashedPropertyKeys_AreProperties()
+    {
+        var p = Parse("- item\n  logseq.order-list-type:: number\n  id:: 6650a1c2-1b7e-4c1d-9a0f-2b3c4d5e6f70");
+
+        var b = p.Roots.Single();
+        Assert.Equal(Guid.Parse("6650a1c2-1b7e-4c1d-9a0f-2b3c4d5e6f70"), b.Id);
+        Assert.Equal("item", b.Content);
+        Assert.Equal(
+            [new BlockProperty("logseq.order-list-type", "number"), new BlockProperty("id", "6650a1c2-1b7e-4c1d-9a0f-2b3c4d5e6f70")],
+            b.Properties);
+        Assert.Equal("nlp", Parse("- q\n  logseq.query/nlp-date:: nlp").Roots[0].GetProperty("logseq.query/nlp-date"));
+    }
+
+    [Theory]
+    [InlineData("6650a1c21b7e4c1d9a0f2b3c4d5e6f70")]
+    [InlineData("{6650a1c2-1b7e-4c1d-9a0f-2b3c4d5e6f70}")]
+    [InlineData("(6650a1c2-1b7e-4c1d-9a0f-2b3c4d5e6f70)")]
+    public void Parse_IdNotInFormatD_IsNull(string value)
+    {
+        var p = Parse("- a\n  id:: " + value);
+
+        Assert.Equal(value, p.Roots[0].GetProperty("id"));
+        Assert.Null(p.Roots[0].Id);
+    }
+
+    [Fact]
     public void Parse_InlineTripleBackticks_DoNotOpenFence()
     {
         var p = Parse("- a\n  ```inline``` code\n- b");

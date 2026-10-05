@@ -40,18 +40,17 @@ public static class LogseqParser
         while (index < lines.Count)
         {
             var start = index;
-            LogseqSyntax.TryParseBullet(lines[start].Text, out var indent, out _, out var text);
-            var fenceRun = LogseqSyntax.FenceOpening(text);
-            var fenceLine = start + 1;
-            index++;
-
-            if (fenceRun == 0)
+            LogseqSyntax.TryParseBullet(lines[start].Text, out var indent, out _, out _);
+            var section = LogseqSyntax.FindPropertySection(lines, start);
+            var fenceRun = 0;
+            var fenceLine = 0;
+            if (section.FenceUnclosed)
             {
-                while (index < lines.Count && LogseqSyntax.TryParseProperty(lines[index].Text) is not null)
-                {
-                    index++;
-                }
+                error ??= $"Zeile {start + 1}: Codeblock wird nicht geschlossen.";
             }
+
+            // Skips the bullet line, a code fence it opens, and the property lines.
+            index = start + section.InsertIndex;
 
             for (; index < lines.Count; index++)
             {
