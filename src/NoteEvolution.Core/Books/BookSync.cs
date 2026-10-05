@@ -275,9 +275,7 @@ public static class BookSync
                 return null;
             }
 
-            var lines = node.Block!.Content.Split('\n');
-            lines[0] = new string('#', node.Level) + " " + title;
-            return string.Join("\n", lines);
+            return HeadingText.WithTitle(node.Block!.Content, node.Level, title);
         }
 
         private Block PlaceTextBlock(SnapshotTextBlock text, OutlineNode section, Block? predecessor)
