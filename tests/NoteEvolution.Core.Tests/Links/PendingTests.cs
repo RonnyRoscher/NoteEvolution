@@ -99,6 +99,53 @@ public class PendingTests
     }
 
     [Fact]
+    public void DeleteTextBlock_NoteNotFoundById_DropsPendingAdd()
+    {
+        using var s = new LinkSetup();
+        s.Writer.FailNext(s.JournalPath);
+        var r = s.Links.Adopt(s.Book, s.Note("Kern").Key, new InsertPosition.After(s.Text("Erster Textblock").Key));
+        s.Reopen();
+
+        s.Links.DeleteTextBlock(s.Book, s.Book.FindTextBlockById(r.TextBlockId)!.Key);
+
+        Assert.Equal(LinkSetup.DefaultBook, s.ReadBook());
+        Assert.Equal(LinkSetup.DefaultJournal, s.ReadJournal());
+        Assert.Empty(s.Pending.Load());
+    }
+
+    [Fact]
+    public void RemoveSource_NoteNotFoundById_DropsPendingAdd()
+    {
+        using var s = new LinkSetup();
+        s.Writer.FailNext(s.JournalPath);
+        var r = s.Links.Adopt(s.Book, s.Note("Kern").Key, new InsertPosition.After(s.Text("Erster Textblock").Key));
+        var noteId = s.Note("Kern").Id!.Value;
+        s.Reopen();
+
+        s.Links.RemoveSource(s.Book, s.Book.FindTextBlockById(r.TextBlockId)!.Key, noteId);
+
+        Assert.DoesNotContain("source::", s.ReadBook());
+        Assert.Equal(LinkSetup.DefaultJournal, s.ReadJournal());
+        Assert.Empty(s.Pending.Load());
+    }
+
+    [Fact]
+    public void RemoveUsage_NoteNotFoundById_DropsPendingAdd()
+    {
+        using var s = new LinkSetup();
+        s.Writer.FailNext(s.JournalPath);
+        var r = s.Links.Adopt(s.Book, s.Note("Kern").Key, new InsertPosition.After(s.Text("Erster Textblock").Key));
+        var noteId = s.Note("Kern").Id!.Value;
+        s.Reopen();
+
+        s.Links.RemoveUsage(noteId, "buch - test", r.TextBlockId);
+
+        Assert.Empty(s.Pending.Load());
+        Assert.Equal(0, s.Links.RetryPending());
+        Assert.Equal(LinkSetup.DefaultJournal, s.ReadJournal());
+    }
+
+    [Fact]
     public void Store_MissingOrCorruptFile_IsEmpty()
     {
         using var dir = new TempDir();

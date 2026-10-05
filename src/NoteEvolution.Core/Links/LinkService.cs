@@ -87,8 +87,7 @@ public sealed class LinkService(IVault vault, IPageWriter writer, UndoManager un
         SaveBook(page, () => block.RestoreLines(lines, wasDirty));
 
         var noteUpdatePending = block.Id is { } bookBlockId
-                                && FindNote(noteBlockId) is { } note
-                                && UpdateNote(note.Page, note.Block, book.LinkName, bookBlockId, remove: true).Pending;
+                                && RemoveUsageOfFound(noteBlockId, book.LinkName, bookBlockId) is { Pending: true };
         if (!noteUpdatePending)
         {
             RetryPending();
@@ -110,9 +109,9 @@ public sealed class LinkService(IVault vault, IPageWriter writer, UndoManager un
         {
             foreach (var noteId in SourceValue.Parse(block.GetProperty(SourceKey) ?? "").Distinct())
             {
-                if (FindNote(noteId) is { } note)
+                if (RemoveUsageOfFound(noteId, book.LinkName, bookBlockId) is { } change)
                 {
-                    changes.Add(UpdateNote(note.Page, note.Block, book.LinkName, bookBlockId, remove: true));
+                    changes.Add(change);
                 }
             }
         }
@@ -150,11 +149,32 @@ public sealed class LinkService(IVault vault, IPageWriter writer, UndoManager un
 
     private void ChangeUsage(Guid noteBlockId, string bookLinkName, Guid? bookBlockId, bool remove)
     {
-        if (FindNote(noteBlockId) is { } note
-            && !UpdateNote(note.Page, note.Block, bookLinkName, bookBlockId, remove).Pending)
+        if (FindNote(noteBlockId) is { } note)
         {
-            RetryPending();
+            if (!UpdateNote(note.Page, note.Block, bookLinkName, bookBlockId, remove).Pending)
+            {
+                RetryPending();
+            }
         }
+        else if (remove)
+        {
+            ClearPending(noteBlockId, bookLinkName, bookBlockId);
+        }
+    }
+
+    /// <summary>
+    /// Removes the usage from the note found by id. If no note has that id (e.g. its <c>id::</c> was never
+    /// written), an open add for this usage is dropped instead, so a later retry cannot bring it back.
+    /// </summary>
+    private NoteChange? RemoveUsageOfFound(Guid noteId, string linkName, Guid bookBlockId)
+    {
+        if (FindNote(noteId) is { } note)
+        {
+            return UpdateNote(note.Page, note.Block, linkName, bookBlockId, remove: true);
+        }
+
+        ClearPending(noteId, linkName, bookBlockId);
+        return null;
     }
 
     /// <summary>Removes the adopted book block (found by its id) and the note's usage; the note keeps its <c>id::</c>.</summary>
@@ -169,17 +189,7 @@ public sealed class LinkService(IVault vault, IPageWriter writer, UndoManager un
             SaveBook(page, () => page.RestoreBlock(parent, index, block));
         }
 
-        var noteUpdatePending = false;
-        if (FindNote(noteId) is { } note)
-        {
-            noteUpdatePending = UpdateNote(note.Page, note.Block, linkName, textBlockId, remove: true).Pending;
-        }
-        else
-        {
-            // An add that never reached the note must not be completed for a block that no longer exists.
-            ClearPending(noteId, linkName, textBlockId);
-        }
-
+        var noteUpdatePending = RemoveUsageOfFound(noteId, linkName, textBlockId) is { Pending: true };
         if (!noteUpdatePending)
         {
             RetryPending();
