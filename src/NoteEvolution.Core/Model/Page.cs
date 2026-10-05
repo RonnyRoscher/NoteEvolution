@@ -12,6 +12,8 @@ public sealed class Page
     /// <summary>Changes not recorded on a remaining block: removed blocks, changed prefix lines.</summary>
     private bool _structureChanged;
 
+    private SavedState _saved = new([], []);
+
     internal Page(string filePath, bool hasBom, string newLine, IEnumerable<RawLine> prefixLines)
     {
         FilePath = filePath;
@@ -181,6 +183,29 @@ public sealed class Page
         }
 
         _structureChanged = false;
+        _saved = CaptureSaved();
+    }
+
+    /// <summary>
+    /// The page as it was last loaded or saved: its prefix lines and its blocks with their places then. The blocks
+    /// are the instances themselves, so their <see cref="Block.BaseLines"/> are the saved lines; one that is no
+    /// longer on this page (<c>Block.Page != this</c>) was removed since, one on the page but not in this list is new.
+    /// Merging external changes (<see cref="Storage.PageMerger"/>) relies on it, because removals leave no trace
+    /// on the remaining blocks.
+    /// </summary>
+    internal SavedState Saved => _saved;
+
+    /// <summary>The file's bytes as they were when the page was last loaded or saved.</summary>
+    internal byte[] SavedBytes() =>
+        TextDocument.Encode(HasBom, _saved.PrefixLines.Concat(_saved.Blocks.SelectMany(b => b.Block.BaseLines)));
+
+    /// <summary>Replaces all prefix lines (merging external changes); only the last line of the file may lack an ending.</summary>
+    internal void ReplacePrefixLines(IEnumerable<RawLine> lines)
+    {
+        _prefixLines.Clear();
+        _prefixLines.AddRange(lines);
+        PrefixChanged();
+        RepairEndings();
     }
 
     internal void AddRoot(Block block) => InsertAt(null, _roots.Count, block);
@@ -204,6 +229,23 @@ public sealed class Page
         InsertAt(parent, Math.Clamp(index, 0, ChildrenOf(parent).Count), removed);
         _structureChanged = true;
         RepairEndings();
+    }
+
+    private SavedState CaptureSaved()
+    {
+        var blocks = new List<SavedBlock>();
+        void Add(IReadOnlyList<Block> siblings, SavedBlock? parent)
+        {
+            for (var index = 0; index < siblings.Count; index++)
+            {
+                var saved = new SavedBlock(siblings[index], parent, [.. parent?.Path ?? [], index]);
+                blocks.Add(saved);
+                Add(siblings[index].Children, saved);
+            }
+        }
+
+        Add(_roots, null);
+        return new SavedState([.. _prefixLines], blocks);
     }
 
     private void PrefixChanged()
@@ -304,4 +346,12 @@ public sealed class Page
         var fileName = Path.GetFileName(filePath);
         return fileName.EndsWith(".md", StringComparison.OrdinalIgnoreCase) ? fileName[..^3] : fileName;
     }
+
+    /// <summary>See <see cref="Saved"/>.</summary>
+    /// <param name="PrefixLines">The prefix lines then.</param>
+    /// <param name="Blocks">All blocks then, depth-first in file order.</param>
+    internal sealed record SavedState(IReadOnlyList<RawLine> PrefixLines, IReadOnlyList<SavedBlock> Blocks);
+
+    /// <summary>A block of <see cref="SavedState"/> with its parent then and its tree path then (child indices from the roots).</summary>
+    internal sealed record SavedBlock(Block Block, SavedBlock? Parent, IReadOnlyList<int> Path);
 }

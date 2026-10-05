@@ -129,6 +129,34 @@ public class PageWriterTests
     }
 
     [Fact]
+    public void Save_FileChangedOnDiskSinceLoad_ThrowsAndKeepsExternalText()
+    {
+        using var s = Create();
+        s.Page.Roots[0].SetContent("lokal");
+        File.WriteAllText(s.Page.FilePath, "- eins extern\n- zwei\n");
+
+        var ex = Assert.Throws<FileChangedExternallyException>(() => s.Writer.Save(s.Page));
+
+        Assert.IsAssignableFrom<IOException>(ex);
+        Assert.Contains(s.Page.FilePath, ex.Message);
+        Assert.Equal("- eins extern\n- zwei\n", s.Tv.Read(PageFile));
+        Assert.True(s.Page.IsDirty);
+        Assert.False(Directory.Exists(Path.Combine(s.Tv.Root, ".noteevolution")));
+    }
+
+    [Fact]
+    public void Save_FileDeletedOnDisk_WritesItAgain()
+    {
+        using var s = Create();
+        s.Page.Roots[0].SetContent("lokal");
+        File.Delete(s.Page.FilePath);
+
+        s.Writer.Save(s.Page);
+
+        Assert.Equal("- lokal\n- zwei\n", s.Tv.Read(PageFile));
+    }
+
+    [Fact]
     public void Save_FileLockedBriefly_RetriesAfter200Ms_ThenSucceeds()
     {
         if (!OperatingSystem.IsWindows())

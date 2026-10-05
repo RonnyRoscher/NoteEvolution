@@ -33,7 +33,7 @@ public sealed class Block
     }
 
     /// <summary>Runtime key, unique per block instance; never written to the file.</summary>
-    public Guid Key { get; private init; } = Guid.NewGuid();
+    public Guid Key { get; private set; } = Guid.NewGuid();
 
     public char Bullet => D.Bullet;
 
@@ -95,6 +95,13 @@ public sealed class Block
         block.IsDirty = false;
         return block;
     }
+
+    /// <summary>
+    /// A detached block with exactly <paramref name="lines"/> (no children, empty <see cref="BaseLines"/>) and
+    /// <paramref name="key"/>; <see cref="Page.InsertBlock"/> renders it for its target position.
+    /// </summary>
+    internal static Block CreateDetached(IReadOnlyList<RawLine> lines, Guid key) =>
+        new(lines, 0, detached: true) { Key = key };
 
     /// <summary>
     /// Copies the block and its whole subtree as detached blocks (new keys, empty <see cref="BaseLines"/>).
@@ -243,6 +250,9 @@ public sealed class Block
         SetProperty("id", id.ToString("D"));
         return id;
     }
+
+    /// <summary>Gives the block the key of the block it replaces (a reloaded or merged version of the same block).</summary>
+    internal void AssignKey(Guid key) => Key = key;
 
     internal void AddChild(Block child) => InsertChild(_children.Count, child);
 

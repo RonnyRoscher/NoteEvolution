@@ -102,6 +102,7 @@ public static class LogseqParser
         }
 
         page.ParseError = error;
+        page.MarkSaved();
         return page;
     }
 }

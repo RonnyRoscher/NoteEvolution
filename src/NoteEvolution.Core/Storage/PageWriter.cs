@@ -32,6 +32,7 @@ public sealed class PageWriter(IVault vault, BackupService backups, SelfWriteReg
         // A file that is briefly locked by another process blocks the backup read as well as the replace.
         WithRetry(page.FilePath, () =>
         {
+            EnsureNotChangedExternally(page);
             backups.EnsureDailyBackup(page.FilePath);
             AtomicFile.Write(page.FilePath, bytes);
         });
@@ -39,6 +40,19 @@ public sealed class PageWriter(IVault vault, BackupService backups, SelfWriteReg
         registry.Record(page.FilePath, bytes);
         page.MarkSaved();
         vault.ReplacePage(page);
+    }
+
+    /// <summary>
+    /// An external change not handled yet (the watcher reports it up to 300 ms later) must not be overwritten. A
+    /// missing file is written: it is a new page, or a deleted one whose unsaved text is kept.
+    /// </summary>
+    private static void EnsureNotChangedExternally(Page page)
+    {
+        if (File.Exists(page.FilePath) && !File.ReadAllBytes(page.FilePath).AsSpan().SequenceEqual(page.SavedBytes()))
+        {
+            throw new FileChangedExternallyException(
+                $"Die Datei '{page.FilePath}' wurde außerhalb von NoteEvolution geändert und wird nicht überschrieben.");
+        }
     }
 
     private void WithRetry(string path, Action write)
@@ -50,7 +64,7 @@ public sealed class PageWriter(IVault vault, BackupService backups, SelfWriteReg
                 write();
                 return;
             }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            catch (Exception ex) when (ex is IOException and not FileChangedExternallyException or UnauthorizedAccessException)
             {
                 if (attempt == Attempts)
                 {

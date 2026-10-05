@@ -128,7 +128,7 @@ public sealed class Vault : IVault
         string.Equals(Path.GetFullPath(a), Path.GetFullPath(b), StringComparison.OrdinalIgnoreCase);
 
     /// <summary>Skips hidden files (also our <c>.x.ne-tmp</c> temp files) and everything below <c>.noteevolution</c>.</summary>
-    private static bool IsNoteFile(string root, string file)
+    internal static bool IsNoteFile(string root, string file)
     {
         if (Path.GetFileName(file).StartsWith('.')) return false;
         var segments = Path.GetRelativePath(root, file).Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
