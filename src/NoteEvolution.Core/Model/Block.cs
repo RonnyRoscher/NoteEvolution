@@ -33,7 +33,7 @@ public sealed class Block
     }
 
     /// <summary>Runtime key, unique per block instance; never written to the file.</summary>
-    public Guid Key { get; } = Guid.NewGuid();
+    public Guid Key { get; private init; } = Guid.NewGuid();
 
     public char Bullet => D.Bullet;
 
@@ -76,9 +76,16 @@ public sealed class Block
     /// A new block that belongs to no page, with bullet <c>-</c> and no indentation;
     /// <see cref="Page.InsertBlock"/> renders it in the style of its target.
     /// </summary>
-    public static Block CreateDetached(string content, IEnumerable<BlockProperty>? properties = null)
+    public static Block CreateDetached(string content, IEnumerable<BlockProperty>? properties = null) =>
+        CreateDetached(content, properties, Guid.NewGuid());
+
+    /// <inheritdoc cref="CreateDetached(string, IEnumerable{BlockProperty}?)"/>
+    /// <param name="content">The block text.</param>
+    /// <param name="properties">Property lines to add.</param>
+    /// <param name="key">The new block's <see cref="Key"/>, e.g. the key the editor already uses for it.</param>
+    internal static Block CreateDetached(string content, IEnumerable<BlockProperty>? properties, Guid key)
     {
-        var block = new Block([new RawLine("-", "\n")], 0, detached: true);
+        var block = new Block([new RawLine("-", "\n")], 0, detached: true) { Key = key };
         block.SetContent(content);
         foreach (var property in properties ?? [])
         {

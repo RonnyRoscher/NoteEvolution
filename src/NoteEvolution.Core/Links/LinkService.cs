@@ -104,25 +104,28 @@ public sealed class LinkService(IVault vault, IPageWriter writer, UndoManager un
         page.RemoveBlock(block);
         SaveBook(page, () => page.RestoreBlock(parent, index, block));
 
-        var changes = new List<NoteChange>();
-        if (block.Id is { } bookBlockId)
-        {
-            foreach (var noteId in SourceValue.Parse(block.GetProperty(SourceKey) ?? "").Distinct())
-            {
-                if (RemoveUsageOfFound(noteId, book.LinkName, bookBlockId) is { } change)
-                {
-                    changes.Add(change);
-                }
-            }
-        }
+        var sources = SourceValue.Parse(block.GetProperty(SourceKey) ?? "");
+        RemoveUsagesOfDeleted(page.FilePath, book.LinkName, block.Id, sources, new DeletedBlock(block, parent?.Key, index));
+    }
 
-        var bookPath = page.FilePath;
-        var linkName = book.LinkName;
-        var parentKey = parent?.Key;
-        undo.Push(new UndoAction("Löschen", () => UndoDelete(bookPath, linkName, parentKey, index, block, changes)));
-        if (changes.All(c => !c.Pending))
+    public void ApplySyncEffects(Book book, IReadOnlyList<SyncEffect> effects)
+    {
+        foreach (var effect in effects)
         {
-            RetryPending();
+            switch (effect)
+            {
+                case BlockSplit split:
+                    foreach (var noteId in split.Sources.Distinct())
+                    {
+                        AddUsage(noteId, new UsedInEntry(book.LinkName, split.NewBookBlockId));
+                    }
+
+                    break;
+                case BlockDeleted deleted:
+                    var removed = deleted.Removed is { } block ? new DeletedBlock(block, deleted.ParentKey, deleted.Index) : null;
+                    RemoveUsagesOfDeleted(book.Page.FilePath, book.LinkName, deleted.BookBlockId, deleted.Sources, removed);
+                    break;
+            }
         }
     }
 
@@ -175,6 +178,37 @@ public sealed class LinkService(IVault vault, IPageWriter writer, UndoManager un
 
         ClearPending(noteId, linkName, bookBlockId);
         return null;
+    }
+
+    /// <summary>
+    /// After a book block was removed and the book saved: removes its usages from the source notes (none without a
+    /// block id) and, if the block is known, records the undo action „Löschen“ that puts it back.
+    /// </summary>
+    private void RemoveUsagesOfDeleted(
+        string bookPath, string linkName, Guid? bookBlockId, IEnumerable<Guid> sources, DeletedBlock? removed)
+    {
+        var changes = new List<NoteChange>();
+        if (bookBlockId is { } id)
+        {
+            foreach (var noteId in sources.Distinct())
+            {
+                if (RemoveUsageOfFound(noteId, linkName, id) is { } change)
+                {
+                    changes.Add(change);
+                }
+            }
+        }
+
+        if (removed is not null)
+        {
+            undo.Push(new UndoAction(
+                "Löschen", () => UndoDelete(bookPath, linkName, removed.ParentKey, removed.Index, removed.Block, changes)));
+        }
+
+        if (changes.All(c => !c.Pending))
+        {
+            RetryPending();
+        }
     }
 
     /// <summary>Removes the adopted book block (found by its id) and the note's usage; the note keeps its <c>id::</c>.</summary>
@@ -497,6 +531,9 @@ public sealed class LinkService(IVault vault, IPageWriter writer, UndoManager un
     /// <summary>What a note looked like before and after one usage change.</summary>
     private sealed record NoteChange(
         Guid NoteId, Guid? BookBlockId, IReadOnlyList<RawLine> Before, IReadOnlyList<RawLine> After, bool Pending);
+
+    /// <summary>A removed book block and where it was (parent key, <c>null</c> = root level; index among the siblings).</summary>
+    private sealed record DeletedBlock(Block Block, Guid? ParentKey, int Index);
 
     private sealed class UndoAction(string description, Action undo) : IUndoAction
     {

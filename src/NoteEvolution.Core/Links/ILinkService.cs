@@ -34,6 +34,13 @@ public interface ILinkService
     /// <summary>Deletes the text block with its paragraphs and removes its usages from the notes. Can be undone („Löschen“).</summary>
     void DeleteTextBlock(Book book, Guid textBlockKey);
 
+    /// <summary>
+    /// Updates the notes after <see cref="BookSync.Apply"/> changed the book and the book was saved:
+    /// <see cref="BlockSplit"/> adds the new block's usage to each source note; <see cref="BlockDeleted"/> removes
+    /// the block's usage from each source note and records an undo action („Löschen“) that puts the block back.
+    /// </summary>
+    void ApplySyncEffects(Book book, IReadOnlyList<SyncEffect> effects);
+
     /// <summary>Adds the entry to the note's <c>used-in::</c> unless it is there; does nothing for an unknown note.</summary>
     void AddUsage(Guid noteBlockId, UsedInEntry entry);
 
