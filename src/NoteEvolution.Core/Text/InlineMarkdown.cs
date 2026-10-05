@@ -251,7 +251,9 @@ public static class InlineMarkdown
         var c = text[i];
         if (c == '_')
         {
-            if (i > 0 && char.IsLetterOrDigit(text[i - 1])) return false;
+            // A lone underscore only: not part of a "__" run and not inside a word.
+            if (i > 0 && (char.IsLetterOrDigit(text[i - 1]) || text[i - 1] == '_')) return false;
+            if (i + 1 < text.Length && text[i + 1] == '_') return false;
             return TryReadAs("_", text, i, out marker, out content, out end);
         }
         if (c != '*') return false;
@@ -289,8 +291,8 @@ public static class InlineMarkdown
                 continue;
             }
             var after = j + 1;
-            if (text[j] == '_' && j > start && !char.IsWhiteSpace(text[j - 1])
-                && (after >= text.Length || !char.IsLetterOrDigit(text[after])))
+            if (text[j] == '_' && j > start && !char.IsWhiteSpace(text[j - 1]) && text[j - 1] != '_'
+                && (after >= text.Length || !char.IsLetterOrDigit(text[after]) && text[after] != '_'))
             {
                 content = text[start..j];
                 end = after;

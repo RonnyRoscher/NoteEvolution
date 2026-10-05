@@ -28,9 +28,30 @@ public class InlineMarkdownTests
     [InlineData("*a **b** c*")]
     [InlineData("***beides***")]
     [InlineData("5 * 3")]
+    [InlineData("__a__")]
+    [InlineData("snake__case")]
+    [InlineData("__init__ und *x*")]
     public void Inline_FormatOfParse_RoundTrips(string text)
     {
         Assert.Equal(text, InlineMarkdown.Format(InlineMarkdown.Parse(text)));
+    }
+
+    [Fact]
+    public void Inline_DoubleUnderscore_IsPlainText()
+    {
+        Assert.Equal([new InlineRun("__a__", false, false)], InlineMarkdown.Parse("__a__"));
+        Assert.Equal(
+            [new InlineRun("__init__ und ", false, false), new InlineRun("x", false, true)],
+            InlineMarkdown.Parse("__init__ und _x_"));
+    }
+
+    [Fact]
+    public void Inline_UnderscoreRunInsideItalic_StaysInContent()
+    {
+        var runs = InlineMarkdown.Parse("_a__b_");
+
+        Assert.Equal([new InlineRun("a__b", false, true)], runs);
+        Assert.Equal("*a__b*", InlineMarkdown.Format(runs));
     }
 
     [Fact]
