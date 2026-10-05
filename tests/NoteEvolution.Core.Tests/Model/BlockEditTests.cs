@@ -196,6 +196,54 @@ public class BlockEditTests
         Assert.False(p.IsDirty);
     }
 
+    [Theory]
+    [InlineData("- ```js\n  a\n  ```\n  id:: " + IdA + "\n  mehr", "```js\na\nb\n```\nmehr",
+        "- ```js\n  a\n  b\n  ```\n  id:: " + IdA + "\n  mehr")]
+    [InlineData("- a\n  id:: " + IdA + "\n  text", "```js\ntext\n```",
+        "- ```js\n  text\n  ```\n  id:: " + IdA + "\n")]
+    [InlineData("- ```js\n  a\n  ```\n  id:: " + IdA, "plain\na",
+        "- plain\n  id:: " + IdA + "\n  a\n")]
+    public void SetContent_FenceStateChanges_PropertiesStayInPropertyPosition(string before, string content, string expected)
+    {
+        var p = Parse(before);
+        var properties = p.Roots[0].Properties.ToList();
+
+        p.Roots[0].SetContent(content);
+
+        Assert.Equal(expected, Text(p));
+        Assert.Equal(properties, p.Roots[0].Properties);
+        Assert.Equal(content, p.Roots[0].Content);
+        var reparsed = Parse(Text(p)).Roots.Single();
+        Assert.Equal(properties, reparsed.Properties);
+        Assert.Equal(content, reparsed.Content);
+        Assert.Equal(Guid.Parse(IdA), reparsed.Id);
+    }
+
+    [Theory]
+    [InlineData("- a\n- b", "a\n- x\nmore")]
+    [InlineData("- a\n- b\n  ```\n  c\n  ```", "a\n```")]
+    [InlineData("- a\n- b", "```js\ncode")]
+    public void SetContent_TextThatWouldChangeTheTree_ThrowsAndChangesNothing(string before, string content)
+    {
+        var p = Parse(before);
+
+        Assert.Throws<ArgumentException>(() => p.Roots[0].SetContent(content));
+
+        Assert.Equal(before, Text(p));
+        Assert.False(p.IsDirty);
+    }
+
+    [Fact]
+    public void SetContent_BulletLikeLineInsideFence_IsAllowed()
+    {
+        var p = Parse("- a\n- b\n");
+
+        p.Roots[0].SetContent("a\n```\n- kein Block\n```");
+
+        Assert.Equal("- a\n  ```\n  - kein Block\n  ```\n- b\n", Text(p));
+        Assert.Equal(2, Parse(Text(p)).Roots.Count);
+    }
+
     // ---- EnsureId / CreateDetached / CloneDetached ----
 
     [Fact]

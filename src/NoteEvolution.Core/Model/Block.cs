@@ -178,11 +178,16 @@ public sealed class Block
     }
 
     /// <summary>
-    /// Sets the text (bullet text plus continuation lines, separated by <c>"\n"</c>). Lines are compared one by
-    /// one with the current <see cref="Content"/>; only differing lines are rewritten, surplus ones removed and
-    /// extra ones inserted after the last content line (never inside the property section). Property lines and
-    /// trailing blank lines stay untouched.
+    /// Sets the text (bullet text plus continuation lines, separated by <c>"\n"</c>). The lines are laid out as
+    /// bullet line, the code fence the bullet text opens (if any), the existing property lines (unchanged), the
+    /// remaining content, then the existing trailing blank lines. Within each content part, lines are compared
+    /// one by one with the current ones; unchanged lines are kept byte-identical, differing ones rewritten.
+    /// A <c>word:: x</c> line that lands directly in the property position is a property (Logseq semantics).
     /// </summary>
+    /// <exception cref="ArgumentException">
+    /// A continuation line outside a code fence would be a bullet, or the content leaves a code fence open;
+    /// the block is not changed.
+    /// </exception>
     public void SetContent(string content)
     {
         var target = content.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n').ToList();
@@ -191,39 +196,35 @@ public sealed class Block
             target.RemoveAt(target.Count - 1);
         }
 
+        var targetHead = ValidateContent(target);
+
         var current = Content.Split('\n');
         var section = PropertySection;
         var contentIndices = Enumerable.Range(0, _lines.Count)
             .Where(i => i < section.Start || i >= section.InsertIndex)
             .Take(current.Length)
             .ToList();
-        var changed = false;
+        var currentHead = contentIndices.Count(i => i < section.Start);
 
-        for (var j = 0; j < Math.Min(current.Length, target.Count); j++)
+        var lines = new List<RawLine>();
+        AppendContent(lines, target, 0, targetHead, current, contentIndices, 0, currentHead);
+        lines.AddRange(_lines.Skip(section.Start).Take(section.Count));
+        AppendContent(lines, target, targetHead, target.Count, current, contentIndices, currentHead, current.Length);
+        lines.AddRange(_lines.Skip(Math.Max(contentIndices[^1] + 1, section.InsertIndex)));
+
+        // Only the last line of the file may lack an ending; keep it that way if it stays last.
+        for (var i = 0; i < lines.Count - 1; i++)
         {
-            if (current[j] != target[j])
+            if (lines[i].Ending.Length == 0)
             {
-                var index = contentIndices[j];
-                _lines[index] = _lines[index] with { Text = ContentLineText(j, target[j]) };
-                changed = true;
+                lines[i] = lines[i] with { Ending = NewLine };
             }
         }
 
-        for (var j = current.Length - 1; j >= target.Count; j--)
+        if (!lines.SequenceEqual(_lines))
         {
-            _lines.RemoveAt(contentIndices[j]);
-            changed = true;
-        }
-
-        var at = Math.Max(contentIndices[^1] + 1, section.InsertIndex);
-        for (var j = current.Length; j < target.Count; j++)
-        {
-            InsertLine(at++, ContentLineText(j, target[j]));
-            changed = true;
-        }
-
-        if (changed)
-        {
+            _lines.Clear();
+            _lines.AddRange(lines);
             Changed();
         }
     }
@@ -310,6 +311,73 @@ public sealed class Block
         _baseLines.Clear();
         _baseLines.AddRange(_lines);
         IsDirty = false;
+    }
+
+    /// <summary>
+    /// Checks that <paramref name="target"/> re-parses as exactly this block: no continuation line outside a
+    /// code fence is a bullet, and every fence is closed. Returns the number of lines before the property
+    /// position: 1, or up to and including the line that closes a fence opened by the bullet text.
+    /// </summary>
+    private int ValidateContent(IReadOnlyList<string> target)
+    {
+        var head = 1;
+        var fenceRun = LogseqSyntax.FenceOpening(target[0]);
+        var bulletFence = fenceRun > 0;
+        for (var j = 1; j < target.Count; j++)
+        {
+            if (fenceRun > 0)
+            {
+                if (LogseqSyntax.IsFenceClosing(target[j], fenceRun))
+                {
+                    fenceRun = 0;
+                    if (bulletFence)
+                    {
+                        head = j + 1;
+                        bulletFence = false;
+                    }
+                }
+
+                continue;
+            }
+
+            if (LogseqSyntax.IsBullet(ContentLineText(j, target[j])))
+            {
+                throw new ArgumentException($"Content line {j + 1} would become a block of its own.", "content");
+            }
+
+            fenceRun = LogseqSyntax.FenceOpening(target[j]);
+        }
+
+        if (fenceRun > 0)
+        {
+            throw new ArgumentException("The content leaves a code fence open.", "content");
+        }
+
+        return head;
+    }
+
+    /// <summary>
+    /// Appends target lines <paramref name="from"/>..<paramref name="to"/>, reusing position by position the
+    /// current content lines <paramref name="currentFrom"/>..<paramref name="currentTo"/>: unchanged ones as they
+    /// are, differing ones rewritten with their ending kept; extra lines are new with <see cref="NewLine"/>.
+    /// </summary>
+    private void AppendContent(
+        List<RawLine> lines, List<string> target, int from, int to,
+        string[] current, List<int> contentIndices, int currentFrom, int currentTo)
+    {
+        for (var j = from; j < to; j++)
+        {
+            var k = currentFrom + (j - from);
+            if (k >= currentTo)
+            {
+                lines.Add(new RawLine(ContentLineText(j, target[j]), NewLine));
+            }
+            else
+            {
+                var existing = _lines[contentIndices[k]];
+                lines.Add(current[k] == target[j] ? existing : existing with { Text = ContentLineText(j, target[j]) });
+            }
+        }
     }
 
     /// <summary>Text of content line <paramref name="j"/> (0 = bullet line) for <paramref name="text"/>.</summary>
