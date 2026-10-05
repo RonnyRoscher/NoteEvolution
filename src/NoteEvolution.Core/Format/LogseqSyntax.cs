@@ -42,6 +42,27 @@ internal static partial class LogseqSyntax
             : null;
     }
 
+    /// <summary>Formats a property line <c>{prefix}{key}:: {value}</c> (<c>{prefix}{key}::</c> for an empty value).</summary>
+    /// <exception cref="ArgumentException">The key is not a valid property key, or the value spans several lines.</exception>
+    public static string FormatProperty(string prefix, string key, string value)
+    {
+        if (key.Length == 0 || key.Any(c => c == ':' || char.IsWhiteSpace(c)))
+        {
+            throw new ArgumentException($"'{key}' is not a valid property key.", nameof(key));
+        }
+
+        if (value.Contains('\n') || value.Contains('\r'))
+        {
+            throw new ArgumentException("A property value must be a single line.", nameof(value));
+        }
+
+        return value.Length == 0 ? $"{prefix}{key}::" : $"{prefix}{key}:: {value}";
+    }
+
+    /// <summary>Whether <paramref name="property"/> already has exactly this key spelling and (trimmed) value.</summary>
+    public static bool IsSame(BlockProperty property, string key, string value) =>
+        property.Key == key && property.Value == value.Trim();
+
     /// <summary>
     /// Locates the property section of the block whose bullet line is <c>lines[bulletIndex]</c>:
     /// the run of property lines directly after the bullet line or, if the bullet line opens a
