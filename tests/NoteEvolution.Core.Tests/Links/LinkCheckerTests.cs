@@ -223,4 +223,60 @@ public class LinkCheckerTests
         Assert.Empty(report.Broken);
         Assert.Equal(0, Checker(s).FixMissing(report));
     }
+
+    private const string IdLessJournal = "- Notiz\n  used-in:: [[Fehlt]]\n- Zweite\n";
+
+    [Fact]
+    public void Analyze_NoteWithoutId_IsReportedAsOrphan()
+    {
+        using var s = new LinkSetup(BookWith(""), IdLessJournal);
+
+        var orphan = Assert.Single(Checker(s).Analyze().Orphans);
+
+        Assert.Equal(s.Note("Notiz").Key, orphan.NoteBlockKey);
+        Assert.Equal(new UsedInEntry("Fehlt", null), orphan.Entry);
+    }
+
+    [Fact]
+    public void Resolve_Remove_NoteWithoutId_WritesIdAndRemovesEntry()
+    {
+        using var s = new LinkSetup(BookWith(""), IdLessJournal);
+        var checker = Checker(s);
+        var orphan = Assert.Single(checker.Analyze().Orphans);
+
+        checker.Resolve(orphan, OrphanResolution.Remove);
+
+        var id = s.Note("Notiz").Id;
+        Assert.NotNull(id);
+        Assert.Equal($"- Notiz\n  id:: {id}\n- Zweite\n", s.ReadJournal());
+        Assert.Empty(checker.Analyze().Orphans);
+    }
+
+    [Fact]
+    public void Resolve_MarkUnknown_NoteWithoutIdAndWithoutBlockRef_IsNoOp()
+    {
+        using var s = new LinkSetup(BookWith(""), IdLessJournal);
+        var checker = Checker(s);
+        var orphan = Assert.Single(checker.Analyze().Orphans);
+
+        checker.Resolve(orphan, OrphanResolution.MarkUnknown);
+
+        Assert.Equal(IdLessJournal, s.ReadJournal());
+        Assert.Null(s.Note("Notiz").Id);
+    }
+
+    [Fact]
+    public void Resolve_NoteWithoutIdOnReadOnlyPage_ThrowsWithoutChange()
+    {
+        var journal = IdLessJournal + "- ```\n  offen\n";
+        using var s = new LinkSetup(BookWith(""), journal);
+        var checker = Checker(s);
+        var orphan = Assert.Single(checker.Analyze().Orphans);
+
+        Assert.Throws<ReadOnlyPageException>(() => checker.Resolve(orphan, OrphanResolution.Remove));
+
+        Assert.Equal(journal, s.ReadJournal());
+        Assert.Null(s.Note("Notiz").Id);
+        Assert.Empty(s.Pending.Load());
+    }
 }

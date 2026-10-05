@@ -38,6 +38,10 @@ public sealed class LinkChecker(IVault vault, ILinkService links)
     private const string SourceKey = "source";
     private const string UsedInKey = "used-in";
 
+    /// <summary>
+    /// Reads the vault and reports missing usages, orphans and broken sources. Orphans are found on every note
+    /// block with a <c>used-in::</c> entry, with or without <c>id::</c> (e.g. notes converted from <c>[handled]</c>).
+    /// </summary>
     public LinkCheckReport Analyze()
     {
         var missing = new List<MissingUsage>();
@@ -98,33 +102,31 @@ public sealed class LinkChecker(IVault vault, ILinkService links)
     /// <summary>
     /// <see cref="OrphanResolution.Remove"/> removes the entry. <see cref="OrphanResolution.MarkUnknown"/> replaces
     /// an entry with block reference by <c>[[Name]]</c> (added at the end of <c>used-in::</c>, unless the note has it
-    /// already); an entry without block reference already is that and stays.
+    /// already); an entry without block reference already is that and stays unchanged. A note without <c>id::</c>
+    /// gets one (written together with the change) when the note is changed.
     /// </summary>
-    /// <exception cref="InvalidOperationException">
-    /// The note block no longer exists or has no <c>id::</c>; or <see cref="ReadOnlyPageException"/> for
-    /// <see cref="OrphanResolution.MarkUnknown"/> on a read-only page (an entry without block reference cannot be queued).
-    /// </exception>
+    /// <exception cref="InvalidOperationException">The note block no longer exists.</exception>
+    /// <exception cref="ReadOnlyPageException">The note's page is read-only; nothing was changed.</exception>
     public void Resolve(OrphanUsage orphan, OrphanResolution resolution)
     {
         var (page, block) = vault.FindBlockByKey(orphan.NoteBlockKey)
                             ?? throw new InvalidOperationException("Der Notizblock existiert nicht mehr.");
-        var noteId = block.Id ?? throw new InvalidOperationException("Der Notizblock hat keine id::.");
-        var (name, blockId) = orphan.Entry;
+        if (page.IsReadOnly)
+        {
+            throw new ReadOnlyPageException($"Die Datei '{page.FilePath}' ist schreibgeschützt: {page.ParseError}");
+        }
 
+        var (name, blockId) = orphan.Entry;
+        if (resolution == OrphanResolution.MarkUnknown && blockId is null)
+        {
+            return;
+        }
+
+        var noteId = block.EnsureId();
         if (resolution == OrphanResolution.Remove)
         {
             links.RemoveUsage(noteId, name, blockId);
             return;
-        }
-
-        if (blockId is null)
-        {
-            return;
-        }
-
-        if (page.IsReadOnly)
-        {
-            throw new ReadOnlyPageException($"Die Datei '{page.FilePath}' ist schreibgeschützt: {page.ParseError}");
         }
 
         if (!UsedInOf(block).Any(e => IsEntryFor(e, name, null)))
@@ -140,8 +142,7 @@ public sealed class LinkChecker(IVault vault, ILinkService links)
         var orphans = new List<OrphanUsage>();
         foreach (var page in vault.Pages.Where(p => !Book.IsBook(p)))
         {
-            // Without an id:: the note could not be changed by id; such a block is never written by this app.
-            foreach (var block in page.AllBlocks().Where(b => b.Id is not null))
+            foreach (var block in page.AllBlocks())
             {
                 foreach (var entry in UsedInOf(block))
                 {
