@@ -15,7 +15,7 @@ public sealed class Vault : IVault
         Root = root;
         Settings = settings;
         _pages = pages;
-        _books = BuildBooks(pages, []);
+        _books = BuildBooks(pages, [], null);
     }
 
     public string Root { get; }
@@ -80,7 +80,7 @@ public sealed class Vault : IVault
             {
                 pages.Add(page);
             }
-            Publish(pages);
+            Publish(pages, page);
         }
         PageReplaced?.Invoke(page);
     }
@@ -92,20 +92,25 @@ public sealed class Vault : IVault
             var pages = _pages.Where(p => !SamePath(p.FilePath, path)).ToList();
             if (pages.Count != _pages.Count)
             {
-                Publish(pages);
+                Publish(pages, null);
             }
         }
     }
 
-    private void Publish(List<Page> pages)
+    private void Publish(List<Page> pages, Page? replaced)
     {
-        _books = BuildBooks(pages, _books);
+        _books = BuildBooks(pages, _books, replaced);
         _pages = pages;
     }
 
-    /// <summary>Reuses the views of unchanged book pages so consumers keep stable instances.</summary>
-    private static IReadOnlyList<Book> BuildBooks(IEnumerable<Page> pages, IReadOnlyList<Book> existing) =>
-        [.. pages.Where(Book.IsBook).Select(p => existing.FirstOrDefault(b => ReferenceEquals(b.Page, p)) ?? Book.Load(p))];
+    /// <summary>
+    /// Reuses the views of the other book pages so consumers keep stable instances; the replaced page is always
+    /// reloaded, because it may be the same instance edited in place.
+    /// </summary>
+    private static IReadOnlyList<Book> BuildBooks(IEnumerable<Page> pages, IReadOnlyList<Book> existing, Page? replaced) =>
+        [.. pages.Where(Book.IsBook).Select(p => ReferenceEquals(p, replaced)
+            ? Book.Load(p)
+            : existing.FirstOrDefault(b => ReferenceEquals(b.Page, p)) ?? Book.Load(p))];
 
     private (Page Page, Block Block)? FindBlock(Func<Block, bool> predicate)
     {

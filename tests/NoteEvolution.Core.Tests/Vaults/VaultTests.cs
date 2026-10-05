@@ -156,6 +156,39 @@ public class VaultTests
     }
 
     [Fact]
+    public void ReplacePage_SameInstanceEditedInPlace_RebuildsBook()
+    {
+        using var tv = Sample();
+        var vault = tv.Open();
+        var page = vault.Pages.Single(p => p.Name == "Buch - Test");
+        var oldBook = vault.Books.Single();
+        Assert.Equal(["Kapitel"], oldBook.Root.Children.Select(n => n.Title));
+
+        page.SetPageProperty("title", "Neu");
+        page.InsertBlock(null, page.Roots.Count, Core.Model.Block.CreateDetached("# Zweites Kapitel"));
+        vault.ReplacePage(page);
+
+        var book = vault.Books.Single();
+        Assert.NotSame(oldBook, book);
+        Assert.Equal("Neu", book.Title);
+        Assert.Equal(["Kapitel", "Zweites Kapitel"], book.Root.Children.Select(n => n.Title));
+    }
+
+    [Fact]
+    public void ReplacePage_OtherBooksKeepTheirView()
+    {
+        using var tv = Sample();
+        var vault = tv.Open();
+        var path = Path.Combine(tv.Root, "pages", "Buch - Zwei.md");
+        vault.ReplacePage(Parse(path, "type:: book\n\n- # A\n"));
+        var first = vault.FindBook("Buch - Test");
+
+        vault.ReplacePage(Parse(path, "type:: book\n\n- # B\n"));
+
+        Assert.Same(first, vault.FindBook("Buch - Test"));
+    }
+
+    [Fact]
     public void ReplacePage_NewPath_AddsPage_BookStatusFollowsContent()
     {
         using var tv = Sample();

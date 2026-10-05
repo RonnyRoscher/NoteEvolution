@@ -4,7 +4,11 @@ using NoteEvolution.Core.Model;
 
 namespace NoteEvolution.Core.Vaults;
 
-/// <summary>Creates <see cref="NoteBlock"/> views over a vault on demand and caches them per page until the page is replaced.</summary>
+/// <summary>
+/// Creates <see cref="NoteBlock"/> views over a vault on demand and caches them per page until the page is replaced.
+/// Every structural change to a page (blocks inserted, removed or moved) must be followed by
+/// <see cref="IVault.ReplacePage"/>; property changes are visible live.
+/// </summary>
 public sealed class NoteRepository : INoteRepository
 {
     private readonly IVault _vault;
