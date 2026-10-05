@@ -1,6 +1,6 @@
 # NoteEvolution – Design-Spezifikation
 
-Stand: 2026-10-05 · Status: zur Prüfung
+Stand: 2026-10-05 · Status: freigegeben
 
 ## 1. Ziel und Kontext
 
