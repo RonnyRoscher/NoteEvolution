@@ -306,6 +306,15 @@ public sealed class Block
         IsDirty = true;
     }
 
+    /// <summary>Puts back lines taken from <see cref="Lines"/> earlier, and the dirty flag of that time (undo, failed saves).</summary>
+    internal void RestoreLines(IReadOnlyList<RawLine> lines, bool isDirty)
+    {
+        _lines.Clear();
+        _lines.AddRange(lines);
+        _derived = null;
+        IsDirty = isDirty;
+    }
+
     internal void MarkSaved()
     {
         _baseLines.Clear();

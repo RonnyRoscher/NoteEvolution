@@ -1,5 +1,6 @@
 using System.Text;
 using NoteEvolution.Core.Format;
+using NoteEvolution.Core.Links;
 using NoteEvolution.Core.Vaults;
 using NoteEvolution.TestSupport;
 
@@ -67,7 +68,7 @@ public class NoteRepositoryTests
         Assert.True(notes["eigenes"].IsUsed);
         Assert.True(notes["darunter"].IsUsed);
         Assert.Equal(
-            [new Links.UsedInEntry("Buch - X", Guid.Parse("7f3a91c2-4b1d-4e8a-9c3f-1a2b3c4d5e6f"))],
+            [new UsedInEntry("Buch - X", Guid.Parse("7f3a91c2-4b1d-4e8a-9c3f-1a2b3c4d5e6f"))],
             notes["eltern"].Usages);
         Assert.Empty(notes["kind"].Usages);
         Assert.Equal(["Buch - Y"], notes["eigenes"].Usages.Select(u => u.PageName));

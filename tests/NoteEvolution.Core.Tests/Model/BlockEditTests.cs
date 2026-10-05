@@ -432,6 +432,51 @@ public class BlockEditTests
         Assert.Equal("- b\n- a\n", Text(p));
     }
 
+    [Fact]
+    public void RestoreBlock_PutsRemovedBlockBackByteIdentical()
+    {
+        // Odd indentation, a `*` bullet, mixed endings and a trailing blank line that InsertBlock would re-render.
+        const string before = "- a\n   * b\r\n     text b\n\n\t\t- c\n   * d\n";
+        var p = Parse(before);
+        var b = p.Roots[0].Children[0];
+
+        p.RemoveBlock(b);
+        p.RestoreBlock(p.Roots[0], 0, b);
+
+        Assert.Equal(before, Text(p));
+        Assert.Same(p.Roots[0], b.Parent);
+        Assert.True(p.IsDirty);
+        Assert.Equal(["a", "b\ntext b", "c", "d"], p.AllBlocks().Select(x => x.Content));
+    }
+
+    [Fact]
+    public void RestoreBlock_LastBlockWithoutFinalNewline_StaysWithout()
+    {
+        const string before = "- a\n- b";
+        var p = Parse(before);
+        var b = p.Roots[1];
+
+        p.RemoveBlock(b);
+        p.RestoreBlock(null, 5, b);
+
+        Assert.Equal(before, Text(p));
+    }
+
+    [Fact]
+    public void RestoreLines_PutsBackLinesAndDirtyFlag()
+    {
+        var p = Parse("- a\n  collapsed:: true\n");
+        var a = p.Roots[0];
+        var lines = a.Lines.ToList();
+
+        a.EnsureId();
+        a.RestoreLines(lines, isDirty: false);
+
+        Assert.Null(a.Id);
+        Assert.Equal("- a\n  collapsed:: true\n", Text(p));
+        Assert.False(p.IsDirty);
+    }
+
     // ---- MoveBlock ----
 
     [Fact]

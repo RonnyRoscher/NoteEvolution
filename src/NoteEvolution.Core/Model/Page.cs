@@ -185,6 +185,27 @@ public sealed class Page
 
     internal void AddRoot(Block block) => InsertAt(null, _roots.Count, block);
 
+    /// <summary>
+    /// Puts a block taken out with <see cref="RemoveBlock"/> back at <paramref name="index"/> (clamped to the
+    /// children of <paramref name="parent"/>) with its lines unchanged, so that undo restores the file exactly.
+    /// </summary>
+    internal void RestoreBlock(Block? parent, int index, Block removed)
+    {
+        if (removed.Page is not null || removed.Parent is not null)
+        {
+            throw new ArgumentException("Only a detached block can be restored.", nameof(removed));
+        }
+
+        if (parent is not null)
+        {
+            EnsureOwned(parent, nameof(parent));
+        }
+
+        InsertAt(parent, Math.Clamp(index, 0, ChildrenOf(parent).Count), removed);
+        _structureChanged = true;
+        RepairEndings();
+    }
+
     private void PrefixChanged()
     {
         _pageProperties = null;
