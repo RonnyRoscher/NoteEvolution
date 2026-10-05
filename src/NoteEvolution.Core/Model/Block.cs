@@ -197,12 +197,7 @@ public sealed class Block
     /// </exception>
     public void SetContent(string content)
     {
-        var target = content.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n').ToList();
-        while (target.Count > 1 && string.IsNullOrWhiteSpace(target[^1]))
-        {
-            target.RemoveAt(target.Count - 1);
-        }
-
+        var target = ContentLines(content);
         var targetHead = ValidateContent(target);
 
         var current = Content.Split('\n');
@@ -330,11 +325,31 @@ public sealed class Block
     }
 
     /// <summary>
-    /// Checks that <paramref name="target"/> re-parses as exactly this block: no continuation line outside a
+    /// Checks <paramref name="content"/> exactly as <see cref="SetContent"/> does, without changing anything,
+    /// so that a caller can validate all its edits before the first one.
+    /// </summary>
+    /// <exception cref="ArgumentException">See <see cref="SetContent"/>.</exception>
+    internal static void ValidateContent(string content) => ValidateContent(ContentLines(content));
+
+    /// <summary>The content's lines (any line ending) without trailing blank lines.</summary>
+    private static List<string> ContentLines(string content)
+    {
+        var lines = content.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n').ToList();
+        while (lines.Count > 1 && string.IsNullOrWhiteSpace(lines[^1]))
+        {
+            lines.RemoveAt(lines.Count - 1);
+        }
+
+        return lines;
+    }
+
+    /// <summary>
+    /// Checks that <paramref name="target"/> re-parses as exactly one block: no continuation line outside a
     /// code fence is a bullet, and every fence is closed. Returns the number of lines before the property
     /// position: 1, or up to and including the line that closes a fence opened by the bullet text.
+    /// The block's own indentation is whitespace and does not change the result, so the check is static.
     /// </summary>
-    private int ValidateContent(IReadOnlyList<string> target)
+    private static int ValidateContent(IReadOnlyList<string> target)
     {
         var head = 1;
         var fenceRun = LogseqSyntax.FenceOpening(target[0]);
@@ -356,7 +371,7 @@ public sealed class Block
                 continue;
             }
 
-            if (LogseqSyntax.IsBullet(ContentLineText(j, target[j])))
+            if (LogseqSyntax.IsBullet("  " + target[j]))
             {
                 throw new ArgumentException($"Content line {j + 1} would become a block of its own.", "content");
             }

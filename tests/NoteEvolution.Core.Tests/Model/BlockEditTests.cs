@@ -223,14 +223,27 @@ public class BlockEditTests
     [InlineData("- a\n- b", "a\n- x\nmore")]
     [InlineData("- a\n- b\n  ```\n  c\n  ```", "a\n```")]
     [InlineData("- a\n- b", "```js\ncode")]
+    [InlineData("- a\n- b", "a\r\n-\r\nb")]
+    [InlineData("- a\n- b", "a\r  * b")]
     public void SetContent_TextThatWouldChangeTheTree_ThrowsAndChangesNothing(string before, string content)
     {
         var p = Parse(before);
 
+        Assert.Throws<ArgumentException>(() => Block.ValidateContent(content));
         Assert.Throws<ArgumentException>(() => p.Roots[0].SetContent(content));
 
         Assert.Equal(before, Text(p));
         Assert.False(p.IsDirty);
+    }
+
+    [Theory]
+    [InlineData("a\n\\- x\n\\```")]
+    [InlineData("a\n```\n- im Zaun\n```")]
+    [InlineData("a\n\n  b")]
+    public void ValidateContent_TextKeepingTheTree_DoesNotThrow(string content)
+    {
+        Block.ValidateContent(content);
+        Block.CreateDetached(content);
     }
 
     [Fact]

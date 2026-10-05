@@ -104,12 +104,13 @@ public sealed class LinkService(IVault vault, IPageWriter writer, UndoManager un
         page.RemoveBlock(block);
         SaveBook(page, () => page.RestoreBlock(parent, index, block));
 
-        var sources = SourceValue.Parse(block.GetProperty(SourceKey) ?? "");
-        RemoveUsagesOfDeleted(page.FilePath, book.LinkName, block.Id, sources, new DeletedBlock(block, parent?.Key, index));
+        RemoveUsagesOfDeleted(
+            page.FilePath, book.LinkName, SourceValue.LinkedBlocksIn(block), new DeletedBlock(block, parent?.Key, index));
     }
 
     public void ApplySyncEffects(Book book, IReadOnlyList<SyncEffect> effects)
     {
+        var handled = new HashSet<Block>();
         foreach (var effect in effects)
         {
             switch (effect)
@@ -121,9 +122,18 @@ public sealed class LinkService(IVault vault, IPageWriter writer, UndoManager un
                     }
 
                     break;
+                case BlockDeleted { Removed: { } removed } deleted:
+                    // All effects of one removed subtree share the top block: one undo restores them together.
+                    if (handled.Add(removed))
+                    {
+                        var linked = effects.OfType<BlockDeleted>().Where(e => e.Removed == removed).Select(e => (e.BookBlockId, e.Sources));
+                        RemoveUsagesOfDeleted(
+                            book.Page.FilePath, book.LinkName, linked, new DeletedBlock(removed, deleted.ParentKey, deleted.Index));
+                    }
+
+                    break;
                 case BlockDeleted deleted:
-                    var removed = deleted.Removed is { } block ? new DeletedBlock(block, deleted.ParentKey, deleted.Index) : null;
-                    RemoveUsagesOfDeleted(book.Page.FilePath, book.LinkName, deleted.BookBlockId, deleted.Sources, removed);
+                    RemoveUsagesOfDeleted(book.Page.FilePath, book.LinkName, [(deleted.BookBlockId, deleted.Sources)], null);
                     break;
             }
         }
@@ -181,14 +191,15 @@ public sealed class LinkService(IVault vault, IPageWriter writer, UndoManager un
     }
 
     /// <summary>
-    /// After a book block was removed and the book saved: removes its usages from the source notes (none without a
-    /// block id) and, if the block is known, records the undo action „Löschen“ that puts it back.
+    /// After book blocks were removed and the book saved: removes the usages of the removed linked blocks
+    /// (<c>id::</c> and sources) from their notes and, if the removed top block is known, records the undo action
+    /// „Löschen“ that puts it back with all these usages.
     /// </summary>
     private void RemoveUsagesOfDeleted(
-        string bookPath, string linkName, Guid? bookBlockId, IEnumerable<Guid> sources, DeletedBlock? removed)
+        string bookPath, string linkName, IEnumerable<(Guid Id, IReadOnlyList<Guid> Sources)> linked, DeletedBlock? removed)
     {
         var changes = new List<NoteChange>();
-        if (bookBlockId is { } id)
+        foreach (var (id, sources) in linked)
         {
             foreach (var noteId in sources.Distinct())
             {
@@ -232,7 +243,8 @@ public sealed class LinkService(IVault vault, IPageWriter writer, UndoManager un
 
     /// <summary>
     /// Puts the deleted block back with its original lines. A note still exactly as the delete left it gets its
-    /// original lines back; any other note gets the usage added again.
+    /// original lines back; any other note gets the usage added again. Changes are undone newest first, so that
+    /// several changes of the same note are each checked against the state they left.
     /// </summary>
     private void UndoDelete(
         string bookPath, string linkName, Guid? parentKey, int index, Block block, IReadOnlyList<NoteChange> changes)
@@ -249,7 +261,7 @@ public sealed class LinkService(IVault vault, IPageWriter writer, UndoManager un
         SaveBook(page, () => page.RemoveBlock(block));
 
         var allWritten = true;
-        foreach (var change in changes)
+        foreach (var change in changes.Reverse())
         {
             if (FindNote(change.NoteId) is not { } note)
             {

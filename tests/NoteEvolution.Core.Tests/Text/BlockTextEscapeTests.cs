@@ -19,6 +19,13 @@ public class BlockTextEscapeTests
     [InlineData("\\- schon maskiert", "\\\\- schon maskiert")]
     [InlineData("\\\\# zweifach", "\\\\\\# zweifach")]
     [InlineData("a\n- b\n# c", "a\n\\- b\n\\# c")]
+    [InlineData("fazit:: gut", "fazit:\\: gut")]
+    [InlineData("id::", "id:\\:")]
+    [InlineData("  source:: ((x))", "  source:\\: ((x))")]
+    [InlineData("fazit:\\: gut", "fazit:\\\\: gut")]
+    [InlineData("a\\:: b", "a\\:\\: b")]
+    [InlineData("```k:: v", "\\```k:\\: v")]
+    [InlineData("Erster\nfazit:: gut", "Erster\nfazit:\\: gut")]
     public void Escape_LinesThatWouldChangeTheTree_GetBackslash_UnescapeReverts(string editor, string file)
     {
         Assert.Equal(file, BlockTextEscape.Escape(editor));
@@ -38,6 +45,11 @@ public class BlockTextEscapeTests
     [InlineData("\\")]
     [InlineData("")]
     [InlineData("  # eingerückt")]
+    [InlineData("a::b")]
+    [InlineData("zwei Wörter:: x")]
+    [InlineData(":: x")]
+    [InlineData("https://example.org")]
+    [InlineData("fazit:\\x: gut")]
     public void Escape_OrdinaryLines_Unchanged(string text)
     {
         Assert.Equal(text, BlockTextEscape.Escape(text));
@@ -48,6 +60,7 @@ public class BlockTextEscapeTests
     [InlineData("- x")]
     [InlineData("# x")]
     [InlineData("```")]
+    [InlineData("key:: value")]
     public void Unescape_UnescapedSyntaxInFile_KeptAsIs(string file)
     {
         Assert.Equal(file, BlockTextEscape.Unescape(file));

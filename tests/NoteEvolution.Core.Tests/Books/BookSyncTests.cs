@@ -477,6 +477,133 @@ public class BookSyncTests
     }
 
     [Fact]
+    public void Apply_TypedPropertyLines_AreMasked_SameSnapshotAgain_NotChanged()
+    {
+        using var s = new LinkSetup(TestBook, TestJournal);
+        var snapshot = Section(s, "Abschnitt");
+        var first = TextNode(snapshot, "Erster Textblock");
+        var edited = Replace(
+            snapshot,
+            first,
+            first with { Text = "Erster Textblock\nfazit:: gut" },
+            new SnapshotTextBlock(Guid.NewGuid(), null, "Neu\nsource:: ((" + N1 + "))\nid::", [], []));
+
+        Assert.True(BookSync.Apply(s.Book, edited).Changed);
+        var once = Serialize(s.Book);
+
+        var again = BookSync.Apply(s.Book, edited);
+
+        Assert.False(again.Changed);
+        Assert.Equal(once, Serialize(s.Book));
+        Assert.Equal(
+            TestBook.Replace(
+                ErsterTextblock,
+                ErsterTextblock.Replace("\t\t\t- Absatz eins\n", "\t\t  fazit:\\: gut\n\t\t\t- Absatz eins\n") +
+                $"\t\t- Neu\n\t\t  source:\\: (({N1}))\n\t\t  id:\\:\n"),
+            once);
+        var reloaded = Book.Load(LogseqParser.Parse(s.BookPath, PageSerializer.Serialize(s.Book.Page)));
+        var texts = reloaded.Root.Children.Single().Children.First().TextBlocks.ToList();
+        Assert.Equal([Guid.Parse(N1), Guid.Parse(N2)], texts[0].Sources);
+        Assert.DoesNotContain(texts[0].Block.Properties, p => p.Key == "fazit");
+        Assert.Empty(texts[1].Block.Properties);
+        Assert.Null(texts[1].Block.Id);
+    }
+
+    [Fact]
+    public void Apply_CarriageReturnsInTexts_AreLineBreaks_AppliedCompletely()
+    {
+        using var s = new LinkSetup(TestBook, TestJournal);
+        var snapshot = Section(s, "Abschnitt");
+        var first = TextNode(snapshot, "Erster Textblock");
+        var second = TextNode(snapshot, "Zweiter Textblock");
+        var edited = Replace(
+            Replace(snapshot, first, first with { Text = "Erster!" }),
+            second,
+            second with { Text = "a\r\n-\r\nb\rc" });
+
+        var result = BookSync.Apply(s.Book, edited);
+
+        Assert.True(result.Changed);
+        Assert.Equal(
+            TestBook
+                .Replace("\t\t- Erster Textblock\n", "\t\t- Erster!\n")
+                .Replace("\t\t- Zweiter Textblock\n", "\t\t- a\n\t\t  \\-\n\t\t  b\n\t\t  c\n"),
+            Serialize(s.Book));
+        var again = BookSnapshot.Create(Book.Load(s.Book.Page), s.Vault, s.SectionKey("Abschnitt"), includeSubsections: false);
+        Assert.Equal("a\n-\nb\nc", again.Nodes.Cast<SnapshotTextBlock>().ElementAt(1).Text);
+    }
+
+    [Fact]
+    public void Apply_DemotedLinkedBlockDeletedAsParagraph_NoteLosesUsage_UndoRestores()
+    {
+        const string b2 = "0199a1c2-1b7e-7c1d-9a0f-2b3c4d5e6f72";
+        var bookText = TestBook.Replace("\t\t- Zweiter Textblock\n", $"\t\t- Zweiter Textblock\n\t\t  id:: {b2}\n\t\t  source:: (({N2}))\n");
+        var journalText = TestJournal.Replace(
+            $"  id:: {N2}\n  used-in:: [[Buch - Test]] (({B1}))\n",
+            $"  id:: {N2}\n  used-in:: [[Buch - Test]] (({B1})), [[Buch - Test]] (({b2}))\n");
+        using var s = new LinkSetup(bookText, journalText);
+
+        // Step 1: the linked text block becomes a paragraph of the first one; it keeps key, id and source.
+        var snapshot = Section(s, "Abschnitt");
+        var first = TextNode(snapshot, "Erster Textblock");
+        var second = TextNode(snapshot, "Zweiter Textblock");
+        var demoted = Replace(
+            Replace(snapshot, second),
+            first,
+            first with { Paragraphs = [.. first.Paragraphs, new SnapshotParagraph(second.Key, "Zweiter Textblock", 1, false)] });
+        Assert.Empty(BookSync.Apply(s.Book, demoted).Effects);
+        s.Writer.Save(s.Book.Page);
+        var afterDemotion = s.ReadBook();
+        Assert.Contains($"\t\t\t- Absatz zwei #notiz\n\t\t\t- Zweiter Textblock\n\t\t\t  id:: {b2}\n\t\t\t  source:: (({N2}))\n", afterDemotion);
+
+        // Step 2: the paragraph is deleted.
+        var book = Book.Load(s.Book.Page);
+        var current = BookSnapshot.Create(book, s.Vault, s.SectionKey("Abschnitt"), includeSubsections: false);
+        var block = TextNode(current, "Erster Textblock");
+        var result = BookSync.Apply(book, Replace(current, block, block with { Paragraphs = [.. block.Paragraphs.SkipLast(1)] }));
+
+        var deleted = Assert.IsType<BlockDeleted>(Assert.Single(result.Effects));
+        Assert.Equal((Guid.Parse(b2), Guid.Parse(N2)), (deleted.BookBlockId, Assert.Single(deleted.Sources)));
+        s.Writer.Save(book.Page);
+        s.Links.ApplySyncEffects(book, result.Effects);
+        Assert.Equal(TestJournal, s.ReadJournal());
+
+        s.Undo.Undo();
+
+        Assert.Equal(afterDemotion, s.ReadBook());
+        Assert.Equal(journalText, s.ReadJournal());
+    }
+
+    [Fact]
+    public void Apply_LinkedBlockWithLinkedParagraphDeleted_EffectsForBoth_OneUndoRestoresAll()
+    {
+        const string b2 = "0199a1c2-1b7e-7c1d-9a0f-2b3c4d5e6f72";
+        var bookText = TestBook.Replace("\t\t\t- Absatz eins\n", $"\t\t\t- Absatz eins\n\t\t\t  id:: {b2}\n\t\t\t  source:: (({N2}))\n");
+        var journalText = TestJournal.Replace(
+            $"  id:: {N2}\n  used-in:: [[Buch - Test]] (({B1}))\n",
+            $"  id:: {N2}\n  used-in:: [[Buch - Test]] (({B1})), [[Buch - Test]] (({b2}))\n");
+        using var s = new LinkSetup(bookText, journalText);
+        var book = s.Book;
+        var snapshot = Section(s, "Abschnitt");
+
+        var result = BookSync.Apply(book, Replace(snapshot, TextNode(snapshot, "Erster Textblock")));
+
+        Assert.Equal(
+            [(Guid.Parse(B1), 2), (Guid.Parse(b2), 1)],
+            result.Effects.Select(e => Assert.IsType<BlockDeleted>(e)).Select(d => (d.BookBlockId, d.Sources.Count)));
+        s.Writer.Save(book.Page);
+        s.Links.ApplySyncEffects(book, result.Effects);
+        Assert.Equal($"- Erste Quelle\n  id:: {N1}\n- Zweite Quelle\n  id:: {N2}\n", s.ReadJournal());
+
+        s.Undo.Undo();
+
+        Assert.False(s.Undo.CanUndo);
+        Assert.Equal(bookText, s.ReadBook());
+        Assert.Equal(journalText, s.ReadJournal());
+        Assert.Empty(s.Pending.Load());
+    }
+
+    [Fact]
     public void Apply_DuplicateKeys_Throws_NothingChanged()
     {
         using var s = new LinkSetup(TestBook, TestJournal);
@@ -487,6 +614,7 @@ public class BookSyncTests
             BookSync.Apply(s.Book, snapshot with { Nodes = [first with { Text = "geändert" }, first] }));
 
         Assert.Equal(TestBook, Serialize(s.Book));
+        Assert.False(s.Book.Page.IsDirty);
     }
 
     [Fact]

@@ -9,10 +9,13 @@ namespace NoteEvolution.Core.Books;
 /// <summary>A consequence of <see cref="BookSync.Apply"/> for the linked notes; see <see cref="ILinkService.ApplySyncEffects"/>.</summary>
 public abstract record SyncEffect;
 
-/// <summary>A linked text block was deleted in the editor; its notes lose the usage.</summary>
+/// <summary>A linked block was deleted in the editor (itself or within a removed subtree); its notes lose the usage.</summary>
 public sealed record BlockDeleted(Guid BookBlockId, IReadOnlyList<Guid> Sources) : SyncEffect
 {
-    /// <summary>The removed block with its subtree and lines unchanged, so that undo can put it back.</summary>
+    /// <summary>
+    /// The removed top block with its subtree and lines unchanged, so that undo can put it back. Effects for linked
+    /// blocks within the same removed subtree carry the same instance.
+    /// </summary>
     internal Block? Removed { get; init; }
 
     /// <summary><see cref="Block.Key"/> of the parent the block was removed from; <c>null</c> = root level.</summary>
@@ -44,11 +47,16 @@ public static class BookSync
     /// <see cref="ILinkService.RetryPending"/>. If the save fails, the effects are dropped and the book is taken
     /// from the vault again; the in-memory page must not be saved later.
     /// </para>
+    /// <para>
+    /// Line endings in the snapshot texts (<c>"\r\n"</c>, <c>"\r"</c>) are read as <c>"\n"</c>. Every text to be
+    /// written is validated before the first change, so the exceptions listed here leave the page untouched. On
+    /// any other exception the page may be partly changed: the caller must reload it from disk.
+    /// </para>
     /// </summary>
     /// <exception cref="ReadOnlyPageException">The book page is read-only.</exception>
     /// <exception cref="ArgumentException">
-    /// Unknown scope, or an inconsistent snapshot (empty or duplicate keys, a text block or paragraph with the key
-    /// of a heading); nothing is changed.
+    /// Unknown scope, an inconsistent snapshot (empty or duplicate keys, a text block or paragraph with the key
+    /// of a heading), or a text that would change the block tree (see <see cref="Block.SetContent"/>); nothing is changed.
     /// </exception>
     public static SyncResult Apply(Book book, SectionSnapshot snapshot)
     {
@@ -59,10 +67,32 @@ public static class BookSync
         }
 
         var before = PageSerializer.Serialize(page);
-        var run = new Run(book, snapshot);
+        var run = new Run(book, NormalizeLineEndings(snapshot));
         run.Execute();
         var changed = !before.AsSpan().SequenceEqual(PageSerializer.Serialize(page));
         return new SyncResult(changed, run.Effects);
+    }
+
+    private static SectionSnapshot NormalizeLineEndings(SectionSnapshot snapshot)
+    {
+        static string Lf(string text) => text.Replace("\r\n", "\n").Replace('\r', '\n');
+
+        return snapshot with
+        {
+            Nodes =
+            [
+                .. snapshot.Nodes.Select(node => node switch
+                {
+                    SnapshotHeading heading => heading with { Text = Lf(heading.Text) },
+                    SnapshotTextBlock text => text with
+                    {
+                        Text = Lf(text.Text),
+                        Paragraphs = [.. text.Paragraphs.Select(p => p with { Text = Lf(p.Text) })],
+                    },
+                    _ => node,
+                }),
+            ],
+        };
     }
 
     /// <summary>The state of one <see cref="Apply"/> call. All lookups go through the page's blocks by key.</summary>
@@ -85,6 +115,10 @@ public static class BookSync
         private readonly Dictionary<Guid, Block> _blocks = [];
         private readonly List<Block> _textBlocks = [];
 
+        /// <summary>The content to write, by key: for new blocks and for blocks whose text changed. Validated up front.</summary>
+        private readonly Dictionary<Guid, string> _contents = [];
+
+        /// <summary>Checks the snapshot and plans and validates every text change; the page is not touched yet.</summary>
         public Run(Book book, SectionSnapshot snapshot)
         {
             _page = book.Page;
@@ -98,6 +132,8 @@ public static class BookSync
             {
                 _blocks.TryAdd(block.Key, block);
             }
+
+            PlanContents();
         }
 
         public List<SyncEffect> Effects { get; } = [];
@@ -113,7 +149,7 @@ public static class BookSync
                 switch (node)
                 {
                     case SnapshotHeading heading when Manuscript && _book.FindNode(heading.Key) is { Block: { } block } known:
-                        Rename(known, heading.Text);
+                        WritePlanned(block);
                         section = known;
                         predecessor = block;
                         break;
@@ -174,28 +210,81 @@ public static class BookSync
             }
         }
 
-        /// <summary>Keeps the heading's <c>#</c> prefix and any further lines; replaces the title if it differs.</summary>
-        private static void Rename(OutlineNode node, string text)
+        /// <summary>
+        /// Records the content of every renamed heading, changed or new text block and changed or new paragraph,
+        /// and validates it as <see cref="Block.SetContent"/> would (ruling R17).
+        /// </summary>
+        private void PlanContents()
+        {
+            foreach (var node in _snapshot.Nodes)
+            {
+                switch (node)
+                {
+                    case SnapshotHeading heading when Manuscript && _book.FindNode(heading.Key) is { Block: not null } known:
+                        if (RenamedContent(known, heading.Text) is { } renamed)
+                        {
+                            Plan(heading.Key, renamed);
+                        }
+
+                        break;
+                    case SnapshotTextBlock text:
+                        if (!_blocks.TryGetValue(text.Key, out var block) || BlockTextEscape.Unescape(block.Content) != text.Text)
+                        {
+                            Plan(text.Key, BlockTextEscape.Escape(text.Text));
+                        }
+
+                        foreach (var paragraph in text.Paragraphs)
+                        {
+                            if (!_blocks.TryGetValue(paragraph.Key, out var existing)
+                                || BookSnapshot.ParagraphText(existing.Content) != paragraph.Text
+                                || NoteTag.Has(existing.Content) != paragraph.IsNote)
+                            {
+                                Plan(paragraph.Key, ParagraphContent(paragraph));
+                            }
+                        }
+
+                        break;
+                }
+            }
+        }
+
+        private void Plan(Guid key, string content)
+        {
+            Block.ValidateContent(content);
+            _contents[key] = content;
+        }
+
+        /// <summary>Writes the planned content, if any, into a present block.</summary>
+        private void WritePlanned(Block block)
+        {
+            if (_contents.TryGetValue(block.Key, out var content))
+            {
+                block.SetContent(content);
+            }
+        }
+
+        /// <summary>
+        /// The heading's content with the title replaced (the <c>#</c> prefix and any further lines kept), or
+        /// <c>null</c> if the title is the same.
+        /// </summary>
+        private static string? RenamedContent(OutlineNode node, string text)
         {
             var title = text.ReplaceLineEndings(" ").Trim();
             if (title == node.Title)
             {
-                return;
+                return null;
             }
 
             var lines = node.Block!.Content.Split('\n');
             lines[0] = new string('#', node.Level) + " " + title;
-            node.Block.SetContent(string.Join("\n", lines));
+            return string.Join("\n", lines);
         }
 
         private Block PlaceTextBlock(SnapshotTextBlock text, OutlineNode section, Block? predecessor)
         {
             if (_blocks.TryGetValue(text.Key, out var block))
             {
-                if (BlockTextEscape.Unescape(block.Content) != text.Text)
-                {
-                    block.SetContent(BlockTextEscape.Escape(text.Text));
-                }
+                WritePlanned(block);
             }
             else
             {
@@ -233,7 +322,7 @@ public static class BookSync
                 Effects.Add(new BlockSplit(id, [.. sources.Distinct()]));
             }
 
-            var block = Block.CreateDetached(BlockTextEscape.Escape(text.Text), properties, text.Key);
+            var block = Block.CreateDetached(_contents[text.Key], properties, text.Key);
             _blocks[text.Key] = block;
             return block;
         }
@@ -320,17 +409,13 @@ public static class BookSync
                 var parent = path[depth - 1];
                 path.RemoveRange(depth, path.Count - depth);
 
-                var content = ParagraphContent(paragraph);
                 if (_blocks.TryGetValue(paragraph.Key, out var block))
                 {
-                    if (BookSnapshot.ParagraphText(block.Content) != paragraph.Text || NoteTag.Has(block.Content) != paragraph.IsNote)
-                    {
-                        block.SetContent(content);
-                    }
+                    WritePlanned(block);
                 }
                 else
                 {
-                    block = Block.CreateDetached(content, null, paragraph.Key);
+                    block = Block.CreateDetached(_contents[paragraph.Key], null, paragraph.Key);
                     _blocks[paragraph.Key] = block;
                 }
 
@@ -374,7 +459,7 @@ public static class BookSync
                 {
                     if (!_headings.Contains(block.Key) && !_listed.Contains(block.Key))
                     {
-                        Remove(block, linked: true);
+                        Remove(block);
                     }
                 }
             }
@@ -395,21 +480,23 @@ public static class BookSync
                 }
                 else
                 {
-                    Remove(child, linked: false);
+                    Remove(child);
                 }
             }
         }
 
-        private void Remove(Block block, bool linked)
+        /// <summary>
+        /// Removes the block with its subtree. Every linked block in the subtree (ruling R18) gets a
+        /// <see cref="BlockDeleted"/>; all of them carry the removed top block, so that one undo restores everything.
+        /// </summary>
+        private void Remove(Block block)
         {
             var parent = block.Parent;
             var index = IndexAmongSiblings(block);
             _page.RemoveBlock(block);
-            if (linked
-                && block.Id is { } id
-                && SourceValue.Parse(block.GetProperty("source") ?? "") is { Count: > 0 } sources)
+            foreach (var (id, sources) in SourceValue.LinkedBlocksIn(block))
             {
-                Effects.Add(new BlockDeleted(id, [.. sources.Distinct()]) { Removed = block, ParentKey = parent?.Key, Index = index });
+                Effects.Add(new BlockDeleted(id, sources) { Removed = block, ParentKey = parent?.Key, Index = index });
             }
         }
 
