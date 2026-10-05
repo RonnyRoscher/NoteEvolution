@@ -69,6 +69,63 @@ public class InlineMarkdownTests
         Assert.Equal([new InlineRun("ab", false, true)], InlineMarkdown.Parse("*a*_b_"));
     }
 
+    public static TheoryData<InlineRun[]> RunLists => new()
+    {
+        { [new("a", false, true), new("b", true, false)] },
+        { [new("a", true, false), new("b", false, true)] },
+        { [new("a", false, true), new("b", true, true)] },
+        { [new("a", true, true), new("b", false, true)] },
+        { [new("a", true, false), new("b", true, true), new("c", false, true)] },
+        { [new("x ", true, false), new("y", false, false)] },
+        { [new(" x", false, true), new("y", false, false)] },
+        { [new("a", false, false), new(" b ", true, true), new("c", false, false)] },
+        { [new("  ", true, false), new("c", true, false)] },
+        { [new("a", true, false), new("", true, true), new("b", true, false)] },
+        { [new("ab", false, true), new("cd", true, false)] },
+        { [new("a", false, false), new("b", false, true), new("c", true, false), new("d", false, false)] },
+    };
+
+    [Theory]
+    [MemberData(nameof(RunLists))]
+    public void Inline_ParseOfFormat_EqualsNormalizedRuns(InlineRun[] runs)
+    {
+        Assert.Equal(InlineMarkdown.Normalize(runs), InlineMarkdown.Parse(InlineMarkdown.Format(runs)));
+    }
+
+    [Fact]
+    public void Inline_ParseOfFormat_EqualsNormalizedRuns_ForAllShortRunLists()
+    {
+        string[] texts = ["a", "b c", " d ", "e"];
+        var alphabet = (from text in texts from bold in new[] { false, true } from italic in new[] { false, true }
+                        select new InlineRun(text, bold, italic)).ToArray();
+        IEnumerable<InlineRun[]> lists = [[]];
+        for (var length = 1; length <= 4; length++)
+        {
+            var size = length;
+            lists = lists.Concat(Enumerable.Range(0, (int)Math.Pow(alphabet.Length, size))
+                .Select(n => Enumerable.Range(0, size).Select(p => alphabet[n / (int)Math.Pow(alphabet.Length, p) % alphabet.Length]).ToArray()));
+        }
+
+        var failures = lists
+            .Where(runs => !InlineMarkdown.Normalize(runs).SequenceEqual(InlineMarkdown.Parse(InlineMarkdown.Format(runs))))
+            .Select(runs => Describe(runs) + "  =>  " + InlineMarkdown.Format(runs) + "  =>  " + Describe(InlineMarkdown.Parse(InlineMarkdown.Format(runs))))
+            .Take(12)
+            .ToList();
+
+        Assert.True(failures.Count == 0, string.Join(Environment.NewLine, failures));
+    }
+
+    private static string Describe(IEnumerable<InlineRun> runs) =>
+        string.Join(" | ", runs.Select(r => $"{(r.Bold ? "B" : "")}{(r.Italic ? "I" : "")}'{r.Text}'"));
+
+    [Fact]
+    public void Inline_Normalize_MovesEdgeWhitespaceOutAndMerges()
+    {
+        var result = InlineMarkdown.Normalize([new(" a", true, false), new("", false, true), new("b ", true, false), new("c", false, false)]);
+
+        Assert.Equal([new InlineRun(" ", false, false), new InlineRun("ab", true, false), new InlineRun(" c", false, false)], result);
+    }
+
     [Fact]
     public void Inline_UnderscoreInsideWordIsNotItalic()
     {
