@@ -12,5 +12,8 @@ public class FtsQueryTests
     [InlineData("", null)]
     [InlineData("\" \"\"", null)]
     [InlineData("  a \t b\nc ", "\"a\"* \"b\"* \"c\"*")]
+    [InlineData("a\0b", "\"a\"* \"b\"*")]
+    [InlineData("a\u0007b\u007fc", "\"a\"* \"b\"* \"c\"*")]
+    [InlineData("\0", null)]
     public void Build_EscapesUserInput(string input, string? expected) => Assert.Equal(expected, FtsQuery.Build(input));
 }

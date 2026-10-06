@@ -169,6 +169,8 @@ public class FullTextSearchTests
     [InlineData("a:b NOT c^")]
     [InlineData("\"\"\"")]
     [InlineData("'; DROP TABLE notes; --")]
+    [InlineData("a\0b")]
+    [InlineData("a\u0007b")]
     public void Search_SpecialCharacters_DoNotThrow(string text)
     {
         using var tv = TestVault.Create(("pages/Idee.md", "- foo bar -x (y) AND OR\n"));
