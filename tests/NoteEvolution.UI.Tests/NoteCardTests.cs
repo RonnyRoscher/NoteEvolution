@@ -148,6 +148,40 @@ public class NoteCardTests : UiTestContext
     }
 
     [Fact]
+    public async Task NoteCard_SearchIndexFailsAfterAdopt_BookIsStillRefreshed()
+    {
+        using var tv = Create();
+        var session = await OpenAlphaAsync(tv);
+        var staleBook = State.CurrentBook!;
+        var note = Note(session, "Gedächtnis braucht");
+        var cut = RenderCard(note);
+        ((IDisposable)session.Search).Dispose();
+        Assert.ThrowsAny<Exception>(() => session.Search.UpdatePage(session.Notes, note.Page.FilePath));
+
+        cut.Find(".ne-note-adopt").Click();
+
+        Assert.NotSame(staleBook, State.CurrentBook);
+        Assert.Contains("Gedächtnis braucht Schlaf", State.CurrentBook!.Root.Children.First().TextBlocks.Select(t => t.Text));
+        Assert.Empty(cut.FindAll(".ne-note-error"));
+    }
+
+    [Fact]
+    public async Task NoteCard_FlushFails_ShowsGenericMessageAndAdoptsNothing()
+    {
+        using var tv = Create();
+        var session = await OpenAlphaAsync(tv);
+        State.FlushEditor = () => throw new InvalidOperationException("editor broke");
+        var before = tv.Read(AlphaPath);
+        var cut = RenderCard(Note(session, "Gedächtnis braucht"));
+
+        cut.Find(".ne-note-adopt").Click();
+
+        var localizer = Services.GetRequiredService<IStringLocalizer<Strings>>();
+        Assert.Equal(localizer["NoteAdoptFailed"].Value, cut.Find(".ne-note-error").TextContent);
+        Assert.Equal(before, tv.Read(AlphaPath));
+    }
+
+    [Fact]
     public async Task NoteCard_AdoptFlushesTheEditorFirst()
     {
         using var tv = Create();

@@ -6,6 +6,7 @@
 @inject AppState State
 @inject IPlatformServices Platform
 @inject IStringLocalizer<Strings> L
+@inject ILogger<NoteCard> Logger
 
 @* One note of the notes pane: origin, score, usage mark, the block text with its sub-bullets, and the actions. *@
 @{
@@ -169,9 +170,34 @@
     private async Task AdoptAsync(Block block)
     {
         _message = null;
-        if (State.FlushEditor is { } flush)
+        try
         {
-            await flush();
+            await TryAdoptAsync(block);
+        }
+        finally
+        {
+            // Whatever happened, the book view and the cards are taken from the vault again: on success the book
+            // changed, after a failure the vault holds the page as it is on disk again.
+            State.RefreshBook();
+            State.Notify();
+        }
+    }
+
+    private async Task TryAdoptAsync(Block block)
+    {
+        try
+        {
+            if (State.FlushEditor is { } flush)
+            {
+                await flush();
+            }
+        }
+        catch (Exception ex)
+        {
+            // The editor's text may not be saved, so nothing is adopted behind its back.
+            Logger.LogError(ex, "Saving the editor before adopting a note failed");
+            _message = ("NoteAdoptFailed", true);
+            return;
         }
 
         // The flush may have changed the state, so everything is read after it.
@@ -190,35 +216,48 @@
         var position = State.CursorTextBlockKey is { } cursor && book.FindTextBlock(cursor) is not null
             ? (InsertPosition)new InsertPosition.After(cursor)
             : new InsertPosition.SectionEnd(State.CurrentSectionKey);
+        AdoptResult result;
         try
         {
-            var result = session.Links.Adopt(book, block.Key, position);
-            session.Search.UpdatePage(session.Notes, Note.Page.FilePath);
-            if (result.NoteUpdatePending)
-            {
-                _message = ("NoteUpdatePending", false);
-            }
+            result = session.Links.Adopt(book, block.Key, position);
         }
         catch (FileChangedExternallyException)
         {
             session.HandleExternalChange(bookPath);
             _message = ("NoteAdoptExternalChange", true);
+            return;
         }
         catch (ReadOnlyPageException)
         {
             _message = ("NoteAdoptBookReadOnly", true);
+            return;
         }
-        catch (InvalidOperationException)
+        catch (InvalidOperationException) when (Note.Page.IsReadOnly)
         {
             _message = ("NoteAdoptNoteReadOnly", true);
+            return;
         }
-        catch (Exception ex) when (ex is ArgumentException or IOException or UnauthorizedAccessException)
+        catch (Exception ex) when (ex is ArgumentException or IOException or UnauthorizedAccessException or InvalidOperationException)
         {
+            // Includes the page writer refusing a result that would not parse safely (nothing was written).
+            Logger.LogWarning(ex, "Adopting a note failed");
             _message = ("NoteAdoptFailed", true);
+            return;
         }
 
-        // On success the book changed; after a failure the vault holds the page as it is on disk again.
-        State.RefreshBook();
-        State.Notify();
+        try
+        {
+            session.Search.UpdatePage(session.Notes, Note.Page.FilePath);
+        }
+        catch (Exception ex)
+        {
+            // The note is adopted; a stale search index (an aid, rebuilt on opening) must not hide that.
+            Logger.LogWarning(ex, "Updating the search index after adopting failed");
+        }
+
+        if (result.NoteUpdatePending)
+        {
+            _message = ("NoteUpdatePending", false);
+        }
     }
 }
