@@ -60,6 +60,21 @@ public class UiSettingsTests
         Assert.Equal(300, UiSettings.Load(target).OutlineWidth);
     }
 
+    [Theory]
+    [InlineData(2, 10, 5, 50)]
+    [InlineData(99, 20, 500, 100)]
+    [InlineData(14, 14, 80, 80)]
+    public void Load_ClampsHandEditedValues(int fontSize, int expectedFont, int lineWidth, int expectedWidth)
+    {
+        using var dir = new TempDir();
+        dir.Write("ui.json", $"{{ \"FontSizePt\": {fontSize}, \"LineWidthCh\": {lineWidth} }}");
+
+        var loaded = UiSettings.Load(dir.Path);
+
+        Assert.Equal(expectedFont, loaded.FontSizePt);
+        Assert.Equal(expectedWidth, loaded.LineWidthCh);
+    }
+
     private static void AssertDefaults(UiSettings settings)
     {
         Assert.Null(settings.LastVault);

@@ -33,6 +33,21 @@ public class UndoManagerTests
     }
 
     [Fact]
+    public void Pushed_IsRaisedForPushOnly()
+    {
+        var log = new List<string>();
+        var undo = new UndoManager();
+        var pushed = new List<string>();
+        undo.Pushed += action => pushed.Add(action.Description);
+
+        undo.Push(new Recording("eins", log));
+        undo.Push(new Recording("zwei", log));
+        undo.Undo();
+
+        Assert.Equal(["eins", "zwei"], pushed);
+    }
+
+    [Fact]
     public void Push_KeepsAtMost50Actions()
     {
         var log = new List<string>();

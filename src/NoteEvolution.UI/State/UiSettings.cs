@@ -17,6 +17,14 @@ public sealed class UiSettings
 {
     public const string FileName = "ui.json";
 
+    public const int MinFontSizePt = 10;
+
+    public const int MaxFontSizePt = 20;
+
+    public const int MinLineWidthCh = 50;
+
+    public const int MaxLineWidthCh = 100;
+
     private static readonly JsonSerializerOptions Json = new()
     {
         WriteIndented = true,
@@ -46,13 +54,16 @@ public sealed class UiSettings
     /// <summary>The hint not to edit the same book in Logseq at the same time has been shown.</summary>
     public bool LogseqHintShown { get; set; }
 
-    /// <summary>Reads <c>ui.json</c> from <paramref name="dir"/>; a missing or unreadable file gives the defaults.</summary>
+    /// <summary>Reads <c>ui.json</c> from <paramref name="dir"/>; a missing or unreadable file gives the defaults, hand-edited values are clamped to their range.</summary>
     public static UiSettings Load(string dir)
     {
         var path = Path.Combine(dir, FileName);
         try
         {
-            return File.Exists(path) ? JsonSerializer.Deserialize<UiSettings>(File.ReadAllBytes(path), Json) ?? new() : new();
+            var settings = File.Exists(path) ? JsonSerializer.Deserialize<UiSettings>(File.ReadAllBytes(path), Json) ?? new() : new();
+            settings.FontSizePt = Math.Clamp(settings.FontSizePt, MinFontSizePt, MaxFontSizePt);
+            settings.LineWidthCh = Math.Clamp(settings.LineWidthCh, MinLineWidthCh, MaxLineWidthCh);
+            return settings;
         }
         catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
         {

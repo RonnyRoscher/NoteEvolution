@@ -17,7 +17,11 @@ public sealed class UndoManager
     private readonly LinkedList<IUndoAction> _actions = [];
     private readonly object _gate = new();
 
+    /// <summary>Raised whenever the stack changes: an action was pushed or one was undone.</summary>
     public event Action? Changed;
+
+    /// <summary>Raised after an action was pushed (and <see cref="Changed"/>), with that action; not for an undo.</summary>
+    public event Action<IUndoAction>? Pushed;
 
     public bool CanUndo
     {
@@ -54,6 +58,7 @@ public sealed class UndoManager
         }
 
         Changed?.Invoke();
+        Pushed?.Invoke(action);
     }
 
     /// <summary>
