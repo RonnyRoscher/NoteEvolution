@@ -13,15 +13,15 @@ namespace NoteEvolution.UI.Tests;
 
 public class EditorPaneTests : UiTestContext
 {
-    private const string BookPath = "pages/Buch - Alpha.md";
+    internal const string BookPath = "pages/Buch - Alpha.md";
 
-    private const string NotesPath = "pages/Ideen.md";
+    internal const string NotesPath = "pages/Ideen.md";
 
-    private const string FirstId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    internal const string FirstId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 
-    private const string NoteId = "11111111-1111-4111-8111-111111111111";
+    internal const string NoteId = "11111111-1111-4111-8111-111111111111";
 
-    private static TestVault Alpha() => TestVault.Create(
+    internal static TestVault Alpha() => TestVault.Create(
         (BookPath,
             "title:: Alpha\ntype:: book\n\n" +
             "- # Eins\n" +
@@ -268,6 +268,63 @@ public class EditorPaneTests : UiTestContext
         Assert.Contains("\t- Erster Text, lokal\n", book);
         Assert.Contains("\t- Zweiter Text, extern\n", book);
         cut.WaitForAssertion(() => Assert.Equal("Erster Text, lokal|Zweiter Text, extern", TextsOf(Editor.Json)));
+    }
+
+    [Fact]
+    public async Task Pane_ExternalDeleteWithPendingText_OpensConflict_FileNotRecreated()
+    {
+        using var tv = Alpha();
+        var (session, cut) = await RenderAsync(tv);
+        var doc = Doc(Editor.Json);
+        SetText(doc, 0, "Erster Text, lokal");
+        await ChangeAsync(cut, doc);
+        var path = Path.Combine(tv.Root, BookPath);
+        File.Delete(path);
+
+        await cut.InvokeAsync(() => session.HandleExternalChange(path));
+        await cut.InvokeAsync(() => State.FlushEditor!());
+
+        Assert.True(session.HasOpenConflict(path));
+        Assert.False(File.Exists(path));
+        // The local page with the text stays in the vault for the conflict's resolution.
+        var local = Book.Load(session.Vault.FindBook("Buch - Alpha")!.Page);
+        Assert.Equal("Erster Text, lokal", local.FindNode(Section("Eins").Key)!.TextBlocks.First().Text);
+        cut.WaitForAssertion(() => Assert.NotNull(cut.Find(".ne-editor-host").GetAttribute("inert")));
+        Assert.Equal(Text("EditorConflict"), cut.Find(".ne-editor-hint").TextContent);
+    }
+
+    [Fact]
+    public async Task Pane_ExternalChangeMakesFileUnparseable_WithPendingText_OpensConflict_FileUntouched()
+    {
+        using var tv = Alpha();
+        var (session, cut) = await RenderAsync(tv);
+        var doc = Doc(Editor.Json);
+        SetText(doc, 0, "Erster Text, lokal");
+        await ChangeAsync(cut, doc);
+        var path = Path.Combine(tv.Root, BookPath);
+        var broken = tv.Read(BookPath) + "\t- Code\n\t  ```\n\t  offen\n";
+        File.WriteAllText(path, broken);
+
+        await cut.InvokeAsync(() => session.HandleExternalChange(path));
+        await cut.InvokeAsync(() => State.FlushEditor!());
+
+        Assert.True(session.HasOpenConflict(path));
+        Assert.Equal(broken, tv.Read(BookPath));
+        cut.WaitForAssertion(() => Assert.NotNull(cut.Find(".ne-editor-host").GetAttribute("inert")));
+    }
+
+    [Fact]
+    public async Task Pane_Dispose_SavesPendingText()
+    {
+        using var tv = Alpha();
+        var (_, cut) = await RenderAsync(tv);
+        var doc = Doc(Editor.Json);
+        SetText(doc, 1, "Zweiter Text, kurz vor dem Schließen");
+        await ChangeAsync(cut, doc);
+
+        await DisposeComponentsAsync();
+
+        Assert.Contains("\t- Zweiter Text, kurz vor dem Schließen\n", tv.Read(BookPath));
     }
 
     [Fact]

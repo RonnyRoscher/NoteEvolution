@@ -52,8 +52,9 @@ public static class NoteAdoption
             return new AdoptMessage("NoteAdoptFailed", true);
         }
 
-        // The flush may have changed the state, so everything is read after it.
-        if (state.Session is not { } session || state.CurrentBook is not { } book)
+        // The flush may have saved the page or changed the state, so everything is read after it, the book from the vault.
+        if (state.Session is not { } session || state.CurrentBook is not { } current
+            || session.Vault.FindBook(current.LinkName) is not { } book)
         {
             return null;
         }

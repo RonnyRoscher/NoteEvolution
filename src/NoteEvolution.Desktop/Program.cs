@@ -53,6 +53,15 @@ internal static class Program
                 }
             };
 
+            // The editor saves its pending text before the window closes (and before the session is disposed below).
+            var closeGuard = new EditorCloseGuard(
+                appState,
+                work => app.WindowManager.Dispatcher.InvokeAsync(work),
+                () => app.MainWindow.Close(),
+                TimeProvider.System,
+                app.Services.GetRequiredService<ILoggerFactory>().CreateLogger<EditorCloseGuard>());
+            app.MainWindow.RegisterWindowClosingHandler((_, _) => closeGuard.OnClosing());
+
             app.MainWindow
                 .SetLogVerbosity(0)
                 .SetTitle("NoteEvolution")

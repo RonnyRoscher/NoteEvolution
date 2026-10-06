@@ -1,8 +1,5 @@
 @using NoteEvolution.Core.Books
-@using NoteEvolution.Core.Format
 @using NoteEvolution.Core.Links
-@using NoteEvolution.Core.Model
-@using NoteEvolution.Core.Storage
 @using NoteEvolution.UI.Editor
 @implements IEditorCallbacks
 @implements IAsyncDisposable
@@ -13,7 +10,7 @@
 @inject ILogger<EditorPane> Logger
 
 @* The book text (spec 7): the current section, or the current part as manuscript, in the TipTap editor. Every change
-   is saved 1000 ms after the last one by reconciling the editor's document into the book page (BookSync). *@
+   is saved 1000 ms after the last one by reconciling the editor's document into the book page (BookTextSaver). *@
 <div class="ne-editor-pane">
     @if (State.CurrentBook is null)
     {
@@ -31,7 +28,7 @@
         {
             <div class="ne-editor-hint" role="status">@L[reason]</div>
         }
-        @if (_message is { } message)
+        @if (_saver.Message is { } message)
         {
             <div class="@(message.IsError ? "ne-editor-error" : "ne-editor-info")" role="@(message.IsError ? "alert" : "status")">@L[message.Key]</div>
         }
@@ -46,23 +43,15 @@
     /// <summary>Loading, saving and the chip operations run one at a time (they await the editor in between).</summary>
     private readonly SemaphoreSlim _gate = new(1, 1);
 
-    /// <summary>Effects of applied changes whose page is not saved yet (after an external change); applied once it is.</summary>
-    private readonly List<(VaultSession Session, string BookLink, SyncEffect Effect)> _unsavedEffects = [];
-
+    private BookTextSaver _saver = default!;
     private ElementReference _host;
     private VaultSession? _session;
-    private Shown? _shown;
-    private string? _pending;
     private CancellationTokenSource? _debounce;
     private bool _ready;
     private bool _loading;
-    private bool _reloadNeeded;
     private bool _showChips;
+    private bool _shownChips;
     private bool _disposed;
-    private AdoptMessage? _message;
-
-    /// <summary>What the editor shows: the session and book it is from and its snapshot (after a save: the one saved).</summary>
-    private sealed record Shown(VaultSession Session, string BookLink, SectionSnapshot Snapshot, bool ShowChips);
 
     /// <summary>Why the book page cannot be edited now: it is read-only, or a conflict for its file is open (R26).</summary>
     private string? ReadOnlyReason => State switch
@@ -74,6 +63,7 @@
 
     protected override void OnInitialized()
     {
+        _saver = new BookTextSaver(State, Logger);
         State.Changed += OnStateChanged;
         State.FlushEditor = FlushAsync;
         TrackSession();
@@ -94,7 +84,7 @@
         {
             // Whatever failed (the bundle not found, a script error), the rest of the app stays usable.
             Logger.LogError(ex, "Loading the editor failed");
-            _message = new AdoptMessage("EditorLoadFailed", true);
+            _saver.Message = new AdoptMessage("EditorLoadFailed", true);
             StateHasChanged();
             return;
         }
@@ -118,17 +108,19 @@
         }
 
         Unsubscribe();
+        CancelDebounce();
         try
         {
             // The last text typed is not lost when the editor goes away (e.g. while another vault opens).
-            Save();
+            _saver.Save();
+            _saver.SaveDirtyPage();
+            _saver.ApplyUnsavedEffects();
         }
         catch (Exception ex)
         {
             Logger.LogError(ex, "Saving the book text on closing the editor failed");
         }
 
-        CancelDebounce();
         try
         {
             await Editor.DisposeAsync();
@@ -164,12 +156,12 @@
     public Task OnDocumentChanged(string docJson)
     {
         // A change from before a newly loaded document, or in a page that cannot be saved, is not taken.
-        if (_loading || _shown is null || ReadOnlyReason is not null)
+        if (_loading || _saver.Shown is null || ReadOnlyReason is not null)
         {
             return Task.CompletedTask;
         }
 
-        _pending = docJson;
+        _saver.Pending = docJson;
         CancelDebounce();
         var source = _debounce = new CancellationTokenSource();
         _ = SaveAfterDelayAsync(source.Token);
@@ -193,10 +185,7 @@
         return Task.CompletedTask;
     }
 
-    /// <summary>
-    /// Removes the note from the block's sources and the usage from the note, after saving the pending text. Refused
-    /// while a conflict is open for the book or the note page (R26).
-    /// </summary>
+    /// <summary>Removes the note from the block's sources and the usage from the note, after saving the pending text.</summary>
     public async Task OnChipRemoved(Guid textBlockKey, Guid noteId)
     {
         if (!_ready || _disposed)
@@ -207,9 +196,10 @@
         await _gate.WaitAsync();
         try
         {
-            _message = null;
-            Save();
-            RemoveSource(textBlockKey, noteId);
+            CancelDebounce();
+            _saver.Message = null;
+            _saver.Save();
+            _saver.RemoveSource(textBlockKey, noteId);
         }
         finally
         {
@@ -228,7 +218,7 @@
     public async Task OnNoteDropped(Guid noteBlockKey, Guid? afterTextBlockKey)
     {
         var section = State.CurrentSectionKey;
-        _message = await NoteAdoption.AdoptAsync(
+        _saver.Message = await NoteAdoption.AdoptAsync(
             State,
             noteBlockKey,
             book => afterTextBlockKey switch
@@ -250,6 +240,16 @@
     private void OnPagesChanged(string path) => _ = InvokeAsync(SyncAsync);
 
     private void OnConflictsChanged() => _ = InvokeAsync(StateHasChanged);
+
+    /// <summary>
+    /// The session is about to bring in an external change: pending text of that page goes into the page first, so it
+    /// is merged with the external version (R30).
+    /// </summary>
+    private void OnExternalChangeStarting(string path)
+    {
+        CancelDebounce();
+        _saver.PutPendingIntoPage(path);
+    }
 
     /// <summary>Follows the current session's page and conflict events (a vault switch brings a new one).</summary>
     private void TrackSession()
@@ -320,27 +320,29 @@
     private async Task SyncCoreAsync()
     {
         TrackSession();
-        Save();
-        SaveMergedPage();
-        ApplyUnsavedEffects();
+        CancelDebounce();
+        _saver.Save();
+        _saver.SaveDirtyPage();
+        _saver.ApplyUnsavedEffects();
 
         if (State.Session is not { } session || State.CurrentBook is null
             || session.Vault.FindBook(State.CurrentBook.LinkName) is not { } book)
         {
-            _shown = null;
-            _pending = null;
+            _saver.Shown = null;
+            _saver.Pending = null;
             StateHasChanged();
             return;
         }
 
         var manuscript = State.Mode == ViewMode.Manuscript;
         var scope = book.FindNode(State.CurrentSectionKey) is not null ? State.CurrentSectionKey : book.Root.Key;
-        var sameTarget = _shown is { } shown
+        var shown = _saver.Shown;
+        var sameTarget = shown is not null
                          && ReferenceEquals(shown.Session, session)
                          && string.Equals(shown.BookLink, book.LinkName, StringComparison.OrdinalIgnoreCase)
                          && shown.Snapshot.ScopeKey == scope
                          && shown.Snapshot.IncludeSubsections == manuscript;
-        if (_pending is not null)
+        if (_saver.Pending is not null)
         {
             // Saving failed and the text waits for the next try: keep showing it.
             if (sameTarget)
@@ -349,16 +351,16 @@
                 return;
             }
 
-            _pending = null;
-            _message = new AdoptMessage("EditorChangesLost", true);
+            _saver.Pending = null;
+            _saver.Message = new AdoptMessage("EditorChangesLost", true);
         }
         else if (!sameTarget)
         {
-            _message = null;
+            _saver.Message = null;
         }
 
         var fresh = BookSnapshot.Create(book, session.Vault, scope, manuscript);
-        if (sameTarget && !_reloadNeeded && _shown!.ShowChips == _showChips && SameContent(_shown.Snapshot, fresh))
+        if (sameTarget && !_saver.ReloadNeeded && _shownChips == _showChips && SameContent(shown!.Snapshot, fresh))
         {
             StateHasChanged();
             return;
@@ -374,292 +376,16 @@
             _loading = false;
         }
 
-        _shown = new Shown(session, book.LinkName, fresh, _showChips);
-        _reloadNeeded = false;
+        _saver.Shown = new ShownText(session, book.LinkName, fresh);
+        _shownChips = _showChips;
+        _saver.ReloadNeeded = false;
         StateHasChanged();
-    }
-
-    /// <summary>
-    /// The save pipeline: editor document → snapshot → <see cref="BookSync.Apply"/> → if changed,
-    /// <see cref="VaultSession.TrySave"/> (R26), then the links (<see cref="ILinkService.ApplySyncEffects"/>,
-    /// <see cref="ILinkService.RetryPending"/>) and a fresh book view. A refused document or a failed save never
-    /// leaves the shared page different from the file without being saved.
-    /// </summary>
-    private void Save()
-    {
-        CancelDebounce();
-        if (_pending is not { } json || _shown is not { } shown)
-        {
-            return;
-        }
-
-        _pending = null;
-        var session = shown.Session;
-        if (!ReferenceEquals(session, State.Session) || session.Vault.FindBook(shown.BookLink) is not { } book)
-        {
-            // The vault or the book is gone.
-            return;
-        }
-
-        var page = book.Page;
-        if (page.IsReadOnly || session.HasOpenConflict(page.FilePath))
-        {
-            Logger.LogWarning("The text for {Path} was not saved: the page is read-only or in conflict", page.FilePath);
-            _message = new AdoptMessage(page.IsReadOnly ? "EditorReadOnly" : "EditorConflict", true);
-            _reloadNeeded = true;
-            return;
-        }
-
-        SectionSnapshot snapshot;
-        SyncResult result;
-        try
-        {
-            snapshot = EditorDocMapper.FromJson(json, shown.Snapshot.ScopeKey, shown.Snapshot.IncludeSubsections);
-            result = BookSync.Apply(book, snapshot);
-        }
-        catch (ArgumentException ex)
-        {
-            // The page is untouched; the editor shows the book's text again.
-            Logger.LogWarning(ex, "The editor's text for {Path} cannot be written", page.FilePath);
-            _message = new AdoptMessage("EditorSaveInvalid", true);
-            _reloadNeeded = true;
-            return;
-        }
-        catch (Exception ex)
-        {
-            // The page may be partly changed: take the file's version.
-            Logger.LogError(ex, "Applying the editor's text to {Path} failed", page.FilePath);
-            ReloadFromDisk(session, page);
-            _message = new AdoptMessage("EditorSaveFailed", true);
-            _reloadNeeded = true;
-            return;
-        }
-
-        if (!result.Changed)
-        {
-            _shown = shown with { Snapshot = snapshot };
-            return;
-        }
-
-        if (session.TrySave(page, out var error))
-        {
-            _shown = shown with { Snapshot = snapshot };
-            _message = null;
-            _unsavedEffects.AddRange(result.Effects.Select(effect => (session, book.LinkName, effect)));
-            ApplyUnsavedEffects();
-            State.RefreshBook();
-            State.Notify();
-            return;
-        }
-
-        if (error is FileChangedExternallyException || session.HasOpenConflict(page.FilePath))
-        {
-            // The session merged the text with the other program's version and saved it, or reported a conflict
-            // that keeps it; the editor shows the result. The links follow once the page is saved.
-            _unsavedEffects.AddRange(result.Effects.Select(effect => (session, book.LinkName, effect)));
-            _message = new AdoptMessage("EditorExternalChange", false);
-            _reloadNeeded = true;
-            return;
-        }
-
-        // Not written (e.g. the file is locked): the page goes back to the file's version and the text waits for the
-        // next save; the editor keeps showing it.
-        ReloadFromDisk(session, page);
-        State.RefreshBook();
-        _pending = json;
-        _message = new AdoptMessage("EditorSaveFailed", true);
-    }
-
-    /// <summary>
-    /// The session calls this before it brings in an external change: pending text of that page goes into the page now
-    /// (not saved), so the change handling merges it with the external version (spec 5.7) instead of it overwriting
-    /// that version later.
-    /// </summary>
-    private void OnExternalChangeStarting(string path)
-    {
-        if (_pending is not { } json || _shown is not { } shown
-            || shown.Session.Vault.FindBook(shown.BookLink) is not { } book
-            || !string.Equals(Path.GetFullPath(book.Page.FilePath), path, StringComparison.OrdinalIgnoreCase)
-            || book.Page.IsReadOnly || shown.Session.HasOpenConflict(path))
-        {
-            return;
-        }
-
-        CancelDebounce();
-        _pending = null;
-        _reloadNeeded = true;
-        try
-        {
-            var result = BookSync.Apply(book, EditorDocMapper.FromJson(json, shown.Snapshot.ScopeKey, shown.Snapshot.IncludeSubsections));
-            _unsavedEffects.AddRange(result.Effects.Select(effect => (shown.Session, book.LinkName, effect)));
-        }
-        catch (ArgumentException ex)
-        {
-            Logger.LogWarning(ex, "The editor's text for {Path} cannot be written", book.Page.FilePath);
-            _message = new AdoptMessage("EditorSaveInvalid", true);
-        }
-        catch (Exception ex)
-        {
-            Logger.LogError(ex, "Applying the editor's text to {Path} failed", book.Page.FilePath);
-            ReloadFromDisk(shown.Session, book.Page);
-            _message = new AdoptMessage("EditorSaveFailed", true);
-        }
-    }
-
-    /// <summary>
-    /// A shown book page with unsaved changes (merged after an external change whose save failed, or text put in
-    /// right before an external change that turned out to be none) is saved, unless a conflict is open for it.
-    /// </summary>
-    private void SaveMergedPage()
-    {
-        if (_shown is not { } shown || !ReferenceEquals(shown.Session, State.Session)
-            || shown.Session.Vault.FindBook(shown.BookLink)?.Page is not { IsDirty: true, IsReadOnly: false } page
-            || shown.Session.HasOpenConflict(page.FilePath))
-        {
-            return;
-        }
-
-        if (shown.Session.TrySave(page, out _))
-        {
-            State.RefreshBook();
-        }
-    }
-
-    /// <summary>
-    /// Passes the effects of applied changes to the notes once their book page is saved (and no conflict is open).
-    /// After a merge or a conflict resolution only the effects that still fit the page are applied: a split-off block
-    /// that is in it, a deleted block that is not.
-    /// </summary>
-    private void ApplyUnsavedEffects()
-    {
-        foreach (var group in _unsavedEffects.GroupBy(e => (e.Session, e.BookLink)).ToList())
-        {
-            var (session, bookLink) = group.Key;
-            if (!ReferenceEquals(session, State.Session) || session.Vault.FindBook(bookLink) is not { } book)
-            {
-                _unsavedEffects.RemoveAll(e => e.Session == session && e.BookLink == bookLink);
-                continue;
-            }
-
-            var page = book.Page;
-            if (page.IsDirty || page.IsReadOnly || session.HasOpenConflict(page.FilePath))
-            {
-                continue;
-            }
-
-            _unsavedEffects.RemoveAll(e => e.Session == session && e.BookLink == bookLink);
-            bool InPage(Guid id) => session.Vault.FindBlockById(id) is { } found && found.Page == page;
-            var effects = group.Select(e => e.Effect).Where(effect => effect switch
-            {
-                BlockSplit split => InPage(split.NewBookBlockId),
-                BlockDeleted deleted => !InPage(deleted.BookBlockId),
-                _ => false,
-            }).ToList();
-            if (effects.Count == 0)
-            {
-                continue;
-            }
-
-            try
-            {
-                session.Links.ApplySyncEffects(book, effects);
-                session.Links.RetryPending();
-            }
-            catch (Exception ex)
-            {
-                // The book is saved; the link check repairs the notes' used-in entries.
-                Logger.LogError(ex, "Updating the notes after saving {Path} failed", page.FilePath);
-            }
-
-            UpdateSearch(session, effects.SelectMany(effect => effect switch
-            {
-                BlockSplit split => split.Sources,
-                BlockDeleted deleted => deleted.Sources,
-                _ => [],
-            }));
-        }
-    }
-
-    private void RemoveSource(Guid textBlockKey, Guid noteId)
-    {
-        if (_pending is not null)
-        {
-            // The text could not be saved; nothing is changed behind it.
-            return;
-        }
-
-        if (_shown is not { } shown || shown.Session.Vault.FindBook(shown.BookLink) is not { Page.IsReadOnly: false } book)
-        {
-            return;
-        }
-
-        var session = shown.Session;
-        var bookPath = book.Page.FilePath;
-        var notePage = session.Vault.FindBlockById(noteId)?.Page;
-        if (session.HasOpenConflict(bookPath) || (notePage is not null && session.HasOpenConflict(notePage.FilePath)))
-        {
-            _message = new AdoptMessage("EditorChipConflict", true);
-            return;
-        }
-
-        try
-        {
-            session.Links.RemoveSource(book, textBlockKey, noteId);
-        }
-        catch (FileChangedExternallyException)
-        {
-            session.HandleExternalChange(bookPath);
-            _message = new AdoptMessage("EditorExternalChange", false);
-            return;
-        }
-        catch (Exception ex) when (ex is ArgumentException or IOException or UnauthorizedAccessException or InvalidOperationException)
-        {
-            // Includes a read-only page and the writer refusing an unsafe result; nothing was written.
-            Logger.LogWarning(ex, "Removing a source failed");
-            _message = new AdoptMessage("EditorChipFailed", true);
-            return;
-        }
-
-        UpdateSearch(session, [noteId]);
     }
 
     private async Task ToggleChipsAsync(ChangeEventArgs e)
     {
         _showChips = e.Value is true;
         await SyncAsync();
-    }
-
-    /// <summary>The search index knows which notes are used; it is updated for the notes whose used-in changed.</summary>
-    private void UpdateSearch(VaultSession session, IEnumerable<Guid> noteIds)
-    {
-        var paths = noteIds.Select(id => session.Vault.FindBlockById(id)?.Page.FilePath).OfType<string>().Distinct();
-        foreach (var path in paths)
-        {
-            try
-            {
-                session.Search.UpdatePage(session.Notes, path);
-            }
-            catch (Exception ex)
-            {
-                // A stale index (an aid, rebuilt on opening) must not hide that the notes were updated.
-                Logger.LogWarning(ex, "Updating the search index for {Path} failed", path);
-            }
-        }
-    }
-
-    /// <summary>Puts the file's version of <paramref name="page"/> into the vault, keeping the block keys the editor uses.</summary>
-    private void ReloadFromDisk(VaultSession session, Page page)
-    {
-        try
-        {
-            var reloaded = LogseqParser.Parse(page.FilePath, File.ReadAllBytes(page.FilePath));
-            RuntimeKeys.Carry(page, reloaded);
-            session.Vault.ReplacePage(reloaded);
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            Logger.LogError(ex, "Reading {Path} again failed", page.FilePath);
-        }
     }
 
     /// <summary>Same nodes, texts, paragraphs and chips (<see cref="SnapshotTextBlock.SplitFrom"/> is left out).</summary>
