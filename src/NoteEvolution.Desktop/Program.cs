@@ -4,6 +4,7 @@ using NoteEvolution.Core.Storage;
 using NoteEvolution.Core.Vaults;
 using NoteEvolution.Pdf;
 using NoteEvolution.UI.Components;
+using NoteEvolution.UI.Editor;
 using NoteEvolution.UI.Platform;
 using NoteEvolution.UI.State;
 using Photino.Blazor;
@@ -34,6 +35,7 @@ internal static class Program
             builder.Services.AddSingleton<IClock, SystemClock>();
             builder.Services.AddSingleton(TimeProvider.System);
             builder.Services.AddSingleton<IPdfExporter, QuestPdfExporter>();
+            builder.Services.AddTransient<IEditorInterop, TipTapInterop>();
             builder.RootComponents.Add<Shell>("#app");
 
             var app = builder.Build();

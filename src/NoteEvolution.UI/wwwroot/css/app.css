@@ -620,3 +620,182 @@ html, body {
     border: 1px solid var(--danger);
     border-radius: 4px;
 }
+
+/* Editor */
+
+.ne-editor-pane {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+}
+
+.ne-editor-bar {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 4px 12px 0;
+    font-family: var(--font-ui);
+    font-size: 12px;
+    color: var(--fg-muted);
+}
+
+.ne-editor-hint,
+.ne-editor-info,
+.ne-editor-error {
+    margin: 6px 12px 0;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-family: var(--font-ui);
+    font-size: 12px;
+}
+
+.ne-editor-hint,
+.ne-editor-info {
+    background: var(--hint-bg);
+}
+
+.ne-editor-error {
+    color: var(--danger);
+    border: 1px solid var(--danger);
+}
+
+.ne-editor-host {
+    flex: 1;
+    display: flex;
+    min-height: 0;
+}
+
+.ne-editor-host[hidden] {
+    display: none;
+}
+
+.ne-editor-host[inert] {
+    opacity: 0.75;
+}
+
+.ne-editor-root {
+    flex: 1;
+    display: flex;
+}
+
+.ne-doc {
+    flex: 1;
+    box-sizing: border-box;
+    max-width: calc(var(--line-width, 70ch) + 64px);
+    margin: 0 auto;
+    padding: 16px 32px 48px;
+    font-family: var(--font-text);
+    font-size: var(--font-size, 12pt);
+    line-height: 1.5;
+    outline: none;
+}
+
+.ne-heading {
+    margin: 1.2em 0 0.4em;
+    font-weight: 600;
+    line-height: 1.25;
+}
+
+.ne-block {
+    position: relative;
+}
+
+.ne-block-handle {
+    position: absolute;
+    left: -20px;
+    top: 0.3em;
+    width: 4px;
+    height: 1em;
+    cursor: grab;
+    border-left: 3px dotted var(--fg-muted);
+    border-right: 3px dotted var(--fg-muted);
+    opacity: 0;
+}
+
+.ne-block:hover > .ne-block-handle {
+    opacity: 1;
+}
+
+.ne-para {
+    margin: 0;
+    padding-left: calc(var(--depth, 0) * 1.5em);
+}
+
+.ne-para[data-note="true"] {
+    font-style: italic;
+    color: var(--fg-muted);
+}
+
+.ne-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 4px;
+    font-family: var(--font-ui);
+    font-size: 11px;
+    user-select: none;
+}
+
+.ne-chips:empty {
+    display: none;
+}
+
+.ne-chip {
+    display: inline-flex;
+    align-items: center;
+    max-width: 100%;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--bg-pane);
+}
+
+.ne-chip.broken {
+    color: var(--danger);
+    border-color: var(--danger);
+}
+
+.ne-chip button {
+    border: none !important;
+    background: transparent !important;
+    padding: 1px 6px !important;
+    color: inherit;
+    font-size: inherit !important;
+}
+
+.ne-chip-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ne-chip-remove {
+    padding-left: 0 !important;
+}
+
+/* Section view: text blocks set apart, chips below each block. */
+.mode-section .ne-block {
+    margin: 0 0 12px;
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg-raised);
+}
+
+/* Manuscript view: continuous text, blocks only spaced, sources as a margin mark, chips on request. */
+.mode-manuscript .ne-block {
+    margin: 0 0 0.8em;
+}
+
+.mode-manuscript .ne-block[data-has-sources]::before {
+    content: "";
+    position: absolute;
+    left: -10px;
+    top: 0.35em;
+    bottom: 0.35em;
+    border-left: 2px solid var(--accent);
+}
+
+.mode-manuscript:not(.show-chips) .ne-chips {
+    display: none;
+}
