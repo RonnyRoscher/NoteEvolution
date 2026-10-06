@@ -1,0 +1,221 @@
+@using NoteEvolution.Core.Assistants
+@using NoteEvolution.Core.Model
+@using NoteEvolution.Core.Storage
+@using NoteEvolution.Core.Vaults
+@inject AppState State
+@inject IStringLocalizer<Strings> L
+@inject ILogger<HandledWizard> Logger
+
+<Modal Title="@L["HandledTitle"]" CssClass="ne-handled" OnClose="OnClose">
+<ChildContent>
+    @if (_result is { } result)
+    {
+        <p class="ne-handled-done" role="status">@L["HandledDone", result.Converted]</p>
+        @if (result.Skipped.Count > 0)
+        {
+            <p class="ne-dialog-hint">@L["HandledSkipped", result.Skipped.Count]</p>
+            <ul class="ne-handled-skipped">
+                @foreach (var note in result.Skipped)
+                {
+                    <li>@Excerpt.FirstLine(note.Block.Content)</li>
+                }
+            </ul>
+        }
+    }
+    else if (State.Session is null)
+    {
+        <p>@L["LinkCheckNoVault"]</p>
+    }
+    else if (_items.Count == 0)
+    {
+        <p class="ne-handled-none">@L["HandledNone"]</p>
+    }
+    else
+    {
+        <p class="ne-dialog-hint">@L["HandledIntro"]</p>
+        @if (_error is not null)
+        {
+            <p class="ne-dialog-error" role="alert">@_error</p>
+        }
+        <label class="ne-handled-book">
+            @L["HandledBook"]
+            <select class="ne-handled-book-select" value="@_bookName" disabled="@_confirming" @onchange="e => _bookName = e.Value as string">
+                @foreach (var book in State.Session.Vault.Books)
+                {
+                    <option value="@book.LinkName">@book.Title</option>
+                }
+            </select>
+        </label>
+        <ul class="ne-handled-list">
+            @foreach (var note in _items)
+            {
+                var key = note.Key;
+                <li class="ne-handled-item">
+                    <label>
+                        <input type="checkbox" checked="@_selected.Contains(key)" disabled="@(_confirming || note.Page.IsReadOnly)"
+                               @onchange="e => Select(key, (bool)(e.Value ?? false))" />
+                        <span class="ne-handled-text">@Excerpt.FirstLine(note.Block.Content)</span>
+                        <span class="ne-handled-page">@note.Page.Name</span>
+                        @if (note.Page.IsReadOnly)
+                        {
+                            <span class="ne-handled-readonly">@L["HandledReadOnly"]</span>
+                        }
+                    </label>
+                </li>
+            }
+        </ul>
+        @if (_confirming)
+        {
+            <p class="ne-handled-confirm-text" role="alert">@L["HandledConfirm", _selected.Count, BookTitle]</p>
+        }
+    }
+    </ChildContent>
+    <Footer>
+        @if (_result is null && _items.Count > 0 && State.Session is not null)
+        {
+            @if (_confirming)
+            {
+                <button type="button" class="ne-handled-yes" disabled="@_busy" @onclick="ConvertAsync">@L["HandledConfirmYes"]</button>
+                <button type="button" class="ne-handled-no" disabled="@_busy" @onclick="() => _confirming = false">@L["Cancel"]</button>
+            }
+            else
+            {
+                <button type="button" class="ne-handled-convert" disabled="@(_selected.Count == 0 || _bookName is null)"
+                        @onclick="() => _confirming = true">@L["HandledConvert"]</button>
+            }
+        }
+        <button type="button" class="ne-handled-close" disabled="@_busy" @onclick="OnClose">@L["Close"]</button>
+    </Footer>
+</Modal>
+
+@code {
+    private IReadOnlyList<NoteBlock> _items = [];
+    private readonly HashSet<Guid> _selected = [];
+    private string? _bookName;
+    private bool _confirming;
+    private bool _busy;
+    private string? _error;
+    private HandledResult? _result;
+
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    private string BookTitle => State.Session?.Vault.FindBook(_bookName ?? "")?.Title ?? "";
+
+    protected override void OnInitialized()
+    {
+        if (State.Session is not { } session)
+        {
+            return;
+        }
+
+        _items = session.Handled.Find();
+        foreach (var note in _items.Where(n => !n.Page.IsReadOnly))
+        {
+            _selected.Add(note.Key);
+        }
+
+        _bookName = State.CurrentBook?.LinkName ?? session.Vault.Books.FirstOrDefault()?.LinkName;
+    }
+
+    private void Select(Guid key, bool on)
+    {
+        if (on)
+        {
+            _selected.Add(key);
+        }
+        else
+        {
+            _selected.Remove(key);
+        }
+    }
+
+    /// <summary>
+    /// Converts the selected notes (R26): the editor saves first, nothing is written for a page with an open conflict,
+    /// and a failure leaves the pages as their files are. The notes are looked up again, since a page may have been
+    /// reloaded after an external change since the list was made.
+    /// </summary>
+    private async Task ConvertAsync()
+    {
+        if (_busy || State.Session is not { } session)
+        {
+            return;
+        }
+
+        _busy = true;
+        _error = null;
+        try
+        {
+            try
+            {
+                if (State.FlushEditor is { } flush)
+                {
+                    await flush();
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError(ex, "Saving the editor before converting [handled] notes failed");
+                _error = L["AssistantFlushFailed"];
+                return;
+            }
+
+            if (!ReferenceEquals(session, State.Session) || session.Vault.FindBook(_bookName ?? "") is not { } book)
+            {
+                _error = L["AssistantStale"];
+                return;
+            }
+
+            var notes = session.Handled.Find().Where(n => _selected.Contains(n.Key)).ToList();
+            var pages = notes.Where(n => !n.Page.IsReadOnly).Select(n => n.Page).Distinct().ToList();
+            if (pages.Any(p => session.HasOpenConflict(p.FilePath)))
+            {
+                _error = L["AssistantConflict"];
+                _confirming = false;
+                return;
+            }
+
+            try
+            {
+                _result = session.Handled.Apply(notes, book);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
+            {
+                // Pages saved before the failure stay saved; the others are taken from their files again.
+                Logger.LogWarning(ex, "Converting [handled] notes failed");
+                foreach (var page in pages.Where(p => p.IsDirty))
+                {
+                    PageReload.FromDisk(session, page);
+                }
+
+                _error = ex is FileChangedExternallyException ? L["AssistantExternalChange"] : L["HandledFailed"];
+                _confirming = false;
+            }
+
+            UpdateSearch(session, pages);
+            _items = session.Handled.Find();
+            _selected.IntersectWith(_items.Select(n => n.Key));
+        }
+        finally
+        {
+            _busy = false;
+            State.RefreshBook();
+            State.Notify();
+        }
+    }
+
+    private void UpdateSearch(VaultSession session, IEnumerable<Page> pages)
+    {
+        foreach (var page in pages)
+        {
+            try
+            {
+                session.Search.UpdatePage(session.Notes, page.FilePath);
+            }
+            catch (Exception ex)
+            {
+                // The index is an aid, rebuilt on opening; it must not hide the conversion.
+                Logger.LogWarning(ex, "Updating the search index after converting [handled] notes failed");
+            }
+        }
+    }
+}

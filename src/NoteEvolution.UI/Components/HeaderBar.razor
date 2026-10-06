@@ -49,6 +49,21 @@
         </div>
     }
 
+    @if (OnHandledWizard.HasDelegate || OnDraftWizard.HasDelegate)
+    {
+        <div class="ne-assistants">
+            <button type="button" class="ne-assistants-toggle" disabled="@(State.Session is null)" aria-expanded="@(_assistantsOpen ? "true" : "false")"
+                    @onclick="() => _assistantsOpen = !_assistantsOpen">@L["Assistants"]</button>
+            @if (_assistantsOpen && State.Session is not null)
+            {
+                <div class="ne-assistants-popup">
+                    <button type="button" class="ne-assistant-handled" @onclick="OpenHandled">@L["AssistantHandled"]</button>
+                    <button type="button" class="ne-assistant-draft" @onclick="OpenDraft">@L["AssistantDraft"]</button>
+                </div>
+            }
+        </div>
+    }
+
     <button type="button" class="ne-pdf" disabled="@(State.CurrentBook is null || !OnPdfExport.HasDelegate)"
             @onclick="OnPdfExport">@L["PdfExport"]</button>
     <button type="button" class="ne-linkcheck" disabled="@(State.Session is null || !OnLinkCheck.HasDelegate)"
@@ -60,16 +75,23 @@
 @code {
     private VaultSession? _session;
     private bool _readOnlyOpen;
+    private bool _assistantsOpen;
 
     [Parameter] public EventCallback OnOpenVault { get; set; }
 
-    /// <summary>Opens the PDF export (dialog from Task 21); the button is disabled while unset.</summary>
+    /// <summary>Opens the <c>[handled]</c> assistant; the assistants menu is hidden while both assistants are unset.</summary>
+    [Parameter] public EventCallback OnHandledWizard { get; set; }
+
+    /// <summary>Opens the draft assistant; the assistants menu is hidden while both assistants are unset.</summary>
+    [Parameter] public EventCallback OnDraftWizard { get; set; }
+
+    /// <summary>Opens the PDF export dialog; the button is disabled while unset.</summary>
     [Parameter] public EventCallback OnPdfExport { get; set; }
 
-    /// <summary>Opens the link check (dialog from Task 21); the button is disabled while unset.</summary>
+    /// <summary>Opens the link check dialog; the button is disabled while unset.</summary>
     [Parameter] public EventCallback OnLinkCheck { get; set; }
 
-    /// <summary>Opens the settings (dialog from Task 21); the button is disabled while unset.</summary>
+    /// <summary>Opens the settings dialog; the button is disabled while unset.</summary>
     [Parameter] public EventCallback OnSettings { get; set; }
 
     protected override void OnInitialized()
@@ -149,6 +171,18 @@
 
         State.Mode = mode;
         State.Notify();
+    }
+
+    private async Task OpenHandled()
+    {
+        _assistantsOpen = false;
+        await OnHandledWizard.InvokeAsync();
+    }
+
+    private async Task OpenDraft()
+    {
+        _assistantsOpen = false;
+        await OnDraftWizard.InvokeAsync();
     }
 
     private async Task Undo()

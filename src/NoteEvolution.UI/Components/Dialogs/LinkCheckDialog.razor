@@ -1,0 +1,257 @@
+@using NoteEvolution.Core.Books
+@using NoteEvolution.Core.Links
+@using NoteEvolution.Core.Model
+@using NoteEvolution.Core.Storage
+@inject AppState State
+@inject IStringLocalizer<Strings> L
+@inject ILogger<LinkCheckDialog> Logger
+
+<Modal Title="@L["LinkCheck"]" CssClass="ne-linkcheck-dialog" OnClose="OnClose">
+<ChildContent>
+    @if (_report is null)
+    {
+        <p class="ne-linkcheck-none">@L["LinkCheckNoVault"]</p>
+    }
+    else
+    {
+        @if (_fixed > 0)
+        {
+            <p class="ne-linkcheck-fixed" role="status">@L["LinkCheckFixed", _fixed]</p>
+        }
+        @if (_message is not null)
+        {
+            <p class="ne-dialog-error" role="alert">@_message</p>
+        }
+        @if (_report.Missing.Count > 0)
+        {
+            <p class="ne-linkcheck-missing" role="alert">@L["LinkCheckStillMissing", _report.Missing.Count]</p>
+        }
+        @if (_report.Orphans.Count == 0 && _report.Broken.Count == 0 && _report.Missing.Count == 0)
+        {
+            <p class="ne-linkcheck-clean">@L["LinkCheckClean"]</p>
+        }
+
+        @if (_report.Orphans.Count > 0)
+        {
+            <h3>@L["LinkCheckOrphans"]</h3>
+            <p class="ne-dialog-hint">@L["LinkCheckOrphansHint"]</p>
+            <ul class="ne-linkcheck-orphans">
+                @foreach (var orphan in _report.Orphans)
+                {
+                    <li class="ne-linkcheck-orphan">
+                        <div class="ne-linkcheck-text">
+                            <span class="ne-linkcheck-note">@NoteText(orphan)</span>
+                            <span class="ne-linkcheck-target">@OrphanTarget(orphan)</span>
+                        </div>
+                        <div class="ne-linkcheck-actions">
+                            @if (orphan.Entry.BookBlockId is not null)
+                            {
+                                <button type="button" class="ne-linkcheck-unknown"
+                                        @onclick="() => ResolveOrphan(orphan, OrphanResolution.MarkUnknown)">@L["LinkCheckMarkUnknown"]</button>
+                            }
+                            <button type="button" class="ne-linkcheck-remove"
+                                    @onclick="() => ResolveOrphan(orphan, OrphanResolution.Remove)">@L["LinkCheckRemove"]</button>
+                        </div>
+                    </li>
+                }
+            </ul>
+        }
+
+        @if (_report.Broken.Count > 0)
+        {
+            <h3>@L["LinkCheckBroken"]</h3>
+            <p class="ne-dialog-hint">@L["LinkCheckBrokenHint"]</p>
+            <ul class="ne-linkcheck-broken">
+                @foreach (var broken in _report.Broken)
+                {
+                    <li>
+                        <button type="button" class="ne-linkcheck-goto" @onclick="() => GoToAsync(broken)">
+                            <span class="ne-linkcheck-book">@broken.BookLinkName</span>
+                            <span class="ne-linkcheck-block">@BlockText(broken)</span>
+                        </button>
+                    </li>
+                }
+            </ul>
+        }
+    }
+    </ChildContent>
+    <Footer>
+        <button type="button" class="ne-linkcheck-close" @onclick="OnClose">@L["Close"]</button>
+    </Footer>
+</Modal>
+
+@code {
+    private LinkCheckReport? _report;
+    private int _fixed;
+    private string? _message;
+
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    /// <summary>
+    /// Runs the check when the dialog opens and adds the missing <c>used-in::</c> entries at once (spec 5.4); what is
+    /// left (orphans, broken sources) the user decides on.
+    /// </summary>
+    protected override void OnInitialized()
+    {
+        if (State.Session is not { } session)
+        {
+            return;
+        }
+
+        var report = session.Checker.Analyze();
+        if (report.Missing.Count > 0)
+        {
+            FixMissing(session, report);
+            report = session.Checker.Analyze();
+        }
+
+        _report = report;
+    }
+
+    private void FixMissing(VaultSession session, LinkCheckReport report)
+    {
+        var pages = report.Missing
+            .Select(m => session.Vault.FindBlockById(m.NoteBlockId)?.Page)
+            .OfType<Page>().Distinct().ToList();
+        if (pages.Any(p => session.HasOpenConflict(p.FilePath)))
+        {
+            // Adding entries writes the notes directly (R26).
+            _message = L["LinkCheckConflict"];
+            return;
+        }
+
+        try
+        {
+            _fixed = session.Checker.FixMissing(report);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
+        {
+            Logger.LogWarning(ex, "Adding the missing usages failed");
+            _message = L["LinkCheckFixFailed"];
+        }
+
+        UpdateSearch(session, pages);
+        State.Notify();
+    }
+
+    private void ResolveOrphan(OrphanUsage orphan, OrphanResolution resolution)
+    {
+        _message = null;
+        if (State.Session is not { } session)
+        {
+            return;
+        }
+
+        var page = session.Vault.FindBlockByKey(orphan.NoteBlockKey)?.Page;
+        if (page is not null && session.HasOpenConflict(page.FilePath))
+        {
+            _message = L["LinkCheckConflict"];
+            return;
+        }
+
+        try
+        {
+            session.Checker.Resolve(orphan, resolution);
+        }
+        catch (ReadOnlyPageException)
+        {
+            _message = L["LinkCheckReadOnly"];
+        }
+        catch (FileChangedExternallyException)
+        {
+            // The note file changed in the meantime: bring the change in, then the user decides again.
+            if (page is not null)
+            {
+                session.HandleExternalChange(page.FilePath);
+            }
+
+            _message = L["LinkCheckExternalChange"];
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
+        {
+            // Includes the note having disappeared since the check.
+            Logger.LogWarning(ex, "Resolving an orphaned usage failed");
+            _message = L["LinkCheckResolveFailed"];
+        }
+
+        if (page is not null)
+        {
+            UpdateSearch(session, [page]);
+        }
+
+        _report = session.Checker.Analyze();
+        State.Notify();
+    }
+
+    /// <summary>
+    /// Goes to the section holding the book block whose <c>source::</c> is broken and closes the dialog. The editor
+    /// saves its pending text first.
+    /// </summary>
+    private async Task GoToAsync(BrokenSource broken)
+    {
+        try
+        {
+            if (State.FlushEditor is { } flush)
+            {
+                await flush();
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Saving the editor before jumping to a block failed");
+            _message = L["LinkCheckJumpFailed"];
+            return;
+        }
+
+        if (State.Session?.Vault.FindBook(broken.BookLinkName) is not { } book)
+        {
+            _message = L["LinkCheckJumpFailed"];
+            return;
+        }
+
+        State.CurrentBook = book;
+        State.CurrentSectionKey = SectionOf(book.Root, broken.TextBlockKey) ?? book.Root.Key;
+        State.CursorTextBlockKey = null;
+        State.Notify();
+        await OnClose.InvokeAsync();
+    }
+
+    /// <summary>The key of the section whose heading, text block or paragraph is the block with <paramref name="blockKey"/>.</summary>
+    private static Guid? SectionOf(OutlineNode node, Guid blockKey)
+    {
+        if (node.Block?.Key == blockKey
+            || node.TextBlocks.Any(text => text.Block.Key == blockKey || text.Paragraphs.Any(p => p.Block.Key == blockKey)))
+        {
+            return node.Key;
+        }
+
+        return node.Children.Select(child => SectionOf(child, blockKey)).FirstOrDefault(key => key is not null);
+    }
+
+    private void UpdateSearch(VaultSession session, IEnumerable<Page> pages)
+    {
+        foreach (var page in pages)
+        {
+            try
+            {
+                session.Search.UpdatePage(session.Notes, page.FilePath);
+            }
+            catch (Exception ex)
+            {
+                // The index is an aid, rebuilt on opening; it must not hide the result of the check.
+                Logger.LogWarning(ex, "Updating the search index after the link check failed");
+            }
+        }
+    }
+
+    private string NoteText(OrphanUsage orphan) =>
+        State.Session?.Vault.FindBlockByKey(orphan.NoteBlockKey) is { } found ? Excerpt.FirstLine(found.Block.Content) : "";
+
+    private string OrphanTarget(OrphanUsage orphan) =>
+        State.Session?.Vault.FindBook(orphan.Entry.PageName) is null
+            ? L["LinkCheckBookMissing", orphan.Entry.PageName]
+            : L["LinkCheckBlockMissing", orphan.Entry.PageName];
+
+    private string BlockText(BrokenSource broken) =>
+        State.Session?.Vault.FindBlockByKey(broken.TextBlockKey) is { } found ? Excerpt.FirstLine(found.Block.Content) : "";
+}

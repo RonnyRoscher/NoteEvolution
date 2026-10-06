@@ -1,0 +1,179 @@
+@using NoteEvolution.Core.Books
+@using NoteEvolution.Pdf
+@inject AppState State
+@inject IPlatformServices Platform
+@inject IPdfExporter Exporter
+@inject IStringLocalizer<Strings> L
+@inject ILogger<PdfExportDialog> Logger
+
+<Modal Title="@L["PdfExport"]" CssClass="ne-pdf-dialog" OnClose="OnClose">
+<ChildContent>
+    @if (State.CurrentBook is not { } book)
+    {
+        <p>@L["PdfNoBook"]</p>
+    }
+    else
+    {
+        <fieldset class="ne-pdf-scope" disabled="@_busy">
+            <legend>@L["PdfScope"]</legend>
+            <label>
+                <input type="radio" name="pdf-scope" value="book" checked="@(!_section)" @onchange="() => _section = false" />
+                @L["PdfScopeBook", book.Title]
+            </label>
+            <label>
+                <input type="radio" name="pdf-scope" value="section" checked="@_section" disabled="@(SectionNode(book) is null)"
+                       @onchange="() => _section = true" />
+                @(SectionNode(book) is { } node ? L["PdfScopeSection", node.Title] : L["PdfScopeSectionNone"])
+            </label>
+        </fieldset>
+        <fieldset class="ne-pdf-size" disabled="@_busy">
+            <legend>@L["PdfSize"]</legend>
+            @foreach (var size in Sizes)
+            {
+                <label>
+                    <input type="radio" name="pdf-size" value="@size" checked="@(_size == size)" @onchange="() => _size = size" />
+                    @size
+                </label>
+            }
+        </fieldset>
+        @if (_error is not null)
+        {
+            <p class="ne-dialog-error" role="alert">@_error</p>
+        }
+        @if (_savedTo is not null)
+        {
+            <p class="ne-pdf-saved" role="status">@L["PdfSaved", _savedTo]</p>
+            @if (_warnings.Count == 0)
+            {
+                <p class="ne-pdf-nowarnings">@L["PdfNoWarnings"]</p>
+            }
+            else
+            {
+                <p class="ne-pdf-warnings-title">@L["PdfWarnings"]</p>
+                <ul class="ne-pdf-warnings">
+                    @foreach (var warning in _warnings)
+                    {
+                        <li>@warning</li>
+                    }
+                </ul>
+            }
+        }
+    }
+    </ChildContent>
+    <Footer>
+        <button type="button" class="ne-pdf-export" disabled="@(_busy || State.CurrentBook is null)" @onclick="ExportAsync">@L["PdfExportStart"]</button>
+        <button type="button" class="ne-pdf-close" disabled="@_busy" @onclick="OnClose">@L["Close"]</button>
+    </Footer>
+</Modal>
+
+@code {
+    private static readonly PdfPageSize[] Sizes = [PdfPageSize.A4, PdfPageSize.A5];
+
+    private bool _section;
+    private PdfPageSize _size = PdfPageSize.A4;
+    private bool _busy;
+    private string? _error;
+    private string? _savedTo;
+    private IReadOnlyList<string> _warnings = [];
+
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    /// <summary>The current section with its subtree, if one below the book root is selected.</summary>
+    private OutlineNode? SectionNode(Book book) =>
+        State.CurrentSectionKey == book.Root.Key || State.CurrentSectionKey == Guid.Empty ? null : book.FindNode(State.CurrentSectionKey);
+
+    protected override void OnInitialized() => _section = State.CurrentBook is { } book && SectionNode(book) is not null;
+
+    /// <summary>
+    /// Asks where to save, then writes the PDF on a background thread. The editor saves first, so the PDF has the
+    /// text as typed; the dialog is modal while the export runs.
+    /// </summary>
+    private async Task ExportAsync()
+    {
+        if (_busy || State.CurrentBook is null)
+        {
+            return;
+        }
+
+        _busy = true;
+        _error = null;
+        _savedTo = null;
+        try
+        {
+            try
+            {
+                if (State.FlushEditor is { } flush)
+                {
+                    await flush();
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError(ex, "Saving the editor before the PDF export failed");
+                _error = L["PdfFlushFailed"];
+                return;
+            }
+
+            // The flush may have saved (and so replaced) the book view.
+            if (State.Session?.Vault.FindBook(State.CurrentBook.LinkName) is not { } book)
+            {
+                return;
+            }
+
+            var path = await Platform.PickSaveFileAsync($"{FileName(book.Title, L["PdfDefaultName"])}.pdf");
+            if (path is null)
+            {
+                return;
+            }
+
+            Guid? scope = _section && SectionNode(book) is { } node ? node.Key : null;
+            var options = new PdfOptions(_size);
+            try
+            {
+                var report = await Task.Run(() => Write(book, scope, options, path));
+                _warnings = report.Warnings;
+                _savedTo = path;
+            }
+            catch (Exception ex)
+            {
+                // QuestPDF and the file system report problems with various exception types; the app stays usable.
+                Logger.LogError(ex, "The PDF export to {Path} failed", path);
+                _error = L["PdfFailed"];
+            }
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private PdfExportReport Write(Book book, Guid? scope, PdfOptions options, string path)
+    {
+        try
+        {
+            using var stream = File.Create(path);
+            return Exporter.Export(book, scope, options, stream);
+        }
+        catch
+        {
+            try
+            {
+                File.Delete(path);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // The incomplete file stays; the export error is what matters.
+            }
+
+            throw;
+        }
+    }
+
+    /// <summary>The book title as a file name: characters a file system refuses are replaced.</summary>
+    private static string FileName(string title, string fallback)
+    {
+        var invalid = Path.GetInvalidFileNameChars();
+        var name = string.Concat(title.Select(c => invalid.Contains(c) ? '_' : c)).Trim();
+        return name.Length == 0 ? fallback : name;
+    }
+}

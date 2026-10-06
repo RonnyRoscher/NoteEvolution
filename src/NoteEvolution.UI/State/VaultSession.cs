@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NoteEvolution.AI.Search;
+using NoteEvolution.Core.Assistants;
 using NoteEvolution.Core.Links;
 using NoteEvolution.Core.Model;
 using NoteEvolution.Core.Storage;
@@ -39,6 +40,8 @@ public sealed class VaultSession : IDisposable
         Links = new LinkService(vault, Writer, Undo, new PendingStore(vault.Root));
         Checker = new LinkChecker(vault, Links);
         Changes = new ExternalChangeHandler(vault);
+        Handled = new HandledConverter(Notes, Writer);
+        Drafts = new DraftConverter(_backups, Writer);
         Watcher = new VaultWatcher(vault, registry, timeProvider);
         Watcher.ExternalChange += OnWatcherChange;
     }
@@ -58,6 +61,12 @@ public sealed class VaultSession : IDisposable
     public LinkChecker Checker { get; }
 
     public ExternalChangeHandler Changes { get; }
+
+    /// <summary>The one-time assistant for <c>[handled]</c> notes (spec 5.5).</summary>
+    public HandledConverter Handled { get; }
+
+    /// <summary>The assistant that turns a plain outline into a book (spec 5.6).</summary>
+    public DraftConverter Drafts { get; }
 
     public VaultWatcher Watcher { get; }
 

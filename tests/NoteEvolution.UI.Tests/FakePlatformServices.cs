@@ -12,13 +12,20 @@ public sealed class FakePlatformServices : IPlatformServices, IDisposable
 
     public string? SaveFileToPick { get; set; }
 
+    /// <summary>The file name the last save dialog proposed.</summary>
+    public string? LastSuggestedName { get; private set; }
+
     public List<string> OpenedUris { get; } = [];
 
     public string UserDataDirectory => _userData.Path;
 
     public Task<string?> PickFolderAsync() => Task.FromResult(FolderToPick);
 
-    public Task<string?> PickSaveFileAsync(string suggestedName) => Task.FromResult(SaveFileToPick);
+    public Task<string?> PickSaveFileAsync(string suggestedName)
+    {
+        LastSuggestedName = suggestedName;
+        return Task.FromResult(SaveFileToPick);
+    }
 
     public void OpenExternal(string uri) => OpenedUris.Add(uri);
 

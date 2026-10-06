@@ -1,4 +1,5 @@
 @using NoteEvolution.Core.Storage
+@using NoteEvolution.UI.Components.Dialogs
 @implements IDisposable
 @inject AppState State
 @inject UiSettings Settings
@@ -9,7 +10,8 @@
 @inject IStringLocalizer<Strings> L
 
 <div class="ne-shell" data-theme="@ThemeAttribute" style="--font-size: @(Settings.FontSizePt)pt; --line-width: @(Settings.LineWidthCh)ch;">
-    <HeaderBar OnOpenVault="PickVaultAsync" />
+    <HeaderBar OnOpenVault="PickVaultAsync" OnPdfExport="() => Show(Dialog.Pdf)" OnLinkCheck="() => Show(Dialog.LinkCheck)"
+               OnSettings="() => Show(Dialog.Settings)" OnHandledWizard="() => Show(Dialog.Handled)" OnDraftWizard="() => Show(Dialog.Draft)" />
 
     @if (_hintVisible)
     {
@@ -80,6 +82,28 @@
             }
         </section>
     </main>
+
+    @switch (_dialog)
+    {
+        case Dialog.Pdf:
+            <PdfExportDialog OnClose="CloseDialog" />
+            break;
+        case Dialog.LinkCheck:
+            <LinkCheckDialog OnClose="CloseDialog" />
+            break;
+        case Dialog.Settings:
+            <SettingsDialog OnClose="CloseDialog" OnNoteFoldersChanged="ReopenVaultAsync" />
+            break;
+        case Dialog.Handled:
+            <HandledWizard OnClose="CloseDialog" />
+            break;
+        case Dialog.Draft:
+            <DraftWizard OnClose="CloseDialog" />
+            break;
+    }
+
+    <ConflictDialog />
+    <UndoToast />
 </div>
 
 @code {
@@ -88,6 +112,30 @@
     private bool _opening;
     private bool _hintVisible;
     private string? _failedRoot;
+    private Dialog _dialog;
+
+    private enum Dialog
+    {
+        None,
+        Pdf,
+        LinkCheck,
+        Settings,
+        Handled,
+        Draft,
+    }
+
+    private void Show(Dialog dialog) => _dialog = dialog;
+
+    private void CloseDialog() => _dialog = Dialog.None;
+
+    /// <summary>The note folders changed: the vault is opened again with them.</summary>
+    private async Task ReopenVaultAsync()
+    {
+        if (State.Session is { } session)
+        {
+            await OpenVaultAsync(session.Vault.Root);
+        }
+    }
 
     private string? ThemeAttribute => Settings.Theme switch
     {
@@ -133,6 +181,7 @@
     {
         _opening = true;
         _failedRoot = null;
+        _dialog = Dialog.None;
         StateHasChanged();
         try
         {
@@ -144,10 +193,10 @@
             SaveSettings();
             if (session.StartupReport is { } report && (report.Missing.Count + report.Orphans.Count + report.Broken.Count) > 0)
             {
-                // Task 21 shows the link check dialog for it.
                 _logger.LogInformation(
                     "Link check on opening: {Missing} missing, {Orphans} orphaned, {Broken} broken",
                     report.Missing.Count, report.Orphans.Count, report.Broken.Count);
+                _dialog = Dialog.LinkCheck;
             }
         }
         catch (Exception ex)
