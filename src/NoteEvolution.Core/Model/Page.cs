@@ -14,6 +14,9 @@ public sealed class Page
 
     private SavedState _saved = new([], []);
 
+    /// <summary>File bytes accepted as the saved state's bytes (see <see cref="AcceptDiskAsBase"/>); reset by <see cref="MarkSaved"/>.</summary>
+    private byte[]? _acceptedDiskBytes;
+
     internal Page(string filePath, bool hasBom, string newLine, IEnumerable<RawLine> prefixLines)
     {
         FilePath = filePath;
@@ -184,6 +187,7 @@ public sealed class Page
 
         _structureChanged = false;
         _saved = CaptureSaved();
+        _acceptedDiskBytes = null;
     }
 
     /// <summary>
@@ -195,9 +199,19 @@ public sealed class Page
     /// </summary>
     internal SavedState Saved => _saved;
 
-    /// <summary>The file's bytes as they were when the page was last loaded or saved.</summary>
-    internal byte[] SavedBytes() =>
-        TextDocument.Encode(HasBom, _saved.PrefixLines.Concat(_saved.Blocks.SelectMany(b => b.Block.BaseLines)));
+    /// <summary>
+    /// The file's bytes as they were when the page was last loaded or saved, or the bytes accepted with
+    /// <see cref="AcceptDiskAsBase"/> since then.
+    /// </summary>
+    internal byte[] SavedBytes() => _acceptedDiskBytes
+        ?? TextDocument.Encode(HasBom, _saved.PrefixLines.Concat(_saved.Blocks.SelectMany(b => b.Block.BaseLines)));
+
+    /// <summary>
+    /// Treats <paramref name="diskBytes"/> (the file's current content, e.g. an unreadable external version the user
+    /// chose to replace) as what the page was loaded from, so that the next save may overwrite it. The block-level
+    /// saved state (used for merging) is unchanged; <see cref="MarkSaved"/> ends this.
+    /// </summary>
+    internal void AcceptDiskAsBase(byte[] diskBytes) => _acceptedDiskBytes = diskBytes;
 
     /// <summary>Replaces all prefix lines (merging external changes); only the last line of the file may lack an ending.</summary>
     internal void ReplacePrefixLines(IEnumerable<RawLine> lines)

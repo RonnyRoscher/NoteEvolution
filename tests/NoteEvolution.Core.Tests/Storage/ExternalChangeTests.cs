@@ -255,6 +255,30 @@ public class ExternalChangeTests
 
         s.Handler.Resolve(conflict, conflict.Conflicts.ToDictionary(c => c.Local.Key, _ => ConflictChoice.Mine));
         Assert.Same(local, s.Page);
+        Assert.IsType<ExternalChangeOutcome.Reloaded>(s.Handler.Handle(s.PagePath));
+        Assert.Same(local, s.Page);
+
+        s.Writer.Save(s.Page);
+
+        Assert.Equal($"- eins lokal\n- zwei\n  id:: {IdA}\n- drei\n- neu\n", s.Tv.Read(PageFile));
+        Assert.False(s.Page.IsDirty);
+    }
+
+    [Fact]
+    public void Handle_UnparseableAgainAfterSave_IsNotIgnored()
+    {
+        using var s = new Setup();
+        var local = s.Page;
+        B(local, "eins").SetContent("eins lokal");
+        s.WriteExternally("- ```\n  offen\n");
+        var conflict = Assert.IsType<ExternalChangeOutcome.Conflict>(s.Handler.Handle(s.PagePath));
+        s.Handler.Resolve(conflict, conflict.Conflicts.ToDictionary(c => c.Local.Key, _ => ConflictChoice.Mine));
+        s.Writer.Save(s.Page);
+
+        s.WriteExternally("- ```\n  offen\n");
+
+        Assert.IsType<ExternalChangeOutcome.Reloaded>(s.Handler.Handle(s.PagePath));
+        Assert.True(s.Page.IsReadOnly);
     }
 
     [Fact]

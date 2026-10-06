@@ -142,6 +142,79 @@ public class ConflictTests
         Assert.Equal("- eins\n- zwei\n\t- zwei-a\n", Text(theirs));
     }
 
+    // An external copy with the saved text next to an edited version: which one is "the" block is a guess,
+    // so the local change must be a conflict, and no choice may overwrite or drop the copy.
+    [Theory]
+    [InlineData(
+        "- a\n- foo ext\n- foo\n- b\n", null,
+        "- a\n- foo loc\n- foo ext\n- foo\n- b\n", "- a\n- foo ext\n- foo\n- b\n", "- a\n- foo loc\n- foo ext\n- foo\n- b\n")]
+    [InlineData(
+        "- foo\n- a\n- foo ext\n- b\n", "foo ext",
+        "- foo\n- a\n- foo loc\n- b\n", "- foo\n- a\n- foo ext\n- b\n", "- foo\n- a\n- foo loc\n- foo ext\n- b\n")]
+    public void Detect_ExternalCopyOfChangedBlock_IsConflict_EveryChoiceKeepsCopy(
+        string externalText, string? externalContent, string mine, string theirs, string both)
+    {
+        var local = Parse("- a\n- foo\n- b\n");
+        var foo = B(local, "foo");
+        foo.SetContent("foo loc");
+        var external = Parse(externalText);
+
+        var conflict = Assert.Single(ConflictDetector.Detect(local, external));
+
+        Assert.Same(foo, conflict.Local);
+        Assert.Equal(externalContent, conflict.External?.Content);
+        Assert.Equal(mine, Text(PageMerger.Merge(local, external, Choose([conflict], ConflictChoice.Mine))));
+        Assert.Equal(theirs, Text(PageMerger.Merge(local, external, Choose([conflict], ConflictChoice.Theirs))));
+        Assert.Equal(both, Text(PageMerger.Merge(local, external, Choose([conflict], ConflictChoice.Both))));
+    }
+
+    [Fact]
+    public void Merge_LocalRemoval_ExternalCopyNextToEditedVersion_RemovesNothing()
+    {
+        var local = Parse("- a\n- foo\n- b\n");
+        local.RemoveBlock(B(local, "foo"));
+        var external = Parse("- a\n- foo ext\n- foo\n- b\n");
+
+        Assert.Empty(ConflictDetector.Detect(local, external));
+        var merged = PageMerger.Merge(local, external, new Dictionary<Guid, ConflictChoice>());
+
+        Assert.Equal("- a\n- foo ext\n- foo\n- b\n", Text(merged));
+    }
+
+    // The only external block could be the changed version of either saved block: no pairing by position, the
+    // local block counts as deleted externally, and the external block is kept. Mine puts the local block where
+    // it was among its local siblings (before the unpaired external block).
+    [Theory]
+    [InlineData("- a\n- b\n", "- b ext\n", "- a loc\n- b ext\n", "- b ext\n")]
+    [InlineData("- x\n- a\n- b\n", "- x\n- b ext\n", "- x\n- a loc\n- b ext\n", "- x\n- b ext\n")]
+    public void Detect_AmbiguousPlace_ConflictWithoutExternal_MineKeepsOtherBlock(
+        string saved, string externalText, string mine, string theirs)
+    {
+        var local = Parse(saved);
+        var a = B(local, "a");
+        a.SetContent("a loc");
+        var external = Parse(externalText);
+
+        var conflict = Assert.Single(ConflictDetector.Detect(local, external));
+
+        Assert.Same(a, conflict.Local);
+        Assert.Null(conflict.External);
+        Assert.Equal(mine, Text(PageMerger.Merge(local, external, Choose([conflict], ConflictChoice.Mine))));
+        Assert.Equal(theirs, Text(PageMerger.Merge(local, external, Choose([conflict], ConflictChoice.Theirs))));
+    }
+
+    [Fact]
+    public void Detect_OnlyBlockChangedOnBothSides_IsPairedConflict()
+    {
+        var local = Parse("- p\n\t- c\n");
+        B(local, "c").SetContent("c loc");
+        var external = Parse("- p\n\t- c ext\n");
+
+        var conflict = Assert.Single(ConflictDetector.Detect(local, external));
+
+        Assert.Equal("c ext", conflict.External!.Content);
+    }
+
     [Fact]
     public void Detect_UnchangedLocally_DeletedExternally_NoConflict_StaysDeleted()
     {

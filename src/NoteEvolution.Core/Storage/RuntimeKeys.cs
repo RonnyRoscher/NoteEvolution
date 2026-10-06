@@ -13,8 +13,10 @@ public static class RuntimeKeys
     /// </summary>
     public static void Carry(Page from, Page to)
     {
-        var sources = BlockMatcher.WithPaths(from).Select(b => new BlockMatcher.Source(b.Block, b.Block.Lines, b.Path)).ToList();
-        foreach (var (source, target) in BlockMatcher.Match(sources, to, byPathAlone: false))
+        var sources = BlockMatcher.WithPaths(from)
+            .Select(b => new BlockMatcher.Source(b.Block, b.Block.Parent, b.Block.Lines, b.Path, Strict: false))
+            .ToList();
+        foreach (var (source, target) in BlockMatcher.Match(sources, to, byPosition: false))
         {
             target.AssignKey(source.Key);
         }

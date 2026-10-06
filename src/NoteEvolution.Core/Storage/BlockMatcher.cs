@@ -9,17 +9,38 @@ internal static class BlockMatcher
     /// <summary>Compares blocks by instance.</summary>
     public static readonly IEqualityComparer<Block> ByReference = ReferenceEqualityComparer.Instance;
 
-    /// <summary>A block of the earlier state: the lines and the tree path it had then.</summary>
-    internal sealed record Source(Block Block, IReadOnlyList<RawLine> Lines, IReadOnlyList<int> Path);
+    /// <summary>Groups root blocks in place of a parent.</summary>
+    private static readonly object RootGroup = new();
+
+    /// <summary>A block of the earlier state: its parent, lines and tree path then.</summary>
+    /// <param name="Block">The block instance.</param>
+    /// <param name="Parent">Its parent then; <c>null</c> for a root block.</param>
+    /// <param name="Lines">Its lines then.</param>
+    /// <param name="Path">Its tree path then (child indices from the roots).</param>
+    /// <param name="Strict">
+    /// The block was changed or removed locally since then: it is never paired by its text found elsewhere (see
+    /// <see cref="Match"/>), so that an external copy with the old text is not taken for it.
+    /// </param>
+    internal sealed record Source(Block Block, Block? Parent, IReadOnlyList<RawLine> Lines, IReadOnlyList<int> Path, bool Strict);
 
     /// <summary>
-    /// Each target block is paired with at most one source, in this order: same <c>id::</c>; else same tree path and
-    /// same text; else same text anywhere (the first free one in file order, so a block shifted by an insertion
-    /// above it is still found); with <paramref name="byPathAlone"/> finally the block at the same tree path, which
-    /// then is the same block changed. Blocks with two different ids are never paired.
+    /// Each target block is paired with at most one source, in this order:
+    /// <list type="number">
+    /// <item>same <c>id::</c>;</item>
+    /// <item>same tree path and same text;</item>
+    /// <item>non-strict sources: same text anywhere (the first free one in file order, so a block shifted by an
+    /// insertion above it is still found);</item>
+    /// <item>with <paramref name="byPosition"/>, every source still unpaired, in file order: by its place among its
+    /// siblings. The source's parent must be paired with the target's parent. Its nearest paired siblings before and
+    /// after (the gap's bounds; none = start/end) must be paired with the nearest paired target siblings around the
+    /// gap, and both gaps must hold the same number of unpaired blocks; then the source gets the target at the same
+    /// index within the gap. A gap of more than one block also needs at least one real bound. Otherwise the source
+    /// stays unpaired (for the caller: its counterpart is missing), because pairing would be a guess.</item>
+    /// </list>
+    /// Blocks with two different ids are never paired.
     /// </summary>
     /// <returns>Source block → target block.</returns>
-    public static Dictionary<Block, Block> Match(IReadOnlyList<Source> sources, Page target, bool byPathAlone)
+    public static Dictionary<Block, Block> Match(IReadOnlyList<Source> sources, Page target, bool byPosition)
     {
         var pairs = new Dictionary<Block, Block>(ByReference);
         var taken = new HashSet<Block>(ByReference);
@@ -71,7 +92,7 @@ internal static class BlockMatcher
         var byText = targets.Where(t => !taken.Contains(t.Block))
             .GroupBy(t => targetTexts[t.Block])
             .ToDictionary(g => g.Key, g => new Queue<Block>(g.Select(t => t.Block)));
-        foreach (var source in Unpaired())
+        foreach (var source in Unpaired().Where(s => !s.Strict))
         {
             if (byText.TryGetValue(sourceTexts[source.Block], out var queue))
             {
@@ -81,17 +102,77 @@ internal static class BlockMatcher
             }
         }
 
-        if (byPathAlone)
+        if (byPosition)
         {
+            var siblings = sources
+                .GroupBy(s => (object?)s.Parent ?? RootGroup, ReferenceEqualityComparer.Instance)
+                .ToDictionary(g => g.Key!, g => g.ToList(), ReferenceEqualityComparer.Instance);
             foreach (var source in Unpaired())
             {
-                TryPair(source, byPath.GetValueOrDefault(PathKey(source.Path)));
+                TryPair(source, ByPosition(source, siblings[(object?)source.Parent ?? RootGroup], target, pairs, taken));
             }
         }
 
         return pairs;
 
         IEnumerable<Source> Unpaired() => sources.Where(s => !pairs.ContainsKey(s.Block)).ToList();
+    }
+
+    /// <summary>Step 4 of <see cref="Match"/>: the target at the source's place, if that place is unambiguous.</summary>
+    private static Block? ByPosition(
+        Source source, List<Source> siblings, Page target, Dictionary<Block, Block> pairs, HashSet<Block> taken)
+    {
+        Block? targetParent = null;
+        if (source.Parent is not null && !pairs.TryGetValue(source.Parent, out targetParent))
+        {
+            return null;
+        }
+
+        var index = siblings.IndexOf(source);
+        var first = index;
+        while (first > 0 && !pairs.ContainsKey(siblings[first - 1].Block))
+        {
+            first--;
+        }
+
+        var last = index;
+        while (last < siblings.Count - 1 && !pairs.ContainsKey(siblings[last + 1].Block))
+        {
+            last++;
+        }
+
+        var before = first > 0 ? pairs[siblings[first - 1].Block] : null;
+        var after = last < siblings.Count - 1 ? pairs[siblings[last + 1].Block] : null;
+        var candidates = targetParent?.Children ?? target.Roots;
+        var start = before is null ? 0 : IndexIn(candidates, before) + 1;
+        var end = after is null ? candidates.Count : IndexIn(candidates, after);
+        if (start == 0 && before is not null || end < 0 || end < start)
+        {
+            return null; // A bound was paired with a block under another parent, or the bounds are swapped.
+        }
+
+        var gap = candidates.Skip(start).Take(end - start).Where(b => !taken.Contains(b)).ToList();
+        var count = last - first + 1;
+        if (gap.Count != count || count > 1 && before is null && after is null)
+        {
+            return null;
+        }
+
+        return gap[index - first];
+    }
+
+    /// <summary>Index of <paramref name="block"/> in <paramref name="list"/> by instance; -1 if it is not there.</summary>
+    private static int IndexIn(IReadOnlyList<Block> list, Block block)
+    {
+        for (var i = 0; i < list.Count; i++)
+        {
+            if (ReferenceEquals(list[i], block))
+            {
+                return i;
+            }
+        }
+
+        return -1;
     }
 
     /// <summary>

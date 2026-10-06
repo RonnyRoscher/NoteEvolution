@@ -118,11 +118,13 @@ public sealed class ExternalChangeHandler(IVault vault)
     /// puts the result into the vault; saving it is left to the caller (it is dirty where it differs from the file).
     /// With an external version the result is <see cref="PageMerger.Merge"/>. Without one (<c>External = null</c>)
     /// the page can only be taken as a whole: if any choice is <see cref="ConflictChoice.Mine"/> or
-    /// <see cref="ConflictChoice.Both"/>, the local page goes back into the vault, and saving it recreates the deleted
-    /// file or replaces the unreadable one; otherwise the vault keeps the external state (page removed, or read-only).
-    /// Call it before handling further changes of the same file.
+    /// <see cref="ConflictChoice.Both"/>, the local page goes back into the vault with the file's current content
+    /// accepted as its saved state, so that saving it recreates the deleted file or replaces the unreadable one (the
+    /// writer's check for external changes passes); otherwise the vault keeps the external state (page removed, or
+    /// read-only). Call it before handling further changes of the same file.
     /// </summary>
     /// <exception cref="ArgumentException">A conflict has no entry in <paramref name="choices"/>.</exception>
+    /// <exception cref="IOException">The file exists but cannot be read; the vault is unchanged.</exception>
     public void Resolve(ExternalChangeOutcome.Conflict conflict, IReadOnlyDictionary<Guid, ConflictChoice> choices)
     {
         if (conflict.External is not null)
@@ -139,6 +141,11 @@ public sealed class ExternalChangeHandler(IVault vault)
         var local = conflict.Local;
         if (conflict.Conflicts.Any(c => choices[c.Local.Key] != ConflictChoice.Theirs))
         {
+            if (ReadIfExists(local.FilePath) is { } diskBytes)
+            {
+                local.AcceptDiskAsBase(diskBytes);
+            }
+
             vault.ReplacePage(local);
         }
         else if (ReferenceEquals(vault.FindPageByPath(local.FilePath), local))

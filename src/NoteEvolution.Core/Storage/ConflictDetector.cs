@@ -18,8 +18,10 @@ public static class ConflictDetector
 {
     /// <summary>
     /// Compares the blocks of <paramref name="local"/>'s last saved state (see <see cref="Page.MarkSaved"/>) with
-    /// <paramref name="external"/>. Blocks are paired by <c>id::</c>, else by tree path with the same text, else by
-    /// the same text elsewhere, else by tree path alone (the same block, changed externally). A conflict is a block
+    /// <paramref name="external"/>. Blocks are paired by <c>id::</c>, else by tree path with the same text, else (only
+    /// blocks unchanged locally) by the same text elsewhere, else by their place among unambiguously paired siblings (the
+    /// same block, changed externally). A locally changed or removed block whose place is ambiguous counts as deleted
+    /// externally, so that no other external block is overwritten or removed for it. A conflict is a block
     /// <list type="bullet">
     /// <item>changed locally whose external version differs from the saved one (and from the local one), or is missing;</item>
     /// <item>removed locally whose external version differs from the saved one.</item>
@@ -50,8 +52,15 @@ public static class ConflictDetector
     /// <summary>One entry per block of <paramref name="local"/>'s saved state, in that order.</summary>
     internal static IReadOnlyList<SavedEntry> Compare(Page local, Page external)
     {
-        var sources = local.Saved.Blocks.Select(b => new BlockMatcher.Source(b.Block, b.Block.BaseLines, b.Path)).ToList();
-        var pairs = BlockMatcher.Match(sources, external, byPathAlone: true);
+        var sources = local.Saved.Blocks
+            .Select(b => new BlockMatcher.Source(
+                b.Block,
+                b.Parent?.Block,
+                b.Block.BaseLines,
+                b.Path,
+                Strict: b.Block.Page != local || !BlockMatcher.SameText(b.Block.Lines, b.Block.BaseLines)))
+            .ToList();
+        var pairs = BlockMatcher.Match(sources, external, byPosition: true);
         return
         [
             .. local.Saved.Blocks.Select(saved =>
