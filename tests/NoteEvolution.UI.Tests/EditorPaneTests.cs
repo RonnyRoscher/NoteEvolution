@@ -134,6 +134,7 @@ public class EditorPaneTests : UiTestContext
         Time.Advance(TimeSpan.FromMilliseconds(1));
 
         cut.WaitForAssertion(() => Assert.Contains("\t- Zweiter Text, geändert\n", tv.Read(BookPath)));
+        await cut.InvokeAsync(() => State.FlushEditor!()); // waits for the autosave's own sync to finish
         var (removed, added) = LineDiff.Changed(Encoding.UTF8.GetBytes(before), Encoding.UTF8.GetBytes(tv.Read(BookPath)));
         Assert.Single(removed);
         Assert.Single(added);
@@ -220,8 +221,12 @@ public class EditorPaneTests : UiTestContext
 
         Assert.Equal(["Erster Text", "Gedächtnis braucht Schlaf", "Zweiter Text"], Section("Eins").TextBlocks.Select(t => t.Text));
         Assert.Contains("used-in:: [[Buch - Alpha]]", tv.Read(NotesPath).Split("- Gedächtnis braucht Schlaf")[1]);
-        Assert.Equal(2, Editor.Documents.Count);
-        Assert.Equal("Erster Text|Gedächtnis braucht Schlaf|Zweiter Text", TextsOf(Editor.Json));
+        // The editor reloads through the state change it listens to (InvokeAsync), not within the drop call.
+        cut.WaitForAssertion(() =>
+        {
+            Assert.Equal(2, Editor.Documents.Count);
+            Assert.Equal("Erster Text|Gedächtnis braucht Schlaf|Zweiter Text", TextsOf(Editor.Json));
+        });
     }
 
     [Fact]
@@ -253,7 +258,8 @@ public class EditorPaneTests : UiTestContext
         Assert.Contains("\t- Erster Text, neu\n\t  id:: " + FirstId + "\n\t- Zweiter Text\n", book);
         Assert.DoesNotContain("source::", book);
         Assert.DoesNotContain("used-in::", tv.Read(NotesPath));
-        Assert.Empty(Blocks(Doc(Editor.Json))[0]!["attrs"]!["sources"]!.AsArray());
+        // The new document comes through the state change (InvokeAsync), after the chip call has returned.
+        cut.WaitForAssertion(() => Assert.Empty(Blocks(Doc(Editor.Json))[0]!["attrs"]!["sources"]!.AsArray()));
     }
 
     [Fact]
@@ -319,8 +325,11 @@ public class EditorPaneTests : UiTestContext
         State.CurrentSectionKey = Section("Zwei").Key;
         await cut.InvokeAsync(State.Notify);
 
-        Assert.Contains("\t- Zweiter Text, noch nicht gespeichert\n- # Zwei\n\t- Dritter Text\n", tv.Read(BookPath));
-        Assert.Equal("Dritter Text", TextsOf(Editor.Json));
+        cut.WaitForAssertion(() =>
+        {
+            Assert.Contains("\t- Zweiter Text, noch nicht gespeichert\n- # Zwei\n\t- Dritter Text\n", tv.Read(BookPath));
+            Assert.Equal("Dritter Text", TextsOf(Editor.Json));
+        });
     }
 
     [Fact]
@@ -331,10 +340,13 @@ public class EditorPaneTests : UiTestContext
         State.CurrentSectionKey = Guid.Empty;
         await cut.InvokeAsync(State.Notify);
 
-        var (json, manuscript, showChips) = Editor.Documents[^1];
-        Assert.True(manuscript);
-        Assert.False(showChips);
-        Assert.Equal(["heading", "textBlock", "textBlock", "heading", "textBlock"], Blocks(Doc(json)).Select(n => (string?)n!["type"]));
+        cut.WaitForAssertion(() =>
+        {
+            var (json, manuscript, showChips) = Editor.Documents[^1];
+            Assert.True(manuscript);
+            Assert.False(showChips);
+            Assert.Equal(["heading", "textBlock", "textBlock", "heading", "textBlock"], Blocks(Doc(json)).Select(n => (string?)n!["type"]));
+        });
 
         cut.Find(".ne-editor-chips input").Change(true);
 

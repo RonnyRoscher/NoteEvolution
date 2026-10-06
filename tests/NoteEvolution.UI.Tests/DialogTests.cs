@@ -814,15 +814,15 @@ public class DialogTests : UiTestContext
             ("extra/Neu.md", "- Neue Notiz\n"));
         Settings.LastVault = tv.Root;
         var cut = Render<Shell>();
-        cut.WaitForAssertion(() => Assert.NotNull(State.Session));
+        WaitForVaultOpened(cut);
         var first = State.Session;
         Assert.Empty(first!.Notes.All());
 
         cut.Find(".ne-settings").Click();
-        cut.Find(".ne-settings-folders").Input("pages\nextra");
+        cut.WaitForElement(".ne-settings-folders").Input("pages\nextra");
         cut.Find(".ne-settings-save").Click();
 
-        cut.WaitForAssertion(() => Assert.NotSame(first, State.Session));
+        WaitForVaultOpened(cut, first);
         Assert.Equal(["Neue Notiz"], State.Session!.Notes.All().Select(n => n.Block.Content));
         cut.WaitForAssertion(() => Assert.Empty(cut.FindAll(".ne-settings-dialog")));
     }

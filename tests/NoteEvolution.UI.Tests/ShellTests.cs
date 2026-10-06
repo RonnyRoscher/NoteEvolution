@@ -101,7 +101,7 @@ public class ShellTests : UiTestContext
 
         await cut.Find(".ne-open-vault").ClickAsync(new MouseEventArgs());
 
-        cut.WaitForAssertion(() => Assert.NotNull(State.Session));
+        WaitForVaultOpened(cut);
         Assert.Equal("Alpha", State.CurrentBook!.Title);
         Assert.Equal(State.CurrentBook.Root.Key, State.CurrentSectionKey);
         Assert.Equal(["Alpha", "Beta"], cut.FindAll(".ne-book-select option").Select(o => o.TextContent));
@@ -122,7 +122,7 @@ public class ShellTests : UiTestContext
 
         var cut = Render<Shell>();
 
-        cut.WaitForAssertion(() => Assert.NotNull(State.Session));
+        WaitForVaultOpened(cut);
         Assert.Equal("Alpha", State.CurrentBook!.Title);
         Assert.Empty(cut.FindAll(".ne-hint"));
     }
@@ -150,6 +150,7 @@ public class ShellTests : UiTestContext
         Platform.FolderToPick = first.Root;
         var cut = Render<Shell>();
         await cut.Find(".ne-open-vault").ClickAsync(new MouseEventArgs());
+        WaitForVaultOpened(cut);
         cut.WaitForAssertion(() => Assert.Contains("Vorspann", Editor.Json));
         var doc = JsonNode.Parse(Editor.Json)!;
         doc["content"]![0]!["content"]![0]!["content"] = new JsonArray(new JsonObject { ["type"] = "text", ["text"] = "Vorspann, gerade getippt" });
@@ -167,7 +168,8 @@ public class ShellTests : UiTestContext
         Platform.FolderToPick = second.Root;
         await cut.Find(".ne-open-vault").ClickAsync(new MouseEventArgs());
 
-        cut.WaitForAssertion(() => Assert.Equal(second.Root, State.Session?.Vault.Root));
+        WaitForVaultOpened(cut, firstSession);
+        Assert.Equal(second.Root, State.Session!.Vault.Root);
         Assert.Equal([true], flushedWhileShown);
         Assert.Equal("title:: Alpha\ntype:: book\n\n- Vorspann, gerade getippt\n- # Eins\n", first.Read(bookPath));
     }
