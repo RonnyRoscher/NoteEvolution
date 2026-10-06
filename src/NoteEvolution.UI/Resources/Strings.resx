@@ -129,4 +129,42 @@
   <data name="ResizePane" xml:space="preserve">
     <value>Breite ziehen</value>
   </data>
+
+  <!-- Gliederung -->
+  <data name="OutlinePrologue" xml:space="preserve">
+    <value>Vorspann</value>
+  </data>
+  <data name="OutlineAddSub" xml:space="preserve">
+    <value>Unter-Überschrift hinzufügen</value>
+  </data>
+  <data name="OutlineAddRoot" xml:space="preserve">
+    <value>Überschrift hinzufügen</value>
+  </data>
+  <data name="OutlineNewTitle" xml:space="preserve">
+    <value>Neue Überschrift</value>
+  </data>
+  <data name="OutlineRenameTitle" xml:space="preserve">
+    <value>Titel der Überschrift</value>
+  </data>
+  <data name="OutlineWords" xml:space="preserve">
+    <value>{0} W</value>
+  </data>
+  <data name="OutlineWordsLong" xml:space="preserve">
+    <value>{0} Wörter</value>
+  </data>
+  <data name="OutlineSources" xml:space="preserve">
+    <value>{0} Q</value>
+  </data>
+  <data name="OutlineSourcesLong" xml:space="preserve">
+    <value>{0} Quellen</value>
+  </data>
+  <data name="OutlineTitleInvalid" xml:space="preserve">
+    <value>Der Titel darf nicht leer sein und nur eine Zeile haben.</value>
+  </data>
+  <data name="OutlineMoveInvalid" xml:space="preserve">
+    <value>Dort kann keine Überschrift eingefügt werden (nicht in sich selbst, höchstens sechs Ebenen).</value>
+  </data>
+  <data name="OutlineSaveFailed" xml:space="preserve">
+    <value>Die Änderung konnte nicht gespeichert werden. Die Gliederung zeigt wieder den Stand der Datei.</value>
+  </data>
 </root>

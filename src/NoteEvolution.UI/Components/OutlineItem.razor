@@ -1,0 +1,107 @@
+@using NoteEvolution.Core.Books
+@inject IStringLocalizer<Strings> L
+
+@* One entry of the outline tree. The root is shown as the prologue ("Vorspann"): it can be selected, nothing else. *@
+@{
+    var isPrologue = Node.Block is null;
+    var renaming = !isPrologue && Pane.RenamingKey == Node.Key;
+    var draggable = !isPrologue && !renaming && Pane.Editable;
+    var words = isPrologue ? Node.WordCount - Node.Children.Sum(child => child.WordCount) : Node.WordCount;
+    var sources = isPrologue ? Node.TextBlocks.SelectMany(text => text.Sources).Distinct().Count() : Node.SourceCount;
+    var warnings = Pane.WarningsFor(Node.Key);
+}
+
+<li class="ne-outline-item">
+    @if (!isPrologue)
+    {
+        <div class="ne-drop-before @(Pane.IsDropHint(Node.Key, true) ? "drop-here" : null)"
+             @ondragenter="() => Pane.DragEnter(Node.Key, before: true)" @ondragover:preventDefault
+             @ondrop="() => Pane.DropBefore(Node)" @ondrop:preventDefault></div>
+    }
+    <div class="ne-outline-row @(Pane.IsSelected(Node) ? "selected" : null) @(isPrologue ? "prologue" : null) @(!isPrologue && Pane.IsDropHint(Node.Key, false) ? "drop-onto" : null)"
+         draggable="@(draggable ? "true" : null)"
+         @onclick="() => Pane.Select(Node)" @ondblclick="() => Pane.StartRename(Node)"
+         @ondragstart="() => Pane.DragStart(Node)" @ondragend="Pane.DragEnd"
+         @ondragenter="() => Pane.DragEnter(Node.Key, before: false)" @ondragover:preventDefault
+         @ondrop="() => Pane.DropOnto(Node)" @ondrop:preventDefault>
+        @if (renaming)
+        {
+            <input class="ne-outline-rename" type="text" aria-label="@L["OutlineRenameTitle"]" value="@Pane.RenameText"
+                   @ref="_renameInput" @oninput="e => Pane.RenameText = e.Value?.ToString() ?? string.Empty"
+                   @onkeydown="OnRenameKey" @onblur="() => Pane.CommitRename(Node)"
+                   @onclick:stopPropagation @ondblclick:stopPropagation />
+        }
+        else
+        {
+            <span class="ne-outline-title">@(isPrologue ? L["OutlinePrologue"] : Node.Title)</span>
+        }
+        <span class="ne-outline-meta">
+            @if (warnings.Count > 0)
+            {
+                <span class="ne-outline-warning" title="@string.Join("\n", warnings)">⚠</span>
+            }
+            @if (words > 0)
+            {
+                <span class="ne-outline-words" title="@L["OutlineWordsLong", words]">@L["OutlineWords", words]</span>
+            }
+            @if (sources > 0)
+            {
+                <span class="ne-outline-sources" title="@L["OutlineSourcesLong", sources]">@L["OutlineSources", sources]</span>
+            }
+            @if (!isPrologue)
+            {
+                <button type="button" class="ne-outline-add" title="@L["OutlineAddSub"]" aria-label="@L["OutlineAddSub"]"
+                        disabled="@(!Pane.Editable || Node.Level >= 6)" @onclick="() => Pane.Add(Node)"
+                        @onclick:stopPropagation @ondblclick:stopPropagation>+</button>
+            }
+        </span>
+    </div>
+    @if (!isPrologue && Node.Children.Any())
+    {
+        <ul class="ne-outline-tree">
+            @foreach (var child in Node.Children)
+            {
+                <OutlineItem @key="child.Key" Node="child" Pane="Pane" />
+            }
+        </ul>
+    }
+</li>
+
+@code {
+    private ElementReference _renameInput;
+    private bool _focusPending;
+    private bool _wasRenaming;
+
+    [Parameter, EditorRequired] public OutlineNode Node { get; set; } = default!;
+
+    [Parameter, EditorRequired] public OutlinePane Pane { get; set; } = default!;
+
+    protected override void OnParametersSet()
+    {
+        var renaming = Node.Block is not null && Pane.RenamingKey == Node.Key;
+        _focusPending = renaming && !_wasRenaming;
+        _wasRenaming = renaming;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_focusPending)
+        {
+            _focusPending = false;
+            await _renameInput.FocusAsync();
+        }
+    }
+
+    private void OnRenameKey(KeyboardEventArgs e)
+    {
+        switch (e.Key)
+        {
+            case "Enter":
+                Pane.CommitRename(Node);
+                break;
+            case "Escape":
+                Pane.CancelRename();
+                break;
+        }
+    }
+}
