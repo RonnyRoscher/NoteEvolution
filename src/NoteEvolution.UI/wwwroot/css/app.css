@@ -1,0 +1,294 @@
+/* NoteEvolution – layout and themes. Colors are variables; .ne-shell[data-theme] overrides the system choice. */
+
+.ne-shell {
+    --bg: #fbfaf7;
+    --bg-pane: #f3f1ec;
+    --bg-raised: #ffffff;
+    --fg: #23211d;
+    --fg-muted: #6b675f;
+    --border: #dcd8cf;
+    --accent: #3d6fb6;
+    --accent-fg: #ffffff;
+    --warning: #b4690e;
+    --danger: #b3261e;
+    --hint-bg: #fff4d6;
+    --font-ui: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --font-text: "EB Garamond", Georgia, "Times New Roman", serif;
+    color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+    .ne-shell:not([data-theme="light"]) {
+        --bg: #1c1b19;
+        --bg-pane: #242320;
+        --bg-raised: #2d2b28;
+        --fg: #e8e5de;
+        --fg-muted: #a39e94;
+        --border: #3b3934;
+        --accent: #7aa7e8;
+        --accent-fg: #10151d;
+        --warning: #e5a446;
+        --danger: #f2827a;
+        --hint-bg: #3a3222;
+        color-scheme: dark;
+    }
+}
+
+.ne-shell[data-theme="dark"] {
+    --bg: #1c1b19;
+    --bg-pane: #242320;
+    --bg-raised: #2d2b28;
+    --fg: #e8e5de;
+    --fg-muted: #a39e94;
+    --border: #3b3934;
+    --accent: #7aa7e8;
+    --accent-fg: #10151d;
+    --warning: #e5a446;
+    --danger: #f2827a;
+    --hint-bg: #3a3222;
+    color-scheme: dark;
+}
+
+html, body {
+    margin: 0;
+    height: 100%;
+    overflow: hidden;
+}
+
+#app {
+    height: 100%;
+}
+
+.ne-shell {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--font-ui);
+    font-size: 14px;
+}
+
+.ne-shell button,
+.ne-shell select {
+    font: inherit;
+    color: inherit;
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 3px 10px;
+    cursor: pointer;
+}
+
+.ne-shell button:disabled {
+    opacity: 0.45;
+    cursor: default;
+}
+
+/* Header */
+
+.ne-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-pane);
+}
+
+.ne-header-spacer {
+    flex: 1;
+}
+
+.ne-book-select {
+    min-width: 180px;
+}
+
+.ne-mode {
+    display: inline-flex;
+}
+
+.ne-mode button {
+    border-radius: 0;
+}
+
+.ne-mode button:first-child {
+    border-radius: 4px 0 0 4px;
+}
+
+.ne-mode button:last-child {
+    border-radius: 0 4px 4px 0;
+    border-left: none;
+}
+
+.ne-mode button.active {
+    background: var(--accent);
+    color: var(--accent-fg);
+    border-color: var(--accent);
+}
+
+.ne-ai {
+    color: var(--fg-muted);
+    font-size: 12px;
+    padding: 0 4px;
+}
+
+.ne-readonly {
+    position: relative;
+}
+
+.ne-readonly-toggle {
+    color: var(--warning) !important;
+    border-color: var(--warning) !important;
+}
+
+.ne-readonly-popup {
+    position: absolute;
+    right: 0;
+    top: calc(100% + 4px);
+    z-index: 20;
+    min-width: 320px;
+    max-width: 560px;
+    max-height: 60vh;
+    overflow: auto;
+    padding: 8px 10px;
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    box-shadow: 0 6px 20px rgb(0 0 0 / 0.18);
+}
+
+.ne-readonly-title {
+    font-weight: 600;
+    margin-bottom: 6px;
+}
+
+.ne-readonly-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.ne-readonly-list li {
+    display: flex;
+    flex-direction: column;
+    padding: 4px 0;
+    border-top: 1px solid var(--border);
+}
+
+.ne-readonly-file {
+    font-weight: 600;
+}
+
+.ne-readonly-error {
+    color: var(--fg-muted);
+    font-size: 12px;
+}
+
+/* Notices */
+
+.ne-hint,
+.ne-error {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 6px 12px;
+    border-bottom: 1px solid var(--border);
+}
+
+.ne-hint {
+    background: var(--hint-bg);
+}
+
+.ne-error {
+    color: var(--danger);
+}
+
+/* Three panes */
+
+.ne-main {
+    flex: 1;
+    display: flex;
+    min-height: 0;
+}
+
+.ne-pane {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    overflow: auto;
+}
+
+.ne-outline,
+.ne-notes {
+    flex: none;
+    background: var(--bg-pane);
+}
+
+.ne-outline.collapsed,
+.ne-notes.collapsed {
+    width: 32px;
+}
+
+.ne-editor {
+    flex: 1;
+    font-family: var(--font-text);
+    font-size: var(--font-size, 12pt);
+}
+
+.ne-pane-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    padding: 6px 8px;
+    color: var(--fg-muted);
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.ne-collapse {
+    padding: 0 6px !important;
+    border: none !important;
+    background: transparent !important;
+}
+
+.ne-placeholder {
+    padding: 16px;
+    color: var(--fg-muted);
+}
+
+.ne-welcome {
+    margin: auto;
+    max-width: var(--line-width, 70ch);
+    text-align: center;
+    font-family: var(--font-ui);
+}
+
+/* Splitter */
+
+.ne-splitter {
+    flex: none;
+    /* A 1px line with a 7px grip area. */
+    width: 1px;
+    cursor: col-resize;
+    background: var(--border);
+    background-clip: content-box;
+    padding: 0 3px;
+    margin: 0 -3px;
+    z-index: 1;
+}
+
+.ne-splitter:hover,
+.ne-splitter.dragging {
+    background: var(--accent);
+    background-clip: content-box;
+}
+
+.ne-splitter-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    cursor: col-resize;
+}

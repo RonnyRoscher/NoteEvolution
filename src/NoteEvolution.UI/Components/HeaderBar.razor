@@ -1,0 +1,165 @@
+@using NoteEvolution.Core.Links
+@using NoteEvolution.Core.Model
+@implements IDisposable
+@inject AppState State
+@inject IStringLocalizer<Strings> L
+@inject ILogger<HeaderBar> Logger
+
+<header class="ne-header">
+    <button type="button" class="ne-open-vault" @onclick="OnOpenVault">@L["OpenVault"]</button>
+
+    @if (State.Session is { } session)
+    {
+        <select class="ne-book-select" aria-label="@L["Book"]" value="@State.CurrentBook?.LinkName" @onchange="SelectBook">
+            @foreach (var book in session.Vault.Books)
+            {
+                <option value="@book.LinkName">@book.Title</option>
+            }
+        </select>
+    }
+
+    <div class="ne-mode" role="group" aria-label="@L["ViewMode"]">
+        <button type="button" class="ne-mode-section @Active(ViewMode.Section)" aria-pressed="@Pressed(ViewMode.Section)"
+                @onclick="() => SetMode(ViewMode.Section)">@L["ModeSection"]</button>
+        <button type="button" class="ne-mode-manuscript @Active(ViewMode.Manuscript)" aria-pressed="@Pressed(ViewMode.Manuscript)"
+                @onclick="() => SetMode(ViewMode.Manuscript)">@L["ModeManuscript"]</button>
+    </div>
+
+    <button type="button" class="ne-undo" disabled="@(_undo?.CanUndo != true)" title="@_undo?.NextDescription"
+            @onclick="Undo">@L["Undo"]</button>
+
+    <span class="ne-header-spacer"></span>
+
+    @if (ReadOnlyPages() is { Count: > 0 } readOnly)
+    {
+        <div class="ne-readonly">
+            <button type="button" class="ne-readonly-toggle" title="@L["ReadOnlyFiles"]" aria-expanded="@(_readOnlyOpen ? "true" : "false")"
+                    @onclick="() => _readOnlyOpen = !_readOnlyOpen">⚠ @readOnly.Count</button>
+            @if (_readOnlyOpen)
+            {
+                <div class="ne-readonly-popup">
+                    <div class="ne-readonly-title">@L["ReadOnlyFiles"]</div>
+                    <ul class="ne-readonly-list">
+                        @foreach (var broken in readOnly)
+                        {
+                            <li><span class="ne-readonly-file">@Path.GetFileName(broken.FilePath)</span><span class="ne-readonly-error">@broken.ParseError</span></li>
+                        }
+                    </ul>
+                </div>
+            }
+        </div>
+    }
+
+    <button type="button" class="ne-pdf" disabled="@(State.CurrentBook is null || !OnPdfExport.HasDelegate)"
+            @onclick="OnPdfExport">@L["PdfExport"]</button>
+    <button type="button" class="ne-linkcheck" disabled="@(State.Session is null || !OnLinkCheck.HasDelegate)"
+            @onclick="OnLinkCheck">@L["LinkCheck"]</button>
+    <button type="button" class="ne-settings" disabled="@(!OnSettings.HasDelegate)" @onclick="OnSettings">@L["Settings"]</button>
+    <span class="ne-ai">@L["AiOff"]</span>
+</header>
+
+@code {
+    private UndoManager? _undo;
+    private bool _readOnlyOpen;
+
+    [Parameter] public EventCallback OnOpenVault { get; set; }
+
+    /// <summary>Opens the PDF export (dialog from Task 21); the button is disabled while unset.</summary>
+    [Parameter] public EventCallback OnPdfExport { get; set; }
+
+    /// <summary>Opens the link check (dialog from Task 21); the button is disabled while unset.</summary>
+    [Parameter] public EventCallback OnLinkCheck { get; set; }
+
+    /// <summary>Opens the settings (dialog from Task 21); the button is disabled while unset.</summary>
+    [Parameter] public EventCallback OnSettings { get; set; }
+
+    protected override void OnInitialized()
+    {
+        State.Changed += OnStateChanged;
+        TrackUndo();
+    }
+
+    public void Dispose()
+    {
+        State.Changed -= OnStateChanged;
+        if (_undo is not null)
+        {
+            _undo.Changed -= OnUndoChanged;
+        }
+    }
+
+    private void OnStateChanged() => _ = InvokeAsync(() =>
+    {
+        TrackUndo();
+        StateHasChanged();
+    });
+
+    private void OnUndoChanged() => _ = InvokeAsync(StateHasChanged);
+
+    /// <summary>Follows the undo stack of the current session (a new session brings a new one).</summary>
+    private void TrackUndo()
+    {
+        var undo = State.Session?.Undo;
+        if (ReferenceEquals(undo, _undo))
+        {
+            return;
+        }
+
+        if (_undo is not null)
+        {
+            _undo.Changed -= OnUndoChanged;
+        }
+
+        _undo = undo;
+        if (_undo is not null)
+        {
+            _undo.Changed += OnUndoChanged;
+        }
+    }
+
+    private List<Page> ReadOnlyPages() => State.Session?.Vault.Pages.Where(p => p.IsReadOnly).ToList() ?? [];
+
+    private string? Active(ViewMode mode) => State.Mode == mode ? "active" : null;
+
+    private string Pressed(ViewMode mode) => State.Mode == mode ? "true" : "false";
+
+    private void SelectBook(ChangeEventArgs e)
+    {
+        if (State.Session?.Vault.FindBook(e.Value as string ?? "") is not { } book)
+        {
+            return;
+        }
+
+        State.CurrentBook = book;
+        State.CurrentSectionKey = book.Root.Key;
+        State.CursorTextBlockKey = null;
+        State.Notify();
+    }
+
+    private void SetMode(ViewMode mode)
+    {
+        if (State.Mode == mode)
+        {
+            return;
+        }
+
+        State.Mode = mode;
+        State.Notify();
+    }
+
+    private void Undo()
+    {
+        try
+        {
+            _undo?.Undo();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or ArgumentException)
+        {
+            Logger.LogError(ex, "Undo failed");
+        }
+
+        // The undone operation changed (and saved) the book page; views take it from the vault again.
+        State.RefreshBook();
+        State.Notify();
+    }
+}

@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+                <xsd:element name="comment" type="xsd:string" minOccurs="0" msdata:Ordinal="2" />
+              </xsd:sequence>
+              <xsd:attribute name="name" use="required" type="xsd:string" msdata:Ordinal="1" />
+              <xsd:attribute name="type" type="xsd:string" msdata:Ordinal="3" />
+              <xsd:attribute name="mimetype" type="xsd:string" msdata:Ordinal="4" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+
+  <!-- Vault -->
+  <data name="OpenVault" xml:space="preserve">
+    <value>Vault öffnen …</value>
+  </data>
+  <data name="PickVaultTitle" xml:space="preserve">
+    <value>Vault-Ordner wählen</value>
+  </data>
+  <data name="SaveFileTitle" xml:space="preserve">
+    <value>Speichern unter</value>
+  </data>
+  <data name="NoVaultOpen" xml:space="preserve">
+    <value>Noch kein Vault geöffnet. Wähle den Ordner deines Logseq-Graphen.</value>
+  </data>
+  <data name="VaultOpening" xml:space="preserve">
+    <value>Vault wird geöffnet …</value>
+  </data>
+  <data name="VaultOpenFailed" xml:space="preserve">
+    <value>Der Vault „{0}“ konnte nicht geöffnet werden. Details stehen im Protokoll.</value>
+    <comment>{0} = Ordnerpfad</comment>
+  </data>
+  <data name="LogseqHint" xml:space="preserve">
+    <value>Hinweis: Bearbeite dasselbe Buch nicht gleichzeitig in Logseq, sonst können sich Änderungen überschneiden.</value>
+  </data>
+  <data name="HintOk" xml:space="preserve">
+    <value>Verstanden</value>
+  </data>
+
+  <!-- Kopfleiste -->
+  <data name="Book" xml:space="preserve">
+    <value>Buch</value>
+  </data>
+  <data name="ViewMode" xml:space="preserve">
+    <value>Ansicht</value>
+  </data>
+  <data name="ModeSection" xml:space="preserve">
+    <value>Abschnitt</value>
+  </data>
+  <data name="ModeManuscript" xml:space="preserve">
+    <value>Manuskript</value>
+  </data>
+  <data name="Undo" xml:space="preserve">
+    <value>Rückgängig</value>
+  </data>
+  <data name="PdfExport" xml:space="preserve">
+    <value>PDF-Export</value>
+  </data>
+  <data name="LinkCheck" xml:space="preserve">
+    <value>Verknüpfungsprüfung</value>
+  </data>
+  <data name="Settings" xml:space="preserve">
+    <value>Einstellungen</value>
+  </data>
+  <data name="AiOff" xml:space="preserve">
+    <value>KI: aus</value>
+  </data>
+  <data name="ReadOnlyFiles" xml:space="preserve">
+    <value>Nicht sicher lesbare Dateien (nur Anzeige, werden nie geschrieben)</value>
+  </data>
+
+  <!-- Bereiche -->
+  <data name="Outline" xml:space="preserve">
+    <value>Gliederung</value>
+  </data>
+  <data name="Editor" xml:space="preserve">
+    <value>Text</value>
+  </data>
+  <data name="Notes" xml:space="preserve">
+    <value>Notizen</value>
+  </data>
+  <data name="OutlinePlaceholder" xml:space="preserve">
+    <value>Hier erscheint die Gliederung des Buchs.</value>
+  </data>
+  <data name="EditorPlaceholder" xml:space="preserve">
+    <value>Hier erscheint der Text des gewählten Abschnitts.</value>
+  </data>
+  <data name="NotesPlaceholder" xml:space="preserve">
+    <value>Hier erscheinen Suche und Journal.</value>
+  </data>
+  <data name="Collapse" xml:space="preserve">
+    <value>Einklappen</value>
+  </data>
+  <data name="Expand" xml:space="preserve">
+    <value>Ausklappen</value>
+  </data>
+  <data name="ResizePane" xml:space="preserve">
+    <value>Breite ziehen</value>
+  </data>
+</root>

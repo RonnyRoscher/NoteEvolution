@@ -1,0 +1,59 @@
+@* A vertical divider between two panes: dragging it changes the width of the pane on one side. *@
+@inject IStringLocalizer<Strings> L
+
+<div class="ne-splitter @(_dragging ? "dragging" : null)" role="separator" aria-orientation="vertical"
+     title="@L["ResizePane"]" @onpointerdown="Start"></div>
+@if (_dragging)
+{
+    @* Covers the window while dragging, so the pointer is followed even over the editor. *@
+    <div class="ne-splitter-overlay" @onpointermove="Move" @onpointerup="End" @onpointerleave="End"></div>
+}
+
+@code {
+    public const double MinWidth = 160;
+    public const double MaxWidth = 800;
+
+    private bool _dragging;
+    private double _startX;
+    private double _startWidth;
+
+    /// <summary>The current width of the pane this splitter resizes.</summary>
+    [Parameter] public double Width { get; set; }
+
+    [Parameter] public EventCallback<double> WidthChanged { get; set; }
+
+    /// <summary>Raised once when the drag ends, e.g. to save the width.</summary>
+    [Parameter] public EventCallback DragEnded { get; set; }
+
+    /// <summary>The pane lies to the right of the splitter: dragging to the left widens it.</summary>
+    [Parameter] public bool PaneOnRight { get; set; }
+
+    private void Start(PointerEventArgs e)
+    {
+        _dragging = true;
+        _startX = e.ClientX;
+        _startWidth = Width;
+    }
+
+    private async Task Move(PointerEventArgs e)
+    {
+        var delta = e.ClientX - _startX;
+        var width = Math.Clamp(_startWidth + (PaneOnRight ? -delta : delta), MinWidth, MaxWidth);
+        if (width != Width)
+        {
+            await WidthChanged.InvokeAsync(width);
+        }
+    }
+
+    private async Task End(PointerEventArgs e)
+    {
+        if (!_dragging)
+        {
+            return;
+        }
+
+        await Move(e);
+        _dragging = false;
+        await DragEnded.InvokeAsync();
+    }
+}
