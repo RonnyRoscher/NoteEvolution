@@ -41,6 +41,15 @@ public sealed class BookTextSaver(AppState state, ILogger logger)
     public AdoptMessage? Message { get; set; }
 
     /// <summary>
+    /// Text the editor shows is not in the file: <see cref="Pending"/> waits for the next try, or the shown book page
+    /// holds changes that could not be saved.
+    /// </summary>
+    public bool HasUnsavedText =>
+        Pending is not null
+        || (Shown is { } shown && ReferenceEquals(shown.Session, state.Session)
+            && shown.Session.Vault.FindBook(shown.BookLink)?.Page is { IsDirty: true });
+
+    /// <summary>
     /// Saves <see cref="Pending"/> into the shown book. On a write failure the file's version is read again and the
     /// text stays pending for the next try; if even reading fails, the page keeps the text and
     /// <see cref="SaveDirtyPage"/> saves it later.

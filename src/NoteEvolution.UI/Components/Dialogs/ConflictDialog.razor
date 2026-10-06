@@ -225,9 +225,9 @@ else if (Current is { } conflict)
                 _queue.Clear();
                 return;
             }
-            catch (IOException ex)
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
-                // The file could not be read; the conflict stays open and nothing was applied.
+                // The file could not be read (also: access denied); the conflict stays open and nothing was applied.
                 Logger.LogWarning(ex, "Resolving the conflict in {Path} failed", path);
                 _error = L["ConflictResolveFailed"];
                 return;

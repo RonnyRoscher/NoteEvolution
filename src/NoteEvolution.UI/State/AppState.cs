@@ -49,6 +49,12 @@ public sealed class AppState
     /// </summary>
     public Func<Task>? FlushEditor { get; set; }
 
+    /// <summary>
+    /// Asked on the UI thread when the window is about to close, after <see cref="FlushEditor"/>: <c>true</c> if the
+    /// editor still holds text it could not save, after telling the user so; <c>null</c> while no editor is shown.
+    /// </summary>
+    public Func<bool>? WarnUnsavedText { get; set; }
+
     public event Action? Changed;
 
     public void Notify() => Changed?.Invoke();

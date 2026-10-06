@@ -135,6 +135,9 @@
   <data name="EditorSaveFailed" xml:space="preserve">
     <value>Der Text konnte nicht gespeichert werden. Beim nächsten Speichern wird es erneut versucht.</value>
   </data>
+  <data name="EditorCloseUnsaved" xml:space="preserve">
+    <value>Der Text konnte nicht gespeichert werden, deshalb bleibt das Fenster offen. Wenn Sie es noch einmal schließen, gehen die letzten Änderungen verloren.</value>
+  </data>
   <data name="EditorChangesLost" xml:space="preserve">
     <value>Die letzten Änderungen konnten nicht gespeichert werden.</value>
   </data>

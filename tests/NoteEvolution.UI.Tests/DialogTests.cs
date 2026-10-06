@@ -208,6 +208,46 @@ public class DialogTests : UiTestContext
         Assert.False(session.HasOpenConflict(JournalFile(tv)));
     }
 
+    [Fact]
+    public async Task ConflictDialog_FileAccessDenied_ShowsErrorAndKeepsTheConflict()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return; // denying read access to the file owner needs a Windows ACL
+        }
+
+        using var tv = JournalVault();
+        var session = await OpenSessionAsync(tv);
+        var cut = Render<ConflictDialog>();
+        await RaiseConflictAsync(cut, session, JournalFile(tv), "Lokal geändert", External("Extern geändert"));
+        cut.WaitForAssertion(() => Assert.Single(cut.FindAll(".ne-conflict")));
+        var file = new FileInfo(JournalFile(tv));
+        var deny = new System.Security.AccessControl.FileSystemAccessRule(
+            System.Security.Principal.WindowsIdentity.GetCurrent().User!,
+            System.Security.AccessControl.FileSystemRights.ReadData,
+            System.Security.AccessControl.AccessControlType.Deny);
+        var acl = file.GetAccessControl();
+        acl.AddAccessRule(deny);
+        file.SetAccessControl(acl);
+        try
+        {
+            Assert.Throws<UnauthorizedAccessException>(() => File.ReadAllBytes(file.FullName));
+
+            cut.Find(".ne-conflict-confirm").Click();
+
+            Assert.Equal(Text("ConflictResolveFailed"), cut.Find(".ne-dialog-error").TextContent);
+            Assert.Single(cut.FindAll(".ne-conflict"));
+            Assert.True(session.HasOpenConflict(JournalFile(tv)));
+        }
+        finally
+        {
+            acl.RemoveAccessRule(deny);
+            file.SetAccessControl(acl);
+        }
+
+        Assert.Equal(External("Extern geändert"), tv.Read(JournalPath));
+    }
+
     // ---- LinkCheckDialog ----
 
     private static TestVault LinkVault() => TestVault.Create(

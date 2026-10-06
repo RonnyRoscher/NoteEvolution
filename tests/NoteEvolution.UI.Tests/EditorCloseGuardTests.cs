@@ -63,6 +63,64 @@ public class EditorCloseGuardTests
     }
 
     [Fact]
+    public void TextStillUnsavedAfterTheFlush_KeepsTheWindowOpenOnce_SecondCloseCloses()
+    {
+        _state.FlushEditor = () =>
+        {
+            _log.Add("flush");
+            return Task.CompletedTask;
+        };
+        _state.WarnUnsavedText = () =>
+        {
+            _log.Add("warn");
+            return true;
+        };
+        var guard = Guard();
+
+        Assert.True(guard.OnClosing());
+
+        Assert.Equal(["dispatch", "flush", "dispatch", "warn"], _log);
+
+        // The user closes again: one more try to save, then the window closes whatever is left.
+        Assert.True(guard.OnClosing());
+
+        Assert.Equal(["dispatch", "flush", "dispatch", "warn", "dispatch", "flush", "close"], _log);
+        Assert.False(guard.OnClosing());
+    }
+
+    [Fact]
+    public void FailingFlushWithUnsavedText_KeepsTheWindowOpen()
+    {
+        _state.FlushEditor = () => Task.FromException(new IOException("gesperrt"));
+        _state.WarnUnsavedText = () => true;
+        var guard = Guard();
+
+        Assert.True(guard.OnClosing());
+
+        Assert.DoesNotContain("close", _log);
+        Assert.True(guard.OnClosing());
+        Assert.Contains("close", _log);
+        Assert.False(guard.OnClosing());
+    }
+
+    [Fact]
+    public void NothingUnsavedAfterTheFlush_Closes()
+    {
+        _state.FlushEditor = () => Task.CompletedTask;
+        _state.WarnUnsavedText = () =>
+        {
+            _log.Add("warn");
+            return false;
+        };
+        var guard = Guard();
+
+        Assert.True(guard.OnClosing());
+
+        Assert.Equal(["dispatch", "dispatch", "warn", "close"], _log);
+        Assert.False(guard.OnClosing());
+    }
+
+    [Fact]
     public void HangingFlush_ClosesAfterTheTimeout()
     {
         _state.FlushEditor = () => new TaskCompletionSource().Task;

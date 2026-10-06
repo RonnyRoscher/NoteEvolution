@@ -176,9 +176,24 @@
         }
     }
 
-    /// <summary>Opens <paramref name="root"/> in the background and makes it the app's session, replacing the old one.</summary>
+    /// <summary>
+    /// Opens <paramref name="root"/> in the background and makes it the app's session, replacing the old one. The
+    /// editor's pending text is saved into the old vault first, while the editor still shows it.
+    /// </summary>
     private async Task OpenVaultAsync(string root)
     {
+        if (State.FlushEditor is { } flush)
+        {
+            try
+            {
+                await flush();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Saving the editor's text before opening {Root} failed", root);
+            }
+        }
+
         _opening = true;
         _failedRoot = null;
         _dialog = Dialog.None;

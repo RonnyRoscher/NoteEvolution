@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using Bunit;
 using Microsoft.AspNetCore.Components.Web;
 using NoteEvolution.Core.Links;
@@ -138,6 +139,37 @@ public class ShellTests : UiTestContext
 
         cut.WaitForAssertion(() => Assert.Single(cut.FindAll(".ne-error")));
         Assert.Null(State.Session);
+    }
+
+    [Fact]
+    public async Task OpenVault_AnotherVault_SavesTheEditorsPendingTextFirst()
+    {
+        const string bookPath = "pages/Buch - Alpha.md";
+        using var first = TestVault.Create((bookPath, "title:: Alpha\ntype:: book\n\n- Vorspann\n- # Eins\n"));
+        using var second = TwoBooks();
+        Platform.FolderToPick = first.Root;
+        var cut = Render<Shell>();
+        await cut.Find(".ne-open-vault").ClickAsync(new MouseEventArgs());
+        cut.WaitForAssertion(() => Assert.Contains("Vorspann", Editor.Json));
+        var doc = JsonNode.Parse(Editor.Json)!;
+        doc["content"]![0]!["content"]![0]!["content"] = new JsonArray(new JsonObject { ["type"] = "text", ["text"] = "Vorspann, gerade getippt" });
+        await cut.InvokeAsync(() => Editor.Callbacks!.OnDocumentChanged(doc.ToJsonString()));
+        var firstSession = State.Session;
+        var editorFlush = State.FlushEditor!;
+        var flushedWhileShown = new List<bool>();
+        State.FlushEditor = async () =>
+        {
+            // The editor is flushed while it still shows the first vault.
+            flushedWhileShown.Add(ReferenceEquals(State.Session, firstSession) && cut.FindAll(".ne-editor-pane").Count == 1);
+            await editorFlush();
+        };
+
+        Platform.FolderToPick = second.Root;
+        await cut.Find(".ne-open-vault").ClickAsync(new MouseEventArgs());
+
+        cut.WaitForAssertion(() => Assert.Equal(second.Root, State.Session?.Vault.Root));
+        Assert.Equal([true], flushedWhileShown);
+        Assert.Equal("title:: Alpha\ntype:: book\n\n- Vorspann, gerade getippt\n- # Eins\n", first.Read(bookPath));
     }
 
     [Fact]

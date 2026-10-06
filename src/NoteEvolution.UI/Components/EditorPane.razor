@@ -66,6 +66,7 @@
         _saver = new BookTextSaver(State, Logger);
         State.Changed += OnStateChanged;
         State.FlushEditor = FlushAsync;
+        State.WarnUnsavedText = WarnUnsavedText;
         TrackSession();
     }
 
@@ -105,6 +106,11 @@
         if (State.FlushEditor == (Func<Task>)FlushAsync)
         {
             State.FlushEditor = null;
+        }
+
+        if (State.WarnUnsavedText == (Func<bool>)WarnUnsavedText)
+        {
+            State.WarnUnsavedText = null;
         }
 
         Unsubscribe();
@@ -151,6 +157,22 @@
         {
             _gate.Release();
         }
+    }
+
+    /// <summary>
+    /// Registered as <see cref="AppState.WarnUnsavedText"/>: before the window closes (after a flush), says whether text
+    /// could not be saved and, if so, shows that closing again loses it (R33).
+    /// </summary>
+    private bool WarnUnsavedText()
+    {
+        if (_disposed || !_saver.HasUnsavedText)
+        {
+            return false;
+        }
+
+        _saver.Message = new AdoptMessage("EditorCloseUnsaved", true);
+        StateHasChanged();
+        return true;
     }
 
     public Task OnDocumentChanged(string docJson)

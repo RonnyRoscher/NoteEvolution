@@ -418,6 +418,36 @@ public class EditorPaneTests : UiTestContext
     }
 
     [Fact]
+    public async Task Pane_TextThatCannotBeSaved_WarnsBeforeTheWindowCloses()
+    {
+        using var tv = Alpha();
+        var (_, cut) = await RenderAsync(tv);
+        var warned = true;
+        await cut.InvokeAsync(() => warned = State.WarnUnsavedText!());
+        Assert.False(warned);
+        var path = Path.Combine(tv.Root, BookPath);
+        var doc = Doc(Editor.Json);
+        SetText(doc, 1, "Zweiter Text, nicht speicherbar");
+        await ChangeAsync(cut, doc);
+
+        // A read-only file cannot be replaced: the write fails after its retries and the text stays pending.
+        File.SetAttributes(path, FileAttributes.ReadOnly);
+        try
+        {
+            await cut.InvokeAsync(() => State.FlushEditor!());
+            await cut.InvokeAsync(() => warned = State.WarnUnsavedText!());
+        }
+        finally
+        {
+            File.SetAttributes(path, FileAttributes.Normal);
+        }
+
+        Assert.True(warned);
+        cut.WaitForAssertion(() => Assert.Equal(Text("EditorCloseUnsaved"), cut.Find(".ne-editor-error").TextContent));
+        Assert.DoesNotContain("nicht speicherbar", tv.Read(BookPath));
+    }
+
+    [Fact]
     public async Task Pane_InvalidDocument_ShowsErrorAndReloads()
     {
         using var tv = Alpha();
@@ -465,6 +495,7 @@ public class EditorPaneTests : UiTestContext
         await DisposeComponentsAsync();
 
         Assert.Null(State.FlushEditor);
+        Assert.Null(State.WarnUnsavedText);
         Assert.True(Editor.Disposed);
     }
 }
