@@ -87,12 +87,30 @@ internal sealed partial class PdfContent : IDisposable
                     break;
                 case TextBlock text:
                     AddBlockText(text.Text);
-                    foreach (var paragraph in text.Paragraphs.Where(p => !p.IsNote))
-                    {
-                        AddBlockText(paragraph.Text);
-                    }
-
+                    AddParagraphs(text.Paragraphs);
                     break;
+            }
+        }
+    }
+
+    /// <summary>
+    /// <paramref name="paragraphs"/> is a flat preorder list, so everything deeper than a note that follows it
+    /// (until a paragraph at the note's depth or above) is that note's subtree: working notes, not exported.
+    /// </summary>
+    private void AddParagraphs(IReadOnlyList<Paragraph> paragraphs)
+    {
+        var noteDepth = int.MaxValue;
+        foreach (var paragraph in paragraphs)
+        {
+            if (paragraph.Depth > noteDepth)
+            {
+                continue;
+            }
+
+            noteDepth = paragraph.IsNote ? paragraph.Depth : int.MaxValue;
+            if (!paragraph.IsNote)
+            {
+                AddBlockText(paragraph.Text);
             }
         }
     }

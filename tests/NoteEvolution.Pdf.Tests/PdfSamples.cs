@@ -44,6 +44,17 @@ internal static class PdfSamples
     public static string BookWithBlock(string blockContent) =>
         "title:: Bildbuch\ntype:: book\n\n- # Kapitel\n\t- " + blockContent + "\n";
 
+    /// <summary>A text block with a note bullet that has a child and a grandchild, followed by a normal sibling.</summary>
+    public const string BookWithNoteSubtree =
+        "title:: Notizbuch\ntype:: book\n\n" +
+        "- # Kapitel\n" +
+        "\t- Hauptabsatz\n" +
+        "\t\t- Vorheriger Absatz\n" +
+        "\t\t- Arbeitsnotiz #notiz\n" +
+        "\t\t\t- Kind der Notiz\n" +
+        "\t\t\t\t- Enkel der Notiz\n" +
+        "\t\t- Folgender Absatz\n";
+
     public static Book Load(string text, string path = "Buch - Test.md") =>
         Book.Load(LogseqParser.Parse(path, new UTF8Encoding(false).GetBytes(text)));
 

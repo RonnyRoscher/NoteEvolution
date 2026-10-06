@@ -43,6 +43,18 @@ public class PdfExportTests
     }
 
     [Fact]
+    public void Export_SkipsDescendantsOfNoteParagraphs()
+    {
+        var text = ExportAndRead(PdfSamples.BookWithNoteSubtree);
+
+        Assert.Contains("Vorheriger Absatz", text);
+        Assert.Contains("Folgender Absatz", text);
+        Assert.DoesNotContain("Arbeitsnotiz", text);
+        Assert.DoesNotContain("Kind der Notiz", text);
+        Assert.DoesNotContain("Enkel der Notiz", text);
+    }
+
+    [Fact]
     public void Export_CleansLinksTagsAndRefs_EmphasisMarkersDisappear()
     {
         var text = ExportAndRead(PdfSamples.SpecBookWithTwoChapters);
