@@ -31,9 +31,11 @@ function parseSources(value) {
     }
 }
 
+// A key is never taken from parsed or pasted HTML (R31): a pasted copy may come from outside the shown document, and
+// its key would make C# move the original block. Moves within the editor keep their keys through the drag slice.
 const keyAttribute = {
     default: null,
-    parseHTML: el => el.getAttribute('data-key'),
+    parseHTML: () => null,
     renderHTML: attrs => (attrs.key ? { 'data-key': attrs.key } : {}),
 };
 
@@ -175,7 +177,8 @@ const TextBlock = Node.create({
     addAttributes() {
         return {
             key: keyAttribute,
-            splitFrom: { default: null, rendered: false, parseHTML: () => null },
+            // A pasted block becomes a copy split from the block it was copied from: new key and id, same sources.
+            splitFrom: { default: null, rendered: false, parseHTML: el => el.getAttribute('data-key') },
             sources: {
                 default: [],
                 parseHTML: el => parseSources(el.getAttribute('data-sources')),
