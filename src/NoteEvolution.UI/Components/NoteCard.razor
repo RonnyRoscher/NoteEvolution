@@ -1,7 +1,6 @@
 @using NoteEvolution.Core.Books
 @using NoteEvolution.Core.Links
 @using NoteEvolution.Core.Model
-@using NoteEvolution.Core.Storage
 @using NoteEvolution.Core.Vaults
 @inject AppState State
 @inject IPlatformServices Platform
@@ -74,7 +73,7 @@
     private const int CollapsedLines = 3;
 
     private bool _expanded;
-    private (string Key, bool IsError)? _message;
+    private AdoptMessage? _message;
 
     [Parameter, EditorRequired] public NoteBlock Note { get; set; } = default!;
 
@@ -162,102 +161,17 @@
 
     /// <summary>
     /// Adopts <paramref name="block"/> (the note itself or one of its sub-bullets) into the current book: after the
-    /// text block under the cursor, else at the end of the current section. Always waits for the editor to save its
-    /// text first. Refuses while a conflict is open for the book or the note page (R26; <see cref="ILinkService"/>
-    /// writes through the page writer directly and would overwrite it). A change of the book file by another
-    /// program is handed to the session (merge or conflict) and the user adopts again.
+    /// text block under the cursor, else at the end of the current section (see <see cref="NoteAdoption"/>).
     /// </summary>
     private async Task AdoptAsync(Block block)
     {
         _message = null;
-        try
-        {
-            await TryAdoptAsync(block);
-        }
-        finally
-        {
-            // Whatever happened, the book view and the cards are taken from the vault again: on success the book
-            // changed, after a failure the vault holds the page as it is on disk again.
-            State.RefreshBook();
-            State.Notify();
-        }
-    }
-
-    private async Task TryAdoptAsync(Block block)
-    {
-        try
-        {
-            if (State.FlushEditor is { } flush)
-            {
-                await flush();
-            }
-        }
-        catch (Exception ex)
-        {
-            // The editor's text may not be saved, so nothing is adopted behind its back.
-            Logger.LogError(ex, "Saving the editor before adopting a note failed");
-            _message = ("NoteAdoptFailed", true);
-            return;
-        }
-
-        // The flush may have changed the state, so everything is read after it.
-        if (State.Session is not { } session || State.CurrentBook is not { } book || !CanAdopt)
-        {
-            return;
-        }
-
-        var bookPath = book.Page.FilePath;
-        if (session.HasOpenConflict(bookPath) || session.HasOpenConflict(Note.Page.FilePath))
-        {
-            _message = ("NoteAdoptConflict", true);
-            return;
-        }
-
-        var position = State.CursorTextBlockKey is { } cursor && book.FindTextBlock(cursor) is not null
-            ? (InsertPosition)new InsertPosition.After(cursor)
-            : new InsertPosition.SectionEnd(State.CurrentSectionKey);
-        AdoptResult result;
-        try
-        {
-            result = session.Links.Adopt(book, block.Key, position);
-        }
-        catch (FileChangedExternallyException)
-        {
-            session.HandleExternalChange(bookPath);
-            _message = ("NoteAdoptExternalChange", true);
-            return;
-        }
-        catch (ReadOnlyPageException)
-        {
-            _message = ("NoteAdoptBookReadOnly", true);
-            return;
-        }
-        catch (InvalidOperationException) when (Note.Page.IsReadOnly)
-        {
-            _message = ("NoteAdoptNoteReadOnly", true);
-            return;
-        }
-        catch (Exception ex) when (ex is ArgumentException or IOException or UnauthorizedAccessException or InvalidOperationException)
-        {
-            // Includes the page writer refusing a result that would not parse safely (nothing was written).
-            Logger.LogWarning(ex, "Adopting a note failed");
-            _message = ("NoteAdoptFailed", true);
-            return;
-        }
-
-        try
-        {
-            session.Search.UpdatePage(session.Notes, Note.Page.FilePath);
-        }
-        catch (Exception ex)
-        {
-            // The note is adopted; a stale search index (an aid, rebuilt on opening) must not hide that.
-            Logger.LogWarning(ex, "Updating the search index after adopting failed");
-        }
-
-        if (result.NoteUpdatePending)
-        {
-            _message = ("NoteUpdatePending", false);
-        }
+        _message = await NoteAdoption.AdoptAsync(
+            State,
+            block.Key,
+            book => State.CursorTextBlockKey is { } cursor && book.FindTextBlock(cursor) is not null
+                ? new InsertPosition.After(cursor)
+                : new InsertPosition.SectionEnd(State.CurrentSectionKey),
+            Logger);
     }
 }

@@ -92,12 +92,12 @@
         }
     }
 
-    private void OnRenameKey(KeyboardEventArgs e)
+    private async Task OnRenameKey(KeyboardEventArgs e)
     {
         switch (e.Key)
         {
             case "Enter":
-                Pane.CommitRename(Node);
+                await Pane.CommitRename(Node);
                 break;
             case "Escape":
                 Pane.CancelRename();

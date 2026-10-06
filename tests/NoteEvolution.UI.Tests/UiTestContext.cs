@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Time.Testing;
 using NoteEvolution.Core.Storage;
 using NoteEvolution.TestSupport;
+using NoteEvolution.UI.Editor;
 using NoteEvolution.UI.Platform;
 using NoteEvolution.UI.State;
 
@@ -20,7 +21,11 @@ public abstract class UiTestContext : BunitContext
         Services.AddSingleton(State);
         Services.AddSingleton<IClock>(Clock);
         Services.AddSingleton<TimeProvider>(Time);
+        Services.AddSingleton<IEditorInterop>(Editor);
     }
+
+    /// <summary>The editor every rendered <c>EditorPane</c> talks to.</summary>
+    protected FakeEditorInterop Editor { get; } = new();
 
     protected FakePlatformServices Platform { get; } = new();
 

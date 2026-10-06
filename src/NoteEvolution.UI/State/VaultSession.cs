@@ -77,6 +77,13 @@ public sealed class VaultSession : IDisposable
     public event Action? ConflictsChanged;
 
     /// <summary>
+    /// Raised on the UI thread with the full path just before an external change of that file is brought in. A view
+    /// holding unsaved edits of the page (the editor's pending text) puts them into the page now, without saving: the
+    /// change handling then merges them with the external version instead of the edits later overwriting it.
+    /// </summary>
+    public event Action<string>? ExternalChangeStarting;
+
+    /// <summary>
     /// Some conflict waits for the user's decision. Operations that may write any page (undo, and every UI-triggered
     /// write) are refused meanwhile, so no deleted file is recreated and no unresolved conflict is overwritten.
     /// </summary>
@@ -144,6 +151,7 @@ public sealed class VaultSession : IDisposable
         var fullPath = Path.GetFullPath(path);
         try
         {
+            ExternalChangeStarting?.Invoke(fullPath);
             var outcome = Changes.Handle(fullPath);
             if (outcome is ExternalChangeOutcome.Conflict conflict)
             {

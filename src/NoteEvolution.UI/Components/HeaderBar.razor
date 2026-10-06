@@ -2,6 +2,7 @@
 @implements IDisposable
 @inject AppState State
 @inject IStringLocalizer<Strings> L
+@inject ILogger<HeaderBar> Logger
 
 <header class="ne-header">
     <button type="button" class="ne-open-vault" @onclick="OnOpenVault">@L["OpenVault"]</button>
@@ -150,15 +151,35 @@
         State.Notify();
     }
 
-    private void Undo()
+    private async Task Undo()
     {
         if (_session is null)
         {
             return;
         }
 
+        // The editor's pending text is saved first: undo writes the book page directly.
+        try
+        {
+            if (State.FlushEditor is { } flush)
+            {
+                await flush();
+            }
+        }
+        catch (Exception ex)
+        {
+            // The text may not be saved, so nothing is undone behind it.
+            Logger.LogError(ex, "Saving the editor before undoing failed");
+            return;
+        }
+
+        if (_session is not { } session || !ReferenceEquals(session, State.Session))
+        {
+            return;
+        }
+
         // Refused while a conflict is open; a failure is logged by the session.
-        _session.TryUndo(out _);
+        session.TryUndo(out _);
 
         // The undone operation changed (and saved) the book page, or a failed one left the vault with the page as it
         // is on disk; views take it from the vault again.

@@ -114,8 +114,38 @@
   <data name="OutlinePlaceholder" xml:space="preserve">
     <value>Hier erscheint die Gliederung des Buchs.</value>
   </data>
-  <data name="EditorPlaceholder" xml:space="preserve">
-    <value>Hier erscheint der Text des gewählten Abschnitts.</value>
+  <data name="EditorNoBook" xml:space="preserve">
+    <value>In diesem Vault gibt es noch kein Buch. Hier erscheint der Text des gewählten Abschnitts.</value>
+  </data>
+  <data name="EditorShowChips" xml:space="preserve">
+    <value>Quellen anzeigen</value>
+  </data>
+  <data name="EditorReadOnly" xml:space="preserve">
+    <value>Die Buchdatei kann nicht sicher gelesen werden und ist schreibgeschützt. Bitte die Datei in Logseq korrigieren.</value>
+  </data>
+  <data name="EditorConflict" xml:space="preserve">
+    <value>Die Buchdatei wurde gleichzeitig von einem anderen Programm geändert. Bis der Konflikt gelöst ist, wird hier nichts gespeichert.</value>
+  </data>
+  <data name="EditorLoadFailed" xml:space="preserve">
+    <value>Der Editor konnte nicht geladen werden.</value>
+  </data>
+  <data name="EditorSaveInvalid" xml:space="preserve">
+    <value>Diese Änderung würde den Aufbau der Buchdatei verändern und wurde nicht gespeichert. Der Text zeigt wieder den Stand der Datei.</value>
+  </data>
+  <data name="EditorSaveFailed" xml:space="preserve">
+    <value>Der Text konnte nicht gespeichert werden. Beim nächsten Speichern wird es erneut versucht.</value>
+  </data>
+  <data name="EditorChangesLost" xml:space="preserve">
+    <value>Die letzten Änderungen konnten nicht gespeichert werden.</value>
+  </data>
+  <data name="EditorExternalChange" xml:space="preserve">
+    <value>Die Buchdatei wurde gleichzeitig von einem anderen Programm geändert. Der Text zeigt jetzt den zusammengeführten Stand.</value>
+  </data>
+  <data name="EditorChipConflict" xml:space="preserve">
+    <value>Die Quelle kann nicht entfernt werden, solange ein Konflikt mit einer Änderung von außen offen ist.</value>
+  </data>
+  <data name="EditorChipFailed" xml:space="preserve">
+    <value>Die Quelle konnte nicht entfernt werden.</value>
   </data>
   <data name="NotesPlaceholder" xml:space="preserve">
     <value>Hier erscheinen Suche und Journal.</value>

@@ -108,6 +108,35 @@ public class OutlinePaneTests : UiTestContext
     }
 
     [Fact]
+    public async Task OutlineOperations_FlushTheEditorBeforeWriting()
+    {
+        using var tv = Alpha();
+        await OpenSessionAsync(tv);
+        var before = tv.Read(BookPath);
+        var flushes = new List<bool>();
+        State.FlushEditor = () =>
+        {
+            flushes.Add(tv.Read(BookPath) == before);
+            return Task.CompletedTask;
+        };
+        var cut = Render<OutlinePane>();
+
+        Row(cut, "Zwei").DoubleClick();
+        cut.Find(".ne-outline-rename").Input("Zwei neu");
+        cut.Find(".ne-outline-rename").KeyDown(new KeyboardEventArgs { Key = "Enter" });
+
+        Assert.Equal([true], flushes);
+        Assert.Contains("- # Zwei neu\n", tv.Read(BookPath));
+
+        before = tv.Read(BookPath);
+        cut.Find(".ne-outline-add-root").Click();
+        Row(cut, "Eins").DragStart();
+        cut.Find(".ne-drop-end").Drop();
+
+        Assert.Equal([true, true, false], flushes);
+    }
+
+    [Fact]
     public async Task Rename_Escape_CancelsWithoutWriting()
     {
         using var tv = Alpha();

@@ -235,6 +235,27 @@ public class ShellTests : UiTestContext
     }
 
     [Fact]
+    public async Task HeaderBar_Undo_FlushesTheEditorFirst()
+    {
+        using var tv = TwoBooks();
+        var session = await OpenSessionAsync(tv);
+        var action = new RecordingUndo("Löschen");
+        session.Undo.Push(action);
+        bool? undoneBeforeFlush = null;
+        State.FlushEditor = () =>
+        {
+            undoneBeforeFlush = action.Undone;
+            return Task.CompletedTask;
+        };
+        var cut = Render<HeaderBar>();
+
+        cut.Find(".ne-undo").Click();
+
+        Assert.False(undoneBeforeFlush);
+        Assert.True(action.Undone);
+    }
+
+    [Fact]
     public async Task HeaderBar_Undo_DisabledWhileConflictOpen()
     {
         using var tv = TwoBooks();
