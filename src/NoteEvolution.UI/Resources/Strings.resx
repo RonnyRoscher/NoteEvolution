@@ -167,4 +167,94 @@
   <data name="OutlineSaveFailed" xml:space="preserve">
     <value>Die Änderung konnte nicht gespeichert werden. Die Gliederung zeigt wieder den Stand der Datei.</value>
   </data>
+
+  <!-- Notizbereich -->
+  <data name="NotesTabSearch" xml:space="preserve">
+    <value>Suche</value>
+  </data>
+  <data name="NotesTabJournal" xml:space="preserve">
+    <value>Journal</value>
+  </data>
+  <data name="NotesHideUsed" xml:space="preserve">
+    <value>Verwendete ausblenden</value>
+  </data>
+  <data name="NotesFrom" xml:space="preserve">
+    <value>Von</value>
+  </data>
+  <data name="NotesTo" xml:space="preserve">
+    <value>Bis</value>
+  </data>
+  <data name="NotesSearchLabel" xml:space="preserve">
+    <value>Notizen durchsuchen</value>
+  </data>
+  <data name="NotesSearchPlaceholder" xml:space="preserve">
+    <value>Notizen durchsuchen …</value>
+  </data>
+  <data name="NotesSearchHint" xml:space="preserve">
+    <value>Gib einen Suchbegriff ein.</value>
+  </data>
+  <data name="NotesSearchEmpty" xml:space="preserve">
+    <value>Keine passenden Notizen.</value>
+  </data>
+  <data name="NotesJournalEmpty" xml:space="preserve">
+    <value>Keine Journal-Einträge.</value>
+  </data>
+  <data name="NotesJumpTo" xml:space="preserve">
+    <value>Springen zum Tag</value>
+  </data>
+  <data name="NotesShowMore" xml:space="preserve">
+    <value>Weitere anzeigen</value>
+  </data>
+  <data name="NoteFocused" xml:space="preserve">
+    <value>Ausgewählte Notiz</value>
+  </data>
+  <data name="NoteFocusedClose" xml:space="preserve">
+    <value>Schließen</value>
+  </data>
+  <data name="NoteScoreTitle" xml:space="preserve">
+    <value>Trefferquote im Vergleich zum besten Treffer</value>
+  </data>
+  <data name="NoteUsedTitle" xml:space="preserve">
+    <value>Verwendet in {0} Stelle(n) – zur Stelle springen</value>
+    <comment>{0} = Anzahl der Verwendungen</comment>
+  </data>
+  <data name="NoteAdopt" xml:space="preserve">
+    <value>Übernehmen</value>
+  </data>
+  <data name="NoteAdoptTitle" xml:space="preserve">
+    <value>Diese Notiz ins Buch übernehmen</value>
+  </data>
+  <data name="NoteAdoptChildTitle" xml:space="preserve">
+    <value>Diesen Unterpunkt ins Buch übernehmen</value>
+  </data>
+  <data name="NoteOpenLogseq" xml:space="preserve">
+    <value>In Logseq öffnen</value>
+  </data>
+  <data name="NoteMore" xml:space="preserve">
+    <value>mehr</value>
+  </data>
+  <data name="NoteLess" xml:space="preserve">
+    <value>weniger</value>
+  </data>
+  <data name="NoteReadOnlyHint" xml:space="preserve">
+    <value>Diese Notizdatei ist nicht sicher lesbar. Übernehmen ist nicht möglich.</value>
+  </data>
+  <data name="NoteAdoptConflict" xml:space="preserve">
+    <value>Für diese Seite liegt ein ungelöster Konflikt vor. Bitte zuerst den Konflikt lösen.</value>
+  </data>
+  <data name="NoteAdoptBookReadOnly" xml:space="preserve">
+    <value>Die Buchdatei ist schreibgeschützt. Es wurde nichts übernommen.</value>
+  </data>
+  <data name="NoteAdoptNoteReadOnly" xml:space="preserve">
+    <value>Die Notizdatei ist nicht sicher lesbar. Es wurde nichts übernommen.</value>
+  </data>
+  <data name="NoteAdoptExternalChange" xml:space="preserve">
+    <value>Die Buchdatei wurde von einem anderen Programm geändert. Die Änderung wurde eingelesen; bitte erneut übernehmen.</value>
+  </data>
+  <data name="NoteAdoptFailed" xml:space="preserve">
+    <value>Die Notiz konnte nicht übernommen werden. Angezeigt wird der Stand der Datei.</value>
+  </data>
+  <data name="NoteUpdatePending" xml:space="preserve">
+    <value>Verknüpfung in der Notiz wird nachgetragen.</value>
+  </data>
 </root>

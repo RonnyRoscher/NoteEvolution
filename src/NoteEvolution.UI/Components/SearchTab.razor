@@ -1,0 +1,109 @@
+@using NoteEvolution.AI.Search
+@using NoteEvolution.Core.Vaults
+@implements IDisposable
+@inject AppState State
+@inject TimeProvider Time
+@inject IStringLocalizer<Strings> L
+
+@* The "Suche" tab: a search box whose query is committed 300 ms after the last keystroke, and the hits as note cards. *@
+<div class="ne-search">
+    <input class="ne-search-input" type="search" value="@_text" placeholder="@L["NotesSearchPlaceholder"]"
+           aria-label="@L["NotesSearchLabel"]" @oninput="OnInput" />
+    @if (string.IsNullOrWhiteSpace(Query))
+    {
+        <div class="ne-search-hint">@L["NotesSearchHint"]</div>
+    }
+    else if (_hits.Count == 0)
+    {
+        <div class="ne-search-empty">@L["NotesSearchEmpty"]</div>
+    }
+    <div class="ne-search-list">
+        @foreach (var hit in _hits)
+        {
+            // Read live (not kept): a page replaced after an external change gives new views.
+            if (State.Session?.Notes.Get(hit.Key) is { } note)
+            {
+                <NoteCard @key="hit.Key" Note="note" Percent="hit.Percent" />
+            }
+        }
+    </div>
+</div>
+
+@code {
+    /// <summary>The search starts this long after the last keystroke (R4: measured with the injected <see cref="TimeProvider"/>).</summary>
+    internal static readonly TimeSpan Debounce = TimeSpan.FromMilliseconds(300);
+
+    private CancellationTokenSource? _pending;
+    private string _text = "";
+    private (string Query, NoteFilter Filter, int Revision)? _last;
+    private List<(Guid Key, int Percent)> _hits = [];
+
+    /// <summary>The committed query (kept by the pane, so it survives a switch to the journal and back).</summary>
+    [Parameter] public string Query { get; set; } = "";
+
+    [Parameter] public EventCallback<string> QueryChanged { get; set; }
+
+    [Parameter, EditorRequired] public NoteFilter Filter { get; set; } = default!;
+
+    /// <summary>Changes whenever the vault's pages or the session changed, so the hits are searched again.</summary>
+    [Parameter] public int Revision { get; set; }
+
+    protected override void OnInitialized() => _text = Query;
+
+    protected override void OnParametersSet()
+    {
+        if (_last == (Query, Filter, Revision))
+        {
+            return;
+        }
+
+        _last = (Query, Filter, Revision);
+        Run();
+    }
+
+    public void Dispose()
+    {
+        _pending?.Cancel();
+        _pending?.Dispose();
+    }
+
+    private void OnInput(ChangeEventArgs e)
+    {
+        _text = e.Value?.ToString() ?? "";
+        _pending?.Cancel();
+        _pending?.Dispose();
+        var source = _pending = new CancellationTokenSource();
+        _ = CommitAfterDelayAsync(_text, source.Token);
+    }
+
+    private async Task CommitAfterDelayAsync(string text, CancellationToken cancel)
+    {
+        try
+        {
+            await Task.Delay(Debounce, Time, cancel);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+
+        await InvokeAsync(() => QueryChanged.InvokeAsync(text));
+    }
+
+    private void Run()
+    {
+        _hits = [];
+        if (State.Session is not { } session || string.IsNullOrWhiteSpace(Query))
+        {
+            return;
+        }
+
+        var found = session.Search.Search(new SearchQuery(Query, Filter));
+        var best = found.Count > 0 ? found.Max(hit => hit.Score) : 0;
+        _hits = [.. found.Select(hit => (hit.NoteBlockKey, Percent(hit.Score, best)))];
+    }
+
+    /// <summary>The score in percent of the best hit's (the best is 100 %); all 100 if no score is positive.</summary>
+    private static int Percent(double score, double best) =>
+        best > 0 ? (int)Math.Clamp(Math.Round(score / best * 100), 0, 100) : 100;
+}

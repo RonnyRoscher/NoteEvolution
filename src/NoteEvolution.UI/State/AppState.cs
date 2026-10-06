@@ -34,6 +34,21 @@ public sealed class AppState
     /// <summary>The note the notes pane should show (e.g. after a click on a source chip).</summary>
     public Guid? FocusedNoteKey { get; set; }
 
+    /// <summary>
+    /// The note card being dragged from the notes pane; <c>null</c> when no drag is running. Blazor cannot fill a
+    /// drag's <c>dataTransfer</c> from C#, and the editor (the only JavaScript component) must not be told by
+    /// script, so the card records its note here on <c>dragstart</c> and clears it on <c>dragend</c>; the editor's
+    /// drop handler reads it (the card also carries the key in its <c>data-note-key</c> attribute).
+    /// </summary>
+    public Guid? DraggedNoteKey { get; set; }
+
+    /// <summary>
+    /// Saves the editor's pending text, <c>null</c> while no editor is shown. The editor registers it; whoever is
+    /// about to change the book page behind the editor's back (adopting a note) awaits it first, so no typed text
+    /// is lost and the editor's page is current.
+    /// </summary>
+    public Func<Task>? FlushEditor { get; set; }
+
     public event Action? Changed;
 
     public void Notify() => Changed?.Invoke();

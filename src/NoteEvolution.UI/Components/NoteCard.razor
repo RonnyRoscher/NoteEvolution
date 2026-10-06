@@ -1,0 +1,224 @@
+@using NoteEvolution.Core.Books
+@using NoteEvolution.Core.Links
+@using NoteEvolution.Core.Model
+@using NoteEvolution.Core.Storage
+@using NoteEvolution.Core.Vaults
+@inject AppState State
+@inject IPlatformServices Platform
+@inject IStringLocalizer<Strings> L
+
+@* One note of the notes pane: origin, score, usage mark, the block text with its sub-bullets, and the actions. *@
+@{
+    var lineCount = LineCount;
+    var usageCount = Note.Usages.Count;
+    var collapsible = lineCount > CollapsedLines;
+}
+
+<article class="ne-note-card" draggable="true" data-note-key="@Note.Key"
+         @ondragstart="OnDragStart" @ondragend="OnDragEnd">
+    <header class="ne-note-head">
+        <span class="ne-note-origin">@Origin</span>
+        @if (Percent is { } percent)
+        {
+            <span class="ne-note-score" title="@L["NoteScoreTitle"]">@percent %</span>
+        }
+        @if (Note.IsUsed)
+        {
+            <button type="button" class="ne-note-used" title="@L["NoteUsedTitle", usageCount]"
+                    aria-label="@L["NoteUsedTitle", usageCount]" @onclick="GoToUsage">
+                <span class="ne-note-used-mark">✓</span>
+                @if (usageCount > 1)
+                {
+                    <span class="ne-note-used-count">@usageCount</span>
+                }
+            </button>
+        }
+    </header>
+    @if (Note.ContextPath.Count > 0)
+    {
+        <div class="ne-note-context">@string.Join(" › ", Note.ContextPath)</div>
+    }
+    <div class="ne-note-body @(collapsible && !_expanded ? "collapsed" : null)">
+        <div class="ne-note-text">@Note.Block.Content</div>
+        @foreach (var (child, depth) in Descendants(Note.Block, 1))
+        {
+            <div class="ne-note-child" style="margin-left: @(depth * 12)px">
+                <span class="ne-note-child-text">@child.Content</span>
+                <button type="button" class="ne-note-child-adopt" title="@L["NoteAdoptChildTitle"]"
+                        disabled="@(!CanAdopt)" @onclick="() => AdoptAsync(child)">@L["NoteAdopt"]</button>
+            </div>
+        }
+    </div>
+    @if (Note.Page.IsReadOnly)
+    {
+        <div class="ne-note-hint">@L["NoteReadOnlyHint"]</div>
+    }
+    <footer class="ne-note-actions">
+        <button type="button" class="ne-note-adopt" title="@L["NoteAdoptTitle"]"
+                disabled="@(!CanAdopt)" @onclick="() => AdoptAsync(Note.Block)">@L["NoteAdopt"]</button>
+        <button type="button" class="ne-note-logseq" @onclick="OpenInLogseq">@L["NoteOpenLogseq"]</button>
+        @if (collapsible)
+        {
+            <button type="button" class="ne-note-more" @onclick="() => _expanded = !_expanded">@(_expanded ? L["NoteLess"] : L["NoteMore"])</button>
+        }
+    </footer>
+    @if (_message is { } message)
+    {
+        <div class="ne-note-message @(message.IsError ? "ne-note-error" : "ne-note-info")" role="@(message.IsError ? "alert" : "status")">@L[message.Key]</div>
+    }
+</article>
+
+@code {
+    /// <summary>From this many lines on, the card is collapsed to three lines until "mehr" is clicked.</summary>
+    private const int CollapsedLines = 3;
+
+    private bool _expanded;
+    private (string Key, bool IsError)? _message;
+
+    [Parameter, EditorRequired] public NoteBlock Note { get; set; } = default!;
+
+    /// <summary>The hit's score in percent of the best hit; <c>null</c> outside the search.</summary>
+    [Parameter] public int? Percent { get; set; }
+
+    private string Origin => Note.Date is { } date
+        ? date.ToString("dd.MM.yyyy", CultureInfo.InvariantCulture)
+        : Note.Page.Name;
+
+    /// <summary>Lines of the note's text and all its sub-bullets.</summary>
+    private int LineCount =>
+        Lines(Note.Block.Content) + Descendants(Note.Block, 1).Sum(entry => Lines(entry.Block.Content));
+
+    /// <summary>
+    /// A note can be adopted into the current book: it is safely readable (R13: adopting from a read-only page
+    /// throws before any change) and so is the book page.
+    /// </summary>
+    private bool CanAdopt =>
+        State is { Session: not null, CurrentBook.Page.IsReadOnly: false } && !Note.Page.IsReadOnly;
+
+    private static int Lines(string text) => text.Count(c => c == '\n') + 1;
+
+    private static IEnumerable<(Block Block, int Depth)> Descendants(Block block, int depth) =>
+        block.Children.SelectMany(child => Descendants(child, depth + 1).Prepend((child, depth)));
+
+    private void OnDragStart() => State.DraggedNoteKey = Note.Key;
+
+    private void OnDragEnd() => State.DraggedNoteKey = null;
+
+    private void OpenInLogseq()
+    {
+        if (State.Session is not { } session)
+        {
+            return;
+        }
+
+        var graph = Uri.EscapeDataString(Path.GetFileName(Path.TrimEndingDirectorySeparator(session.Vault.Root)));
+        var target = Note.Block.Id is { } id
+            ? $"block-id={Uri.EscapeDataString(id.ToString("D"))}"
+            : $"page={Uri.EscapeDataString(Note.Page.Name)}";
+        Platform.OpenExternal($"logseq://graph/{graph}?{target}");
+    }
+
+    /// <summary>
+    /// Goes to the place where the note is used: the book of its first <c>used-in::</c> entry with a block
+    /// reference (else its first entry) and the section containing that block (an entry without a block, or a block
+    /// that is not found, only switches the book).
+    /// </summary>
+    private void GoToUsage()
+    {
+        if (State.Session is not { } session)
+        {
+            return;
+        }
+
+        var usages = Note.Usages;
+        var entry = usages.FirstOrDefault(u => u.BookBlockId is not null) ?? usages.FirstOrDefault();
+        if (entry is null || session.Vault.FindBook(entry.PageName) is not { } book)
+        {
+            return;
+        }
+
+        var sameBook = string.Equals(State.CurrentBook?.LinkName, book.LinkName, StringComparison.OrdinalIgnoreCase);
+        var section = entry.BookBlockId is { } blockId ? SectionOf(book.Root, blockId) : null;
+        State.CurrentBook = book;
+        State.CurrentSectionKey = section ?? (sameBook && book.FindNode(State.CurrentSectionKey) is not null
+            ? State.CurrentSectionKey
+            : book.Root.Key);
+        State.CursorTextBlockKey = null;
+        State.Notify();
+    }
+
+    /// <summary>The key of the section whose heading, text block or paragraph has the id <paramref name="blockId"/>.</summary>
+    private static Guid? SectionOf(OutlineNode node, Guid blockId)
+    {
+        if (node.Block?.Id == blockId
+            || node.TextBlocks.Any(text => text.Block.Id == blockId || text.Paragraphs.Any(p => p.Block.Id == blockId)))
+        {
+            return node.Key;
+        }
+
+        return node.Children.Select(child => SectionOf(child, blockId)).FirstOrDefault(key => key is not null);
+    }
+
+    /// <summary>
+    /// Adopts <paramref name="block"/> (the note itself or one of its sub-bullets) into the current book: after the
+    /// text block under the cursor, else at the end of the current section. Always waits for the editor to save its
+    /// text first. Refuses while a conflict is open for the book or the note page (R26; <see cref="ILinkService"/>
+    /// writes through the page writer directly and would overwrite it). A change of the book file by another
+    /// program is handed to the session (merge or conflict) and the user adopts again.
+    /// </summary>
+    private async Task AdoptAsync(Block block)
+    {
+        _message = null;
+        if (State.FlushEditor is { } flush)
+        {
+            await flush();
+        }
+
+        // The flush may have changed the state, so everything is read after it.
+        if (State.Session is not { } session || State.CurrentBook is not { } book || !CanAdopt)
+        {
+            return;
+        }
+
+        var bookPath = book.Page.FilePath;
+        if (session.HasOpenConflict(bookPath) || session.HasOpenConflict(Note.Page.FilePath))
+        {
+            _message = ("NoteAdoptConflict", true);
+            return;
+        }
+
+        var position = State.CursorTextBlockKey is { } cursor && book.FindTextBlock(cursor) is not null
+            ? (InsertPosition)new InsertPosition.After(cursor)
+            : new InsertPosition.SectionEnd(State.CurrentSectionKey);
+        try
+        {
+            var result = session.Links.Adopt(book, block.Key, position);
+            session.Search.UpdatePage(session.Notes, Note.Page.FilePath);
+            if (result.NoteUpdatePending)
+            {
+                _message = ("NoteUpdatePending", false);
+            }
+        }
+        catch (FileChangedExternallyException)
+        {
+            session.HandleExternalChange(bookPath);
+            _message = ("NoteAdoptExternalChange", true);
+        }
+        catch (ReadOnlyPageException)
+        {
+            _message = ("NoteAdoptBookReadOnly", true);
+        }
+        catch (InvalidOperationException)
+        {
+            _message = ("NoteAdoptNoteReadOnly", true);
+        }
+        catch (Exception ex) when (ex is ArgumentException or IOException or UnauthorizedAccessException)
+        {
+            _message = ("NoteAdoptFailed", true);
+        }
+
+        // On success the book changed; after a failure the vault holds the page as it is on disk again.
+        State.RefreshBook();
+        State.Notify();
+    }
+}
