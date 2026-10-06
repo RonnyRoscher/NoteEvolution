@@ -4,4 +4,12 @@
     <ProjectReference Include="..\NoteEvolution.Core\NoteEvolution.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Include="QuestPDF" Version="2026.9.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Fonts\*.ttf;Fonts\OFL.txt" LogicalName="Fonts/%(Filename)%(Extension)" />
+  </ItemGroup>
+
 </Project>
