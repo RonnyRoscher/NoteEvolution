@@ -22,7 +22,7 @@ public sealed record SectionSnapshot(Guid ScopeKey, bool IncludeSubsections, IRe
 /// <summary>An editor node; <paramref name="Key"/> is the <see cref="Model.Block.Key"/> of its block.</summary>
 public abstract record SnapshotNode(Guid Key);
 
-/// <summary>A heading (manuscript view only); <paramref name="Text"/> is the title without <c>#</c>.</summary>
+/// <summary>A heading (manuscript view only); <paramref name="Text"/> is the title without <c>#</c>, spaces kept.</summary>
 public sealed record SnapshotHeading(Guid Key, int Level, string Text) : SnapshotNode(Key);
 
 /// <summary>A text block. Texts are inline Markdown, line breaks within a block are <c>"\n"</c>.</summary>
@@ -30,7 +30,10 @@ public sealed record SnapshotHeading(Guid Key, int Level, string Text) : Snapsho
 /// <param name="SplitFrom">For a new block split off in the editor: the key of the block it was split from.</param>
 /// <param name="Text">The block's own text.</param>
 /// <param name="Paragraphs">The descendant blocks in file order.</param>
-/// <param name="Sources">The source chips (read-only for the sync).</param>
+/// <param name="Sources">
+/// The source chips. The sync never changes the sources of a known block; a new block without
+/// <paramref name="SplitFrom"/> is linked to those it finds in the vault (see <see cref="BookSync.Apply"/>).
+/// </param>
 public sealed record SnapshotTextBlock(
     Guid Key, Guid? SplitFrom, string Text, IReadOnlyList<SnapshotParagraph> Paragraphs, IReadOnlyList<SourceInfo> Sources)
     : SnapshotNode(Key);
@@ -69,14 +72,17 @@ public static class BookSnapshot
         return new SectionSnapshot(scopeKey, includeSubsections, nodes);
     }
 
-    /// <summary>The text a paragraph block shows in the editor: without <c>#notiz</c>, unescaped.</summary>
-    internal static string ParagraphText(string content) => BlockTextEscape.Unescape(NoteTag.Strip(content));
+    /// <summary>
+    /// The text a paragraph block shows in the editor: without <c>#notiz</c> and the one space that
+    /// <see cref="NoteTag.Add"/> puts before it (other spaces are kept, so the text round-trips), unescaped.
+    /// </summary>
+    internal static string ParagraphText(string content) => BlockTextEscape.Unescape(NoteTag.Remove(content));
 
     private static void AddSubtree(List<SnapshotNode> nodes, OutlineNode node, IVault vault)
     {
         if (node.Block is not null)
         {
-            nodes.Add(new SnapshotHeading(node.Key, node.Level, node.Title));
+            nodes.Add(new SnapshotHeading(node.Key, node.Level, HeadingText.TitleOf(node.Block.Content, node.Level)));
         }
 
         foreach (var item in node.Items)

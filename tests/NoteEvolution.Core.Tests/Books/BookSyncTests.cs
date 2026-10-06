@@ -534,6 +534,104 @@ public class BookSyncTests
     }
 
     [Fact]
+    public void Apply_TrailingAndLeadingSpacesInParagraphs_RoundTripThroughCreate()
+    {
+        using var s = new LinkSetup(TestBook, TestJournal);
+        var snapshot = Section(s, "Abschnitt");
+        var block = TextNode(snapshot, "Erster Textblock");
+        var edited = block with
+        {
+            Paragraphs =
+            [
+                block.Paragraphs[0] with { Text = "Absatz eins " },
+                block.Paragraphs[1] with { Text = "Absatz zwei  " },
+                new SnapshotParagraph(Guid.NewGuid(), " ", 1, true),
+            ],
+        };
+
+        Assert.True(BookSync.Apply(s.Book, Replace(snapshot, block, edited)).Changed);
+
+        var again = BookSnapshot.Create(Book.Load(s.Book.Page), s.Vault, s.SectionKey("Abschnitt"), includeSubsections: false);
+        var paragraphs = TextNode(again, "Erster Textblock").Paragraphs;
+        Assert.Equal(["Absatz eins ", "Absatz zwei  ", " "], paragraphs.Select(p => p.Text));
+        Assert.Equal([false, true, true], paragraphs.Select(p => p.IsNote));
+        var once = Serialize(s.Book);
+        Assert.False(BookSync.Apply(Book.Load(s.Book.Page), again).Changed);
+        Assert.Equal(once, Serialize(s.Book));
+    }
+
+    [Fact]
+    public void Apply_HeadingTitleWithSpaces_RoundTripsThroughCreate_OutlineTitleTrimmed()
+    {
+        using var s = new LinkSetup(TestBook, TestJournal);
+        var snapshot = Manuscript(s, "Kapitel");
+        var heading = snapshot.Nodes.OfType<SnapshotHeading>().Single(h => h.Text == "Abschnitt");
+
+        Assert.True(BookSync.Apply(s.Book, Replace(snapshot, heading, heading with { Text = "Abschnitt " })).Changed);
+
+        Assert.Equal(TestBook.Replace("\t- ## Abschnitt\n", "\t- ## Abschnitt \n"), Serialize(s.Book));
+        var book = Book.Load(s.Book.Page);
+        Assert.Equal("Abschnitt", book.FindNode(heading.Key)!.Title);
+        var again = BookSnapshot.Create(book, s.Vault, s.SectionKey("Kapitel"), includeSubsections: true);
+        Assert.Equal("Abschnitt ", again.Nodes.OfType<SnapshotHeading>().Single(h => h.Key == heading.Key).Text);
+        Assert.False(BookSync.Apply(book, again).Changed);
+    }
+
+    [Fact]
+    public void Apply_DeletedLinkedBlockRestoredWithItsKeyAndSources_RelinkedWithNewId()
+    {
+        using var s = new LinkSetup(TestBook, TestJournal);
+        var snapshot = Section(s, "Abschnitt");
+        var original = TextNode(snapshot, "Erster Textblock");
+        var deleted = BookSync.Apply(s.Book, Replace(snapshot, original), s.Vault);
+        s.Writer.Save(s.Book.Page);
+        s.Links.ApplySyncEffects(s.Book, deleted.Effects);
+        Assert.DoesNotContain("used-in::", s.ReadJournal());
+
+        // Editor Ctrl+Z after the autosave: the node is back with its old key and sources; one source is not in the vault.
+        var book = Book.Load(s.Book.Page);
+        var current = BookSnapshot.Create(book, s.Vault, s.SectionKey("Abschnitt"), includeSubsections: false);
+        var unknown = Guid.NewGuid();
+        var restored = original with { Sources = [.. original.Sources, new SourceInfo(unknown, "weg", false)] };
+        var result = BookSync.Apply(book, current with { Nodes = [restored, .. current.Nodes] }, s.Vault);
+
+        Assert.True(result.Changed);
+        var block = Book.Load(s.Book.Page).FindTextBlock(original.Key)!;
+        var newId = block.Block.Id!.Value;
+        Assert.NotEqual(Guid.Parse(B1), newId);
+        Assert.Equal([Guid.Parse(N1), Guid.Parse(N2)], block.Sources);
+        Assert.Equal(TestBook.Replace($"\t\t  id:: {B1}\n", $"\t\t  id:: {newId}\n"), Serialize(s.Book));
+        var relinked = Assert.IsType<BlockSplit>(Assert.Single(result.Effects));
+        Assert.Equal(newId, relinked.NewBookBlockId);
+        Assert.Equal([Guid.Parse(N1), Guid.Parse(N2)], relinked.Sources);
+
+        s.Writer.Save(s.Book.Page);
+        s.Links.ApplySyncEffects(book, result.Effects);
+
+        Assert.Equal(TestJournal.Replace(B1, newId.ToString("D")), s.ReadJournal());
+    }
+
+    [Fact]
+    public void Apply_NewBlockWithOnlyUnknownSources_OrWithoutVault_StaysUnlinked()
+    {
+        using var s = new LinkSetup(TestBook, TestJournal);
+        var snapshot = Section(s, "Abschnitt");
+        var stale = new SnapshotTextBlock(Guid.NewGuid(), null, "Ohne Quelle", [], [new SourceInfo(Guid.NewGuid(), "weg", true)]);
+        var known = new SnapshotTextBlock(Guid.NewGuid(), null, "Ohne Tresor", [], TextNode(snapshot, "Erster Textblock").Sources);
+
+        var result = BookSync.Apply(s.Book, snapshot with { Nodes = [.. snapshot.Nodes, stale] }, s.Vault);
+        var book = Book.Load(s.Book.Page);
+        var current = BookSnapshot.Create(book, s.Vault, s.SectionKey("Abschnitt"), includeSubsections: false);
+        var withoutVault = BookSync.Apply(book, current with { Nodes = [.. current.Nodes, known] });
+
+        Assert.Empty(result.Effects);
+        Assert.Empty(withoutVault.Effects);
+        Assert.Equal(
+            TestBook.Replace("\t\t- Nachtrag\n", "\t\t- Nachtrag\n\t\t- Ohne Quelle\n\t\t- Ohne Tresor\n"),
+            Serialize(s.Book));
+    }
+
+    [Fact]
     public void Apply_DemotedLinkedBlockDeletedAsParagraph_NoteLosesUsage_UndoRestores()
     {
         const string b2 = "0199a1c2-1b7e-7c1d-9a0f-2b3c4d5e6f72";

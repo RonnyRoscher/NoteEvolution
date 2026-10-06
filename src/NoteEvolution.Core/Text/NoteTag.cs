@@ -14,6 +14,10 @@ public static partial class NoteTag
     [GeneratedRegex(@"[ \t]*(?<!\S)#notiz(?!\S)[ \t]*")]
     private static partial Regex TokenRegex();
 
+    // The token with the space before it, else with the space after it.
+    [GeneratedRegex(@"(?<before> )?(?<!\S)#notiz(?!\S)(?<after> )?")]
+    private static partial Regex TokenWithSpaceRegex();
+
     public static bool Has(string content) => HasRegex().IsMatch(content);
 
     /// <summary>Removes every <c>#notiz</c> token and the spaces around it (one space remains between neighbouring words), and trims the ends.</summary>
@@ -24,6 +28,13 @@ public static partial class NoteTag
             var after = m.Index + m.Length < content.Length ? content[m.Index + m.Length] : '\n';
             return before is '\n' or '\r' || after is '\n' or '\r' ? "" : " ";
         }).Trim();
+
+    /// <summary>
+    /// Removes every <c>#notiz</c> token with one space next to it (the one before it, else the one after it) and
+    /// keeps all other whitespace, so that <c>Remove(Add(text)) == text</c>.
+    /// </summary>
+    public static string Remove(string content) =>
+        TokenWithSpaceRegex().Replace(content, m => m.Groups["before"].Success ? m.Groups["after"].Value : "");
 
     public static string Add(string text) => text + " " + Tag;
 }

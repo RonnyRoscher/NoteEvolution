@@ -32,6 +32,32 @@ public class NoteTagTests
         Assert.Equal(expected, NoteTag.Strip(content));
     }
 
+    [Theory]
+    [InlineData("x #notiz", "x")]
+    [InlineData("x  #notiz", "x ")]
+    [InlineData("#notiz x", "x")]
+    [InlineData("#notiz", "")]
+    [InlineData("a #notiz b", "a b")]
+    [InlineData("a #notiz b #notiz c", "a b c")]
+    [InlineData(" a b  #notiz", " a b ")]
+    [InlineData("#notizen ", "#notizen ")]
+    [InlineData("a #notiz\nb", "a\nb")]
+    [InlineData("a\n#notiz b", "a\nb")]
+    public void Remove_RemovesTagWithOneSpace_KeepsTheRest(string content, string expected)
+    {
+        Assert.Equal(expected, NoteTag.Remove(content));
+    }
+
+    [Theory]
+    [InlineData("x")]
+    [InlineData("x ")]
+    [InlineData(" x  ")]
+    [InlineData("")]
+    public void Remove_UndoesAdd(string text)
+    {
+        Assert.Equal(text, NoteTag.Remove(NoteTag.Add(text)));
+    }
+
     [Fact]
     public void Add_AppendsTag()
     {

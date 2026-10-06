@@ -3,6 +3,7 @@ using NoteEvolution.Core.Links;
 using NoteEvolution.Core.Model;
 using NoteEvolution.Core.Storage;
 using NoteEvolution.Core.Text;
+using NoteEvolution.Core.Vaults;
 
 namespace NoteEvolution.Core.Books;
 
@@ -25,7 +26,10 @@ public sealed record BlockDeleted(Guid BookBlockId, IReadOnlyList<Guid> Sources)
     internal int Index { get; init; }
 }
 
-/// <summary>A linked text block was split in the editor; the new part has its own id and the same sources.</summary>
+/// <summary>
+/// A text block got its own id and the sources: split off a linked block in the editor, or a linked block the editor put
+/// back after its deletion was saved (its sources that are still in the vault). Each source note gains the usage.
+/// </summary>
 public sealed record BlockSplit(Guid NewBookBlockId, IReadOnlyList<Guid> Sources) : SyncEffect;
 
 /// <param name="Changed">The page's content changed; the caller has to save it.</param>
@@ -40,6 +44,12 @@ public static class BookSync
     /// <see cref="BlockTextEscape"/>), new blocks are inserted with the snapshot key as <see cref="Block.Key"/>,
     /// moved blocks are moved, blocks missing from the snapshot are removed. Blocks the user did not change keep
     /// their lines and their place. Headings are only renamed; the outline itself is never changed here.
+    /// <para>
+    /// A new text block split off a linked block gets an id and the same <c>source::</c> (<see cref="BlockSplit"/>).
+    /// A new text block without <see cref="SnapshotTextBlock.SplitFrom"/> but with sources (the editor put a deleted
+    /// linked block back, e.g. its undo after the deletion was saved) is linked again the same way with those of its
+    /// sources that <paramref name="vault"/> finds; without a vault, or if none is found, it stays unlinked.
+    /// </para>
     /// <para>
     /// The page is not saved, and <paramref name="book"/> is stale afterwards (rebuild it with <see cref="Book.Load"/>).
     /// If <see cref="SyncResult.Changed"/>, the caller saves <c>book.Page</c> with <see cref="IPageWriter.Save"/>,
@@ -58,7 +68,7 @@ public static class BookSync
     /// Unknown scope, an inconsistent snapshot (empty or duplicate keys, a text block or paragraph with the key
     /// of a heading), or a text that would change the block tree (see <see cref="Block.SetContent"/>); nothing is changed.
     /// </exception>
-    public static SyncResult Apply(Book book, SectionSnapshot snapshot)
+    public static SyncResult Apply(Book book, SectionSnapshot snapshot, IVault? vault = null)
     {
         var page = book.Page;
         if (page.IsReadOnly)
@@ -67,7 +77,7 @@ public static class BookSync
         }
 
         var before = PageSerializer.Serialize(page);
-        var run = new Run(book, NormalizeLineEndings(snapshot));
+        var run = new Run(book, NormalizeLineEndings(snapshot), vault);
         run.Execute();
         var changed = !before.AsSpan().SequenceEqual(PageSerializer.Serialize(page));
         return new SyncResult(changed, run.Effects);
@@ -100,6 +110,7 @@ public static class BookSync
     {
         private readonly Page _page;
         private readonly Book _book;
+        private readonly IVault? _vault;
         private readonly SectionSnapshot _snapshot;
         private readonly OutlineNode _scope;
 
@@ -119,9 +130,10 @@ public static class BookSync
         private readonly Dictionary<Guid, string> _contents = [];
 
         /// <summary>Checks the snapshot and plans and validates every text change; the page is not touched yet.</summary>
-        public Run(Book book, SectionSnapshot snapshot)
+        public Run(Book book, SectionSnapshot snapshot, IVault? vault)
         {
             _page = book.Page;
+            _vault = vault;
             _book = book;
             _snapshot = snapshot;
             _scope = book.FindNode(snapshot.ScopeKey)
@@ -265,12 +277,12 @@ public static class BookSync
 
         /// <summary>
         /// The heading's content with the title replaced (the <c>#</c> prefix and any further lines kept), or
-        /// <c>null</c> if the title is the same.
+        /// <c>null</c> if the title is the same. Spaces are kept, as <see cref="BookSnapshot.Create"/> reports them.
         /// </summary>
         private static string? RenamedContent(OutlineNode node, string text)
         {
-            var title = text.ReplaceLineEndings(" ").Trim();
-            if (title == node.Title)
+            var title = text.ReplaceLineEndings(" ");
+            if (title == HeadingText.TitleOf(node.Block!.Content, node.Level))
             {
                 return null;
             }
@@ -306,23 +318,40 @@ public static class BookSync
             return block;
         }
 
-        /// <summary>A new detached text block; split off a linked block, it gets an id and the same <c>source::</c>.</summary>
+        /// <summary>
+        /// A new detached text block. Split off a linked block, it gets an id and the same <c>source::</c>; put back
+        /// with sources (no split), it gets an id and those sources that are in the vault (ruling R33).
+        /// </summary>
         private Block Create(SnapshotTextBlock text)
         {
             List<BlockProperty>? properties = null;
-            if (text.SplitFrom is { } from
-                && _blocks.TryGetValue(from, out var original)
-                && original.GetProperty("source") is { } source
-                && SourceValue.Parse(source) is { Count: > 0 } sources)
+            if (text.SplitFrom is { } from)
             {
-                var id = Guid.CreateVersion7();
-                properties = [new BlockProperty("id", id.ToString("D")), new BlockProperty("source", source)];
-                Effects.Add(new BlockSplit(id, [.. sources.Distinct()]));
+                if (_blocks.TryGetValue(from, out var original)
+                    && original.GetProperty("source") is { } source
+                    && SourceValue.Parse(source) is { Count: > 0 } sources)
+                {
+                    properties = Link(source, [.. sources.Distinct()]);
+                }
+            }
+            else if (_vault is not null
+                     && text.Sources.Select(s => s.NoteId).Distinct().Where(id => _vault.FindBlockById(id) is not null).ToList()
+                         is { Count: > 0 } found)
+            {
+                properties = Link(SourceValue.Format(found), found);
             }
 
             var block = Block.CreateDetached(_contents[text.Key], properties, text.Key);
             _blocks[text.Key] = block;
             return block;
+        }
+
+        /// <summary>The properties of a new linked block (a new id and <paramref name="source"/>); the notes gain its usage.</summary>
+        private List<BlockProperty> Link(string source, IReadOnlyList<Guid> sources)
+        {
+            var id = Guid.CreateVersion7();
+            Effects.Add(new BlockSplit(id, sources));
+            return [new BlockProperty("id", id.ToString("D")), new BlockProperty("source", source)];
         }
 
         /// <summary>
