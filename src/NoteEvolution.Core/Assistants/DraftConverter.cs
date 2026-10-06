@@ -113,7 +113,9 @@ public sealed partial class DraftConverter(BackupService backups, IPageWriter wr
     /// </summary>
     /// <exception cref="ReadOnlyPageException">The page is read-only; checked before anything else.</exception>
     /// <exception cref="ArgumentException">
-    /// The proposal is not for this page, or a heading would get a level above 6; checked before any change.
+    /// The proposal is not for this page, a heading would get a level above 6, or a heading's new content would not
+    /// parse as one block (for example a block whose first line opens a code fence); all checked before the backup
+    /// and before any change.
     /// </exception>
     public void Apply(Page page, DraftProposal proposal)
     {
@@ -122,7 +124,7 @@ public sealed partial class DraftConverter(BackupService backups, IPageWriter wr
             throw new ReadOnlyPageException($"Die Datei '{page.FilePath}' ist schreibgeschützt: {page.ParseError}");
         }
 
-        var levels = new List<(DraftNode Node, int Level)>();
+        var edits = new List<(Block Block, string Content)>();
         foreach (var node in proposal.AllNodes())
         {
             if (node.Block.Page != page)
@@ -140,22 +142,34 @@ public sealed partial class DraftConverter(BackupService backups, IPageWriter wr
                         nameof(proposal));
                 }
 
-                levels.Add((node, level));
+                var content = HeadingText.WithTitle(node.Block.Content, level, FirstLine(node.Block.Content));
+                try
+                {
+                    Block.ValidateContent(content);
+                }
+                catch (ArgumentException ex)
+                {
+                    throw new ArgumentException(
+                        $"Die Überschrift '{FirstLine(node.Block.Content)}' kann nicht gesetzt werden: {ex.Message}",
+                        nameof(proposal),
+                        ex);
+                }
+
+                edits.Add((node.Block, content));
             }
         }
 
         var alreadyBook = string.Equals(page.GetPageProperty("type"), "book", StringComparison.OrdinalIgnoreCase);
-        if (levels.Count == 0 && alreadyBook)
+        if (edits.Count == 0 && alreadyBook)
         {
             return;
         }
 
         backups.CreateBackup(page.FilePath);
 
-        foreach (var (node, level) in levels)
+        foreach (var (block, content) in edits)
         {
-            var content = node.Block.Content;
-            node.Block.SetContent(HeadingText.WithTitle(content, level, FirstLine(content)));
+            block.SetContent(content);
         }
 
         if (!alreadyBook)

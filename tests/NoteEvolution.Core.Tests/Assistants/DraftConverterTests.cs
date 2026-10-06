@@ -343,6 +343,29 @@ public class DraftConverterTests
     }
 
     [Fact]
+    public void Apply_ToggledCodeFenceBlock_ThrowsBeforeBackupAndLeavesPageUntouched()
+    {
+        using var s = new Setup(
+            "- Teil\n" +
+            "  - ```js\n" +
+            "    code\n" +
+            "    ```\n" +
+            "    - Kind\n");
+        var proposal = s.Converter.Propose(s.Page);
+        var fence = Find(proposal, "```js\ncode\n```");
+        Assert.False(fence.IsHeading);
+        fence.IsHeading = true;
+        var before = s.ReadDraft();
+
+        var ex = Assert.Throws<ArgumentException>(() => s.Converter.Apply(s.Page, proposal));
+
+        Assert.Contains("```js", ex.Message);
+        Assert.Equal(before, s.ReadDraft());
+        Assert.False(Directory.Exists(s.BackupsDir));
+        Assert.False(s.Page.IsDirty);
+    }
+
+    [Fact]
     public void Apply_ProposalOfOtherPage_Throws()
     {
         using var s = new Setup("- Teil\n  - Kind\n");
