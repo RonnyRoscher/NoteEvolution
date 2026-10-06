@@ -207,6 +207,88 @@ public class VaultSessionTests
     }
 
     [Fact]
+    public async Task TryUndo_WhileDeletedFileConflictOpen_RefusesAndDoesNotRecreateFile()
+    {
+        using var tv = BookWithLinkedNote();
+        using var session = await Open(tv);
+        var page = session.Vault.FindPageByPath(Journal(tv))!;
+        page.Roots[1].SetContent("Lokal geändert");
+        var undo = new SavingUndo(() => session.Writer.Save(page));
+        session.Undo.Push(undo);
+        var conflictsChanged = 0;
+        session.ConflictsChanged += () => conflictsChanged++;
+
+        File.Delete(Journal(tv));
+        session.HandleExternalChange(Journal(tv));
+
+        Assert.True(session.HasAnyOpenConflict);
+        Assert.Equal(1, conflictsChanged);
+        Assert.False(session.TryUndo(out var error));
+        Assert.IsType<InvalidOperationException>(error);
+        Assert.False(undo.Ran);
+        Assert.True(session.Undo.CanUndo);
+        Assert.False(File.Exists(Journal(tv)));
+    }
+
+    [Fact]
+    public async Task TryUndo_NoConflict_Undoes()
+    {
+        using var tv = BookWithLinkedNote();
+        using var session = await Open(tv);
+        var undo = new SavingUndo(() => { });
+        session.Undo.Push(undo);
+
+        Assert.True(session.TryUndo(out var error));
+
+        Assert.Null(error);
+        Assert.True(undo.Ran);
+        Assert.False(session.HasAnyOpenConflict);
+    }
+
+    [Fact]
+    public async Task HandleExternalChange_AfterDispose_DoesNothing()
+    {
+        using var tv = BookWithLinkedNote();
+        var session = await Open(tv);
+        var page = session.Vault.FindPageByPath(Journal(tv))!;
+        page.Roots[1].SetContent("Lokal geändert");
+        var events = 0;
+        session.PagesChanged += _ => events++;
+        session.ConflictDetected += _ => events++;
+        session.ConflictsChanged += () => events++;
+        const string external = $"- Vertrauen wächst extern\n  id:: {NoteId}\n- Zweiter Gedanke\n";
+        File.WriteAllText(Journal(tv), external, new UTF8Encoding(false));
+
+        session.Dispose();
+        session.HandleExternalChange(Journal(tv));
+
+        Assert.Equal(0, events);
+        Assert.Equal(external, tv.Read("journals/2026_03_01.md"));
+        Assert.Same(page, session.Vault.FindPageByPath(Journal(tv)));
+    }
+
+    [Fact]
+    public async Task WriteOperations_AfterDispose_Throw()
+    {
+        using var tv = BookWithLinkedNote();
+        var session = await Open(tv);
+        var page = session.Vault.FindPageByPath(Journal(tv))!;
+        page.Roots[1].SetContent("Lokal geändert");
+        ExternalChangeOutcome.Conflict? conflict = null;
+        session.ConflictDetected += c => conflict = c;
+        File.Delete(Journal(tv));
+        session.HandleExternalChange(Journal(tv));
+
+        session.Dispose();
+
+        Assert.Throws<ObjectDisposedException>(() => session.TrySave(page, out _));
+        Assert.Throws<ObjectDisposedException>(() => session.TryUndo(out _));
+        Assert.Throws<ObjectDisposedException>(
+            () => session.ResolveConflict(conflict!, conflict!.Conflicts.ToDictionary(c => c.Local.Key, _ => ConflictChoice.Mine)));
+        Assert.False(File.Exists(Journal(tv)));
+    }
+
+    [Fact]
     public async Task TrySave_ReadOnlyPage_ReturnsFalseWithError()
     {
         using var tv = BookWithLinkedNote();
@@ -217,5 +299,19 @@ public class VaultSessionTests
         Assert.False(session.TrySave(page, out var error));
 
         Assert.IsType<ReadOnlyPageException>(error);
+    }
+
+    /// <summary>An undo action that records whether it ran (and may write, like the real ones).</summary>
+    private sealed class SavingUndo(Action undo) : Core.Links.IUndoAction
+    {
+        public bool Ran { get; private set; }
+
+        public string Description => "Übernehmen";
+
+        public void Undo()
+        {
+            Ran = true;
+            undo();
+        }
     }
 }

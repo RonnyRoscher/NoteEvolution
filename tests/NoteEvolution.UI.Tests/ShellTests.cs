@@ -234,6 +234,34 @@ public class ShellTests : UiTestContext
         cut.WaitForAssertion(() => Assert.True(cut.Find(".ne-undo").HasAttribute("disabled")));
     }
 
+    [Fact]
+    public async Task HeaderBar_Undo_DisabledWhileConflictOpen()
+    {
+        using var tv = TwoBooks();
+        var session = await OpenSessionAsync(tv);
+        var journal = Path.Combine(tv.Root, "journals", "2026_03_01.md");
+        var page = session.Vault.FindPageByPath(journal)!;
+        page.Roots[0].SetContent("Lokal geändert");
+        var action = new RecordingUndo("Übernehmen");
+        session.Undo.Push(action);
+        Core.Storage.ExternalChangeOutcome.Conflict? conflict = null;
+        session.ConflictDetected += c => conflict = c;
+        var cut = Render<HeaderBar>();
+        Assert.False(cut.Find(".ne-undo").HasAttribute("disabled"));
+
+        File.Delete(journal);
+        await cut.InvokeAsync(() => session.HandleExternalChange(journal));
+
+        cut.WaitForAssertion(() => Assert.True(cut.Find(".ne-undo").HasAttribute("disabled")));
+        Assert.False(File.Exists(journal));
+
+        await cut.InvokeAsync(() => session.ResolveConflict(
+            conflict!, conflict!.Conflicts.ToDictionary(c => c.Local.Key, _ => Core.Storage.ConflictChoice.Theirs)));
+
+        cut.WaitForAssertion(() => Assert.False(cut.Find(".ne-undo").HasAttribute("disabled")));
+        Assert.False(action.Undone);
+    }
+
     private sealed class RecordingUndo(string description) : IUndoAction
     {
         public bool Undone { get; private set; }

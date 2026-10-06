@@ -73,6 +73,24 @@ public sealed class VaultSession : IDisposable
     /// <summary>Unsaved local changes collide with an external change; until it is resolved the page is not saved.</summary>
     public event Action<ExternalChangeOutcome.Conflict>? ConflictDetected;
 
+    /// <summary>A conflict was opened or closed (<see cref="HasAnyOpenConflict"/> may have changed); raised on the UI thread.</summary>
+    public event Action? ConflictsChanged;
+
+    /// <summary>
+    /// Some conflict waits for the user's decision. Operations that may write any page (undo, and every UI-triggered
+    /// write) are refused meanwhile, so no deleted file is recreated and no unresolved conflict is overwritten.
+    /// </summary>
+    public bool HasAnyOpenConflict
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _openConflicts.Count > 0;
+            }
+        }
+    }
+
     /// <summary>
     /// Opens the vault on a background thread (spec 5.1): parse all files, start the watcher, retry pending note
     /// updates, run the link check (<see cref="StartupReport"/>), build the search index, clean up old backups.
@@ -113,31 +131,29 @@ public sealed class VaultSession : IDisposable
     /// <summary>
     /// Brings in the external change of <paramref name="path"/> (<see cref="ExternalChangeHandler.Handle"/>). Call it on
     /// the UI thread. A merged page is saved right away; a conflict is reported through <see cref="ConflictDetected"/>.
-    /// Never throws: failures are logged (the watcher reports the file again when it changes).
+    /// Never throws: failures are logged (the watcher reports the file again when it changes). Does nothing once the
+    /// session is disposed (a call queued on the UI thread may arrive after a vault switch).
     /// </summary>
     public void HandleExternalChange(string path)
     {
+        if (IsDisposed)
+        {
+            return;
+        }
+
         var fullPath = Path.GetFullPath(path);
         try
         {
             var outcome = Changes.Handle(fullPath);
             if (outcome is ExternalChangeOutcome.Conflict conflict)
             {
-                lock (_gate)
-                {
-                    _openConflicts.Add(fullPath);
-                }
-
+                SetConflictOpen(fullPath, true);
                 _logger.LogWarning("Conflict between local and external changes in {Path}", fullPath);
                 ConflictDetected?.Invoke(conflict);
                 return;
             }
 
-            lock (_gate)
-            {
-                _openConflicts.Remove(fullPath);
-            }
-
+            SetConflictOpen(fullPath, false);
             if (outcome is ExternalChangeOutcome.Reloaded { Page: { IsDirty: true, IsReadOnly: false } merged })
             {
                 SaveMerged(merged);
@@ -165,11 +181,14 @@ public sealed class VaultSession : IDisposable
     /// <see cref="PagesChanged"/>. Saving the resulting page is left to the caller (<see cref="TrySave"/>).
     /// </summary>
     /// <exception cref="FileChangedExternallyException">
-    /// The file changed again since the conflict was reported; it stays open and is handled again
-    /// (<see cref="HandleExternalChange"/>), which may report a new conflict.
+    /// The file changed again since the conflict was reported; the choices were not applied. The change is handled
+    /// again right away (<see cref="HandleExternalChange"/>): that either reports a new conflict or merges the page and
+    /// closes the conflict, so check <see cref="HasOpenConflict"/> afterwards.
     /// </exception>
+    /// <exception cref="ObjectDisposedException">The session is disposed.</exception>
     public void ResolveConflict(ExternalChangeOutcome.Conflict conflict, IReadOnlyDictionary<Guid, ConflictChoice> choices)
     {
+        ObjectDisposedException.ThrowIf(IsDisposed, this);
         var fullPath = Path.GetFullPath(conflict.Local.FilePath);
         try
         {
@@ -181,12 +200,37 @@ public sealed class VaultSession : IDisposable
             throw;
         }
 
-        lock (_gate)
+        SetConflictOpen(fullPath, false);
+        PageChanged(fullPath);
+    }
+
+    /// <summary>
+    /// Reverses the latest operation (<see cref="UndoManager.Undo"/>), unless a conflict is open: undoing writes pages
+    /// directly and could recreate a deleted file or overwrite an unresolved conflict. Failures are logged.
+    /// </summary>
+    /// <returns><c>true</c> if the undo ran without error (or there was nothing to undo); otherwise <paramref name="error"/> says why.</returns>
+    /// <exception cref="ObjectDisposedException">The session is disposed.</exception>
+    public bool TryUndo(out Exception? error)
+    {
+        ObjectDisposedException.ThrowIf(IsDisposed, this);
+        if (HasAnyOpenConflict)
         {
-            _openConflicts.Remove(fullPath);
+            error = new InvalidOperationException("A conflict is open; nothing is undone until it is resolved.");
+            return false;
         }
 
-        PageChanged(fullPath);
+        try
+        {
+            Undo.Undo();
+            error = null;
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or ArgumentException)
+        {
+            _logger.LogError(ex, "Undo failed");
+            error = ex;
+            return false;
+        }
     }
 
     /// <summary>
@@ -196,8 +240,10 @@ public sealed class VaultSession : IDisposable
     /// is then not saved, and views take the page from the vault again (<see cref="PagesChanged"/>).
     /// </summary>
     /// <returns><c>true</c> if <paramref name="page"/> was written; otherwise <paramref name="error"/> says why.</returns>
+    /// <exception cref="ObjectDisposedException">The session is disposed.</exception>
     public bool TrySave(Page page, out Exception? error)
     {
+        ObjectDisposedException.ThrowIf(IsDisposed, this);
         if (HasOpenConflict(page.FilePath))
         {
             error = new InvalidOperationException($"A conflict for '{page.FilePath}' is open; the page is not saved.");
@@ -239,6 +285,31 @@ public sealed class VaultSession : IDisposable
         Watcher.ExternalChange -= OnWatcherChange;
         Watcher.Dispose();
         _search.Dispose();
+    }
+
+    private bool IsDisposed
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _disposed;
+            }
+        }
+    }
+
+    private void SetConflictOpen(string fullPath, bool open)
+    {
+        bool changed;
+        lock (_gate)
+        {
+            changed = open ? _openConflicts.Add(fullPath) : _openConflicts.Remove(fullPath);
+        }
+
+        if (changed)
+        {
+            ConflictsChanged?.Invoke();
+        }
     }
 
     private static Task RunInline(Action action)

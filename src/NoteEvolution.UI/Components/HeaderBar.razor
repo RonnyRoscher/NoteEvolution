@@ -1,9 +1,7 @@
-@using NoteEvolution.Core.Links
 @using NoteEvolution.Core.Model
 @implements IDisposable
 @inject AppState State
 @inject IStringLocalizer<Strings> L
-@inject ILogger<HeaderBar> Logger
 
 <header class="ne-header">
     <button type="button" class="ne-open-vault" @onclick="OnOpenVault">@L["OpenVault"]</button>
@@ -25,7 +23,7 @@
                 @onclick="() => SetMode(ViewMode.Manuscript)">@L["ModeManuscript"]</button>
     </div>
 
-    <button type="button" class="ne-undo" disabled="@(_undo?.CanUndo != true)" title="@_undo?.NextDescription"
+    <button type="button" class="ne-undo" disabled="@(!CanUndo)" title="@_session?.Undo.NextDescription"
             @onclick="Undo">@L["Undo"]</button>
 
     <span class="ne-header-spacer"></span>
@@ -59,7 +57,7 @@
 </header>
 
 @code {
-    private UndoManager? _undo;
+    private VaultSession? _session;
     private bool _readOnlyOpen;
 
     [Parameter] public EventCallback OnOpenVault { get; set; }
@@ -76,44 +74,49 @@
     protected override void OnInitialized()
     {
         State.Changed += OnStateChanged;
-        TrackUndo();
+        TrackSession();
     }
 
     public void Dispose()
     {
         State.Changed -= OnStateChanged;
-        if (_undo is not null)
-        {
-            _undo.Changed -= OnUndoChanged;
-        }
+        Unsubscribe();
     }
+
+    /// <summary>Undo is refused while a conflict is open (R26): it writes pages directly.</summary>
+    private bool CanUndo => _session is { HasAnyOpenConflict: false } session && session.Undo.CanUndo;
 
     private void OnStateChanged() => _ = InvokeAsync(() =>
     {
-        TrackUndo();
+        TrackSession();
         StateHasChanged();
     });
 
-    private void OnUndoChanged() => _ = InvokeAsync(StateHasChanged);
+    private void OnSessionChanged() => _ = InvokeAsync(StateHasChanged);
 
-    /// <summary>Follows the undo stack of the current session (a new session brings a new one).</summary>
-    private void TrackUndo()
+    /// <summary>Follows the undo stack and the conflicts of the current session (a vault switch brings a new one).</summary>
+    private void TrackSession()
     {
-        var undo = State.Session?.Undo;
-        if (ReferenceEquals(undo, _undo))
+        if (ReferenceEquals(State.Session, _session))
         {
             return;
         }
 
-        if (_undo is not null)
+        Unsubscribe();
+        _session = State.Session;
+        if (_session is not null)
         {
-            _undo.Changed -= OnUndoChanged;
+            _session.Undo.Changed += OnSessionChanged;
+            _session.ConflictsChanged += OnSessionChanged;
         }
+    }
 
-        _undo = undo;
-        if (_undo is not null)
+    private void Unsubscribe()
+    {
+        if (_session is not null)
         {
-            _undo.Changed += OnUndoChanged;
+            _session.Undo.Changed -= OnSessionChanged;
+            _session.ConflictsChanged -= OnSessionChanged;
         }
     }
 
@@ -149,16 +152,16 @@
 
     private void Undo()
     {
-        try
+        if (_session is null)
         {
-            _undo?.Undo();
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or ArgumentException)
-        {
-            Logger.LogError(ex, "Undo failed");
+            return;
         }
 
-        // The undone operation changed (and saved) the book page; views take it from the vault again.
+        // Refused while a conflict is open; a failure is logged by the session.
+        _session.TryUndo(out _);
+
+        // The undone operation changed (and saved) the book page, or a failed one left the vault with the page as it
+        // is on disk; views take it from the vault again.
         State.RefreshBook();
         State.Notify();
     }
