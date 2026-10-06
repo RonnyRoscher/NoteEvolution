@@ -63,6 +63,30 @@ public class EditorPaneTests : UiTestContext
         block["content"]![0]!["content"] = new JsonArray(new JsonObject { ["type"] = "text", ["text"] = text });
     }
 
+    /// <summary>
+    /// Replaces the runs of paragraph <paramref name="para"/> (0 = the block's own text) of the text block at
+    /// <paramref name="index"/>; the lines are joined with hard breaks.
+    /// </summary>
+    private static void SetPara(JsonNode doc, int index, int para, params string[] lines)
+    {
+        var block = Blocks(doc).Where(n => (string?)n!["type"] == "textBlock").ElementAt(index)!;
+        var runs = new JsonArray();
+        for (var i = 0; i < lines.Length; i++)
+        {
+            if (i > 0)
+            {
+                runs.Add(new JsonObject { ["type"] = "hardBreak" });
+            }
+
+            if (lines[i].Length > 0)
+            {
+                runs.Add(new JsonObject { ["type"] = "text", ["text"] = lines[i] });
+            }
+        }
+
+        block["content"]![para]!["content"] = runs;
+    }
+
     private static string TextsOf(string json) =>
         string.Join("|", Blocks(Doc(json)).Where(n => (string?)n!["type"] == "textBlock")
             .Select(n => string.Concat((n!["content"]![0]!["content"]?.AsArray() ?? []).Select(t => (string?)t!["text"]))));
@@ -116,6 +140,72 @@ public class EditorPaneTests : UiTestContext
         Assert.Single(Editor.Documents); // the editor is not reloaded after its own save
         Assert.False(State.CurrentBook!.Page.IsDirty);
         Assert.Equal("Zweiter Text, geändert", State.CurrentBook.FindNode(Section("Eins").Key)!.TextBlocks.Last().Text);
+    }
+
+    [Fact]
+    public async Task Pane_TypedTrailingSpaces_SavedAsTyped_EditorNotReloaded()
+    {
+        using var tv = TestVault.Create(
+            (BookPath, "title:: Alpha\ntype:: book\n\n- # Eins\n\t- Text\n\t\t- Absatz eins\n\t\t- Absatz zwei #notiz\n"));
+        var (_, cut) = await RenderAsync(tv);
+        var doc = Doc(Editor.Json);
+        SetPara(doc, 0, 1, "Absatz eins ");
+        SetPara(doc, 0, 2, "Absatz zwei ");
+
+        await ChangeAsync(cut, doc);
+        Time.Advance(TimeSpan.FromMilliseconds(1000));
+
+        cut.WaitForAssertion(() => Assert.Contains("\t\t- Absatz eins \n\t\t- Absatz zwei  #notiz\n", tv.Read(BookPath)));
+        await cut.InvokeAsync(() => State.FlushEditor!()); // waits for the autosave's own sync to finish
+        Assert.Single(Editor.Documents);
+    }
+
+    [Fact]
+    public async Task Pane_OwnSaveNormalizesText_EditorNotReloaded_LaterChangeStillShown()
+    {
+        using var tv = Alpha();
+        var (_, cut) = await RenderAsync(tv);
+        var doc = Doc(Editor.Json);
+        SetPara(doc, 1, 0, "Zweiter Text", ""); // a trailing hard break, which the file does not keep
+
+        await ChangeAsync(cut, doc);
+        await cut.InvokeAsync(() => State.FlushEditor!());
+        await cut.InvokeAsync(() => State.FlushEditor!());
+
+        Assert.Single(Editor.Documents);
+
+        // A change from elsewhere is still shown.
+        var path = Path.Combine(tv.Root, BookPath);
+        File.WriteAllText(path, tv.Read(BookPath).Replace("\t- Zweiter Text\n", "\t- Zweiter Text, extern\n"));
+        await cut.InvokeAsync(() => State.Session!.HandleExternalChange(path));
+
+        cut.WaitForAssertion(() => Assert.Equal("Erster Text|Zweiter Text, extern", TextsOf(Editor.Json)));
+    }
+
+    [Fact]
+    public async Task Pane_LinkedBlockBackAfterAutosavedDelete_NoteHasUsageAgain()
+    {
+        using var tv = Alpha();
+        var (session, cut) = await RenderAsync(tv);
+        var original = Doc(Editor.Json);
+        var deleted = original.DeepClone();
+        Blocks(deleted).RemoveAt(0);
+        await ChangeAsync(cut, deleted);
+        await cut.InvokeAsync(() => State.FlushEditor!());
+        Assert.DoesNotContain("used-in::", tv.Read(NotesPath));
+
+        // Ctrl+Z in the editor: the block is back with its old key and sources.
+        await ChangeAsync(cut, original);
+        await cut.InvokeAsync(() => State.FlushEditor!());
+
+        var block = Section("Eins").TextBlocks.First();
+        Assert.Equal("Erster Text", block.Text);
+        Assert.Equal([Guid.Parse(NoteId)], block.Sources);
+        var newId = block.Block.Id!.Value;
+        Assert.NotEqual(Guid.Parse(FirstId), newId);
+        Assert.Contains("used-in:: [[Buch - Alpha]] ((" + newId.ToString("D") + "))\n", tv.Read(NotesPath));
+        Assert.Contains("\t- Erster Text\n\t  id:: " + newId.ToString("D") + "\n\t  source:: ((" + NoteId + "))\n", tv.Read(BookPath));
+        Assert.True(session.Undo.CanUndo);
     }
 
     [Fact]

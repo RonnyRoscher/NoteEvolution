@@ -8,7 +8,10 @@ using NoteEvolution.UI.Editor;
 namespace NoteEvolution.UI.State;
 
 /// <summary>What the editor shows: the session and book it is from and its snapshot (after a save: the one saved).</summary>
-public sealed record ShownText(VaultSession Session, string BookLink, SectionSnapshot Snapshot);
+/// <param name="FromEditor">
+/// The snapshot is the editor's own document, just saved; the book may hold its texts slightly normalized (ruling R33).
+/// </param>
+public sealed record ShownText(VaultSession Session, string BookLink, SectionSnapshot Snapshot, bool FromEditor = false);
 
 /// <summary>
 /// The editor's save pipeline without the UI (spec 5.3): editor document → snapshot → <see cref="BookSync.Apply"/> →
@@ -79,14 +82,14 @@ public sealed class BookTextSaver(AppState state, ILogger logger)
 
         if (!result.Changed)
         {
-            Shown = shown with { Snapshot = snapshot };
+            Shown = shown with { Snapshot = snapshot, FromEditor = true };
             return;
         }
 
         var page = book.Page;
         if (session.TrySave(page, out var error))
         {
-            Shown = shown with { Snapshot = snapshot };
+            Shown = shown with { Snapshot = snapshot, FromEditor = true };
             Message = null;
             QueueEffects(session, book.LinkName, result.Effects);
             ApplyUnsavedEffects();
@@ -114,7 +117,7 @@ public sealed class BookTextSaver(AppState state, ILogger logger)
         }
 
         // The file cannot even be read: the page keeps the text and is saved by SaveDirtyPage, then the links follow.
-        Shown = shown with { Snapshot = snapshot };
+        Shown = shown with { Snapshot = snapshot, FromEditor = true };
         QueueEffects(session, book.LinkName, result.Effects);
     }
 
@@ -319,7 +322,7 @@ public sealed class BookTextSaver(AppState state, ILogger logger)
         try
         {
             snapshot = EditorDocMapper.FromJson(json, shown.Snapshot.ScopeKey, shown.Snapshot.IncludeSubsections);
-            result = BookSync.Apply(book, snapshot);
+            result = BookSync.Apply(book, snapshot, shown.Session.Vault);
             return true;
         }
         catch (ArgumentException ex)

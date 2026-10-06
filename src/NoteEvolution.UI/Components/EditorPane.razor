@@ -360,8 +360,12 @@
         }
 
         var fresh = BookSnapshot.Create(book, session.Vault, scope, manuscript);
-        if (sameTarget && !_saver.ReloadNeeded && _shownChips == _showChips && SameContent(shown!.Snapshot, fresh))
+        if (sameTarget && !_saver.ReloadNeeded && _shownChips == _showChips
+            && (SameContent(shown!.Snapshot, fresh) || (shown.FromEditor && SameShape(shown.Snapshot, fresh))))
         {
+            // After its own save the editor keeps its document (cursor, undo history) even where the book holds a
+            // text slightly normalized; it is compared with the book's version from now on (R33).
+            _saver.Shown = shown with { Snapshot = fresh, FromEditor = false };
             StateHasChanged();
             return;
         }
@@ -398,6 +402,21 @@
             (SnapshotHeading x, SnapshotHeading y) => x == y,
             (SnapshotTextBlock x, SnapshotTextBlock y) =>
                 x.Key == y.Key && x.Text == y.Text && x.Paragraphs.SequenceEqual(y.Paragraphs) && x.Sources.SequenceEqual(y.Sources),
+            _ => false,
+        });
+
+    /// <summary>Same keys, heading levels, paragraph depths and note flags, and the same chips; texts may differ.</summary>
+    private static bool SameShape(SectionSnapshot a, SectionSnapshot b) =>
+        a.ScopeKey == b.ScopeKey
+        && a.IncludeSubsections == b.IncludeSubsections
+        && a.Nodes.Count == b.Nodes.Count
+        && a.Nodes.Zip(b.Nodes).All(pair => (pair.First, pair.Second) switch
+        {
+            (SnapshotHeading x, SnapshotHeading y) => x.Key == y.Key && x.Level == y.Level,
+            (SnapshotTextBlock x, SnapshotTextBlock y) =>
+                x.Key == y.Key
+                && x.Paragraphs.Select(p => (p.Key, p.Depth, p.IsNote)).SequenceEqual(y.Paragraphs.Select(p => (p.Key, p.Depth, p.IsNote)))
+                && x.Sources.SequenceEqual(y.Sources),
             _ => false,
         });
 }
