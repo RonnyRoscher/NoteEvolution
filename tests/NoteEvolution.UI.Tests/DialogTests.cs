@@ -869,6 +869,53 @@ public class DialogTests : UiTestContext
     }
 
     [Fact]
+    public async Task UndoToast_HeaderUndoOfItsAction_HidesTheToast_ButtonNeverUndoesTheOlderAction()
+    {
+        using var tv = JournalVault();
+        var session = await OpenSessionAsync(tv);
+        var older = new RecordingUndo("Löschen");
+        var newer = new RecordingUndo("Übernehmen");
+        var cut = Render<UndoToast>();
+        await cut.InvokeAsync(() => session.Undo.Push(older));
+        await cut.InvokeAsync(() => session.Undo.Push(newer));
+        cut.WaitForAssertion(() => Assert.Contains("Übernehmen", cut.Find(".ne-toast-text").TextContent));
+
+        // The header's undo reverses the toast's action.
+        await cut.InvokeAsync(() => session.TryUndo(out _));
+
+        cut.WaitForAssertion(() => Assert.Empty(cut.FindAll(".ne-toast")));
+        Assert.True(newer.Undone);
+        Assert.False(older.Undone);
+        Assert.True(session.Undo.CanUndo);
+    }
+
+    [Fact]
+    public async Task UndoToast_ActionNoLongerOnTop_ClickHidesWithoutUndoing()
+    {
+        using var tv = JournalVault();
+        var session = await OpenSessionAsync(tv);
+        var older = new RecordingUndo("Löschen");
+        var newer = new RecordingUndo("Übernehmen");
+        var cut = Render<UndoToast>();
+        await cut.InvokeAsync(() => session.Undo.Push(older));
+        await cut.InvokeAsync(() => session.Undo.Push(newer));
+        cut.WaitForAssertion(() => Assert.Single(cut.FindAll(".ne-toast")));
+        // While the click waits for the editor's flush, the toast's action is undone elsewhere.
+        State.FlushEditor = () =>
+        {
+            session.Undo.Undo();
+            return Task.CompletedTask;
+        };
+
+        cut.Find(".ne-toast-undo").Click();
+
+        cut.WaitForAssertion(() => Assert.Empty(cut.FindAll(".ne-toast")));
+        Assert.True(newer.Undone);
+        Assert.False(older.Undone);
+        Assert.True(session.Undo.CanUndo);
+    }
+
+    [Fact]
     public async Task UndoToast_FailingUndo_ShowsTheFailure()
     {
         using var tv = JournalVault();

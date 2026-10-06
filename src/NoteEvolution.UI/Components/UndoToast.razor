@@ -21,6 +21,7 @@
     private ITimer? _timer;
     private bool _visible;
     private bool _busy;
+    private IUndoAction? _action;
     private string _description = "";
     private string? _error;
 
@@ -72,21 +73,27 @@
 
     private void OnPushed(IUndoAction action) => _ = InvokeAsync(() =>
     {
+        _action = action;
         _description = action.Description;
         _error = null;
         Show();
         StateHasChanged();
     });
 
-    /// <summary>Nothing left to undo (the header's undo was used): the toast has no purpose any more.</summary>
+    /// <summary>
+    /// The action the toast names is no longer the one an undo reverses next (it was undone, e.g. by the header's
+    /// undo, or another one was pushed): the toast hides, so its button never undoes a different action.
+    /// </summary>
     private void OnUndoChanged() => _ = InvokeAsync(() =>
     {
-        if (_visible && _session is { Undo.CanUndo: false })
+        if (_visible && !IsOwnActionOnTop)
         {
             Hide();
             StateHasChanged();
         }
     });
+
+    private bool IsOwnActionOnTop => _action is not null && _session is { } session && ReferenceEquals(session.Undo.Top, _action);
 
     private void Show()
     {
@@ -138,6 +145,13 @@
 
             if (!ReferenceEquals(session, State.Session))
             {
+                return;
+            }
+
+            if (!IsOwnActionOnTop)
+            {
+                // The named action is gone from the top meanwhile; undoing now would reverse a different one.
+                Hide();
                 return;
             }
 

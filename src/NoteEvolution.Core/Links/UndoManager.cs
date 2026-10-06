@@ -34,6 +34,18 @@ public sealed class UndoManager
         }
     }
 
+    /// <summary>The action <see cref="Undo"/> reverses next, or <c>null</c> if the stack is empty.</summary>
+    public IUndoAction? Top
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _actions.Last?.Value;
+            }
+        }
+    }
+
     /// <summary>The <see cref="IUndoAction.Description"/> of the action <see cref="Undo"/> reverses next, or <c>null</c>.</summary>
     public string? NextDescription
     {

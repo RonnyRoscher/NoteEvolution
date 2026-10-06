@@ -33,6 +33,25 @@ public class UndoManagerTests
     }
 
     [Fact]
+    public void Top_IsTheActionUndoReversesNext()
+    {
+        var log = new List<string>();
+        var undo = new UndoManager();
+        Assert.Null(undo.Top);
+        var first = new Recording("eins", log);
+        var second = new Recording("zwei", log);
+
+        undo.Push(first);
+        undo.Push(second);
+        Assert.Same(second, undo.Top);
+
+        undo.Undo();
+        Assert.Same(first, undo.Top);
+        undo.Undo();
+        Assert.Null(undo.Top);
+    }
+
+    [Fact]
     public void Pushed_IsRaisedForPushOnly()
     {
         var log = new List<string>();
