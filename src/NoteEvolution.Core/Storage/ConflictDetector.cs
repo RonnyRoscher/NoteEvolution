@@ -19,8 +19,10 @@ public static class ConflictDetector
     /// <summary>
     /// Compares the blocks of <paramref name="local"/>'s last saved state (see <see cref="Page.MarkSaved"/>) with
     /// <paramref name="external"/>. Blocks are paired by <c>id::</c>, else by tree path with the same text, else (only
-    /// blocks unchanged locally) by the same text elsewhere, else by their place among unambiguously paired siblings (the
-    /// same block, changed externally). A locally changed or removed block whose place is ambiguous counts as deleted
+    /// blocks unchanged locally) by the same text elsewhere, else by their place among unambiguously paired siblings: a
+    /// locally changed or removed block takes the one block there with its saved text (an insertion next to it), else
+    /// the block at its place (the same block, changed externally). A locally changed or removed block whose place is
+    /// ambiguous (several blocks there with its saved text, or differing counts) counts as deleted
     /// externally, so that no other external block is overwritten or removed for it. A conflict is a block
     /// <list type="bullet">
     /// <item>changed locally whose external version differs from the saved one (and from the local one), or is missing;</item>

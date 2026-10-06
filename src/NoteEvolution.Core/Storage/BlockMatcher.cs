@@ -18,8 +18,9 @@ internal static class BlockMatcher
     /// <param name="Lines">Its lines then.</param>
     /// <param name="Path">Its tree path then (child indices from the roots).</param>
     /// <param name="Strict">
-    /// The block was changed or removed locally since then: it is never paired by its text found elsewhere (see
-    /// <see cref="Match"/>), so that an external copy with the old text is not taken for it.
+    /// The block was changed or removed locally since then: it is paired by its saved text only within its own
+    /// sibling gap and only if exactly one block there has that text (see <see cref="Match"/>), so that an external
+    /// copy with the old text elsewhere is not taken for it.
     /// </param>
     internal sealed record Source(Block Block, Block? Parent, IReadOnlyList<RawLine> Lines, IReadOnlyList<int> Path, bool Strict);
 
@@ -33,9 +34,11 @@ internal static class BlockMatcher
     /// <item>with <paramref name="byPosition"/>, every source still unpaired, in file order: by its place among its
     /// siblings. The source's parent must be paired with the target's parent. Its nearest paired siblings before and
     /// after (the gap's bounds; none = start/end) must be paired with the nearest paired target siblings around the
-    /// gap, and both gaps must hold the same number of unpaired blocks; then the source gets the target at the same
-    /// index within the gap. A gap of more than one block also needs at least one real bound. Otherwise the source
-    /// stays unpaired (for the caller: its counterpart is missing), because pairing would be a guess.</item>
+    /// gap. A strict source takes the one unpaired target in the gap with its saved text; if several have it, it
+    /// stays unpaired. Otherwise both gaps must hold the same number of unpaired blocks, and the source gets the
+    /// target at the same index within the gap; a gap of more than one block also needs at least one real bound.
+    /// Otherwise the source stays unpaired (for the caller: its counterpart is missing), because pairing would be a
+    /// guess.</item>
     /// </list>
     /// Blocks with two different ids are never paired.
     /// </summary>
@@ -109,7 +112,9 @@ internal static class BlockMatcher
                 .ToDictionary(g => g.Key!, g => g.ToList(), ReferenceEqualityComparer.Instance);
             foreach (var source in Unpaired())
             {
-                TryPair(source, ByPosition(source, siblings[(object?)source.Parent ?? RootGroup], target, pairs, taken));
+                var candidate = ByPosition(
+                    source, siblings[(object?)source.Parent ?? RootGroup], target, pairs, taken, sourceTexts, targetTexts);
+                TryPair(source, candidate);
             }
         }
 
@@ -120,7 +125,13 @@ internal static class BlockMatcher
 
     /// <summary>Step 4 of <see cref="Match"/>: the target at the source's place, if that place is unambiguous.</summary>
     private static Block? ByPosition(
-        Source source, List<Source> siblings, Page target, Dictionary<Block, Block> pairs, HashSet<Block> taken)
+        Source source,
+        List<Source> siblings,
+        Page target,
+        Dictionary<Block, Block> pairs,
+        HashSet<Block> taken,
+        Dictionary<Block, string> sourceTexts,
+        Dictionary<Block, string> targetTexts)
     {
         Block? targetParent = null;
         if (source.Parent is not null && !pairs.TryGetValue(source.Parent, out targetParent))
@@ -152,6 +163,15 @@ internal static class BlockMatcher
         }
 
         var gap = candidates.Skip(start).Take(end - start).Where(b => !taken.Contains(b)).ToList();
+        if (source.Strict)
+        {
+            var sameText = gap.Where(b => targetTexts[b] == sourceTexts[source.Block]).Take(2).ToList();
+            if (sameText.Count > 0)
+            {
+                return sameText.Count == 1 ? sameText[0] : null;
+            }
+        }
+
         var count = last - first + 1;
         if (gap.Count != count || count > 1 && before is null && after is null)
         {

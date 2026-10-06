@@ -31,7 +31,11 @@ public abstract record ExternalChangeOutcome
     /// <paramref name="Conflicts"/> lists every unsaved local block change with <c>External = null</c>.
     /// </param>
     /// <param name="Conflicts">The colliding blocks.</param>
-    public sealed record Conflict(Page Local, Page? External, IReadOnlyList<BlockConflict> Conflicts) : ExternalChangeOutcome;
+    public sealed record Conflict(Page Local, Page? External, IReadOnlyList<BlockConflict> Conflicts) : ExternalChangeOutcome
+    {
+        /// <summary>The file's bytes when <see cref="ExternalChangeHandler.Handle"/> read it; <c>null</c> if it was missing.</summary>
+        internal byte[]? DiskBytes { get; init; }
+    }
 }
 
 /// <summary>
@@ -70,7 +74,7 @@ public sealed class ExternalChangeHandler(IVault vault)
         {
             if (local is not null && HasUnsavedChanges(local))
             {
-                return new ExternalChangeOutcome.Conflict(local, null, ConflictDetector.LocalChanges(local));
+                return new ExternalChangeOutcome.Conflict(local, null, ConflictDetector.LocalChanges(local)) { DiskBytes = null };
             }
 
             vault.RemovePage(fullPath);
@@ -99,13 +103,13 @@ public sealed class ExternalChangeHandler(IVault vault)
         if (external.IsReadOnly)
         {
             vault.ReplacePage(external);
-            return new ExternalChangeOutcome.Conflict(local, null, ConflictDetector.LocalChanges(local));
+            return new ExternalChangeOutcome.Conflict(local, null, ConflictDetector.LocalChanges(local)) { DiskBytes = bytes };
         }
 
         var conflicts = ConflictDetector.Detect(local, external);
         if (conflicts.Count > 0)
         {
-            return new ExternalChangeOutcome.Conflict(local, external, conflicts);
+            return new ExternalChangeOutcome.Conflict(local, external, conflicts) { DiskBytes = bytes };
         }
 
         var merged = PageMerger.Merge(local, external, NoChoices);
@@ -118,15 +122,40 @@ public sealed class ExternalChangeHandler(IVault vault)
     /// puts the result into the vault; saving it is left to the caller (it is dirty where it differs from the file).
     /// With an external version the result is <see cref="PageMerger.Merge"/>. Without one (<c>External = null</c>)
     /// the page can only be taken as a whole: if any choice is <see cref="ConflictChoice.Mine"/> or
-    /// <see cref="ConflictChoice.Both"/>, the local page goes back into the vault with the file's current content
-    /// accepted as its saved state, so that saving it recreates the deleted file or replaces the unreadable one (the
-    /// writer's check for external changes passes); otherwise the vault keeps the external state (page removed, or
-    /// read-only). Call it before handling further changes of the same file.
+    /// <see cref="ConflictChoice.Both"/>, the local page goes back into the vault with the file content that
+    /// <see cref="Handle"/> read accepted as its saved state, so that saving it recreates the deleted file or replaces
+    /// the unreadable one (the writer's check for external changes passes); otherwise the vault keeps the external
+    /// state (page removed, or read-only).
+    /// <para>
+    /// The user decided on the file as <see cref="Handle"/> read it. If the file has changed since (or was deleted or
+    /// created), the choices are not applied and <see cref="FileChangedExternallyException"/> is thrown: the caller
+    /// runs <see cref="Handle"/> again, which reports the newer version against the local page. For that the vault
+    /// holds the local page again (it had been replaced by the read-only page of an unreadable version).
+    /// </para>
     /// </summary>
     /// <exception cref="ArgumentException">A conflict has no entry in <paramref name="choices"/>.</exception>
+    /// <exception cref="FileChangedExternallyException">
+    /// The file changed since <see cref="Handle"/>; the choices were not applied, the vault holds the local page.
+    /// </exception>
     /// <exception cref="IOException">The file exists but cannot be read; the vault is unchanged.</exception>
     public void Resolve(ExternalChangeOutcome.Conflict conflict, IReadOnlyDictionary<Guid, ConflictChoice> choices)
     {
+        var current = ReadIfExists(conflict.Local.FilePath);
+        var unchanged = current is null
+            ? conflict.DiskBytes is null
+            : conflict.DiskBytes is { } read && current.AsSpan().SequenceEqual(read);
+        if (!unchanged)
+        {
+            // The user's text must stay where the next Handle finds it (an unreadable version had replaced it).
+            if (!ReferenceEquals(vault.FindPageByPath(conflict.Local.FilePath), conflict.Local))
+            {
+                vault.ReplacePage(conflict.Local);
+            }
+
+            throw new FileChangedExternallyException(
+                $"Die Datei '{conflict.Local.FilePath}' wurde seit der Konfliktmeldung erneut geändert; bitte neu einlesen.");
+        }
+
         if (conflict.External is not null)
         {
             vault.ReplacePage(PageMerger.Merge(conflict.Local, conflict.External, choices));
@@ -141,9 +170,9 @@ public sealed class ExternalChangeHandler(IVault vault)
         var local = conflict.Local;
         if (conflict.Conflicts.Any(c => choices[c.Local.Key] != ConflictChoice.Theirs))
         {
-            if (ReadIfExists(local.FilePath) is { } diskBytes)
+            if (conflict.DiskBytes is not null)
             {
-                local.AcceptDiskAsBase(diskBytes);
+                local.AcceptDiskAsBase(conflict.DiskBytes);
             }
 
             vault.ReplacePage(local);

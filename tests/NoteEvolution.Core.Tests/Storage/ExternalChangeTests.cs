@@ -265,6 +265,62 @@ public class ExternalChangeTests
     }
 
     [Fact]
+    public void Resolve_FileRewrittenAfterHandle_Throws_NewTextNotOverwritten()
+    {
+        using var s = new Setup();
+        B(s.Page, "eins").SetContent("eins lokal");
+        s.WriteExternally("- ```\n  offen\n");
+        var conflict = Assert.IsType<ExternalChangeOutcome.Conflict>(s.Handler.Handle(s.PagePath));
+        Assert.True(s.Page.IsReadOnly);
+        s.WriteExternally("- neuer externer Text\n");
+
+        Assert.Throws<FileChangedExternallyException>(() =>
+            s.Handler.Resolve(conflict, conflict.Conflicts.ToDictionary(c => c.Local.Key, _ => ConflictChoice.Mine)));
+
+        Assert.Same(conflict.Local, s.Page);
+        Assert.Throws<FileChangedExternallyException>(() => s.Writer.Save(s.Page));
+        Assert.Equal("- neuer externer Text\n", s.Tv.Read(PageFile));
+        var again = Assert.IsType<ExternalChangeOutcome.Conflict>(s.Handler.Handle(s.PagePath));
+        Assert.Same(conflict.Local, again.Local);
+        Assert.Equal("neuer externer Text", Assert.Single(again.External!.Roots).Content);
+    }
+
+    [Theory]
+    [InlineData(ConflictChoice.Mine)]
+    [InlineData(ConflictChoice.Theirs)]
+    public void Resolve_MergeConflict_FileRewrittenAfterHandle_Throws_VaultUnchanged(ConflictChoice choice)
+    {
+        using var s = new Setup();
+        var local = s.Page;
+        B(local, "zwei").SetContent("zwei lokal");
+        s.WriteExternally(Original.Replace("- zwei\n", "- zwei extern\n"));
+        var conflict = Assert.IsType<ExternalChangeOutcome.Conflict>(s.Handler.Handle(s.PagePath));
+        s.WriteExternally(Original.Replace("- zwei\n", "- zwei noch einmal extern\n"));
+
+        Assert.Throws<FileChangedExternallyException>(() =>
+            s.Handler.Resolve(conflict, conflict.Conflicts.ToDictionary(c => c.Local.Key, _ => choice)));
+
+        Assert.Same(local, s.Page);
+    }
+
+    [Fact]
+    public void Resolve_DeletedFileRecreatedAfterHandle_Throws()
+    {
+        using var s = new Setup();
+        var local = s.Page;
+        B(local, "eins").SetContent("eins lokal");
+        File.Delete(s.PagePath);
+        var conflict = Assert.IsType<ExternalChangeOutcome.Conflict>(s.Handler.Handle(s.PagePath));
+        s.WriteExternally("- wieder da\n");
+
+        Assert.Throws<FileChangedExternallyException>(() =>
+            s.Handler.Resolve(conflict, conflict.Conflicts.ToDictionary(c => c.Local.Key, _ => ConflictChoice.Mine)));
+
+        Assert.Same(local, s.Page);
+        Assert.Equal("- wieder da\n", s.Tv.Read(PageFile));
+    }
+
+    [Fact]
     public void Handle_UnparseableAgainAfterSave_IsNotIgnored()
     {
         using var s = new Setup();
