@@ -89,8 +89,10 @@ html, body {
 
 .ne-header {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: 8px;
+    row-gap: 4px;
     padding: 6px 10px;
     border-bottom: 1px solid var(--border);
     background: var(--bg-pane);
@@ -101,7 +103,8 @@ html, body {
 }
 
 .ne-book-select {
-    min-width: 180px;
+    flex: 0 1 180px;
+    min-width: 0;
 }
 
 .ne-mode {
@@ -131,6 +134,12 @@ html, body {
     color: var(--fg-muted);
     font-size: 12px;
     padding: 0 4px;
+    white-space: nowrap;
+}
+
+.ne-ai.ne-ai-failed {
+    color: var(--danger);
+    cursor: help;
 }
 
 .ne-undo-error {
@@ -498,6 +507,7 @@ html, body {
 }
 
 .ne-search,
+.ne-relevant,
 .ne-journal {
     display: flex;
     flex-direction: column;
@@ -505,6 +515,7 @@ html, body {
 }
 
 .ne-search-list,
+.ne-relevant-list,
 .ne-journal-list {
     display: flex;
     flex-direction: column;
@@ -512,9 +523,18 @@ html, body {
 }
 
 .ne-search-hint,
+.ne-relevant-hint,
 .ne-search-empty {
     color: var(--fg-muted);
     font-size: 12px;
+}
+
+.ne-relevant-hint {
+    margin: 0;
+}
+
+.ne-relevant-download {
+    align-self: flex-start;
 }
 
 .ne-note-focused {
@@ -609,6 +629,37 @@ html, body {
     flex-wrap: wrap;
     gap: 6px;
     margin-top: 6px;
+}
+
+.ne-note-whereto-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin: 6px 0 0;
+    padding: 0;
+    list-style: none;
+}
+
+.ne-shell .ne-note-whereto-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 8px;
+    width: 100%;
+    text-align: left;
+}
+
+.ne-note-whereto-title {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ne-note-whereto-percent {
+    color: var(--fg-muted);
+    font-size: 11px;
 }
 
 .ne-note-hint,
@@ -1025,6 +1076,12 @@ html, body {
     flex: 1;
 }
 
+.ne-handled-place {
+    display: block;
+    max-width: calc(100% - 26px);
+    margin: 2px 0 4px 26px;
+}
+
 .ne-handled-page,
 .ne-handled-readonly {
     color: var(--fg-muted);
@@ -1088,6 +1145,16 @@ html, body {
 
 .ne-settings-field input[type="number"] {
     width: 90px;
+}
+
+.ne-settings-ai {
+    align-items: flex-start;
+}
+
+/* AI model dialog */
+
+.ne-ai-progress {
+    width: 100%;
 }
 
 /* Undo toast */

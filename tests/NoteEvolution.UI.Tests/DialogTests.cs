@@ -47,7 +47,12 @@ public class DialogTests : UiTestContext
             _out.Dispose();
         }
 
+        // The session (and its vector cache in the vault) is closed first, then the vault folders are deleted.
         base.Dispose(disposing);
+        if (disposing)
+        {
+            _aiVaults.ForEach(v => v.Dispose());
+        }
     }
 
     private string Text(string key) => Services.GetRequiredService<IStringLocalizer<Strings>>()[key].Value;
@@ -485,6 +490,171 @@ public class DialogTests : UiTestContext
 
         cut.WaitForAssertion(() => Assert.Equal(Text("AssistantConflict"), cut.Find(".ne-dialog-error").TextContent));
         Assert.Equal(external, tv.Read(NotesPath));
+    }
+
+    // ---- HandledWizard: suggested placements ----
+
+    private const string SleepText = "Schlaf und Träume im Alltag";
+
+    private readonly List<TestVault> _aiVaults = [];
+
+    private TestVault PlacementVault()
+    {
+        var vault = CreatePlacementVault();
+        _aiVaults.Add(vault);
+        return vault;
+    }
+
+    private static TestVault CreatePlacementVault() => TestVault.Create(
+        ("pages/Buch - Alpha.md", $"title:: Alpha\ntype:: book\n\n- # Eins\n\t- {SleepText}\n\t- Suppe kochen mit Gemüse\n"),
+        ("pages/Buch - Beta.md", "title:: Beta\ntype:: book\n\n- # Zwei\n\t- Musik Gitarre Klavier spielen\n"),
+        (NotesPath, "- [handled] Schlaf und Träume\n- [handled] Zwei\n- Drei\n"));
+
+    private static IElement Place(IRenderedComponent<HandledWizard> cut, int item) =>
+        cut.FindAll(".ne-handled-item")[item].QuerySelector(".ne-handled-place")!;
+
+    private static string OptionFor(IElement place, string startsWith) =>
+        place.QuerySelectorAll("option").First(o => o.TextContent.StartsWith(startsWith, StringComparison.Ordinal)).GetAttribute("value")!;
+
+    [Fact]
+    public async Task Handled_PlacementChosen_FullLinkWritten()
+    {
+        var tv = PlacementVault();
+        var session = await OpenWithAiAsync(tv);
+        var cut = Render<HandledWizard>();
+        cut.WaitForAssertion(() => Assert.Equal(2, cut.FindAll(".ne-handled-place").Count));
+        var place = Place(cut, 0);
+        var options = place.QuerySelectorAll("option").ToList();
+        Assert.Equal(3, options.Count);
+        Assert.Equal("", options[0].GetAttribute("value"));
+        Assert.Equal(Text("HandledPlaceUnknown"), options[0].TextContent);
+        Assert.All(options.Skip(1), o => Assert.Matches(@" – \d{1,3} %$", o.TextContent));
+
+        place.Change(OptionFor(place, SleepText));
+        cut.Find(".ne-handled-convert").Click();
+        cut.Find(".ne-handled-yes").Click();
+
+        cut.WaitForAssertion(() => Assert.Single(cut.FindAll(".ne-handled-done")));
+        var notes = tv.Read(NotesPath);
+        Assert.DoesNotContain("[handled] Schlaf", notes);
+        Assert.Matches(@"- Schlaf und Träume\n  id:: [0-9a-f-]{36}\n  used-in:: \[\[Buch - Alpha\]\] \(\([0-9a-f-]{36}\)\)\n", notes);
+        Assert.Contains("- Zwei\n  used-in:: [[Buch - Alpha]]\n", notes);
+        Assert.Contains("source:: ((", tv.Read("pages/Buch - Alpha.md"));
+        Assert.Same(session.Vault.FindBook("Buch - Alpha"), State.CurrentBook);
+        Assert.NotNull(State.CurrentBook!.Root.Children.Single().TextBlocks.First().Block.Id);
+    }
+
+    [Fact]
+    public async Task Handled_DefaultUnknownPlace_AsBefore()
+    {
+        var tv = PlacementVault();
+        await OpenWithAiAsync(tv);
+        var cut = Render<HandledWizard>();
+        cut.WaitForAssertion(() => Assert.Equal(2, cut.FindAll(".ne-handled-place").Count));
+
+        cut.Find(".ne-handled-convert").Click();
+        cut.Find(".ne-handled-yes").Click();
+
+        cut.WaitForAssertion(() => Assert.Single(cut.FindAll(".ne-handled-done")));
+        Assert.Equal(
+            "- Schlaf und Träume\n  used-in:: [[Buch - Alpha]]\n- Zwei\n  used-in:: [[Buch - Alpha]]\n- Drei\n", tv.Read(NotesPath));
+        Assert.DoesNotContain("source::", tv.Read("pages/Buch - Alpha.md"));
+    }
+
+    [Fact]
+    public async Task Handled_WithoutAi_NoPlacementColumn()
+    {
+        var tv = PlacementVault();
+        await OpenSessionAsync(tv);
+        var cut = Render<HandledWizard>();
+
+        Assert.Equal(2, cut.FindAll(".ne-handled-item").Count);
+        Assert.Empty(cut.FindAll(".ne-handled-place"));
+    }
+
+    [Fact]
+    public async Task Handled_BookChange_RecomputesPlacementsAndForgetsTheChoice()
+    {
+        var tv = PlacementVault();
+        await OpenWithAiAsync(tv);
+        var cut = Render<HandledWizard>();
+        cut.WaitForAssertion(() => Assert.Equal(2, cut.FindAll(".ne-handled-place").Count));
+        var place = Place(cut, 0);
+        place.Change(OptionFor(place, SleepText));
+
+        cut.Find(".ne-handled-book-select").Change("Buch - Beta");
+
+        cut.WaitForAssertion(() =>
+            Assert.Contains(Place(cut, 0).QuerySelectorAll("option"), o => o.TextContent.StartsWith("Musik Gitarre", StringComparison.Ordinal)));
+        Assert.DoesNotContain(Place(cut, 0).QuerySelectorAll("option"), o => o.TextContent.StartsWith(SleepText, StringComparison.Ordinal));
+        cut.Find(".ne-handled-convert").Click();
+        cut.Find(".ne-handled-yes").Click();
+        cut.WaitForAssertion(() => Assert.Single(cut.FindAll(".ne-handled-done")));
+        Assert.Equal(
+            "- Schlaf und Träume\n  used-in:: [[Buch - Beta]]\n- Zwei\n  used-in:: [[Buch - Beta]]\n- Drei\n", tv.Read(NotesPath));
+    }
+
+    [Fact]
+    public async Task Handled_PlacementChosen_OpenConflictOnTheBookPage_IsRefused()
+    {
+        var tv = PlacementVault();
+        var session = await OpenWithAiAsync(tv);
+        var cut = Render<HandledWizard>();
+        cut.WaitForAssertion(() => Assert.Equal(2, cut.FindAll(".ne-handled-place").Count));
+        var place = Place(cut, 0);
+        place.Change(OptionFor(place, SleepText));
+        var path = Path.Combine(tv.Root, "pages/Buch - Alpha.md");
+        session.Vault.FindPageByPath(path)!.Roots[0].SetContent("# Lokal");
+        const string external = "title:: Alpha\ntype:: book\n\n- # Extern\n\t- Ein Text\n";
+        File.WriteAllText(path, external, Utf8);
+        session.HandleExternalChange(path);
+        Assert.True(session.HasOpenConflict(path));
+        var before = tv.Read(NotesPath);
+
+        cut.Find(".ne-handled-convert").Click();
+        cut.Find(".ne-handled-yes").Click();
+
+        cut.WaitForAssertion(() => Assert.Equal(Text("AssistantConflict"), cut.Find(".ne-dialog-error").TextContent));
+        Assert.Equal(before, tv.Read(NotesPath));
+        Assert.Equal(external, tv.Read("pages/Buch - Alpha.md"));
+    }
+
+    [Fact]
+    public async Task Handled_PlacementVanished_ShowsErrorAndStaysOpen()
+    {
+        var tv = PlacementVault();
+        var session = await OpenWithAiAsync(tv);
+        var cut = Render<HandledWizard>();
+        cut.WaitForAssertion(() => Assert.Equal(2, cut.FindAll(".ne-handled-place").Count));
+        var place = Place(cut, 0);
+        place.Change(OptionFor(place, SleepText));
+        var path = Path.Combine(tv.Root, "pages/Buch - Alpha.md");
+        const string external = "title:: Alpha\ntype:: book\n\n- # Eins\n\t- Etwas ganz anderes\n";
+        File.WriteAllText(path, external, Utf8);
+        session.HandleExternalChange(path);
+        var before = tv.Read(NotesPath);
+
+        cut.Find(".ne-handled-convert").Click();
+        cut.Find(".ne-handled-yes").Click();
+
+        cut.WaitForAssertion(() => Assert.Equal(Text("HandledPlacementFailed"), cut.Find(".ne-dialog-error").TextContent));
+        Assert.Empty(cut.FindAll(".ne-handled-done"));
+        Assert.Equal(2, cut.FindAll(".ne-handled-item").Count);
+        Assert.Equal(before, tv.Read(NotesPath));
+
+        // The places are suggested again for the book as it is now; the choice is back to "Stelle unbekannt".
+        cut.WaitForAssertion(() =>
+        {
+            var options = Place(cut, 0).QuerySelectorAll("option").Select(o => o.TextContent).ToList();
+            Assert.DoesNotContain(options, o => o.StartsWith(SleepText, StringComparison.Ordinal));
+            Assert.Contains(options, o => o.StartsWith("Etwas ganz anderes", StringComparison.Ordinal));
+        });
+        cut.Find(".ne-handled-convert").Click();
+        cut.Find(".ne-handled-yes").Click();
+
+        cut.WaitForAssertion(() => Assert.Single(cut.FindAll(".ne-handled-done")));
+        Assert.Equal(
+            "- Schlaf und Träume\n  used-in:: [[Buch - Alpha]]\n- Zwei\n  used-in:: [[Buch - Alpha]]\n- Drei\n", tv.Read(NotesPath));
     }
 
     // ---- DraftWizard ----

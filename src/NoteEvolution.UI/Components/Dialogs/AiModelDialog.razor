@@ -1,0 +1,118 @@
+@using NoteEvolution.AI.Model
+@implements IDisposable
+@inject AiRuntime Ai
+@inject UiSettings Settings
+@inject IPlatformServices Platform
+@inject IStringLocalizer<Strings> L
+@inject ILogger<AiModelDialog> Logger
+
+@* The download starts only here, after the user confirmed it; it ends with the dialog (Cancel, or a vault switch). *@
+<Modal Title="@L["AiModelTitle"]" CssClass="ne-ai-model-dialog">
+    <ChildContent>
+        <p class="ne-ai-model-text">@L["AiModelText", Megabytes(Ai.Model.TotalSize)]</p>
+        <p class="ne-dialog-hint">@L["AiModelOffline"]</p>
+        @if (_progress is { } progress)
+        {
+            <progress class="ne-ai-progress" max="@progress.BytesTotal" value="@progress.BytesDone"></progress>
+            <span class="ne-dialog-hint">@L["AiModelProgress", Megabytes(progress.BytesDone), Megabytes(progress.BytesTotal)]</span>
+        }
+        @if (_error is not null)
+        {
+            <p class="ne-dialog-error" role="alert">@L["AiModelDownloadFailed"] <span class="ne-ai-model-error">@_error</span></p>
+        }
+    </ChildContent>
+    <Footer>
+        @if (_download is null)
+        {
+            <button type="button" class="ne-ai-download" @onclick="DownloadAsync">@L["AiDownload"]</button>
+            <button type="button" class="ne-ai-not-now" @onclick="NotNowAsync">@L["AiNotNow"]</button>
+        }
+        else
+        {
+            <button type="button" class="ne-ai-cancel" @onclick="CancelDownload">@L["Cancel"]</button>
+        }
+    </Footer>
+</Modal>
+
+@code {
+    /// <summary>The running download; <c>null</c> while none runs.</summary>
+    private CancellationTokenSource? _download;
+
+    private DownloadProgress? _progress;
+    private string? _error;
+
+    /// <summary>The dialog is done: the model was downloaded, or the user chose "not now".</summary>
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    /// <summary>Whole megabytes, rounded to tens above 100 MB (the size is an estimate for the user).</summary>
+    private static long Megabytes(long bytes)
+    {
+        var mb = (long)Math.Round(bytes / 1_000_000.0);
+        return mb > 100 ? (long)Math.Round(mb / 10.0) * 10 : mb;
+    }
+
+    private async Task DownloadAsync()
+    {
+        if (_download is not null)
+        {
+            return;
+        }
+
+        _error = null;
+        _progress = new DownloadProgress(0, Ai.Model.TotalSize);
+        var download = _download = new CancellationTokenSource();
+        try
+        {
+            await Ai.DownloadAsync(new Progress(this), download.Token);
+            await OnClose.InvokeAsync();
+        }
+        catch (OperationCanceledException) when (download.IsCancellationRequested)
+        {
+            // cancelled by the user (or by closing the dialog): nothing to report
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Downloading the AI model failed");
+            _error = ex.Message;
+        }
+        finally
+        {
+            _download = null;
+            _progress = null;
+            download.Dispose();
+        }
+    }
+
+    /// <summary>Not now: the dialog no longer appears after opening a vault; the settings still offer the download.</summary>
+    private async Task NotNowAsync()
+    {
+        Settings.AiModelDeclined = true;
+        try
+        {
+            Settings.Save(Platform.UserDataDirectory);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Logger.LogWarning(ex, "Saving the UI settings failed");
+        }
+
+        await OnClose.InvokeAsync();
+    }
+
+    private void CancelDownload() => _download?.Cancel();
+
+    public void Dispose() => CancelDownload();
+
+    /// <summary>Shows the download's progress; reports come from the download's thread.</summary>
+    private sealed class Progress(AiModelDialog dialog) : IProgress<DownloadProgress>
+    {
+        public void Report(DownloadProgress value) => _ = dialog.InvokeAsync(() =>
+        {
+            if (dialog._download is not null)
+            {
+                dialog._progress = value;
+                dialog.StateHasChanged();
+            }
+        });
+    }
+}

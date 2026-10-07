@@ -14,9 +14,10 @@ public sealed record HandledResult(int Converted, IReadOnlyList<NoteBlock> Skipp
 
 /// <summary>
 /// One-time assistant: converts the old <c>[handled]</c> marker at the start of a note into
-/// <c>used-in:: [[Book]]</c>. This is the only operation allowed to change a note's content.
+/// <c>used-in:: [[Book]]</c>, or, for a note with a confirmed placement, into a full link with a book text block.
+/// This is the only operation allowed to change a note's content.
 /// </summary>
-public sealed class HandledConverter(INoteRepository notes, IPageWriter writer)
+public sealed class HandledConverter(INoteRepository notes, IPageWriter writer, ILinkService links)
 {
     private const string Marker = "[handled]";
 
@@ -30,15 +31,25 @@ public sealed class HandledConverter(INoteRepository notes, IPageWriter writer)
     ];
 
     /// <summary>
-    /// For each selected note: removes <c>[handled]</c> and one following space from the first line, and links the
-    /// book via <c>used-in::</c> (appending to an existing property unless the book is already listed; no block
-    /// reference, no <c>id::</c>). Each changed page is saved exactly once.
+    /// For each selected note: removes <c>[handled]</c> and one following space from the first line.
+    /// A note without a placement also gets <c>used-in:: [[Book]]</c> (appended to an existing property unless the
+    /// book is already listed; no block reference, no <c>id::</c>). A note with a placement
+    /// (<paramref name="placements"/> maps a note block key to the key of a text block of <paramref name="book"/>)
+    /// is instead fully linked with that text block by <see cref="ILinkService.Link"/>, which saves the book and the
+    /// note page, <b>before</b> the prefix is removed: the note is still found by its content hash if only its page
+    /// cannot be written (the update then waits in <c>pending.json</c>), and a repeated run changes nothing in the link.
+    /// Afterwards each page is saved once with the prefix removed from all its notes.
+    /// <see cref="HandledResult.Converted"/> counts both kinds.
     /// Notes on read-only pages are left untouched and returned in <see cref="HandledResult.Skipped"/>.
-    /// Pages are saved one after the other; if a save throws (for example
-    /// <see cref="FileChangedExternallyException"/> or <see cref="IOException"/>), the exception propagates,
-    /// pages already saved stay saved, and the remaining pages are not written.
+    /// Pages are processed one after the other; if a write throws (for example
+    /// <see cref="FileChangedExternallyException"/> or <see cref="IOException"/>, or an
+    /// <see cref="ArgumentException"/> for an unknown placement), the exception propagates, what was already written
+    /// stays written, and the remaining notes are not processed. A note that was linked but whose prefix could not be
+    /// saved is simply handled again by a new run.
+    /// <see cref="Book"/> is a snapshot: callers rebuild it with <see cref="Book.Load"/> after linking placements.
     /// </summary>
-    public HandledResult Apply(IEnumerable<NoteBlock> selected, Book book)
+    public HandledResult Apply(
+        IEnumerable<NoteBlock> selected, Book book, IReadOnlyDictionary<Guid, Guid>? placements = null)
     {
         var skipped = new List<NoteBlock>();
         var byPage = new Dictionary<Page, List<NoteBlock>>();
@@ -62,7 +73,15 @@ public sealed class HandledConverter(INoteRepository notes, IPageWriter writer)
         {
             foreach (var note in pageNotes)
             {
-                Convert(note.Block, book);
+                if (placements is not null && placements.TryGetValue(note.Block.Key, out var textBlockKey))
+                {
+                    links.Link(book, textBlockKey, note.Block.Key);
+                    StripMarker(note.Block);
+                }
+                else
+                {
+                    Convert(note.Block, book);
+                }
             }
             writer.Save(page);
             converted += pageNotes.Count;
@@ -71,7 +90,7 @@ public sealed class HandledConverter(INoteRepository notes, IPageWriter writer)
         return new HandledResult(converted, skipped);
     }
 
-    private static void Convert(Block block, Book book)
+    private static void StripMarker(Block block)
     {
         var content = block.Content;
         if (content.StartsWith(Marker, StringComparison.Ordinal))
@@ -79,6 +98,11 @@ public sealed class HandledConverter(INoteRepository notes, IPageWriter writer)
             var rest = content[Marker.Length..];
             block.SetContent(rest.StartsWith(' ') ? rest[1..] : rest);
         }
+    }
+
+    private static void Convert(Block block, Book book)
+    {
+        StripMarker(block);
 
         var entries = block.GetProperty("used-in") is { } existing ? [.. UsedInValue.Parse(existing)] : new List<UsedInEntry>();
         if (!entries.Any(e => string.Equals(e.PageName, book.LinkName, StringComparison.OrdinalIgnoreCase)))

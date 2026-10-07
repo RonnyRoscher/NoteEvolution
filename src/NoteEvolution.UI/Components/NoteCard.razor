@@ -1,7 +1,10 @@
+@using NoteEvolution.AI.Embeddings
+@using NoteEvolution.AI.Relevance
 @using NoteEvolution.Core.Books
 @using NoteEvolution.Core.Links
 @using NoteEvolution.Core.Model
 @using NoteEvolution.Core.Vaults
+@implements IDisposable
 @inject AppState State
 @inject IPlatformServices Platform
 @inject IStringLocalizer<Strings> L
@@ -56,12 +59,44 @@
     <footer class="ne-note-actions">
         <button type="button" class="ne-note-adopt" title="@L["NoteAdoptTitle"]"
                 disabled="@(!CanAdopt)" @onclick="() => AdoptAsync(Note.Block)">@L["NoteAdopt"]</button>
+        @if (WhereToAvailable)
+        {
+            <button type="button" class="ne-note-whereto" title="@L["NoteWhereToTitle"]"
+                    aria-expanded="@(_whereTo is not null || _whereBusy)" @onclick="ToggleWhereToAsync">@L["NoteWhereTo"]</button>
+        }
         <button type="button" class="ne-note-logseq" @onclick="OpenInLogseq">@L["NoteOpenLogseq"]</button>
         @if (collapsible)
         {
             <button type="button" class="ne-note-more" @onclick="() => _expanded = !_expanded">@(_expanded ? L["NoteLess"] : L["NoteMore"])</button>
         }
     </footer>
+    @if (_whereBusy)
+    {
+        <div class="ne-note-hint ne-note-whereto-busy" role="status">@L["NoteWhereToBusy"]</div>
+    }
+    else if (_whereTo is { } whereTo)
+    {
+        if (whereTo.Sections.Count == 0)
+        {
+            <div class="ne-note-hint ne-note-whereto-none" role="status">@L["NoteWhereToNone"]</div>
+        }
+        else
+        {
+            <ul class="ne-note-whereto-list">
+                @foreach (var target in whereTo.Sections)
+                {
+                    var key = target.Key;
+                    <li>
+                        <button type="button" class="ne-note-whereto-item" title="@L["NoteWhereToItemTitle"]"
+                                @onclick="() => GoToSectionAsync(key)">
+                            <span class="ne-note-whereto-title">@target.Title</span>
+                            <span class="ne-note-whereto-percent">@target.Percent %</span>
+                        </button>
+                    </li>
+                }
+            </ul>
+        }
+    }
     @if (_message is { } message)
     {
         <div class="ne-note-message @(message.IsError ? "ne-note-error" : "ne-note-info")" role="@(message.IsError ? "alert" : "status")">@L[message.Key]</div>
@@ -75,10 +110,29 @@
     private bool _expanded;
     private AdoptMessage? _message;
 
+    /// <summary>How many sections "Wohin damit?" lists.</summary>
+    private const int WhereToLimit = 5;
+
+    private VaultSession? _session;
+    private bool _disposed;
+    private bool _whereBusy;
+    private WhereToResult? _whereTo;
+    private Guid _whereNoteKey;
+    private string? _whereBookName;
+
+    /// <summary>Counts the requests and closings; a result is only applied while its request is still the newest.</summary>
+    private int _whereGeneration;
+
+    /// <summary>The sections found for the note; <see cref="Book"/> is the snapshot they were found in.</summary>
+    private sealed record WhereToResult(Book Book, IReadOnlyList<(Guid Key, string Title, int Percent)> Sections);
+
     [Parameter, EditorRequired] public NoteBlock Note { get; set; } = default!;
 
     /// <summary>The hit's score in percent of the best hit; <c>null</c> outside the search.</summary>
     [Parameter] public int? Percent { get; set; }
+
+    /// <summary>The button is offered while the AI is ready and there is a book to place the note in.</summary>
+    private bool WhereToAvailable => State is { Session: { } session, CurrentBook: not null } && session.Relevance.IsAvailable;
 
     private string Origin => Note.Date is { } date
         ? date.ToString("dd.MM.yyyy", CultureInfo.InvariantCulture)
@@ -94,6 +148,65 @@
     /// </summary>
     private bool CanAdopt =>
         State is { Session: not null, CurrentBook.Page.IsReadOnly: false } && !Note.Page.IsReadOnly;
+
+    /// <summary>
+    /// The list belongs to one note, session and book: when any of them changes (the card is reused for another note, a
+    /// book switch) it is closed and a request still running is dropped.
+    /// </summary>
+    protected override void OnParametersSet()
+    {
+        var sessionChanged = TrackSession();
+        var bookChanged = (_whereTo is not null || _whereBusy)
+            && !string.Equals(State.CurrentBook?.LinkName, _whereBookName, StringComparison.OrdinalIgnoreCase);
+        if (sessionChanged || bookChanged || Note.Key != _whereNoteKey)
+        {
+            _whereGeneration++;
+            _whereTo = null;
+            _whereBusy = false;
+            _whereNoteKey = Note.Key;
+        }
+    }
+
+    public void Dispose()
+    {
+        _disposed = true;
+        _whereGeneration++;
+        Unsubscribe();
+    }
+
+    /// <summary>Follows the AI status of the current session: the button appears when the AI becomes ready.</summary>
+    private bool TrackSession()
+    {
+        if (ReferenceEquals(State.Session, _session))
+        {
+            return false;
+        }
+
+        Unsubscribe();
+        _session = State.Session;
+        if (_session is not null)
+        {
+            _session.AiStatusChanged += OnAiStatusChanged;
+        }
+
+        return true;
+    }
+
+    private void Unsubscribe()
+    {
+        if (_session is not null)
+        {
+            _session.AiStatusChanged -= OnAiStatusChanged;
+        }
+    }
+
+    private void OnAiStatusChanged() => _ = InvokeAsync(() =>
+    {
+        if (!_disposed)
+        {
+            StateHasChanged();
+        }
+    });
 
     private static int Lines(string text) => text.Count(c => c == '\n') + 1;
 
@@ -143,6 +256,106 @@
         State.CurrentSectionKey = section ?? (sameBook && book.FindNode(State.CurrentSectionKey) is not null
             ? State.CurrentSectionKey
             : book.Root.Key);
+        State.CursorTextBlockKey = null;
+        State.Notify();
+    }
+
+    /// <summary>
+    /// Lists the sections of the current book that fit the note best (or closes the list). The note's text and the book
+    /// snapshot are taken here on the UI thread; only the embedding and comparing run in the background (the vault model
+    /// is not thread-safe), and the section titles are read from that same snapshot.
+    /// </summary>
+    private async Task ToggleWhereToAsync()
+    {
+        var generation = ++_whereGeneration;
+        if (_whereTo is not null || _whereBusy)
+        {
+            _whereTo = null;
+            _whereBusy = false;
+            return;
+        }
+
+        if (State is not { Session: { } session, CurrentBook: { } book })
+        {
+            return;
+        }
+
+        _whereBookName = book.LinkName;
+        var noteKey = Note.Key;
+        var noteText = EmbeddingText.ForNote(Note);
+        var relevance = session.Relevance;
+        _whereBusy = true;
+        IReadOnlyList<SectionHit> hits;
+        try
+        {
+            hits = await Task.Run(() => relevance.WhereTo(noteKey, noteText, book, WhereToLimit));
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Finding the sections for a note failed");
+            hits = [];
+        }
+
+        if (_disposed || generation != _whereGeneration)
+        {
+            return;
+        }
+
+        var best = hits.Count > 0 ? hits.Max(hit => hit.Score) : 0;
+        _whereTo = new WhereToResult(book, [.. hits
+            .Where(hit => book.FindNode(hit.SectionKey) is not null)
+            .Select(hit => (hit.SectionKey, SectionTitle(book, book.FindNode(hit.SectionKey)!), SearchTab.Percent(hit.Score, best)))]);
+        _whereBusy = false;
+    }
+
+    private static string SectionTitle(Book book, OutlineNode section) => section.Level == 0 ? book.Title : section.Title;
+
+    /// <summary>
+    /// Goes to a section of the list: the editor saves first (the view changes behind it), then the book (if the
+    /// current one changed since) and the section are selected and the cursor is cleared.
+    /// </summary>
+    private async Task GoToSectionAsync(Guid sectionKey)
+    {
+        if (_whereTo is not { } result || State.Session is not { } session)
+        {
+            return;
+        }
+
+        try
+        {
+            if (State.FlushEditor is { } flush)
+            {
+                await flush();
+            }
+        }
+        catch (Exception ex)
+        {
+            // The text may not be saved, so the view stays where it is.
+            Logger.LogError(ex, "Saving the editor before going to a section failed");
+            return;
+        }
+
+        if (_disposed || !ReferenceEquals(session, State.Session))
+        {
+            return;
+        }
+
+        if (!string.Equals(State.CurrentBook?.LinkName, result.Book.LinkName, StringComparison.OrdinalIgnoreCase))
+        {
+            if (session.Vault.FindBook(result.Book.LinkName) is not { } book)
+            {
+                return;
+            }
+
+            State.CurrentBook = book;
+        }
+
+        if (State.CurrentBook?.FindNode(sectionKey) is null)
+        {
+            return;
+        }
+
+        State.CurrentSectionKey = sectionKey;
         State.CursorTextBlockKey = null;
         State.Notify();
     }

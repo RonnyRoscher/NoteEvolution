@@ -1,4 +1,7 @@
 @using NoteEvolution.Core.Vaults
+@using Microsoft.Extensions.DependencyInjection
+@implements IDisposable
+@inject IServiceProvider Services
 @inject AppState State
 @inject UiSettings Settings
 @inject IPlatformServices Platform
@@ -35,6 +38,26 @@
         <input id="ne-settings-width" class="ne-settings-width" type="number" min="@UiSettings.MinLineWidthCh" max="@UiSettings.MaxLineWidthCh"
                @bind="_lineWidth" @bind:event="onchange" />
     </div>
+    @if (_ai is { } ai)
+    {
+        <div class="ne-settings-field ne-settings-ai">
+            <span class="ne-settings-label">@L["SettingsAiModel"]</span>
+            @if (ai.IsDownloading)
+            {
+                <span class="ne-settings-ai-status">@L["SettingsAiDownloading"]</span>
+            }
+            else if (ai.ModelInstalled)
+            {
+                <span class="ne-settings-ai-status">@L["SettingsAiInstalled", ai.Model.DisplayName]</span>
+            }
+            else
+            {
+                <span class="ne-settings-ai-status">@L["SettingsAiMissing"]</span>
+                @* The AI model dialog asks for the confirmation; these settings stay open underneath. *@
+                <button type="button" class="ne-settings-ai-download" @onclick="State.RequestAiModelDialog">@L["AiDownload"]</button>
+            }
+        </div>
+    }
     </ChildContent>
     <Footer>
         <button type="button" class="ne-settings-save" disabled="@_busy" @onclick="SaveAsync">@L["Save"]</button>
@@ -55,8 +78,17 @@
     /// <summary>The note folders changed and were saved: the vault is opened again (the dialog is closed before).</summary>
     [Parameter] public EventCallback OnNoteFoldersChanged { get; set; }
 
+    /// <summary>The app's AI runtime; <c>null</c> when none is registered (the AI is off, no model section).</summary>
+    private AiRuntime? _ai;
+
     protected override void OnInitialized()
     {
+        _ai = Services.GetService<AiRuntime>();
+        if (_ai is not null)
+        {
+            _ai.ModelChanged += OnModelChanged;
+        }
+
         _folders = string.Join('\n', State.Session?.Vault.Settings.NoteFolders ?? []);
         _theme = Settings.Theme;
         _fontSize = Settings.FontSizePt;
@@ -164,6 +196,17 @@
 
         return true;
     }
+
+    public void Dispose()
+    {
+        if (_ai is not null)
+        {
+            _ai.ModelChanged -= OnModelChanged;
+        }
+    }
+
+    /// <summary>A download started or ended (on the download's thread): the model's status is shown anew.</summary>
+    private void OnModelChanged() => _ = InvokeAsync(StateHasChanged);
 
     /// <summary>One folder per line; blank lines and repeats are dropped.</summary>
     private List<string> Folders() =>

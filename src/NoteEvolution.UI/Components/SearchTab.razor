@@ -104,6 +104,6 @@
     }
 
     /// <summary>The score in percent of the best hit's (the best is 100 %); all 100 if no score is positive.</summary>
-    private static int Percent(double score, double best) =>
+    internal static int Percent(double score, double best) =>
         best > 0 ? (int)Math.Clamp(Math.Round(score / best * 100), 0, 100) : 100;
 }

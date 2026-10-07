@@ -28,6 +28,17 @@ public interface ILinkService
     /// <exception cref="InvalidOperationException">The note's page is read-only; nothing was changed.</exception>
     AdoptResult Adopt(Book book, Guid noteBlockKey, InsertPosition position);
 
+    /// <summary>
+    /// Fully links an existing text block and a note block (a confirmed placement): gives both an <c>id::</c>, adds
+    /// the note's id to the text block's <c>source::</c>, then sets <c>used-in:: [[book]] ((text block id))</c> on the
+    /// note, replacing an entry for the same book that has no block reference. Writes only property lines; what is
+    /// there already is not written again (a fully linked pair writes nothing). Records no undo action.
+    /// </summary>
+    /// <exception cref="ArgumentException">Unknown text block (a linked paragraph does not count) or note block.</exception>
+    /// <exception cref="ReadOnlyPageException">The book page is read-only.</exception>
+    /// <exception cref="InvalidOperationException">The note's page is read-only; nothing was changed.</exception>
+    void Link(Book book, Guid textBlockKey, Guid noteBlockKey);
+
     /// <summary>Removes <paramref name="noteBlockId"/> from the text block's <c>source::</c> and the usage from the note.</summary>
     void RemoveSource(Book book, Guid textBlockKey, Guid noteBlockId);
 

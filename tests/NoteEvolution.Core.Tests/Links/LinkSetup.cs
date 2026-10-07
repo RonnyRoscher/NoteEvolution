@@ -99,12 +99,23 @@ internal sealed class FailingWriter(IPageWriter inner) : IPageWriter
 {
     private readonly Dictionary<string, int> _failures = new(StringComparer.OrdinalIgnoreCase);
 
-    public void FailNext(string path, int times = 1) => _failures[Path.GetFullPath(path)] = times;
+    private readonly Dictionary<string, int> _skips = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Fails the next <paramref name="times"/> saves of the path, after <paramref name="skip"/> saves that succeed.</summary>
+    public void FailNext(string path, int times = 1, int skip = 0)
+    {
+        _failures[Path.GetFullPath(path)] = times;
+        _skips[Path.GetFullPath(path)] = skip;
+    }
 
     public void Save(Page page)
     {
         var key = Path.GetFullPath(page.FilePath);
-        if (_failures.TryGetValue(key, out var remaining) && remaining > 0)
+        if (_skips.TryGetValue(key, out var skip) && skip > 0)
+        {
+            _skips[key] = skip - 1;
+        }
+        else if (_failures.TryGetValue(key, out var remaining) && remaining > 0)
         {
             _failures[key] = remaining - 1;
             throw new IOException($"Simulierter Schreibfehler: {page.FilePath}");

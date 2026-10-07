@@ -106,6 +106,22 @@
   <data name="AiOff" xml:space="preserve">
     <value>KI: aus</value>
   </data>
+  <data name="AiLocal" xml:space="preserve">
+    <value>KI: lokal</value>
+  </data>
+  <data name="AiIndexing" xml:space="preserve">
+    <value>KI: lokal – indexiert {0}/{1}</value>
+    <comment>{0} = indexierte Notizen, {1} = alle Notizen</comment>
+  </data>
+  <data name="AiModelMissing" xml:space="preserve">
+    <value>KI: Modell fehlt</value>
+  </data>
+  <data name="AiDownloading" xml:space="preserve">
+    <value>KI: lädt Modell …</value>
+  </data>
+  <data name="AiFailed" xml:space="preserve">
+    <value>KI: Fehler</value>
+  </data>
   <data name="ReadOnlyFiles" xml:space="preserve">
     <value>Nicht sicher lesbare Dateien (nur Anzeige, werden nie geschrieben)</value>
   </data>
@@ -211,6 +227,9 @@
   </data>
 
   <!-- Notizbereich -->
+  <data name="NotesTabRelevant" xml:space="preserve">
+    <value>Relevant</value>
+  </data>
   <data name="NotesTabSearch" xml:space="preserve">
     <value>Suche</value>
   </data>
@@ -268,6 +287,21 @@
   </data>
   <data name="NoteAdoptChildTitle" xml:space="preserve">
     <value>Diesen Unterpunkt ins Buch übernehmen</value>
+  </data>
+  <data name="NoteWhereTo" xml:space="preserve">
+    <value>Wohin damit?</value>
+  </data>
+  <data name="NoteWhereToTitle" xml:space="preserve">
+    <value>Die Abschnitte des Buchs anzeigen, die zu dieser Notiz passen</value>
+  </data>
+  <data name="NoteWhereToBusy" xml:space="preserve">
+    <value>Passende Abschnitte werden gesucht …</value>
+  </data>
+  <data name="NoteWhereToNone" xml:space="preserve">
+    <value>Kein passender Abschnitt gefunden.</value>
+  </data>
+  <data name="NoteWhereToItemTitle" xml:space="preserve">
+    <value>Zu diesem Abschnitt springen</value>
   </data>
   <data name="NoteOpenLogseq" xml:space="preserve">
     <value>In Logseq öffnen</value>
@@ -484,6 +518,15 @@
   <data name="HandledFailed" xml:space="preserve">
     <value>Die Notizen konnten nicht umgewandelt werden. Bereits geschriebene Dateien bleiben umgewandelt.</value>
   </data>
+  <data name="HandledPlaceLabel" xml:space="preserve">
+    <value>Fundstelle im Buch</value>
+  </data>
+  <data name="HandledPlaceUnknown" xml:space="preserve">
+    <value>Stelle unbekannt</value>
+  </data>
+  <data name="HandledPlacementFailed" xml:space="preserve">
+    <value>Eine gewählte Fundstelle gibt es im Buch nicht mehr. Bitte die Fundstellen neu wählen; bereits geschriebene Dateien bleiben umgewandelt.</value>
+  </data>
   <data name="DraftTitle" xml:space="preserve">
     <value>Entwurf in ein Buch umwandeln</value>
   </data>
@@ -627,5 +670,63 @@
   </data>
   <data name="UndoFailed" xml:space="preserve">
     <value>Die Aktion konnte nicht rückgängig gemacht werden.</value>
+  </data>
+
+  <!-- KI-Modell -->
+  <data name="AiModelTitle" xml:space="preserve">
+    <value>KI-Modell herunterladen</value>
+  </data>
+  <data name="AiModelText" xml:space="preserve">
+    <value>Für die KI-Funktionen (Relevant, Suche nach Bedeutung, Wohin damit?) braucht NoteEvolution ein Sprachmodell von etwa {0} MB.</value>
+    <comment>{0} = Größe in MB</comment>
+  </data>
+  <data name="AiModelOffline" xml:space="preserve">
+    <value>Der Download ist einmalig, danach arbeitet die KI offline auf diesem Rechner. Ohne Modell sucht die App nur im Volltext.</value>
+  </data>
+  <data name="AiModelProgress" xml:space="preserve">
+    <value>{0} von {1} MB</value>
+    <comment>{0} = geladen, {1} = gesamt</comment>
+  </data>
+  <data name="AiModelDownloadFailed" xml:space="preserve">
+    <value>Das Modell konnte nicht heruntergeladen werden.</value>
+  </data>
+  <data name="AiDownload" xml:space="preserve">
+    <value>Herunterladen</value>
+  </data>
+  <data name="AiNotNow" xml:space="preserve">
+    <value>Nicht jetzt</value>
+  </data>
+  <data name="SettingsAiModel" xml:space="preserve">
+    <value>KI-Modell</value>
+  </data>
+  <data name="SettingsAiInstalled" xml:space="preserve">
+    <value>{0} ist installiert.</value>
+    <comment>{0} = Name des Modells</comment>
+  </data>
+  <data name="SettingsAiMissing" xml:space="preserve">
+    <value>Das Modell ist nicht installiert; die Suche arbeitet nur im Volltext.</value>
+  </data>
+  <data name="SettingsAiDownloading" xml:space="preserve">
+    <value>Das Modell wird heruntergeladen …</value>
+  </data>
+
+  <!-- Reiter „Relevant“ -->
+  <data name="NotesRelevantOff" xml:space="preserve">
+    <value>Die KI ist aus; „Relevant“ ist nicht verfügbar.</value>
+  </data>
+  <data name="NotesRelevantModelMissing" xml:space="preserve">
+    <value>Für „Relevant“ fehlt das KI-Modell.</value>
+  </data>
+  <data name="NotesRelevantDownload" xml:space="preserve">
+    <value>Modell herunterladen</value>
+  </data>
+  <data name="NotesRelevantPreparing" xml:space="preserve">
+    <value>Die KI wird vorbereitet …</value>
+  </data>
+  <data name="NotesRelevantFailed" xml:space="preserve">
+    <value>Die KI meldet einen Fehler; „Relevant“ ist nicht verfügbar.</value>
+  </data>
+  <data name="NotesRelevantNoBook" xml:space="preserve">
+    <value>Kein Buch gewählt</value>
   </data>
 </root>

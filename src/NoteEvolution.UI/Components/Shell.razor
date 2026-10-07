@@ -2,7 +2,9 @@
 @using NoteEvolution.Core.Model
 @using NoteEvolution.Core.Storage
 @using NoteEvolution.UI.Components.Dialogs
+@using Microsoft.Extensions.DependencyInjection
 @implements IDisposable
+@inject IServiceProvider Services
 @inject AppState State
 @inject UiSettings Settings
 @inject IPlatformServices Platform
@@ -105,6 +107,12 @@
             break;
     }
 
+    @* Above the other dialogs: it may be asked for from the settings, which stay open underneath. *@
+    @if (_aiDialogOpen && _ai is not null)
+    {
+        <AiModelDialog OnClose="CloseAiDialog" />
+    }
+
     <ConflictDialog />
     <UndoToast />
 </div>
@@ -120,6 +128,14 @@
     /// <summary>The page the draft assistant starts with (chosen in the book selection); null when opened from the menu.</summary>
     private Page? _draftPage;
 
+    /// <summary>The app's AI runtime; <c>null</c> when none is registered (the AI is off).</summary>
+    private AiRuntime? _ai;
+
+    private bool _aiDialogOpen;
+
+    /// <summary>The AI model dialog waits for the dialog shown after opening the vault (the link check) to close.</summary>
+    private bool _aiDialogPending;
+
     private enum Dialog
     {
         None,
@@ -132,7 +148,45 @@
 
     private void Show(Dialog dialog) => _dialog = dialog;
 
-    private void CloseDialog() => _dialog = Dialog.None;
+    private void CloseDialog()
+    {
+        _dialog = Dialog.None;
+        if (_aiDialogPending)
+        {
+            _aiDialogPending = false;
+            _aiDialogOpen = _ai is { ModelInstalled: false };
+        }
+    }
+
+    private void CloseAiDialog() => _aiDialogOpen = false;
+
+    /// <summary>Raised by whoever asks for the AI model dialog (the settings, the "Relevant" tab).</summary>
+    private void OnAiModelDialogRequested() => _ = InvokeAsync(() =>
+    {
+        _aiDialogOpen = _ai is not null;
+        StateHasChanged();
+    });
+
+    /// <summary>
+    /// After a vault was opened: the model is offered once, unless the user said "not now" before (the settings still
+    /// offer it). A dialog that is already shown (the link check) goes first.
+    /// </summary>
+    private void OfferAiModel()
+    {
+        if (_ai is not { ModelInstalled: false, IsDownloading: false } || Settings.AiModelDeclined || _aiDialogOpen)
+        {
+            return;
+        }
+
+        if (_dialog == Dialog.None)
+        {
+            _aiDialogOpen = true;
+        }
+        else
+        {
+            _aiDialogPending = true;
+        }
+    }
 
     private void ShowDraft(Page? page)
     {
@@ -183,7 +237,9 @@
     protected override async Task OnInitializedAsync()
     {
         _logger = LoggerFactory.CreateLogger<Shell>();
+        _ai = Services.GetService<AiRuntime>();
         State.Changed += OnStateChanged;
+        State.AiModelDialogRequested += OnAiModelDialogRequested;
         if (Settings.LastVault is { } last && Directory.Exists(last))
         {
             await OpenVaultAsync(last);
@@ -193,6 +249,7 @@
     public void Dispose()
     {
         State.Changed -= OnStateChanged;
+        State.AiModelDialogRequested -= OnAiModelDialogRequested;
         if (_subscribed is not null)
         {
             _subscribed.PagesChanged -= OnPagesChanged;
@@ -237,7 +294,7 @@
         try
         {
             var session = await VaultSession.OpenAsync(
-                root, Clock, LoggerFactory.CreateLogger<VaultSession>(), Time, action => InvokeAsync(action));
+                root, Clock, LoggerFactory.CreateLogger<VaultSession>(), Time, action => InvokeAsync(action), _ai);
             Activate(session);
             Settings.LastVault = root;
             _hintVisible = !Settings.LogseqHintShown;
@@ -249,6 +306,8 @@
                     report.Missing.Count, report.Orphans.Count, report.Broken.Count);
                 _dialog = Dialog.LinkCheck;
             }
+
+            OfferAiModel();
         }
         catch (Exception ex)
         {

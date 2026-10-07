@@ -1,7 +1,10 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using NoteEvolution.AI.Relevance;
 using NoteEvolution.AI.Search;
+using NoteEvolution.AI.Semantic;
 using NoteEvolution.Core.Assistants;
+using NoteEvolution.Core.Books;
 using NoteEvolution.Core.Links;
 using NoteEvolution.Core.Model;
 using NoteEvolution.Core.Storage;
@@ -13,9 +16,17 @@ namespace NoteEvolution.UI.State;
 /// An open vault with all services working on it. Pages are edited, saved and reconciled with external changes on
 /// one thread, the UI thread: watcher events reach <see cref="HandleExternalChange"/> through the dispatcher given to
 /// <see cref="OpenAsync"/>, and <see cref="PagesChanged"/> and <see cref="ConflictDetected"/> are raised there.
+/// <para>
+/// With an <see cref="AiRuntime"/> whose model is installed, the notes are embedded in the background after opening
+/// (<see cref="Semantic"/>, spec 5.1 step 4); a page replaced in the vault is embedded again <see cref="PageIndexDelay"/>
+/// after its last change. Search and relevance fall back to full text and "unavailable" while there is no index.
+/// </para>
 /// </summary>
 public sealed class VaultSession : IDisposable
 {
+    /// <summary>How long a replaced page is left alone before its notes are embedded again (debounced per path).</summary>
+    public static readonly TimeSpan PageIndexDelay = TimeSpan.FromMilliseconds(2000);
+
     private readonly ILogger _logger;
     private readonly Func<Action, Task> _dispatch;
     private readonly BackupService _backups;
@@ -25,10 +36,30 @@ public sealed class VaultSession : IDisposable
     private List<string>? _changesDuringOpen = [];
     private bool _disposed;
 
-    private VaultSession(string root, IClock clock, ILogger logger, TimeProvider timeProvider, Func<Action, Task> dispatch)
+    private readonly AiRuntime? _ai;
+    private readonly TimeProvider _time;
+
+    /// <summary>Cancelled when the session closes; never disposed, so late callers can still read its token.</summary>
+    private readonly CancellationTokenSource _aiLifetime = new();
+
+    /// <summary>The pending re-index of each replaced page (full path); guarded by <see cref="_gate"/>.</summary>
+    private readonly Dictionary<string, ITimer> _pageIndexTimers = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Set once, under <see cref="_gate"/>, when the semantic index exists; never after <see cref="Dispose"/>.</summary>
+    private volatile AiParts? _aiParts;
+
+    /// <summary>Why the semantic index could not be created (e.g. its cache could not be opened).</summary>
+    private volatile string? _aiError;
+
+    private int _aiStarted;
+
+    private VaultSession(
+        string root, IClock clock, ILogger logger, TimeProvider timeProvider, Func<Action, Task> dispatch, AiRuntime? ai)
     {
         _logger = logger;
         _dispatch = dispatch;
+        _ai = ai;
+        _time = timeProvider;
         var vault = Core.Vaults.Vault.Open(root);
         var registry = new SelfWriteRegistry();
         _backups = new BackupService(vault.Root, clock);
@@ -40,10 +71,15 @@ public sealed class VaultSession : IDisposable
         Links = new LinkService(vault, Writer, Undo, new PendingStore(vault.Root));
         Checker = new LinkChecker(vault, Links);
         Changes = new ExternalChangeHandler(vault);
-        Handled = new HandledConverter(Notes, Writer);
+        Handled = new HandledConverter(Notes, Writer, Links);
         Drafts = new DraftConverter(_backups, Writer);
         Watcher = new VaultWatcher(vault, registry, timeProvider);
         Watcher.ExternalChange += OnWatcherChange;
+        if (_ai is not null)
+        {
+            _ai.ModelChanged += OnModelChanged;
+            vault.PageReplaced += OnPageReplaced;
+        }
     }
 
     public IVault Vault { get; }
@@ -56,7 +92,53 @@ public sealed class VaultSession : IDisposable
 
     public UndoManager Undo { get; }
 
-    public ISearchService Search => _search;
+    /// <summary>Hybrid (full text and meaning) once the semantic index exists, otherwise full text only.</summary>
+    public ISearchService Search => (ISearchService?)_aiParts?.Search ?? _search;
+
+    /// <summary>The embeddings of the notes; <c>null</c> without AI, while the model is missing or could not be loaded.</summary>
+    public ISemanticIndex? Semantic => _aiParts?.Index;
+
+    /// <summary>Meaning-based suggestions; without a semantic index a service that is never available.</summary>
+    public IRelevanceService Relevance => (IRelevanceService?)_aiParts?.Relevance ?? UnavailableRelevance.Instance;
+
+    /// <summary>The AI's state for this vault: the runtime's (model missing, downloading, load failed) or the index's.</summary>
+    public AiStatus AiStatus
+    {
+        get
+        {
+            if (_ai is null)
+            {
+                return AiStatus.Off;
+            }
+
+            if (_aiParts is { } parts)
+            {
+                var status = parts.Index.Status;
+                return status.State switch
+                {
+                    SemanticState.Ready => new AiStatus(AiState.Ready, status.Done, status.Total, null),
+                    SemanticState.Failed => new AiStatus(AiState.Failed, status.Done, status.Total, status.Error),
+                    _ => new AiStatus(AiState.Indexing, status.Done, status.Total, null),
+                };
+            }
+
+            if (_aiError is { } error)
+            {
+                return AiStatus.Failed(error);
+            }
+
+            // A usable model without an index yet: the index is about to be created.
+            var runtime = _ai.Status;
+            return runtime.State == AiState.Ready ? AiStatus.Of(AiState.Indexing) : runtime;
+        }
+    }
+
+    /// <summary>
+    /// <see cref="AiStatus"/> may have changed; raised on the UI thread (through the dispatcher). Also raised when a
+    /// page's notes were embedded again after a change (the status stays <see cref="AiState.Ready"/> then, but the
+    /// notes' keys are new), so that views of the semantic index read it again.
+    /// </summary>
+    public event Action? AiStatusChanged;
 
     public LinkChecker Checker { get; }
 
@@ -109,18 +191,23 @@ public sealed class VaultSession : IDisposable
 
     /// <summary>
     /// Opens the vault on a background thread (spec 5.1): parse all files, start the watcher, retry pending note
-    /// updates, run the link check (<see cref="StartupReport"/>), build the search index, clean up old backups.
+    /// updates, run the link check (<see cref="StartupReport"/>), build the search index, clean up old backups; then
+    /// the semantic indexing starts in the background (with <paramref name="ai"/>), without holding up the opening.
     /// A failing step after parsing is logged and does not stop the opening.
     /// </summary>
     /// <param name="logger">Receives errors that are handled here; none if <c>null</c>.</param>
-    /// <param name="timeProvider">The clock for the watcher's debounce; <see cref="TimeProvider.System"/> if <c>null</c>.</param>
-    /// <param name="dispatch">
-    /// Runs an action on the UI thread (e.g. a component's <c>InvokeAsync</c>); watcher events are handled through it.
-    /// If <c>null</c>, they are handled on the watcher's thread.
+    /// <param name="timeProvider">
+    /// The clock for the watcher's debounce and <see cref="PageIndexDelay"/>; <see cref="TimeProvider.System"/> if <c>null</c>.
     /// </param>
+    /// <param name="dispatch">
+    /// Runs an action on the UI thread (e.g. a component's <c>InvokeAsync</c>); watcher events, the start of the
+    /// semantic indexing and <see cref="AiStatusChanged"/> go through it. If <c>null</c>, they run on the calling thread.
+    /// </param>
+    /// <param name="ai">The app's AI runtime; without it the AI is off (<see cref="AiState.Off"/>).</param>
     /// <exception cref="DirectoryNotFoundException"><paramref name="root"/> is not a folder.</exception>
     public static Task<VaultSession> OpenAsync(
-        string root, IClock clock, ILogger? logger = null, TimeProvider? timeProvider = null, Func<Action, Task>? dispatch = null)
+        string root, IClock clock, ILogger? logger = null, TimeProvider? timeProvider = null, Func<Action, Task>? dispatch = null,
+        AiRuntime? ai = null)
     {
         if (!Directory.Exists(root))
         {
@@ -130,7 +217,7 @@ public sealed class VaultSession : IDisposable
         return Task.Run(() =>
         {
             var session = new VaultSession(
-                root, clock, logger ?? NullLogger.Instance, timeProvider ?? TimeProvider.System, dispatch ?? RunInline);
+                root, clock, logger ?? NullLogger.Instance, timeProvider ?? TimeProvider.System, dispatch ?? RunInline, ai);
             try
             {
                 session.Start();
@@ -297,8 +384,23 @@ public sealed class VaultSession : IDisposable
             }
 
             _disposed = true;
+            foreach (var timer in _pageIndexTimers.Values)
+            {
+                timer.Dispose();
+            }
+
+            _pageIndexTimers.Clear();
         }
 
+        if (_ai is not null)
+        {
+            _ai.ModelChanged -= OnModelChanged;
+            Vault.PageReplaced -= OnPageReplaced;
+        }
+
+        // The index stops its run and closes its cache; the shared embedder stays with the runtime.
+        _aiLifetime.Cancel();
+        _aiParts?.Index.Dispose();
         Watcher.ExternalChange -= OnWatcherChange;
         Watcher.Dispose();
         _search.Dispose();
@@ -355,6 +457,8 @@ public sealed class VaultSession : IDisposable
         {
             Dispatch(path);
         }
+
+        StartAi();
     }
 
     private void Guarded(string step, Action action)
@@ -389,19 +493,22 @@ public sealed class VaultSession : IDisposable
         Dispatch(path);
     }
 
-    private void Dispatch(string path)
+    private void Dispatch(string path) => Dispatch(() => HandleExternalChange(path), "the external change of " + path);
+
+    /// <summary>Runs <paramref name="action"/> through the dispatcher; never throws, a failure is logged.</summary>
+    private void Dispatch(Action action, string what)
     {
         try
         {
-            _dispatch(() => HandleExternalChange(path)).ContinueWith(
-                t => _logger.LogError(t.Exception, "Dispatching the external change of {Path} failed", path),
+            _dispatch(action).ContinueWith(
+                t => _logger.LogError(t.Exception, "Dispatching {What} failed", what),
                 CancellationToken.None,
                 TaskContinuationOptions.OnlyOnFaulted,
                 TaskScheduler.Default);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Dispatching the external change of {Path} failed", path);
+            _logger.LogError(ex, "Dispatching {What} failed", what);
         }
     }
 
@@ -422,6 +529,200 @@ public sealed class VaultSession : IDisposable
     private void PageChanged(string fullPath)
     {
         Search.UpdatePage(Notes, fullPath);
+
+        // A removed page raises no PageReplaced; this way its notes leave the semantic index too.
+        SchedulePageIndex(fullPath);
         PagesChanged?.Invoke(fullPath);
+    }
+
+    // ---- AI ----
+
+    /// <summary>
+    /// Creates the semantic index once the model is installed (when opening, or when a download completed): the
+    /// embedder is loaded on a background thread, the indexing is started on the UI thread (it reads the notes there).
+    /// </summary>
+    private void StartAi()
+    {
+        if (_ai is null || IsDisposed || !_ai.ModelInstalled || Interlocked.Exchange(ref _aiStarted, 1) == 1)
+        {
+            return;
+        }
+
+        _ = Task.Run(CreateIndex);
+    }
+
+    private void CreateIndex()
+    {
+        try
+        {
+            // A failed load shows in the runtime's status (LoadError).
+            if (_ai!.Embedder is not { } embedder)
+            {
+                return;
+            }
+
+            var index = new SemanticIndex(embedder, VectorCache.Open(Vault.Root, _ai.Model.Id), _ai.Model.Id, _logger);
+            lock (_gate)
+            {
+                if (_disposed)
+                {
+                    index.Dispose();
+                    return;
+                }
+
+                _aiParts = new AiParts(index, new HybridSearchService(_search, index, Notes), new RelevanceService(index));
+            }
+
+            index.StatusChanged += RaiseAiStatusChanged;
+            Dispatch(StartIndexing, "the start of the semantic indexing");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Creating the semantic index failed");
+            _aiError = ex.Message;
+        }
+        finally
+        {
+            RaiseAiStatusChanged();
+        }
+    }
+
+    /// <summary>On the UI thread: embeds every note in the background.</summary>
+    private void StartIndexing()
+    {
+        if (IsDisposed || _aiParts is not { } parts)
+        {
+            return;
+        }
+
+        Observe(() => parts.Index.RebuildAsync(Notes, _aiLifetime.Token), "Semantic indexing");
+    }
+
+    /// <summary>A download started or ended (on the download's thread).</summary>
+    private void OnModelChanged()
+    {
+        StartAi();
+        RaiseAiStatusChanged();
+    }
+
+    /// <summary>Raised on the thread that replaced the page (the UI thread, or the opening's thread).</summary>
+    private void OnPageReplaced(Page page) => SchedulePageIndex(page.FilePath);
+
+    /// <summary>(Re)starts the page's debounce timer; when it fires, the page is embedded again on the UI thread.</summary>
+    private void SchedulePageIndex(string path)
+    {
+        if (_ai is null)
+        {
+            return;
+        }
+
+        var fullPath = Path.GetFullPath(path);
+        lock (_gate)
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            if (_pageIndexTimers.TryGetValue(fullPath, out var timer))
+            {
+                timer.Change(PageIndexDelay, Timeout.InfiniteTimeSpan);
+                return;
+            }
+
+            _pageIndexTimers[fullPath] = _time.CreateTimer(
+                _ => OnPageIndexDue(fullPath), null, PageIndexDelay, Timeout.InfiniteTimeSpan);
+        }
+    }
+
+    /// <summary>Raised on a timer thread.</summary>
+    private void OnPageIndexDue(string fullPath)
+    {
+        lock (_gate)
+        {
+            if (_disposed || !_pageIndexTimers.Remove(fullPath, out var timer))
+            {
+                return;
+            }
+
+            timer.Dispose();
+        }
+
+        Dispatch(() => IndexPage(fullPath), "the semantic update of " + fullPath);
+    }
+
+    /// <summary>
+    /// On the UI thread. Without an index there is nothing to do: the indexing that comes with it reads every page.
+    /// The update is cancelled only when the session closes (a cancelled update leaves the page out of the index).
+    /// </summary>
+    private void IndexPage(string fullPath)
+    {
+        if (IsDisposed || _aiParts is not { } parts)
+        {
+            return;
+        }
+
+        Observe(
+            async () =>
+            {
+                if (await parts.Index.UpdatePageAsync(Notes, fullPath, _aiLifetime.Token))
+                {
+                    RaiseAiStatusChanged();
+                }
+            },
+            "Updating the semantic index");
+    }
+
+    /// <summary>Starts the work and logs its failure; a cancellation (the session closed) ends quietly.</summary>
+    private void Observe(Func<Task> start, string what)
+    {
+        try
+        {
+            start().ContinueWith(
+                t => _logger.LogError(t.Exception, "{What} failed", what),
+                CancellationToken.None,
+                TaskContinuationOptions.OnlyOnFaulted,
+                TaskScheduler.Default);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "{What} failed", what);
+        }
+    }
+
+    /// <summary>Called on any thread (the index reports from its background thread); never throws.</summary>
+    private void RaiseAiStatusChanged()
+    {
+        if (IsDisposed)
+        {
+            return;
+        }
+
+        Dispatch(
+            () =>
+            {
+                if (!IsDisposed)
+                {
+                    AiStatusChanged?.Invoke();
+                }
+            },
+            "the AI status");
+    }
+
+    /// <summary>The services that exist once the semantic index does.</summary>
+    private sealed record AiParts(SemanticIndex Index, HybridSearchService Search, RelevanceService Relevance);
+
+    /// <summary>Relevance without a semantic index: never available, never a suggestion.</summary>
+    private sealed class UnavailableRelevance : IRelevanceService
+    {
+        public static readonly UnavailableRelevance Instance = new();
+
+        public bool IsAvailable => false;
+
+        public IReadOnlyList<SearchHit> Relevant(TopicRequest topic, Func<Guid, bool> include, int limit = 30) => [];
+
+        public IReadOnlyList<SectionHit> WhereTo(Guid noteKey, string noteText, Book book, int limit = 5) => [];
+
+        public IReadOnlyList<PlacementHit> Placements(Guid noteKey, string noteText, Book book, int limit = 3) => [];
     }
 }
