@@ -113,9 +113,10 @@ else
         {
             _session.PagesChanged += OnPagesChanged;
 
-            // The start tab depends on the AI at the moment the vault's notes are first shown; a later change of the
-            // AI never switches tabs (the user's choice wins).
-            _tab = _session.Relevance.IsAvailable ? Tab.Relevant : Tab.Search;
+            // The start tab depends on the AI at the moment the vault's notes are first shown: with a usable model
+            // (indexing or ready; the embedder is still loading at app start) it is Relevant, whose tab says the AI is
+            // being prepared. A later change of the AI never switches tabs (the user's choice wins).
+            _tab = _session.AiStatus.State is AiState.Indexing or AiState.Ready ? Tab.Relevant : Tab.Search;
         }
     }
 

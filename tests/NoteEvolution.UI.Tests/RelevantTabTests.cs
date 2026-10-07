@@ -344,7 +344,7 @@ public class RelevantTabTests : UiTestContext
     }
 
     [Fact]
-    public async Task Tabs_Order_RelevantSearchJournal_DefaultDependsOnAi()
+    public async Task Tabs_Order_RelevantSearchJournal_RelevantIsTheDefaultWhileIndexing()
     {
         var tv = Vault();
         using var gate = new ManualResetEventSlim();
@@ -353,27 +353,48 @@ public class RelevantTabTests : UiTestContext
             var session = await OpenSessionAsync(
                 tv, UseAi(installed: true, () => new FakeEmbedder { OnEmbed = (_, _) => gate.Wait(Wait) }));
             Select(0);
+            Assert.Equal(AiState.Indexing, session.AiStatus.State);
             var cut = Render<NotesPane>();
 
-            // The AI is not ready yet: Search comes first, and stays when the AI becomes available later.
+            // The model is installed and the notes are being indexed: Relevant is the default and says so.
             Assert.Equal([Text("NotesTabRelevant"), Text("NotesTabSearch"), Text("NotesTabJournal")], Tabs(cut));
-            Assert.Equal([Text("NotesTabSearch")], ActiveTabs(cut));
+            Assert.Equal([Text("NotesTabRelevant")], ActiveTabs(cut));
+
+            // Once the AI is ready the tab stays where it is, and so does a choice of the user.
             gate.Set();
             await Eventually(() => session.AiStatus.State == AiState.Ready);
             cut.Render();
-            Assert.Equal([Text("NotesTabSearch")], ActiveTabs(cut));
-
-            // Rendered once the AI is available: Relevant is the default.
-            var again = Render<NotesPane>();
-            Assert.Equal([Text("NotesTabRelevant"), Text("NotesTabSearch"), Text("NotesTabJournal")], Tabs(again));
-            Assert.Equal([Text("NotesTabRelevant")], ActiveTabs(again));
-            again.Find(".ne-tab-journal").Click();
-            again.WaitForAssertion(() => Assert.Equal([Text("NotesTabJournal")], ActiveTabs(again)));
+            Assert.Equal([Text("NotesTabRelevant")], ActiveTabs(cut));
+            cut.Find(".ne-tab-journal").Click();
+            cut.WaitForAssertion(() => Assert.Equal([Text("NotesTabJournal")], ActiveTabs(cut)));
         }
         finally
         {
             gate.Set();
         }
+    }
+
+    [Fact]
+    public async Task Tabs_RelevantIsTheDefaultWhenAiIsReady()
+    {
+        var tv = Vault();
+        await OpenReadyAsync(tv, new FakeEmbedder());
+
+        var cut = Render<NotesPane>();
+
+        Assert.Equal([Text("NotesTabRelevant")], ActiveTabs(cut));
+    }
+
+    [Fact]
+    public async Task Tabs_ModelMissing_SearchIsTheDefault()
+    {
+        var tv = Vault();
+        await OpenSessionAsync(tv, UseAi(installed: false, () => new FakeEmbedder()));
+        Select(0);
+
+        var cut = Render<NotesPane>();
+
+        Assert.Equal([Text("NotesTabSearch")], ActiveTabs(cut));
     }
 
     [Fact]
