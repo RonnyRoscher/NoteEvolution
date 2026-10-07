@@ -117,6 +117,8 @@
     private bool _disposed;
     private bool _whereBusy;
     private WhereToResult? _whereTo;
+    private Guid _whereNoteKey;
+    private string? _whereBookName;
 
     /// <summary>Counts the requests and closings; a result is only applied while its request is still the newest.</summary>
     private int _whereGeneration;
@@ -147,7 +149,23 @@
     private bool CanAdopt =>
         State is { Session: not null, CurrentBook.Page.IsReadOnly: false } && !Note.Page.IsReadOnly;
 
-    protected override void OnParametersSet() => TrackSession();
+    /// <summary>
+    /// The list belongs to one note, session and book: when any of them changes (the card is reused for another note, a
+    /// book switch) it is closed and a request still running is dropped.
+    /// </summary>
+    protected override void OnParametersSet()
+    {
+        var sessionChanged = TrackSession();
+        var bookChanged = (_whereTo is not null || _whereBusy)
+            && !string.Equals(State.CurrentBook?.LinkName, _whereBookName, StringComparison.OrdinalIgnoreCase);
+        if (sessionChanged || bookChanged || Note.Key != _whereNoteKey)
+        {
+            _whereGeneration++;
+            _whereTo = null;
+            _whereBusy = false;
+            _whereNoteKey = Note.Key;
+        }
+    }
 
     public void Dispose()
     {
@@ -157,11 +175,11 @@
     }
 
     /// <summary>Follows the AI status of the current session: the button appears when the AI becomes ready.</summary>
-    private void TrackSession()
+    private bool TrackSession()
     {
         if (ReferenceEquals(State.Session, _session))
         {
-            return;
+            return false;
         }
 
         Unsubscribe();
@@ -170,6 +188,8 @@
         {
             _session.AiStatusChanged += OnAiStatusChanged;
         }
+
+        return true;
     }
 
     private void Unsubscribe()
@@ -260,6 +280,7 @@
             return;
         }
 
+        _whereBookName = book.LinkName;
         var noteKey = Note.Key;
         var noteText = EmbeddingText.ForNote(Note);
         var relevance = session.Relevance;

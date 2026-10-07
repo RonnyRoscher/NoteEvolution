@@ -352,6 +352,12 @@
             UpdateSearch(session, pages);
             _items = session.Handled.Find();
             _selected.IntersectWith(_items.Select(n => n.Key));
+
+            if (placements.Count > 0)
+            {
+                // The book page was linked into (or reloaded after a failure): the suggested places and the choices belong to the old snapshot.
+                StartPlacements();
+            }
         }
         finally
         {

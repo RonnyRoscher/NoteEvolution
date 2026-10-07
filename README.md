@@ -56,7 +56,7 @@ neu aufgebaut. Dasselbe Buch sollte nicht gleichzeitig in Logseq bearbeitet werd
 
 Die KI-Funktionen sind ein Zusatz: „Relevant“ (die Notizen, die zum Abschnitt oder zur Textstelle passen), die Suche
 nach Bedeutung (ergänzt die Volltextsuche), „Wohin damit?“ an jeder Notizkarte (die fünf passendsten Abschnitte des
-Buchs) und Fundstellen-Vorschläge im `[handled]`-Assistenten. Sie lesen und schreiben keinen Buchtext. Einzige
+Buchs) und Fundstellen-Vorschläge im `[handled]`-Assistenten. Sie schreiben und formulieren keinen Buchtext. Einzige
 Schreibaktion sind die Verknüpfungszeilen (`id::`, `source::`, `used-in::`) für Fundstellen, die du im Assistenten
 selbst gewählt und bestätigt hast. Ohne Modell arbeitet die App unverändert mit der Volltextsuche.
 
@@ -70,7 +70,7 @@ selbst gewählt und bestätigt hast. Ohne Modell arbeitet die App unverändert m
   `%APPDATA%\NoteEvolution\models\multilingual-e5-small-int8\`, sonst `~/.config/NoteEvolution/models/multilingual-e5-small-int8/`.
   Zum Entfernen den Ordner löschen; die App bietet den Download danach wieder an.
 - **Bedeutungsvektoren:** `<vault>/.noteevolution/vectors.db` speichert die Vektoren der Notizen (neu berechnet wird
-  nur, was sich geändert hat). Die Datei darf jederzeit gelöscht werden, sie wird beim nächsten Öffnen neu aufgebaut
+  nur, was sich geändert hat). Die Datei darf bei geschlossener App gelöscht werden, sie wird beim nächsten Öffnen neu aufgebaut
   (das Indexieren läuft im Hintergrund, die Kopfzeile zeigt den Fortschritt). Wie alles unter `.noteevolution/` kann
   sie von der Synchronisation ausgenommen werden.
 

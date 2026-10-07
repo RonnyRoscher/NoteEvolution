@@ -37,7 +37,7 @@ else
                     <button type="button" class="ne-note-focused-close" title="@L["NoteFocusedClose"]"
                             aria-label="@L["NoteFocusedClose"]" @onclick="CloseFocused">×</button>
                 </div>
-                <NoteCard Note="focused" />
+                <NoteCard @key="focused.Key" Note="focused" />
             </div>
         }
         @if (_tab == Tab.Relevant)

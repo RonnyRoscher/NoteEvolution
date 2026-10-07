@@ -641,6 +641,20 @@ public class DialogTests : UiTestContext
         Assert.Empty(cut.FindAll(".ne-handled-done"));
         Assert.Equal(2, cut.FindAll(".ne-handled-item").Count);
         Assert.Equal(before, tv.Read(NotesPath));
+
+        // The places are suggested again for the book as it is now; the choice is back to "Stelle unbekannt".
+        cut.WaitForAssertion(() =>
+        {
+            var options = Place(cut, 0).QuerySelectorAll("option").Select(o => o.TextContent).ToList();
+            Assert.DoesNotContain(options, o => o.StartsWith(SleepText, StringComparison.Ordinal));
+            Assert.Contains(options, o => o.StartsWith("Etwas ganz anderes", StringComparison.Ordinal));
+        });
+        cut.Find(".ne-handled-convert").Click();
+        cut.Find(".ne-handled-yes").Click();
+
+        cut.WaitForAssertion(() => Assert.Single(cut.FindAll(".ne-handled-done")));
+        Assert.Equal(
+            "- Schlaf und Träume\n  used-in:: [[Buch - Alpha]]\n- Zwei\n  used-in:: [[Buch - Alpha]]\n- Drei\n", tv.Read(NotesPath));
     }
 
     // ---- DraftWizard ----
