@@ -1,8 +1,10 @@
 using NoteEvolution.Core.Assistants;
 using NoteEvolution.Core.Books;
+using NoteEvolution.Core.Format;
 using NoteEvolution.Core.Links;
 using NoteEvolution.Core.Model;
 using NoteEvolution.Core.Storage;
+using NoteEvolution.Core.Tests.Links;
 using NoteEvolution.Core.Vaults;
 using NoteEvolution.TestSupport;
 
@@ -29,12 +31,15 @@ public class HandledConverterTests
             var vault = Tv.Open();
             Book = vault.FindBook("Buch - Test")!;
             var notes = new NoteRepository(vault);
-            var writer = new PageWriter(vault, new BackupService(vault.Root, new FakeClock(Now)), new SelfWriteRegistry())
+            Vault = vault;
+            Writer = new FailingWriter(new PageWriter(vault, new BackupService(vault.Root, new FakeClock(Now)), new SelfWriteRegistry())
             {
                 Sleep = _ => { },
-            };
+            });
+            var writer = Writer;
             Pending = new PendingStore(vault.Root);
-            Converter = new HandledConverter(notes, writer, new LinkService(vault, writer, new UndoManager(), Pending));
+            Links = new LinkService(vault, writer, new UndoManager(), Pending);
+            Converter = new HandledConverter(notes, writer, Links);
         }
 
         public TestVault Tv { get; }
@@ -42,6 +47,18 @@ public class HandledConverterTests
         public Book Book { get; }
 
         public PendingStore Pending { get; }
+
+        public Vault Vault { get; }
+
+        public FailingWriter Writer { get; }
+
+        public LinkService Links { get; }
+
+        public string JournalPath => Path.Combine(Tv.Root, JournalFile);
+
+        /// <summary>Drops the in-memory journal page (like a restart or reloading it) and reads it from disk again.</summary>
+        public void ReloadJournal() =>
+            Vault.ReplacePage(LogseqParser.Parse(JournalPath, File.ReadAllBytes(JournalPath)));
 
         public Guid TextKey(string text) =>
             Book.Page.AllBlocks().Select(b => Book.FindTextBlock(b.Key)).OfType<TextBlock>().Single(t => t.Text == text).Key;
@@ -229,7 +246,7 @@ public class HandledConverterTests
     }
 
     [Fact]
-    public void Handled_UnknownPlacement_RevertsPrefixRemoval_AndPropagates()
+    public void Handled_UnknownPlacement_LeavesNoteUntouched_AndPropagates()
     {
         const string journal = "- [handled] Eins\n- [handled] Zwei\n";
         using var s = new Setup(journal);
@@ -242,5 +259,61 @@ public class HandledConverterTests
         Assert.Equal("[handled] Eins", found[0].Block.Content);
         Assert.False(found[0].Page.IsDirty);
         Assert.Equal(BookText, s.ReadBook());
+    }
+
+    [Fact]
+    public void Handled_PlacementNoteWriteFails_PendingStillCompletesAfterReload()
+    {
+        using var s = new Setup("- [handled] Eins\n- Zwei\n");
+        var note = s.Converter.Find().Single();
+        // Both the note save inside Link and the page save for the prefix removal fail.
+        s.Writer.FailNext(s.JournalPath, times: 2);
+
+        Assert.Throws<IOException>(() =>
+            s.Converter.Apply([note], s.Book, new Dictionary<Guid, Guid> { [note.Block.Key] = s.TextKey("Absatz") }));
+
+        Assert.Equal("- [handled] Eins\n- Zwei\n", s.ReadJournal());
+        Assert.Single(s.Pending.Load());
+
+        s.ReloadJournal();
+
+        Assert.Equal(1, s.Links.RetryPending());
+        var textId = s.BookBlockId("Absatz");
+        var noteId = s.Converter.Find().Single().Block.Id;
+        Assert.NotNull(noteId);
+        Assert.Equal($"- [handled] Eins\n  id:: {noteId}\n  used-in:: [[Buch - Test]] (({textId}))\n- Zwei\n", s.ReadJournal());
+        Assert.Contains($"source:: (({noteId}))", s.ReadBook());
+        Assert.Empty(s.Pending.Load());
+    }
+
+    [Fact]
+    public void Handled_PrefixSaveFailsAfterLink_RerunIsIdempotent()
+    {
+        using var s = new Setup("- [handled] Eins\n- Zwei\n");
+        var note = s.Converter.Find().Single();
+        s.Writer.FailNext(s.JournalPath, times: 1, skip: 1);
+
+        Assert.Throws<IOException>(() =>
+            s.Converter.Apply([note], s.Book, new Dictionary<Guid, Guid> { [note.Block.Key] = s.TextKey("Absatz") }));
+
+        var textId = s.BookBlockId("Absatz");
+        var noteId = note.Block.Id;
+        var linkedBook =
+            "title:: Buch: Test\ntype:: book\n\n- Vorspann\n- # Kapitel\n" +
+            $"\t- Absatz\n\t  id:: {textId}\n\t  source:: (({noteId}))\n\t- Zweiter Absatz\n";
+        Assert.NotNull(noteId);
+        Assert.Equal($"- [handled] Eins\n  id:: {noteId}\n  used-in:: [[Buch - Test]] (({textId}))\n- Zwei\n", s.ReadJournal());
+        Assert.Equal(linkedBook, s.ReadBook());
+        Assert.Empty(s.Pending.Load());
+
+        s.ReloadJournal();
+        var again = s.Converter.Find().Single();
+        var result = s.Converter.Apply([again], s.Book, new Dictionary<Guid, Guid> { [again.Block.Key] = s.TextKey("Absatz") });
+
+        Assert.Equal(1, result.Converted);
+        Assert.Equal(noteId, again.Block.Id);
+        Assert.Equal(linkedBook, s.ReadBook());
+        Assert.Equal($"- Eins\n  id:: {noteId}\n  used-in:: [[Buch - Test]] (({textId}))\n- Zwei\n", s.ReadJournal());
+        Assert.Empty(s.Pending.Load());
     }
 }
