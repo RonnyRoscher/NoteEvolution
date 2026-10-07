@@ -84,11 +84,21 @@
 
     [Parameter] public EventCallback OnClose { get; set; }
 
+    /// <summary>A page to start with: its proposal is shown at once instead of the page list.</summary>
+    [Parameter] public Page? InitialPage { get; set; }
+
+    /// <summary>Raised after a page was turned into a book (the vault already lists it as one).</summary>
+    [Parameter] public EventCallback<Page> OnConverted { get; set; }
+
     protected override void OnInitialized()
     {
         if (State.Session is { } session)
         {
-            _pages = [.. session.Vault.Pages.Where(p => !Book.IsBook(p) && !p.IsReadOnly)];
+            _pages = BookChoices.ConvertiblePages(session.Vault);
+            if (InitialPage is { } page && _pages.Contains(page))
+            {
+                ChoosePage(page);
+            }
         }
     }
 
@@ -161,6 +171,7 @@
         _busy = true;
         _error = null;
         _confirming = false;
+        Page? converted = null;
         try
         {
             try
@@ -195,6 +206,7 @@
             {
                 session.Drafts.Apply(page, _proposal);
                 _doneName = page.Name;
+                converted = page;
             }
             catch (ReadOnlyPageException)
             {
@@ -225,6 +237,11 @@
             _busy = false;
             State.RefreshBook();
             State.Notify();
+        }
+
+        if (converted is not null)
+        {
+            await OnConverted.InvokeAsync(converted);
         }
     }
 

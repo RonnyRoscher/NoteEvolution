@@ -73,6 +73,15 @@
   <data name="Book" xml:space="preserve">
     <value>Buch</value>
   </data>
+  <data name="BooksGroup" xml:space="preserve">
+    <value>Bücher</value>
+  </data>
+  <data name="PagesGroup" xml:space="preserve">
+    <value>Seiten (als Buch umwandeln)</value>
+  </data>
+  <data name="ChooseBookPlaceholder" xml:space="preserve">
+    <value>Seite als Buch wählen …</value>
+  </data>
   <data name="ViewMode" xml:space="preserve">
     <value>Ansicht</value>
   </data>

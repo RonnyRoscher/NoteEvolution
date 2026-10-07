@@ -1,3 +1,5 @@
+@using NoteEvolution.Core.Books
+@using NoteEvolution.Core.Model
 @using NoteEvolution.Core.Storage
 @using NoteEvolution.UI.Components.Dialogs
 @implements IDisposable
@@ -11,7 +13,8 @@
 
 <div class="ne-shell" data-theme="@ThemeAttribute" style="--font-size: @(Settings.FontSizePt)pt; --line-width: @(Settings.LineWidthCh)ch;">
     <HeaderBar OnOpenVault="PickVaultAsync" OnPdfExport="() => Show(Dialog.Pdf)" OnLinkCheck="() => Show(Dialog.LinkCheck)"
-               OnSettings="() => Show(Dialog.Settings)" OnHandledWizard="() => Show(Dialog.Handled)" OnDraftWizard="() => Show(Dialog.Draft)" />
+               OnSettings="() => Show(Dialog.Settings)" OnHandledWizard="() => Show(Dialog.Handled)" OnDraftWizard="() => ShowDraft(null)"
+               OnBookSelected="RememberBook" OnConvertPage="ShowDraft" />
 
     @if (_hintVisible)
     {
@@ -98,7 +101,7 @@
             <HandledWizard OnClose="CloseDialog" />
             break;
         case Dialog.Draft:
-            <DraftWizard OnClose="CloseDialog" />
+            <DraftWizard OnClose="CloseDialog" InitialPage="_draftPage" OnConverted="OnDraftConverted" />
             break;
     }
 
@@ -114,6 +117,9 @@
     private string? _failedRoot;
     private Dialog _dialog;
 
+    /// <summary>The page the draft assistant starts with (chosen in the book selection); null when opened from the menu.</summary>
+    private Page? _draftPage;
+
     private enum Dialog
     {
         None,
@@ -127,6 +133,36 @@
     private void Show(Dialog dialog) => _dialog = dialog;
 
     private void CloseDialog() => _dialog = Dialog.None;
+
+    private void ShowDraft(Page? page)
+    {
+        _draftPage = page;
+        _dialog = Dialog.Draft;
+    }
+
+    /// <summary>A page was turned into a book: it becomes the current book and is remembered for the next start.</summary>
+    private void OnDraftConverted(Page page)
+    {
+        if (State.Session?.Vault.Books.FirstOrDefault(b => ReferenceEquals(b.Page, page)) is not { } book)
+        {
+            return;
+        }
+
+        State.CurrentBook = book;
+        State.CurrentSectionKey = book.Root.Key;
+        State.CursorTextBlockKey = null;
+        RememberBook(book);
+        State.Notify();
+    }
+
+    private void RememberBook(Book book)
+    {
+        if (State.Session is { } session)
+        {
+            Settings.RememberBook(session.Vault.Root, book.Page.FilePath);
+            SaveSettings();
+        }
+    }
 
     /// <summary>The note folders changed: the vault is opened again with them.</summary>
     private async Task ReopenVaultAsync()
@@ -238,7 +274,8 @@
         session.PagesChanged += OnPagesChanged;
         _subscribed = session;
         State.Session = session;
-        State.CurrentBook = session.Vault.Books.FirstOrDefault();
+        State.CurrentBook = BookChoices.Remembered(session.Vault, Settings.LastBookOf(session.Vault.Root))
+            ?? BookChoices.Books(session.Vault).FirstOrDefault();
         State.CurrentSectionKey = State.CurrentBook?.Root.Key ?? Guid.Empty;
         State.CursorTextBlockKey = null;
         State.FocusedNoteKey = null;

@@ -540,7 +540,7 @@ public class DialogTests : UiTestContext
             return Task.CompletedTask;
         };
         var header = Render<HeaderBar>();
-        Assert.Equal(["Alpha"], header.FindAll(".ne-book-select option").Select(o => o.TextContent));
+        Assert.Equal(["Alpha"], header.FindAll(".ne-book-select .ne-book-option").Select(o => o.TextContent));
         var cut = Render<DraftWizard>();
         cut.Find(".ne-draft-page").Click();
 
@@ -557,7 +557,7 @@ public class DialogTests : UiTestContext
         Assert.Contains("type:: book", saved);
         Assert.Equal(1, flushed);
         Assert.NotNull(session.Vault.FindBook("Entwurf"));
-        header.WaitForAssertion(() => Assert.Equal(["Alpha", "Entwurf"], header.FindAll(".ne-book-select option").Select(o => o.TextContent)));
+        header.WaitForAssertion(() => Assert.Equal(["Alpha", "Entwurf"], header.FindAll(".ne-book-select .ne-book-option").Select(o => o.TextContent)));
     }
 
     [Fact]
