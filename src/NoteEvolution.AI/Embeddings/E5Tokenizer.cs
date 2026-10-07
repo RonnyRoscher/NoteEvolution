@@ -5,6 +5,7 @@ namespace NoteEvolution.AI.Embeddings;
 /// <summary>
 /// Tokenizes for the e5 (XLM-RoBERTa) model with its SentencePiece model and maps to the fairseq ids the model was
 /// trained with: <c>&lt;s&gt;</c> 0, <c>&lt;pad&gt;</c> 1, <c>&lt;/s&gt;</c> 2, <c>&lt;unk&gt;</c> 3, SentencePiece id <c>i &gt; 0</c> becomes <c>i + 1</c>.
+/// Immutable after <see cref="Load"/>, so one instance can encode from several threads at once without locking.
 /// </summary>
 public sealed class E5Tokenizer
 {

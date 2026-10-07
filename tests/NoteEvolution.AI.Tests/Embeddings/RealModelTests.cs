@@ -139,6 +139,42 @@ public class RealModelTests
         Assert.All(v, e => Assert.Equal(new float[384], e));
     }
 
+    [RealModelFact]
+    public void Embed_AfterDispose_ThrowsObjectDisposed()
+    {
+        var embedder = LoadEmbedder();
+        embedder.Dispose();
+        embedder.Dispose(); // idempotent
+
+        Assert.Throws<ObjectDisposedException>(() => embedder.Embed(["passage: Text"]));
+        Assert.Throws<ObjectDisposedException>(() => embedder.Embed([""]));
+    }
+
+    [RealModelFact]
+    public async Task Dispose_DuringEmbed_WaitsForRun_EmbedCancelsOrCompletes()
+    {
+        var embedder = LoadEmbedder();
+        var longText = "passage: " + string.Concat(Enumerable.Repeat("Vertrauen baut Schwung auf, Angst baut Widerstand auf. ", 60));
+        var texts = Enumerable.Repeat(longText, 32).ToArray();
+
+        var embedding = Task.Run(() => embedder.Embed(texts));
+        await Task.Delay(500); // tokenizing takes a few ms; by now the batch is inside InferenceSession.Run
+        var disposing = Task.Run(embedder.Dispose);
+
+        Assert.Same(disposing, await Task.WhenAny(disposing, Task.Delay(TimeSpan.FromSeconds(60))));
+        try
+        {
+            var result = await embedding;
+            Assert.Equal(texts.Length, result.Count);
+        }
+        catch (OperationCanceledException)
+        {
+            // the run was terminated by Dispose: the expected outcome for a long batch
+        }
+
+        Assert.Throws<ObjectDisposedException>(() => embedder.Embed(["passage: Text"]));
+    }
+
     private static OnnxEmbedder LoadEmbedder() =>
         OnnxEmbedder.Load(RealModelFactAttribute.ModelDirectory, RealModelFactAttribute.Model);
 

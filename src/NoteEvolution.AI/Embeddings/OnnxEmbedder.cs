@@ -6,6 +6,8 @@ namespace NoteEvolution.AI.Embeddings;
 /// <summary>
 /// Embeds with an e5 ONNX model on the CPU: one padded batch per call, mean pooling of <c>last_hidden_state</c> over the
 /// attention mask, then L2 normalization. Safe to call from several threads: <c>InferenceSession.Run</c> is thread-safe.
+/// <see cref="Dispose"/> terminates running inference (those calls end with <see cref="OperationCanceledException"/>) and
+/// waits for it before releasing the native session; later calls throw <see cref="ObjectDisposedException"/>.
 /// </summary>
 public sealed class OnnxEmbedder : IEmbedder, IDisposable
 {
@@ -18,6 +20,12 @@ public sealed class OnnxEmbedder : IEmbedder, IDisposable
     private readonly E5Tokenizer _tokenizer;
     private readonly int _maxTokens;
     private readonly bool _needsTokenTypeIds;
+
+    // Guards the native session: Dispose must not free it while a Run is inside it (that is an access violation, not an exception).
+    private readonly object _gate = new();
+    private readonly CancellationTokenSource _disposing = new();
+    private int _running;
+    private bool _disposed;
 
     private OnnxEmbedder(InferenceSession session, E5Tokenizer tokenizer, ModelInfo model)
     {
@@ -66,6 +74,7 @@ public sealed class OnnxEmbedder : IEmbedder, IDisposable
 
     public IReadOnlyList<float[]> Embed(IReadOnlyList<string> texts, CancellationToken ct = default)
     {
+        lock (_gate) ObjectDisposedException.ThrowIf(_disposed, this);
         ct.ThrowIfCancellationRequested();
 
         var result = new float[texts.Count][];
@@ -105,31 +114,75 @@ public sealed class OnnxEmbedder : IEmbedder, IDisposable
             values.Add(typesValue);
         }
 
-        using var runOptions = new RunOptions();
-        using var cancel = ct.Register(() => runOptions.Terminate = true);
-        IDisposableReadOnlyCollection<OrtValue> outputs;
+        EnterRun();
         try
         {
-            outputs = _session.Run(runOptions, names, values, [LastHiddenState]);
-        }
-        catch (OnnxRuntimeException) when (ct.IsCancellationRequested)
-        {
-            throw new OperationCanceledException(ct);
-        }
-
-        using (outputs)
-        {
-            var hidden = outputs[0].GetTensorDataAsSpan<float>();
-            var sequence = tokens * Dimensions;
-            if (hidden.Length != batch * sequence)
-                throw new InvalidOperationException($"{LastHiddenState} has {hidden.Length} values, expected {batch}×{tokens}×{Dimensions}.");
-            for (var b = 0; b < batch; b++)
+            using var runOptions = new RunOptions();
+            using var cancel = ct.Register(() => runOptions.Terminate = true);
+            using var stop = _disposing.Token.Register(() => runOptions.Terminate = true);
+            IDisposableReadOnlyCollection<OrtValue> outputs;
+            try
             {
-                result[encoded[b].Index] = VectorMath.MeanPoolNormalize(
-                    hidden.Slice(b * sequence, sequence), tokens, Dimensions, mask.AsSpan(b * tokens, tokens));
+                outputs = _session.Run(runOptions, names, values, [LastHiddenState]);
             }
+            catch (OnnxRuntimeException) when (ct.IsCancellationRequested)
+            {
+                throw new OperationCanceledException(ct);
+            }
+            catch (OnnxRuntimeException) when (_disposing.IsCancellationRequested)
+            {
+                throw new OperationCanceledException("The embedder was disposed during inference.", _disposing.Token);
+            }
+
+            using (outputs)
+            {
+                var hidden = outputs[0].GetTensorDataAsSpan<float>();
+                var sequence = tokens * Dimensions;
+                if (hidden.Length != batch * sequence)
+                    throw new InvalidOperationException($"{LastHiddenState} has {hidden.Length} values, expected {batch}×{tokens}×{Dimensions}.");
+                for (var b = 0; b < batch; b++)
+                {
+                    result[encoded[b].Index] = VectorMath.MeanPoolNormalize(
+                        hidden.Slice(b * sequence, sequence), tokens, Dimensions, mask.AsSpan(b * tokens, tokens));
+                }
+            }
+        }
+        finally
+        {
+            ExitRun();
         }
     }
 
-    public void Dispose() => _session.Dispose();
+    /// <summary>Registers a run; a call that was overtaken by <see cref="Dispose"/> after it started ends as cancelled.</summary>
+    private void EnterRun()
+    {
+        lock (_gate)
+        {
+            if (_disposed) throw new OperationCanceledException("The embedder was disposed during the call.");
+            _running++;
+        }
+    }
+
+    private void ExitRun()
+    {
+        lock (_gate)
+        {
+            if (--_running == 0) Monitor.PulseAll(_gate);
+        }
+    }
+
+    /// <summary>Terminates running inference, waits until it has left the session, then frees it. Idempotent.</summary>
+    public void Dispose()
+    {
+        lock (_gate)
+        {
+            if (_disposed) return;
+            _disposed = true;
+            _disposing.Cancel();
+            while (_running > 0) Monitor.Wait(_gate);
+        }
+
+        _session.Dispose();
+        _disposing.Dispose();
+    }
 }
