@@ -1,6 +1,11 @@
+using System.Security.Cryptography;
 using Bunit;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
+using NoteEvolution.AI.Embeddings;
+using NoteEvolution.AI.Model;
+using NoteEvolution.AI.Tests;
 using NoteEvolution.Core.Storage;
 using NoteEvolution.TestSupport;
 using NoteEvolution.UI.Editor;
@@ -38,10 +43,48 @@ public abstract class UiTestContext : BunitContext
     /// <summary>Never advances on its own, so the vault watcher's debounce timers only fire when a test says so.</summary>
     protected FakeTimeProvider Time { get; } = new();
 
-    /// <summary>Opens <paramref name="vault"/> as the app's session (dispatching inline) and selects its first book.</summary>
-    protected async Task<VaultSession> OpenSessionAsync(TestVault vault)
+    /// <summary>The AI runtime registered by <see cref="UseAi"/>; <c>null</c> without one (the AI is off).</summary>
+    protected AiRuntime? Ai { get; private set; }
+
+    /// <summary>Serves the test model to <see cref="Ai"/>'s downloads.</summary>
+    protected FakeModelHandler ModelServer { get; } = new(TestModelData);
+
+    private static readonly byte[] TestModelData = [.. Enumerable.Range(0, 3_000).Select(i => (byte)(i * 7))];
+
+    private TempDir? _models;
+    private HttpClient? _http;
+
+    /// <summary>
+    /// Registers an AI runtime for a one-file test model (call it before the first render). With
+    /// <paramref name="installed"/> the file is in place already; otherwise <see cref="ModelServer"/> serves it to a download.
+    /// </summary>
+    protected AiRuntime UseAi(bool installed, Func<IEmbedder> loadEmbedder)
     {
-        var session = await VaultSession.OpenAsync(vault.Root, Clock, timeProvider: Time);
+        _models = new TempDir();
+        var store = new ModelStore(_models.Path);
+        var model = new ModelInfo(
+            "test-model",
+            "Test model",
+            [new ModelFile("model.bin", "https://models.test/model.bin", Convert.ToHexStringLower(SHA256.HashData(TestModelData)), TestModelData.Length)],
+            FakeEmbedder.Dims,
+            512);
+        if (installed)
+        {
+            var path = store.PathOf(model, model.Files[0]);
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllBytes(path, TestModelData);
+        }
+
+        _http = new HttpClient(ModelServer, disposeHandler: false);
+        Ai = new AiRuntime(store, new ModelDownloader(_http, store), loadEmbedder, NullLogger<AiRuntime>.Instance, model);
+        Services.AddSingleton(Ai);
+        return Ai;
+    }
+
+    /// <summary>Opens <paramref name="vault"/> as the app's session (dispatching inline) and selects its first book.</summary>
+    protected async Task<VaultSession> OpenSessionAsync(TestVault vault, AiRuntime? ai = null)
+    {
+        var session = await VaultSession.OpenAsync(vault.Root, Clock, timeProvider: Time, ai: ai);
         State.Session = session;
         State.CurrentBook = session.Vault.Books.FirstOrDefault();
         State.CurrentSectionKey = State.CurrentBook?.Root.Key ?? Guid.Empty;
@@ -64,7 +107,12 @@ public abstract class UiTestContext : BunitContext
     {
         if (disposing)
         {
+            // The session lets go of the shared embedder before the runtime disposes it.
             State.Session?.Dispose();
+            Ai?.Dispose();
+            _http?.Dispose();
+            ModelServer.Dispose();
+            _models?.Dispose();
             Platform.Dispose();
         }
 

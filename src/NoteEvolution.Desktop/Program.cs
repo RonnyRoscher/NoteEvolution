@@ -1,5 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using NoteEvolution.AI.Embeddings;
+using NoteEvolution.AI.Model;
 using NoteEvolution.Core.Storage;
 using NoteEvolution.Core.Vaults;
 using NoteEvolution.Pdf;
@@ -22,7 +24,12 @@ internal static class Program
         Log.Logger = new LoggerConfiguration().MinimumLevel.Information().WriteTo.Sink(logSink).CreateLogger();
         AppDomain.CurrentDomain.UnhandledException += (_, e) => Log.Fatal(e.ExceptionObject as Exception, "Unhandled exception");
 
+        // The model lives in the user profile; it is downloaded only when the user confirms it (AiModelDialog).
+        var models = new ModelStore(userData);
+        using var http = new HttpClient { Timeout = TimeSpan.FromMinutes(30) };
+
         AppState? state = null;
+        AiRuntime? ai = null;
         try
         {
             var builder = PhotinoBlazorAppBuilder.CreateDefault(args);
@@ -35,6 +42,11 @@ internal static class Program
             builder.Services.AddSingleton<IClock, SystemClock>();
             builder.Services.AddSingleton(TimeProvider.System);
             builder.Services.AddSingleton<IPdfExporter, QuestPdfExporter>();
+            builder.Services.AddSingleton(sp => new AiRuntime(
+                models,
+                new ModelDownloader(http, models),
+                () => OnnxEmbedder.Load(models, ModelCatalog.E5Small),
+                sp.GetRequiredService<ILogger<AiRuntime>>()));
             builder.Services.AddTransient<IEditorInterop, TipTapInterop>();
             builder.RootComponents.Add<Shell>("#app");
 
@@ -43,6 +55,7 @@ internal static class Program
 
             // Once a vault is open, the log continues in its .noteevolution/logs folder.
             state = app.Services.GetRequiredService<AppState>();
+            ai = app.Services.GetRequiredService<AiRuntime>();
             var appState = state;
             appState.Changed += () =>
             {
@@ -79,7 +92,9 @@ internal static class Program
         }
         finally
         {
+            // The session lets go of the shared embedder before the runtime disposes it.
             state?.Session?.Dispose();
+            ai?.Dispose();
             Log.CloseAndFlush();
         }
     }

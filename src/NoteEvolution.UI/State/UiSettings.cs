@@ -54,6 +54,9 @@ public sealed class UiSettings
     /// <summary>The hint not to edit the same book in Logseq at the same time has been shown.</summary>
     public bool LogseqHintShown { get; set; }
 
+    /// <summary>The user chose "not now" in the AI model dialog: it is no longer shown after opening a vault.</summary>
+    public bool AiModelDeclined { get; set; }
+
     /// <summary>
     /// The book chosen last in each vault: the vault folder (full path) to the book page's path relative to it, with
     /// <c>/</c> separators. Use <see cref="LastBookOf"/> and <see cref="RememberBook"/>.

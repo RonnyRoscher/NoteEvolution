@@ -133,6 +133,11 @@ html, body {
     padding: 0 4px;
 }
 
+.ne-ai.ne-ai-failed {
+    color: var(--danger);
+    cursor: help;
+}
+
 .ne-undo-error {
     color: var(--danger);
     font-size: 12px;
@@ -1088,6 +1093,16 @@ html, body {
 
 .ne-settings-field input[type="number"] {
     width: 90px;
+}
+
+.ne-settings-ai {
+    align-items: flex-start;
+}
+
+/* AI model dialog */
+
+.ne-ai-progress {
+    width: 100%;
 }
 
 /* Undo toast */

@@ -19,6 +19,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- The AI tests' deterministic embedder, shared without a project reference to the AI tests. -->
+    <Compile Include="..\NoteEvolution.AI.Tests\FakeEmbedder.cs" Link="FakeEmbedder.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\src\NoteEvolution.UI\NoteEvolution.UI.csproj" />
     <ProjectReference Include="..\NoteEvolution.TestSupport\NoteEvolution.TestSupport.csproj" />
   </ItemGroup>

@@ -106,6 +106,22 @@
   <data name="AiOff" xml:space="preserve">
     <value>KI: aus</value>
   </data>
+  <data name="AiLocal" xml:space="preserve">
+    <value>KI: lokal</value>
+  </data>
+  <data name="AiIndexing" xml:space="preserve">
+    <value>KI: lokal – indexiert {0}/{1}</value>
+    <comment>{0} = indexierte Notizen, {1} = alle Notizen</comment>
+  </data>
+  <data name="AiModelMissing" xml:space="preserve">
+    <value>KI: Modell fehlt</value>
+  </data>
+  <data name="AiDownloading" xml:space="preserve">
+    <value>KI: lädt Modell …</value>
+  </data>
+  <data name="AiFailed" xml:space="preserve">
+    <value>KI: Fehler</value>
+  </data>
   <data name="ReadOnlyFiles" xml:space="preserve">
     <value>Nicht sicher lesbare Dateien (nur Anzeige, werden nie geschrieben)</value>
   </data>
@@ -627,5 +643,43 @@
   </data>
   <data name="UndoFailed" xml:space="preserve">
     <value>Die Aktion konnte nicht rückgängig gemacht werden.</value>
+  </data>
+
+  <!-- KI-Modell -->
+  <data name="AiModelTitle" xml:space="preserve">
+    <value>KI-Modell herunterladen</value>
+  </data>
+  <data name="AiModelText" xml:space="preserve">
+    <value>Für die KI-Funktionen (Relevant, Suche nach Bedeutung, Wohin damit?) braucht NoteEvolution ein Sprachmodell von etwa {0} MB.</value>
+    <comment>{0} = Größe in MB</comment>
+  </data>
+  <data name="AiModelOffline" xml:space="preserve">
+    <value>Der Download ist einmalig, danach arbeitet die KI offline auf diesem Rechner. Ohne Modell sucht die App nur im Volltext.</value>
+  </data>
+  <data name="AiModelProgress" xml:space="preserve">
+    <value>{0} von {1} MB</value>
+    <comment>{0} = geladen, {1} = gesamt</comment>
+  </data>
+  <data name="AiModelDownloadFailed" xml:space="preserve">
+    <value>Das Modell konnte nicht heruntergeladen werden.</value>
+  </data>
+  <data name="AiDownload" xml:space="preserve">
+    <value>Herunterladen</value>
+  </data>
+  <data name="AiNotNow" xml:space="preserve">
+    <value>Nicht jetzt</value>
+  </data>
+  <data name="SettingsAiModel" xml:space="preserve">
+    <value>KI-Modell</value>
+  </data>
+  <data name="SettingsAiInstalled" xml:space="preserve">
+    <value>{0} ist installiert.</value>
+    <comment>{0} = Name des Modells</comment>
+  </data>
+  <data name="SettingsAiMissing" xml:space="preserve">
+    <value>Das Modell ist nicht installiert; die Suche arbeitet nur im Volltext.</value>
+  </data>
+  <data name="SettingsAiDownloading" xml:space="preserve">
+    <value>Das Modell wird heruntergeladen …</value>
   </data>
 </root>

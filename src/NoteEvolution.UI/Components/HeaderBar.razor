@@ -1,10 +1,12 @@
 @using NoteEvolution.Core.Books
 @using NoteEvolution.Core.Links
 @using NoteEvolution.Core.Model
+@using Microsoft.Extensions.DependencyInjection
 @implements IDisposable
 @inject AppState State
 @inject IStringLocalizer<Strings> L
 @inject ILogger<HeaderBar> Logger
+@inject IServiceProvider Services
 
 <header class="ne-header">
     <button type="button" class="ne-open-vault" @onclick="OnOpenVault">@L["OpenVault"]</button>
@@ -97,7 +99,9 @@
     <button type="button" class="ne-linkcheck" disabled="@(State.Session is null || !OnLinkCheck.HasDelegate)"
             @onclick="OnLinkCheck">@L["LinkCheck"]</button>
     <button type="button" class="ne-settings" disabled="@(!OnSettings.HasDelegate)" @onclick="OnSettings">@L["Settings"]</button>
-    <span class="ne-ai">@L["AiOff"]</span>
+    @{ var ai = AiStatusNow; }
+    @* Also the fallback hint of spec 9: without a usable model the search is full text only. *@
+    <span class="ne-ai ne-ai-@ai.State.ToString().ToLowerInvariant()" title="@(ai.State == AiState.Failed ? ai.Error : null)">@AiText(ai)</span>
 </header>
 
 @code {
@@ -105,6 +109,7 @@
     private const string PageValuePrefix = "page|";
 
     private VaultSession? _session;
+    private AiRuntime? _ai;
     private bool _readOnlyOpen;
     private bool _assistantsOpen;
     private int _selectVersion;
@@ -139,13 +144,37 @@
     {
         State.Changed += OnStateChanged;
         TrackSession();
+
+        // Without an AI runtime (not registered) the AI is off.
+        _ai = Services.GetService<AiRuntime>();
+        if (_ai is not null)
+        {
+            _ai.ModelChanged += OnSessionChanged;
+        }
     }
 
     public void Dispose()
     {
         State.Changed -= OnStateChanged;
         Unsubscribe();
+        if (_ai is not null)
+        {
+            _ai.ModelChanged -= OnSessionChanged;
+        }
     }
+
+    /// <summary>The open vault's AI status; without one the runtime's (model missing, downloading).</summary>
+    private AiStatus AiStatusNow => State.Session?.AiStatus ?? _ai?.Status ?? AiStatus.Off;
+
+    private string AiText(AiStatus ai) => ai.State switch
+    {
+        AiState.Ready => L["AiLocal"],
+        AiState.Indexing => L["AiIndexing", ai.Done, ai.Total],
+        AiState.ModelMissing => L["AiModelMissing"],
+        AiState.Downloading => L["AiDownloading"],
+        AiState.Failed => L["AiFailed"],
+        _ => L["AiOff"],
+    };
 
     /// <summary>Undo is refused while a conflict is open (R26): it writes pages directly.</summary>
     private bool CanUndo => _session is { HasAnyOpenConflict: false } session && session.Undo.CanUndo;
@@ -180,6 +209,7 @@
             _session.Undo.Changed += OnSessionChanged;
             _session.Undo.Pushed += OnUndoPushed;
             _session.ConflictsChanged += OnSessionChanged;
+            _session.AiStatusChanged += OnSessionChanged;
         }
     }
 
@@ -190,6 +220,7 @@
             _session.Undo.Changed -= OnSessionChanged;
             _session.Undo.Pushed -= OnUndoPushed;
             _session.ConflictsChanged -= OnSessionChanged;
+            _session.AiStatusChanged -= OnSessionChanged;
         }
     }
 

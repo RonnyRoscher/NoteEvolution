@@ -57,7 +57,13 @@ public sealed class AppState
 
     public event Action? Changed;
 
+    /// <summary>Someone asked for the AI model dialog (e.g. the settings' download button); the shell shows it.</summary>
+    public event Action? AiModelDialogRequested;
+
     public void Notify() => Changed?.Invoke();
+
+    /// <summary>Asks the shell to show the AI model dialog, which offers the download.</summary>
+    public void RequestAiModelDialog() => AiModelDialogRequested?.Invoke();
 
     /// <summary>
     /// Takes <see cref="CurrentBook"/> from the session's vault again, after its page was saved, reloaded or removed:
