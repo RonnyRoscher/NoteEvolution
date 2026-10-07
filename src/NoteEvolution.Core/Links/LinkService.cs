@@ -17,17 +17,7 @@ public sealed class LinkService(IVault vault, IPageWriter writer, UndoManager un
     {
         var bookPage = book.Page;
         EnsureWritable(bookPage);
-        if (vault.FindBlockByKey(noteBlockKey) is not { } found || Book.IsBook(found.Page))
-        {
-            throw new ArgumentException("No note block has this key.", nameof(noteBlockKey));
-        }
-
-        var (notePage, note) = found;
-        if (notePage.IsReadOnly)
-        {
-            throw new InvalidOperationException(
-                $"Die Notizdatei '{notePage.FilePath}' kann nicht sicher gelesen werden: {notePage.ParseError}");
-        }
+        var (notePage, note) = FindWritableNote(noteBlockKey);
 
         var (parent, index) = Resolve(book, position);
 
@@ -60,6 +50,47 @@ public sealed class LinkService(IVault vault, IPageWriter writer, UndoManager un
         }
 
         return new AdoptResult(copy.Key, textBlockId, noteUpdatePending);
+    }
+
+    public void Link(Book book, Guid textBlockKey, Guid noteBlockKey)
+    {
+        var bookPage = book.Page;
+        EnsureWritable(bookPage);
+        var textBlock = FindTextBlock(book, textBlockKey);
+        var (notePage, note) = FindWritableNote(noteBlockKey);
+
+        var textLines = textBlock.Lines.ToList();
+        var textWasDirty = textBlock.IsDirty;
+        var noteLines = note.Lines.ToList();
+        var noteWasDirty = note.IsDirty;
+        var textBlockId = textBlock.EnsureId();
+        var noteId = note.EnsureId();
+        var sources = SourceValue.Parse(textBlock.GetProperty(SourceKey) ?? "").ToList();
+        if (!sources.Contains(noteId))
+        {
+            sources.Add(noteId);
+            textBlock.SetProperty(SourceKey, SourceValue.Format(sources));
+        }
+
+        if (!textBlock.Lines.SequenceEqual(textLines))
+        {
+            try
+            {
+                SaveBook(bookPage, () => textBlock.RestoreLines(textLines, textWasDirty));
+            }
+            catch
+            {
+                // The book does not reference the note, so a new id:: must not reach the note file later.
+                note.RestoreLines(noteLines, noteWasDirty);
+                throw;
+            }
+        }
+
+        ReplaceIdlessEntry(note, book.LinkName, textBlockId);
+        if (!UpdateNote(notePage, note, book.LinkName, textBlockId, remove: false).Pending)
+        {
+            RetryPending();
+        }
     }
 
     public void RemoveSource(Book book, Guid textBlockKey, Guid noteBlockId)
@@ -158,6 +189,47 @@ public sealed class LinkService(IVault vault, IPageWriter writer, UndoManager un
         }
 
         return done;
+    }
+
+    /// <summary>
+    /// The note block with this key and its page. Throws before anything changed if there is no such note block
+    /// or its page is read-only.
+    /// </summary>
+    private (Page Page, Block Block) FindWritableNote(Guid noteBlockKey)
+    {
+        if (vault.FindBlockByKey(noteBlockKey) is not { } found || Book.IsBook(found.Page))
+        {
+            throw new ArgumentException("No note block has this key.", nameof(noteBlockKey));
+        }
+
+        if (found.Page.IsReadOnly)
+        {
+            throw new InvalidOperationException(
+                $"Die Notizdatei '{found.Page.FilePath}' kann nicht sicher gelesen werden: {found.Page.ParseError}");
+        }
+
+        return found;
+    }
+
+    /// <summary>
+    /// Replaces the first <c>used-in::</c> entry for this book that has no block reference by the precise entry,
+    /// in place; does nothing if the precise entry is already there or there is no such entry.
+    /// </summary>
+    private static void ReplaceIdlessEntry(Block note, string linkName, Guid bookBlockId)
+    {
+        var entries = UsedInValue.Parse(note.GetProperty(UsedInKey) ?? "").ToList();
+        bool SameBook(UsedInEntry e) => string.Equals(e.PageName, linkName, StringComparison.OrdinalIgnoreCase);
+        if (entries.Any(e => SameBook(e) && e.BookBlockId == bookBlockId))
+        {
+            return;
+        }
+
+        var index = entries.FindIndex(e => SameBook(e) && e.BookBlockId is null);
+        if (index >= 0)
+        {
+            entries[index] = new UsedInEntry(linkName, bookBlockId);
+            note.SetProperty(UsedInKey, UsedInValue.Format(entries));
+        }
     }
 
     private void ChangeUsage(Guid noteBlockId, string bookLinkName, Guid? bookBlockId, bool remove)

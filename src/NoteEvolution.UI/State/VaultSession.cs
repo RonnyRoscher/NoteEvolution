@@ -40,7 +40,7 @@ public sealed class VaultSession : IDisposable
         Links = new LinkService(vault, Writer, Undo, new PendingStore(vault.Root));
         Checker = new LinkChecker(vault, Links);
         Changes = new ExternalChangeHandler(vault);
-        Handled = new HandledConverter(Notes, Writer);
+        Handled = new HandledConverter(Notes, Writer, Links);
         Drafts = new DraftConverter(_backups, Writer);
         Watcher = new VaultWatcher(vault, registry, timeProvider);
         Watcher.ExternalChange += OnWatcherChange;
