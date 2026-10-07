@@ -133,6 +133,12 @@ html, body {
     padding: 0 4px;
 }
 
+.ne-undo-error {
+    color: var(--danger);
+    font-size: 12px;
+    max-width: 220px;
+}
+
 .ne-readonly {
     position: relative;
 }

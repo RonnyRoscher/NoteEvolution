@@ -257,6 +257,14 @@ public sealed class LinkService(IVault vault, IPageWriter writer, UndoManager un
                      ?? throw new InvalidOperationException("Der Abschnitt des gelöschten Textblocks existiert nicht mehr.");
         }
 
+        // The editor's own undo may have put the block back already (with its key, relinked under a new id); restoring
+        // it again would give two blocks with the same key, and every later save another linked copy.
+        var removedKeys = Subtree(block).Select(b => b.Key).ToHashSet();
+        if (page.AllBlocks().Any(b => removedKeys.Contains(b.Key)))
+        {
+            throw new InvalidOperationException("Der gelöschte Textblock ist schon wieder im Buch.");
+        }
+
         page.RestoreBlock(parent, index, block);
         SaveBook(page, () => page.RemoveBlock(block));
 
@@ -546,6 +554,8 @@ public sealed class LinkService(IVault vault, IPageWriter writer, UndoManager un
 
     /// <summary>A removed book block and where it was (parent key, <c>null</c> = root level; index among the siblings).</summary>
     private sealed record DeletedBlock(Block Block, Guid? ParentKey, int Index);
+
+    private static IEnumerable<Block> Subtree(Block block) => block.Children.SelectMany(Subtree).Prepend(block);
 
     private sealed class UndoAction(string description, Action undo) : IUndoAction
     {
