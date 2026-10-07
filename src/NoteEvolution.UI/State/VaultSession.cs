@@ -665,8 +665,10 @@ public sealed class VaultSession : IDisposable
         Observe(
             async () =>
             {
-                await parts.Index.UpdatePageAsync(Notes, fullPath, _aiLifetime.Token);
-                RaiseAiStatusChanged();
+                if (await parts.Index.UpdatePageAsync(Notes, fullPath, _aiLifetime.Token))
+                {
+                    RaiseAiStatusChanged();
+                }
             },
             "Updating the semantic index");
     }

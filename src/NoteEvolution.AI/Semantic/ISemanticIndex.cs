@@ -26,8 +26,12 @@ public interface ISemanticIndex
     /// <summary>Indexes every note, reusing cached embeddings of unchanged texts.</summary>
     Task RebuildAsync(INoteRepository notes, CancellationToken ct);
 
-    /// <summary>Replaces the embeddings of one page's notes (after a save or an external change, or when it was removed).</summary>
-    Task UpdatePageAsync(INoteRepository notes, string pagePath, CancellationToken ct);
+    /// <summary>
+    /// Replaces the embeddings of one page's notes (after a save or an external change, or when it was removed).
+    /// Completes with whether the index changed (a note was added, removed or re-embedded). A failure to embed the page
+    /// is logged and leaves the page's affected notes out until the page changes again; it never fails the index.
+    /// </summary>
+    Task<bool> UpdatePageAsync(INoteRepository notes, string pagePath, CancellationToken ct);
 
     /// <summary>
     /// Whether queries give useful answers: <see cref="SemanticState.Ready"/>, or <see cref="SemanticState.Indexing"/>

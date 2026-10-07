@@ -78,14 +78,18 @@ public sealed class SemanticIndex : ISemanticIndex, IDisposable
 
     /// <summary>
     /// Drops the page's embeddings and indexes its current notes like <see cref="RebuildAsync"/>, without pruning the
-    /// cache and without progress: the status changes only when the update fails. Paths are compared ignoring case.
+    /// cache and without progress: the status does not change. A failure (embedder, cache) is logged and leaves the
+    /// notes that could not be embedded out of the index; the page's next change retries them. Completes with whether
+    /// the page's entries differ from before. Paths are compared ignoring case.
     /// </summary>
-    public Task UpdatePageAsync(INoteRepository notes, string pagePath, CancellationToken ct)
+    public async Task<bool> UpdatePageAsync(INoteRepository notes, string pagePath, CancellationToken ct)
     {
-        if (_disposed) return Task.CompletedTask;
+        if (_disposed) return false;
         var page = Path.GetFullPath(pagePath);
         var items = Read(notes.All().Where(n => string.Equals(PageOf(n), page, StringComparison.OrdinalIgnoreCase)));
-        return RunAsync(token => UpdatePage(page, items, token), ct);
+        var changed = false;
+        await RunAsync(token => { changed = UpdatePage(page, items, token); }, ct).ConfigureAwait(false);
+        return changed;
     }
 
     public IReadOnlyList<(Guid Key, float Score)> Nearest(float[] query, int k, Func<Guid, bool> include) =>
@@ -213,12 +217,26 @@ public sealed class SemanticIndex : ISemanticIndex, IDisposable
         SetStatus(new SemanticStatus(SemanticState.Ready, items.Count, items.Count, null));
     }
 
-    private void UpdatePage(string page, List<Item> items, CancellationToken token)
+    private bool UpdatePage(string page, List<Item> items, CancellationToken token)
     {
         token.ThrowIfCancellationRequested();
         var index = _index;
+        var before = index.VectorsOfPage(page);
         index.RemovePage(page);
-        Embed(index, AddCached(index, items), token, _ => { });
+        try
+        {
+            Embed(index, AddCached(index, items), token, _ => { });
+        }
+        catch (Exception ex) when (!token.IsCancellationRequested && !_disposed)
+        {
+            // a transient failure of one page must not disable the AI for the session: the notes not embedded yet
+            // stay out of the index and the next change of the page retries them
+            _logger.LogError(ex, "Updating the semantic index for {Page} failed", page);
+        }
+
+        var after = index.VectorsOfPage(page);
+        return before.Count != after.Count
+               || before.Any(b => !after.TryGetValue(b.Key, out var vector) || !b.Value.AsSpan().SequenceEqual(vector));
     }
 
     /// <summary>Puts the items whose hash is cached into <paramref name="index"/>; returns the others.</summary>

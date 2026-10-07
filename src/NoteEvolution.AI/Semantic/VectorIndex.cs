@@ -45,6 +45,16 @@ public sealed class VectorIndex
         }
     }
 
+    /// <summary>A copy of the page's stored vectors by key (empty if the page has none); the path is compared ignoring case.</summary>
+    public Dictionary<Guid, float[]> VectorsOfPage(string pagePath)
+    {
+        lock (_gate)
+        {
+            if (!_keysByPage.TryGetValue(pagePath, out var keys)) return [];
+            return keys.ToDictionary(key => key, key => (float[])_entries[key].Vector.Clone());
+        }
+    }
+
     public void Remove(Guid key)
     {
         lock (_gate)

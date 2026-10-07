@@ -143,6 +143,53 @@ public sealed class SemanticIndexTests
     }
 
     [Fact]
+    public async Task UpdatePage_ReportsWhetherTheIndexChanged()
+    {
+        using var tv = TwoPages();
+        var vault = tv.Open();
+        var notes = new NoteRepository(vault);
+        using var index = NewIndex(tv, out _);
+        await index.RebuildAsync(notes, CancellationToken.None);
+        var path = Path.Combine(tv.Root, "pages", "Birne.md");
+
+        Assert.False(await index.UpdatePageAsync(notes, path, CancellationToken.None)); // nothing changed on the page
+        RewriteBirne(tv, vault, "- Birne 3\n", "- Birne drei\n");
+        Assert.True(await index.UpdatePageAsync(notes, path, CancellationToken.None)); // one note re-embedded
+        RewriteBirne(tv, vault, "- Birne 3\n", "");
+        Assert.True(await index.UpdatePageAsync(notes, path, CancellationToken.None)); // one note removed
+    }
+
+    [Fact]
+    public async Task UpdatePage_EmbedderThrows_StaysReady_OthersFound_LaterUpdateAddsTheNote()
+    {
+        using var tv = TwoPages();
+        var vault = tv.Open();
+        var notes = new NoteRepository(vault);
+        using var index = NewIndex(tv, out _);
+        await index.RebuildAsync(notes, CancellationToken.None);
+        var ready = index.Status;
+        var path = RewriteBirne(tv, vault, "- Birne 3\n", "- Birne drei\n");
+        var added = notes.All().Single(n => n.Block.Content == "Birne drei");
+        var other = notes.All().Single(n => n.Block.Content == "Birne 4");
+        _embedder.Throws = true;
+
+        var changed = await index.UpdatePageAsync(notes, path, CancellationToken.None);
+
+        Assert.True(changed); // the old note of the page is gone from the index
+        Assert.Equal(ready, index.Status);
+        Assert.True(index.IsReady);
+        Assert.Null(index.VectorOf(added.Key)); // left out until the page changes again
+        Assert.Equal(FakeEmbedder.VectorFor("passage: Birne 4"), index.VectorOf(other.Key)); // from the cache
+        Assert.NotNull(index.VectorOf(notes.All().Single(n => n.Block.Content == "Apfel 1").Key));
+
+        _embedder.Throws = false;
+        Assert.True(await index.UpdatePageAsync(notes, path, CancellationToken.None));
+
+        Assert.Equal(FakeEmbedder.VectorFor("passage: Birne drei"), index.VectorOf(added.Key));
+        Assert.Equal(ready, index.Status);
+    }
+
+    [Fact]
     public async Task UpdatePage_DuringRebuild_WaitsAndKeepsItsResult()
     {
         using var tv = TwoPages();

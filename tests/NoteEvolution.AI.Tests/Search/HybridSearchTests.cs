@@ -42,7 +42,7 @@ public sealed class HybridSearchTests
 
         public Task RebuildAsync(INoteRepository notes, CancellationToken ct) => throw new NotSupportedException();
 
-        public Task UpdatePageAsync(INoteRepository notes, string pagePath, CancellationToken ct) =>
+        public Task<bool> UpdatePageAsync(INoteRepository notes, string pagePath, CancellationToken ct) =>
             throw new NotSupportedException();
 
         public IReadOnlyList<(Guid Key, float Score)> Nearest(float[] query, int k, Func<Guid, bool> include)
