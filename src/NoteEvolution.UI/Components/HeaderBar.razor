@@ -1,3 +1,4 @@
+@using NoteEvolution.Core.Books
 @using NoteEvolution.Core.Model
 @implements IDisposable
 @inject AppState State
@@ -9,10 +10,32 @@
 
     @if (State.Session is { } session)
     {
-        <select class="ne-book-select" aria-label="@L["Book"]" value="@State.CurrentBook?.LinkName" @onchange="SelectBook">
-            @foreach (var book in session.Vault.Books)
+        var books = BookChoices.Books(session.Vault);
+        var pages = BookChoices.ConvertiblePages(session.Vault);
+        @* Re-created when a page was chosen, so the select shows the current book again (see SelectBook). *@
+        <select @key="_selectVersion" class="ne-book-select" aria-label="@L["Book"]" value="@(State.CurrentBook?.LinkName ?? "")"
+                @onchange="SelectBook">
+            @if (State.CurrentBook is null)
             {
-                <option value="@book.LinkName">@book.Title</option>
+                <option class="ne-book-placeholder" value="" disabled selected>@L["ChooseBookPlaceholder"]</option>
+            }
+            @if (books.Count > 0)
+            {
+                <optgroup label="@L["BooksGroup"]">
+                    @foreach (var book in books)
+                    {
+                        <option class="ne-book-option" value="@book.LinkName">@book.Title</option>
+                    }
+                </optgroup>
+            }
+            @if (pages.Count > 0)
+            {
+                <optgroup label="@L["PagesGroup"]">
+                    @foreach (var candidate in pages)
+                    {
+                        <option class="ne-page-option" value="@(PageValuePrefix + candidate.FilePath)">@candidate.Name</option>
+                    }
+                </optgroup>
             }
         </select>
     }
@@ -73,11 +96,21 @@
 </header>
 
 @code {
+    /// <summary>Marks a page option's value; a file name cannot contain <c>|</c>, so no book link name starts with it.</summary>
+    private const string PageValuePrefix = "page|";
+
     private VaultSession? _session;
     private bool _readOnlyOpen;
     private bool _assistantsOpen;
+    private int _selectVersion;
 
     [Parameter] public EventCallback OnOpenVault { get; set; }
+
+    /// <summary>Raised after a book was chosen in the selection (and made the current book).</summary>
+    [Parameter] public EventCallback<Book> OnBookSelected { get; set; }
+
+    /// <summary>Raised when a page that is no book yet was chosen; the current book stays until it is converted.</summary>
+    [Parameter] public EventCallback<Page> OnConvertPage { get; set; }
 
     /// <summary>Opens the <c>[handled]</c> assistant; the assistants menu is hidden while both assistants are unset.</summary>
     [Parameter] public EventCallback OnHandledWizard { get; set; }
@@ -149,9 +182,26 @@
 
     private string Pressed(ViewMode mode) => State.Mode == mode ? "true" : "false";
 
-    private void SelectBook(ChangeEventArgs e)
+    private async Task SelectBook(ChangeEventArgs e)
     {
-        if (State.Session?.Vault.FindBook(e.Value as string ?? "") is not { } book)
+        if (State.Session is not { } session || e.Value is not string value)
+        {
+            return;
+        }
+
+        if (value.StartsWith(PageValuePrefix, StringComparison.Ordinal))
+        {
+            // The select keeps showing the current book: the page only becomes one once the assistant converted it.
+            _selectVersion++;
+            if (session.Vault.FindPageByPath(value[PageValuePrefix.Length..]) is { } page)
+            {
+                await OnConvertPage.InvokeAsync(page);
+            }
+
+            return;
+        }
+
+        if (session.Vault.FindBook(value) is not { } book)
         {
             return;
         }
@@ -160,6 +210,7 @@
         State.CurrentSectionKey = book.Root.Key;
         State.CursorTextBlockKey = null;
         State.Notify();
+        await OnBookSelected.InvokeAsync(book);
     }
 
     private void SetMode(ViewMode mode)

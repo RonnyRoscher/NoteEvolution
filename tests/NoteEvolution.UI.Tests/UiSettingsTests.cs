@@ -60,6 +60,22 @@ public class UiSettingsTests
         Assert.Equal(300, UiSettings.Load(target).OutlineWidth);
     }
 
+    [Fact]
+    public void RememberBook_PerVault_RoundTrips_IgnoringCaseAndTrailingSeparator()
+    {
+        using var dir = new TempDir();
+        using var vault = new TempDir();
+        var settings = new UiSettings();
+
+        settings.RememberBook(vault.Path, Path.Combine(vault.Path, "pages", "Mein Buch.md"));
+        settings.Save(dir.Path);
+        var loaded = UiSettings.Load(dir.Path);
+
+        Assert.Equal("pages/Mein Buch.md", loaded.LastBookOf(vault.Path));
+        Assert.Equal("pages/Mein Buch.md", loaded.LastBookOf(vault.Path.ToUpperInvariant() + Path.DirectorySeparatorChar));
+        Assert.Null(loaded.LastBookOf(dir.Path));
+    }
+
     [Theory]
     [InlineData(2, 10, 5, 50)]
     [InlineData(99, 20, 500, 100)]

@@ -104,7 +104,7 @@ public class ShellTests : UiTestContext
         WaitForVaultOpened(cut);
         Assert.Equal("Alpha", State.CurrentBook!.Title);
         Assert.Equal(State.CurrentBook.Root.Key, State.CurrentSectionKey);
-        Assert.Equal(["Alpha", "Beta"], cut.FindAll(".ne-book-select option").Select(o => o.TextContent));
+        cut.WaitForAssertion(() => Assert.Equal(["Alpha", "Beta"], cut.FindAll(".ne-book-select .ne-book-option").Select(o => o.TextContent)));
         Assert.Equal(tv.Root, UiSettings.Load(Platform.UserDataDirectory).LastVault);
 
         cut.Find(".ne-hint-ok").Click();
@@ -184,7 +184,7 @@ public class ShellTests : UiTestContext
 
         var cut = Render<HeaderBar>();
 
-        Assert.Equal(["Alpha", "Beta"], cut.FindAll(".ne-book-select option").Select(o => o.TextContent));
+        Assert.Equal(["Alpha", "Beta"], cut.FindAll(".ne-book-select .ne-book-option").Select(o => o.TextContent));
         var beta = session.Vault.Books.Single(b => b.Title == "Beta");
 
         cut.Find(".ne-book-select").Change(beta.LinkName);
