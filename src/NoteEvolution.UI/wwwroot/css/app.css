@@ -503,6 +503,7 @@ html, body {
 }
 
 .ne-search,
+.ne-relevant,
 .ne-journal {
     display: flex;
     flex-direction: column;
@@ -510,6 +511,7 @@ html, body {
 }
 
 .ne-search-list,
+.ne-relevant-list,
 .ne-journal-list {
     display: flex;
     flex-direction: column;
@@ -517,9 +519,18 @@ html, body {
 }
 
 .ne-search-hint,
+.ne-relevant-hint,
 .ne-search-empty {
     color: var(--fg-muted);
     font-size: 12px;
+}
+
+.ne-relevant-hint {
+    margin: 0;
+}
+
+.ne-relevant-download {
+    align-self: flex-start;
 }
 
 .ne-note-focused {

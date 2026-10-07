@@ -1,0 +1,243 @@
+@using NoteEvolution.AI.Relevance
+@using NoteEvolution.Core.Books
+@using NoteEvolution.Core.Vaults
+@implements IDisposable
+@inject AppState State
+@inject TimeProvider Time
+@inject IStringLocalizer<Strings> L
+@inject ILogger<RelevantTab> Logger
+
+@* The "Relevant" tab: the notes that fit the book section (manuscript view: the text at the cursor) the user is working on. *@
+<div class="ne-relevant">
+    @if (State.Session is { } session)
+    {
+        var status = session.AiStatus;
+        if (!session.Relevance.IsAvailable)
+        {
+            switch (status.State)
+            {
+                case AiState.ModelMissing:
+                    <p class="ne-relevant-hint">@L["NotesRelevantModelMissing"]</p>
+                    <button type="button" class="ne-relevant-download" @onclick="State.RequestAiModelDialog">@L["NotesRelevantDownload"]</button>
+                    break;
+                case AiState.Failed:
+                    <p class="ne-relevant-hint" title="@status.Error">@L["NotesRelevantFailed"]</p>
+                    break;
+                case AiState.Off:
+                    <p class="ne-relevant-hint">@L["NotesRelevantOff"]</p>
+                    break;
+                default:
+                    <p class="ne-relevant-hint">@L["NotesRelevantPreparing"]</p>
+                    break;
+            }
+        }
+        else if (State.CurrentBook is null)
+        {
+            <p class="ne-relevant-hint">@L["NotesRelevantNoBook"]</p>
+        }
+        else
+        {
+            if (_computed && _hits.Count == 0)
+            {
+                <div class="ne-search-empty">@L["NotesSearchEmpty"]</div>
+            }
+
+            <div class="ne-relevant-list">
+                @foreach (var hit in _hits)
+                {
+                    // Read live (not kept): a page replaced after an external change gives new views; keys may be stale.
+                    if (session.Notes.Get(hit.Key) is { } note)
+                    {
+                        <NoteCard @key="hit.Key" Note="note" Percent="hit.Percent" />
+                    }
+                }
+            </div>
+        }
+    }
+</div>
+
+@code {
+    /// <summary>
+    /// The list is computed this long after the last change of what it depends on (R4: measured with the injected
+    /// <see cref="TimeProvider"/>); the first computation does not wait.
+    /// </summary>
+    internal static readonly TimeSpan Debounce = TimeSpan.FromMilliseconds(1500);
+
+    /// <summary>How many notes the tab shows.</summary>
+    private const int Limit = 30;
+
+    private VaultSession? _session;
+    private CancellationTokenSource? _pending;
+    private bool _disposed;
+
+    /// <summary>Counts the requests; a result is only applied while its request is still the newest.</summary>
+    private int _generation;
+
+    /// <summary>
+    /// Counts the changes of the index while the AI is ready (a page's notes embedded again under new keys): the list is
+    /// computed again then. Progress during indexing is not counted; the tab does not wait for it.
+    /// </summary>
+    private int _indexVersion;
+
+    private (VaultSession?, Book?, Guid, Guid?, bool, NoteFilter, int, AiState, bool, int)? _last;
+    private List<(Guid Key, int Percent)> _hits = [];
+
+    /// <summary>True once a result was applied for the current topic (to tell "nothing found" from "not computed yet").</summary>
+    private bool _computed;
+
+    [Parameter, EditorRequired] public NoteFilter Filter { get; set; } = default!;
+
+    /// <summary>Changes whenever the vault's pages or the session changed, so the notes are looked up again.</summary>
+    [Parameter] public int Revision { get; set; }
+
+    /// <remarks>
+    /// The pane renders again on every <see cref="AppState.Changed"/>, which calls this: book, section, cursor and
+    /// view mode are read from <see cref="AppState"/> here.
+    /// </remarks>
+    protected override void OnParametersSet()
+    {
+        TrackSession();
+        Refresh();
+    }
+
+    public void Dispose()
+    {
+        _disposed = true;
+        Unsubscribe();
+        _generation++;
+        _pending?.Cancel();
+        _pending?.Dispose();
+    }
+
+    private void TrackSession()
+    {
+        if (ReferenceEquals(State.Session, _session))
+        {
+            return;
+        }
+
+        Unsubscribe();
+        _session = State.Session;
+        if (_session is not null)
+        {
+            _session.AiStatusChanged += OnAiStatusChanged;
+        }
+    }
+
+    private void Unsubscribe()
+    {
+        if (_session is not null)
+        {
+            _session.AiStatusChanged -= OnAiStatusChanged;
+        }
+    }
+
+    private void OnAiStatusChanged() => _ = InvokeAsync(() =>
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        if (_session?.AiStatus.State == AiState.Ready)
+        {
+            _indexVersion++;
+        }
+
+        Refresh();
+        StateHasChanged();
+    });
+
+    /// <summary>Starts a new computation if something the list depends on has changed since the last one.</summary>
+    private void Refresh()
+    {
+        var session = State.Session;
+        var manuscript = State.Mode == ViewMode.Manuscript;
+        var status = session?.AiStatus;
+        var available = session?.Relevance.IsAvailable == true;
+        var current = (session, State.CurrentBook, State.CurrentSectionKey, manuscript ? State.CursorTextBlockKey : null, manuscript,
+            Filter, Revision, status?.State ?? AiState.Off, available, _indexVersion);
+        if (_last == current)
+        {
+            return;
+        }
+
+        var first = _last is null;
+        _last = current;
+        _computed = false;
+        _generation++;
+        _pending?.Cancel();
+        _pending?.Dispose();
+        _pending = null;
+        if (!available || State.CurrentBook is null)
+        {
+            _hits = [];
+            return;
+        }
+
+        var source = _pending = new CancellationTokenSource();
+        _ = ComputeAsync(_generation, first, source.Token);
+    }
+
+    private async Task ComputeAsync(int generation, bool immediately, CancellationToken cancel)
+    {
+        try
+        {
+            if (!immediately)
+            {
+                await Task.Delay(Debounce, Time, cancel);
+            }
+
+            // The vault model belongs to the UI thread: everything the background work needs is read here.
+            (VaultSession Session, TopicRequest Topic, HashSet<Guid> Allowed)? snapshot = null;
+            await InvokeAsync(() => snapshot = TakeSnapshot());
+            if (snapshot is null)
+            {
+                return;
+            }
+
+            var (session, topic, allowed) = snapshot.Value;
+            var found = await Task.Run(() => session.Relevance.Relevant(topic, allowed.Contains, Limit), cancel);
+            var best = found.Count > 0 ? found.Max(hit => hit.Score) : 0;
+            var hits = found.Select(hit => (hit.NoteBlockKey, SearchTab.Percent(hit.Score, best))).ToList();
+            await InvokeAsync(() =>
+            {
+                if (_disposed || generation != _generation)
+                {
+                    return;
+                }
+
+                _hits = hits;
+                _computed = true;
+                StateHasChanged();
+            });
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (ObjectDisposedException) when (_disposed)
+        {
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Computing the relevant notes failed");
+        }
+    }
+
+    private (VaultSession, TopicRequest, HashSet<Guid>)? TakeSnapshot()
+    {
+        if (_disposed || State is not { Session: { } session, CurrentBook: { } book })
+        {
+            return null;
+        }
+
+        var manuscript = State.Mode == ViewMode.Manuscript;
+        var topic = new TopicRequest(book, State.CurrentSectionKey, manuscript ? State.CursorTextBlockKey : null, manuscript);
+        var filter = Filter;
+        var allowed = session.Notes.All()
+            .Where(note => session.Notes.Matches(note, filter))
+            .Select(note => note.Key)
+            .ToHashSet();
+        return (session, topic, allowed);
+    }
+}

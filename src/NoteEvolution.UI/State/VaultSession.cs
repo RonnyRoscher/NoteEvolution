@@ -133,7 +133,11 @@ public sealed class VaultSession : IDisposable
         }
     }
 
-    /// <summary><see cref="AiStatus"/> may have changed; raised on the UI thread (through the dispatcher).</summary>
+    /// <summary>
+    /// <see cref="AiStatus"/> may have changed; raised on the UI thread (through the dispatcher). Also raised when a
+    /// page's notes were embedded again after a change (the status stays <see cref="AiState.Ready"/> then, but the
+    /// notes' keys are new), so that views of the semantic index read it again.
+    /// </summary>
     public event Action? AiStatusChanged;
 
     public LinkChecker Checker { get; }
@@ -658,7 +662,13 @@ public sealed class VaultSession : IDisposable
             return;
         }
 
-        Observe(() => parts.Index.UpdatePageAsync(Notes, fullPath, _aiLifetime.Token), "Updating the semantic index");
+        Observe(
+            async () =>
+            {
+                await parts.Index.UpdatePageAsync(Notes, fullPath, _aiLifetime.Token);
+                RaiseAiStatusChanged();
+            },
+            "Updating the semantic index");
     }
 
     /// <summary>Starts the work and logs its failure; a cancellation (the session closed) ends quietly.</summary>

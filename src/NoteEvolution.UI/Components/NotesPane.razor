@@ -15,6 +15,8 @@ else
     var filter = new NoteFilter(Settings.HideUsed, _from, _to);
     <div class="ne-notes-pane">
         <div class="ne-notes-tabs" role="tablist">
+            <button type="button" role="tab" class="ne-tab ne-tab-relevant @(_tab == Tab.Relevant ? "active" : null)"
+                    aria-selected="@(_tab == Tab.Relevant)" @onclick="() => _tab = Tab.Relevant">@L["NotesTabRelevant"]</button>
             <button type="button" role="tab" class="ne-tab ne-tab-search @(_tab == Tab.Search ? "active" : null)"
                     aria-selected="@(_tab == Tab.Search)" @onclick="() => _tab = Tab.Search">@L["NotesTabSearch"]</button>
             <button type="button" role="tab" class="ne-tab ne-tab-journal @(_tab == Tab.Journal ? "active" : null)"
@@ -38,7 +40,11 @@ else
                 <NoteCard Note="focused" />
             </div>
         }
-        @if (_tab == Tab.Search)
+        @if (_tab == Tab.Relevant)
+        {
+            <RelevantTab Filter="filter" Revision="_revision" />
+        }
+        else if (_tab == Tab.Search)
         {
             <SearchTab Query="@_query" QueryChanged="q => _query = q" Filter="filter" Revision="_revision" />
         }
@@ -52,6 +58,7 @@ else
 @code {
     private enum Tab
     {
+        Relevant,
         Search,
         Journal,
     }
@@ -105,6 +112,10 @@ else
         if (_session is not null)
         {
             _session.PagesChanged += OnPagesChanged;
+
+            // The start tab depends on the AI at the moment the vault's notes are first shown; a later change of the
+            // AI never switches tabs (the user's choice wins).
+            _tab = _session.Relevance.IsAvailable ? Tab.Relevant : Tab.Search;
         }
     }
 

@@ -227,6 +227,9 @@
   </data>
 
   <!-- Notizbereich -->
+  <data name="NotesTabRelevant" xml:space="preserve">
+    <value>Relevant</value>
+  </data>
   <data name="NotesTabSearch" xml:space="preserve">
     <value>Suche</value>
   </data>
@@ -681,5 +684,25 @@
   </data>
   <data name="SettingsAiDownloading" xml:space="preserve">
     <value>Das Modell wird heruntergeladen …</value>
+  </data>
+
+  <!-- Reiter „Relevant“ -->
+  <data name="NotesRelevantOff" xml:space="preserve">
+    <value>Die KI ist aus; „Relevant“ ist nicht verfügbar.</value>
+  </data>
+  <data name="NotesRelevantModelMissing" xml:space="preserve">
+    <value>Für „Relevant“ fehlt das KI-Modell.</value>
+  </data>
+  <data name="NotesRelevantDownload" xml:space="preserve">
+    <value>Modell herunterladen</value>
+  </data>
+  <data name="NotesRelevantPreparing" xml:space="preserve">
+    <value>Die KI wird vorbereitet …</value>
+  </data>
+  <data name="NotesRelevantFailed" xml:space="preserve">
+    <value>Die KI meldet einen Fehler; „Relevant“ ist nicht verfügbar.</value>
+  </data>
+  <data name="NotesRelevantNoBook" xml:space="preserve">
+    <value>Kein Buch gewählt</value>
   </data>
 </root>
