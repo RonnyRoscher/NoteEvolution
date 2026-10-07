@@ -89,8 +89,10 @@ html, body {
 
 .ne-header {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: 8px;
+    row-gap: 4px;
     padding: 6px 10px;
     border-bottom: 1px solid var(--border);
     background: var(--bg-pane);
@@ -101,7 +103,8 @@ html, body {
 }
 
 .ne-book-select {
-    min-width: 180px;
+    flex: 0 1 180px;
+    min-width: 0;
 }
 
 .ne-mode {
@@ -131,6 +134,7 @@ html, body {
     color: var(--fg-muted);
     font-size: 12px;
     padding: 0 4px;
+    white-space: nowrap;
 }
 
 .ne-ai.ne-ai-failed {
