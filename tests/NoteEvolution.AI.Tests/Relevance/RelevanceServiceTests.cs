@@ -80,6 +80,15 @@ public sealed class RelevanceServiceTests : IDisposable
         public TextBlock Text(string content) =>
             Walk(Book.Root).SelectMany(n => n.TextBlocks).Single(t => t.Text == content);
 
+        public string NoteText(string content) => EmbeddingText.ForNote(Note(content));
+
+        /// <summary>What a caller on the UI thread passes as <c>include</c>: a snapshot of the keys that pass the filter.</summary>
+        public Func<Guid, bool> Allow(NoteFilter filter)
+        {
+            var keys = Notes.All().Where(n => Notes.Matches(n, filter)).Select(n => n.Key).ToHashSet();
+            return keys.Contains;
+        }
+
         public string TitleOf(Guid sectionKey) => Book.FindNode(sectionKey)!.Title;
 
         public string ContentOf(Guid noteKey) => Notes.Get(noteKey)!.Block.Content;
@@ -107,7 +116,7 @@ public sealed class RelevanceServiceTests : IDisposable
         var vault = tv.Open();
         var notes = new NoteRepository(vault);
         var index = new StubIndex();
-        return new Fixture(vault.Books.Single(), notes, index, new RelevanceService(index, notes, cacheCapacity));
+        return new Fixture(vault.Books.Single(), notes, index, new RelevanceService(index, cacheCapacity));
     }
 
     /// <summary>
@@ -145,13 +154,13 @@ public sealed class RelevanceServiceTests : IDisposable
         f.SetNote("Benutzt", 1, 0, 0);
         f.SetNote("Alt", 1, 0, 0);
 
-        var hits = f.Service.Relevant(f.Topic("Liebe"), new NoteFilter(true, new DateOnly(2026, 1, 1), null));
+        var hits = f.Service.Relevant(f.Topic("Liebe"), f.Allow(new NoteFilter(true, new DateOnly(2026, 1, 1), null)));
 
         Assert.Equal(30, hits.Count);
         Assert.Equal(Enumerable.Range(1, 30).Select(i => $"Note {i}"), hits.Select(h => f.ContentOf(h.NoteBlockKey)));
         Assert.Equal(hits.OrderByDescending(h => h.Score), hits);
         Assert.Equal(VectorMath.Cosine([1, 0, 0], [1, 0.01f, 0]), hits[0].Score, 1e-6);
-        Assert.Equal(3, f.Service.Relevant(f.Topic("Liebe"), NoFilter, 3).Count);
+        Assert.Equal(3, f.Service.Relevant(f.Topic("Liebe"), f.Allow(NoFilter), 3).Count);
     }
 
     [Fact]
@@ -166,7 +175,7 @@ public sealed class RelevanceServiceTests : IDisposable
         f.SetNote("Nur Text", 0, 1, 0);
         f.SetNote("Beides", 1, 1, 0);
 
-        var hits = f.Service.Relevant(f.Topic("Liebe"), NoFilter);
+        var hits = f.Service.Relevant(f.Topic("Liebe"), f.Allow(NoFilter));
 
         // topic = normalize((1,0,0) + mean((0,1,0),(0,3,0))) = normalize((1,2,0)); the sub-section's block is not part of it
         Assert.Equal(["Beides", "Nur Text", "Nur Pfad"], hits.Select(h => f.ContentOf(h.NoteBlockKey)));
@@ -182,7 +191,7 @@ public sealed class RelevanceServiceTests : IDisposable
         f.Index.Queries[path] = [0, 0, 1];
         f.SetNote("Frage", 0, 0, 1);
 
-        var hits = f.Service.Relevant(f.Topic("Leer"), NoFilter);
+        var hits = f.Service.Relevant(f.Topic("Leer"), f.Allow(NoFilter));
 
         Assert.Equal([path], f.Index.Embedded);
         Assert.Equal(1.0, Assert.Single(hits).Score, 1e-6);
@@ -199,9 +208,9 @@ public sealed class RelevanceServiceTests : IDisposable
         f.SetNote("Um Zwei", 0, 1, 0);
         f.SetNote("Sonst", 1, 0, 0);
 
-        var manuscript = f.Service.Relevant(f.Topic("Liebe", zwei.Key, manuscript: true), NoFilter);
-        var section = f.Service.Relevant(f.Topic("Liebe", zwei.Key, manuscript: false), NoFilter);
-        var vanished = f.Service.Relevant(f.Topic("Liebe", Guid.NewGuid(), manuscript: true), NoFilter);
+        var manuscript = f.Service.Relevant(f.Topic("Liebe", zwei.Key, manuscript: true), f.Allow(NoFilter));
+        var section = f.Service.Relevant(f.Topic("Liebe", zwei.Key, manuscript: false), f.Allow(NoFilter));
+        var vanished = f.Service.Relevant(f.Topic("Liebe", Guid.NewGuid(), manuscript: true), f.Allow(NoFilter));
 
         Assert.Equal("Um Zwei", f.ContentOf(manuscript[0].NoteBlockKey));
         Assert.Equal(1.0, manuscript[0].Score, 1e-6);
@@ -210,11 +219,34 @@ public sealed class RelevanceServiceTests : IDisposable
     }
 
     [Fact]
+    public void Relevant_OnlyConsultsTheIncludeDelegate()
+    {
+        var f = Create("- # Liebe\n\t- Liebe Text\n",
+            notePages: [("journals/2026_03_01.md", "- Eins\n- Zwei\n- Drei\n")]);
+        f.SetSection(f.Section("Liebe"), 1, 0, 0);
+        f.SetNote("Eins", 1, 0, 0);
+        f.SetNote("Zwei", 1, 1, 0);
+        f.SetNote("Drei", 1, 2, 0);
+        var asked = new List<Guid>();
+        var zwei = f.Note("Zwei").Key;
+
+        // the service has no repository: whatever the delegate says is the whole filter
+        var hits = f.Service.Relevant(f.Topic("Liebe"), key =>
+        {
+            asked.Add(key);
+            return key == zwei;
+        });
+
+        Assert.Equal(zwei, Assert.Single(hits).NoteBlockKey);
+        Assert.Equal(f.Index.Notes.Keys.Order(), asked.Order());
+    }
+
+    [Fact]
     public void Relevant_UnknownSection_Empty()
     {
         var f = SixSections(prologue: false);
 
-        Assert.Empty(f.Service.Relevant(new TopicRequest(f.Book, Guid.NewGuid(), null, false), NoFilter));
+        Assert.Empty(f.Service.Relevant(new TopicRequest(f.Book, Guid.NewGuid(), null, false), f.Allow(NoFilter)));
     }
 
     [Fact]
@@ -224,15 +256,15 @@ public sealed class RelevanceServiceTests : IDisposable
         f.Index.Ready = false;
 
         Assert.False(f.Service.IsAvailable);
-        Assert.Empty(f.Service.Relevant(f.Topic("Liebe"), NoFilter));
-        Assert.Empty(f.Service.WhereTo(f.Note("Frage"), f.Book));
-        Assert.Empty(f.Service.Placements(f.Note("Frage"), f.Book));
+        Assert.Empty(f.Service.Relevant(f.Topic("Liebe"), f.Allow(NoFilter)));
+        Assert.Empty(f.Service.WhereTo(f.Note("Frage").Key, f.NoteText("Frage"), f.Book));
+        Assert.Empty(f.Service.Placements(f.Note("Frage").Key, f.NoteText("Frage"), f.Book));
         Assert.Empty(f.Index.Embedded);
         Assert.Equal(0, f.Index.NearestCalls);
 
         f.Index.Ready = true;
         Assert.True(f.Service.IsAvailable);
-        Assert.NotEmpty(f.Service.Relevant(f.Topic("Liebe"), NoFilter));
+        Assert.NotEmpty(f.Service.Relevant(f.Topic("Liebe"), f.Allow(NoFilter)));
     }
 
     [Fact]
@@ -241,14 +273,14 @@ public sealed class RelevanceServiceTests : IDisposable
         var f = SixSections(prologue: false);
         f.Index.EmbedFails = true;
 
-        Assert.Empty(f.Service.Relevant(f.Topic("Liebe"), NoFilter));
-        Assert.Empty(f.Service.WhereTo(f.Note("Frage"), f.Book));
-        Assert.Empty(f.Service.Placements(f.Note("Frage"), f.Book));
+        Assert.Empty(f.Service.Relevant(f.Topic("Liebe"), f.Allow(NoFilter)));
+        Assert.Empty(f.Service.WhereTo(f.Note("Frage").Key, f.NoteText("Frage"), f.Book));
+        Assert.Empty(f.Service.Placements(f.Note("Frage").Key, f.NoteText("Frage"), f.Book));
 
         f.Index.EmbedFails = false;
-        Assert.NotEmpty(f.Service.Relevant(f.Topic("Liebe"), NoFilter));
-        Assert.NotEmpty(f.Service.WhereTo(f.Note("Frage"), f.Book));
-        Assert.NotEmpty(f.Service.Placements(f.Note("Frage"), f.Book));
+        Assert.NotEmpty(f.Service.Relevant(f.Topic("Liebe"), f.Allow(NoFilter)));
+        Assert.NotEmpty(f.Service.WhereTo(f.Note("Frage").Key, f.NoteText("Frage"), f.Book));
+        Assert.NotEmpty(f.Service.Placements(f.Note("Frage").Key, f.NoteText("Frage"), f.Book));
     }
 
     [Fact]
@@ -257,8 +289,8 @@ public sealed class RelevanceServiceTests : IDisposable
         var without = SixSections(prologue: false);
         var with = SixSections(prologue: true);
 
-        var withoutHits = without.Service.WhereTo(without.Note("Frage"), without.Book);
-        var withHits = with.Service.WhereTo(with.Note("Frage"), with.Book);
+        var withoutHits = without.Service.WhereTo(without.Note("Frage").Key, without.NoteText("Frage"), without.Book);
+        var withHits = with.Service.WhereTo(with.Note("Frage").Key, with.NoteText("Frage"), with.Book);
 
         // no prologue: the root is no candidate, the five real sections are listed
         Assert.Equal(["Liebe", "Vertrauen", "Geld", "Leer", "Mut"], withoutHits.Select(h => without.TitleOf(h.SectionKey)));
@@ -267,7 +299,7 @@ public sealed class RelevanceServiceTests : IDisposable
         Assert.Equal(Guid.Empty, withHits[1].SectionKey);
         Assert.Equal(VectorMath.Cosine([1, 0, 0], [2, 0, 1]), withHits[1].Score, 1e-6);
         Assert.Equal(1.0, withHits[0].Score, 1e-6);
-        Assert.Equal(2, with.Service.WhereTo(with.Note("Frage"), with.Book, 2).Count);
+        Assert.Equal(2, with.Service.WhereTo(with.Note("Frage").Key, with.NoteText("Frage"), with.Book, 2).Count);
     }
 
     [Fact]
@@ -278,7 +310,7 @@ public sealed class RelevanceServiceTests : IDisposable
         f.Index.Notes.Clear();
         f.Index.Queries[EmbeddingText.ForNote(frage)] = [1, 0, 0];
 
-        var hits = f.Service.WhereTo(frage, f.Book);
+        var hits = f.Service.WhereTo(frage.Key, EmbeddingText.ForNote(frage), f.Book);
 
         Assert.Equal("Liebe", f.TitleOf(hits[0].SectionKey));
         Assert.Contains(EmbeddingText.ForNote(frage), f.Index.Embedded);
@@ -291,12 +323,12 @@ public sealed class RelevanceServiceTests : IDisposable
         f.SetSection(f.Section("Liebe"), 1, 0, 0);
         f.Index.Queries[EmbeddingText.ForTextBlock(f.Text("Liebe zwei"))] = [1, 1, 0];
 
-        var hits = f.Service.Placements(f.Note("Frage"), f.Book);
+        var hits = f.Service.Placements(f.Note("Frage").Key, f.NoteText("Frage"), f.Book);
 
         Assert.Equal(["Liebe eins", "Prolog", "Liebe zwei"], hits.Select(h => f.Book.FindTextBlock(h.TextBlockKey)!.Text));
         Assert.Equal(hits.OrderByDescending(h => h.Score), hits);
         Assert.Equal(VectorMath.Cosine([1, 0, 0], [1, 1, 0]), hits[2].Score, 1e-6);
-        Assert.Single(f.Service.Placements(f.Note("Frage"), f.Book, 1));
+        Assert.Single(f.Service.Placements(f.Note("Frage").Key, f.NoteText("Frage"), f.Book, 1));
     }
 
     [Fact]
@@ -305,7 +337,7 @@ public sealed class RelevanceServiceTests : IDisposable
         var f = SixSections(prologue: false);
         f.Index.Queries[EmbeddingText.ForHeadingPath(f.Book, f.Section("Leer"))] = [0, 0, 0];
 
-        Assert.Empty(f.Service.Relevant(f.Topic("Leer"), NoFilter));
+        Assert.Empty(f.Service.Relevant(f.Topic("Leer"), f.Allow(NoFilter)));
         Assert.Equal(0, f.Index.NearestCalls);
     }
 
@@ -316,8 +348,8 @@ public sealed class RelevanceServiceTests : IDisposable
         f.SetSection(f.Section("Geld"), 0, 0, 0); // a section and a text block without meaning
         f.SetSection(f.Section("Mut"), 0, 0, 0);
 
-        var sections = f.Service.WhereTo(f.Note("Frage"), f.Book);
-        var placements = f.Service.Placements(f.Note("Frage"), f.Book);
+        var sections = f.Service.WhereTo(f.Note("Frage").Key, f.NoteText("Frage"), f.Book);
+        var placements = f.Service.Placements(f.Note("Frage").Key, f.NoteText("Frage"), f.Book);
 
         Assert.Equal(["Liebe", "Vertrauen", "Leer"], sections.Select(h => f.TitleOf(h.SectionKey)));
         Assert.Equal(["Liebe eins", "Liebe zwei", "Vertrauen Text"],
@@ -325,8 +357,8 @@ public sealed class RelevanceServiceTests : IDisposable
         Assert.All(sections.Select(h => h.Score).Concat(placements.Select(h => h.Score)), s => Assert.True(double.IsFinite(s)));
 
         f.Index.Notes[f.Note("Frage").Key] = [0, 0, 0]; // a note without meaning
-        Assert.Empty(f.Service.WhereTo(f.Note("Frage"), f.Book));
-        Assert.Empty(f.Service.Placements(f.Note("Frage"), f.Book));
+        Assert.Empty(f.Service.WhereTo(f.Note("Frage").Key, f.NoteText("Frage"), f.Book));
+        Assert.Empty(f.Service.Placements(f.Note("Frage").Key, f.NoteText("Frage"), f.Book));
     }
 
     [Fact]
@@ -336,13 +368,13 @@ public sealed class RelevanceServiceTests : IDisposable
         f.SetSection(f.Section("A"), 1, 0, 0);
         f.SetSection(f.Section("B"), 0, 1, 0);
 
-        f.Service.Relevant(f.Topic("A"), NoFilter);
+        f.Service.Relevant(f.Topic("A"), f.Allow(NoFilter));
         Assert.Equal(2, f.Index.Embedded.Count);
-        f.Service.Relevant(f.Topic("B"), NoFilter); // evicts both texts of A
+        f.Service.Relevant(f.Topic("B"), f.Allow(NoFilter)); // evicts both texts of A
         Assert.Equal(4, f.Index.Embedded.Count);
-        f.Service.Relevant(f.Topic("B"), NoFilter);
+        f.Service.Relevant(f.Topic("B"), f.Allow(NoFilter));
         Assert.Equal(4, f.Index.Embedded.Count); // served from the cache
-        f.Service.Relevant(f.Topic("A"), NoFilter);
+        f.Service.Relevant(f.Topic("A"), f.Allow(NoFilter));
         Assert.Equal(6, f.Index.Embedded.Count); // embedded again
     }
 
@@ -354,9 +386,9 @@ public sealed class RelevanceServiceTests : IDisposable
         f.SetSection(f.Section("Alles"), 1, 0, 0);
         f.SetNote("Frage", 1, 0, 0);
 
-        f.Service.Placements(f.Note("Frage"), f.Book);
+        f.Service.Placements(f.Note("Frage").Key, f.NoteText("Frage"), f.Book);
         var first = f.Index.Embedded.Count;
-        f.Service.Placements(f.Note("Frage"), f.Book);
+        f.Service.Placements(f.Note("Frage").Key, f.NoteText("Frage"), f.Book);
 
         Assert.Equal(5000, first); // one text per block; the note's own vector is indexed
         Assert.Equal(5000, f.Index.Embedded.Count); // the second call used the cache only
@@ -371,11 +403,13 @@ public sealed class RelevanceServiceTests : IDisposable
         f.SetNote("Frage", 1, 0, 0);
         var frage = f.Note("Frage");
         var topics = new[] { f.Topic("A"), f.Topic("B"), f.Topic("C") };
+        var text = f.NoteText("Frage"); // everything from the vault is captured before going parallel
+        var include = f.Allow(NoFilter);
 
         Parallel.For(0, 200, i =>
         {
-            Assert.Single(f.Service.Relevant(topics[i % 3], NoFilter));
-            Assert.Equal(3, f.Service.WhereTo(frage, f.Book).Count);
+            Assert.Single(f.Service.Relevant(topics[i % 3], include));
+            Assert.Equal(3, f.Service.WhereTo(frage.Key, text, f.Book).Count);
         });
     }
 }
