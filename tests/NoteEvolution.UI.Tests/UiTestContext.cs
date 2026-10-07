@@ -92,6 +92,24 @@ public abstract class UiTestContext : BunitContext
     }
 
     /// <summary>
+    /// Opens <paramref name="vault"/> with an installed test model and a working <paramref name="embedder"/> (a
+    /// <see cref="FakeEmbedder"/> by default), and waits until the notes are indexed (the AI is ready).
+    /// </summary>
+    protected async Task<VaultSession> OpenWithAiAsync(TestVault vault, FakeEmbedder? embedder = null)
+    {
+        embedder ??= new FakeEmbedder();
+        var session = await OpenSessionAsync(vault, UseAi(installed: true, () => embedder));
+        var until = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+        while (session.AiStatus.State != AiState.Ready)
+        {
+            Assert.True(DateTime.UtcNow < until, "The AI did not become ready in time.");
+            await Task.Delay(10);
+        }
+
+        return session;
+    }
+
+    /// <summary>
     /// Waits until the shell has finished opening a vault (other than <paramref name="previous"/>): the session is set
     /// before the opening ends, so the test waits for the editor to be shown again as well.
     /// </summary>

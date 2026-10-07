@@ -1,7 +1,11 @@
+@using NoteEvolution.AI.Embeddings
+@using NoteEvolution.AI.Relevance
 @using NoteEvolution.Core.Assistants
+@using NoteEvolution.Core.Books
 @using NoteEvolution.Core.Model
 @using NoteEvolution.Core.Storage
 @using NoteEvolution.Core.Vaults
+@implements IDisposable
 @inject AppState State
 @inject IStringLocalizer<Strings> L
 @inject ILogger<HandledWizard> Logger
@@ -39,7 +43,7 @@
         }
         <label class="ne-handled-book">
             @L["HandledBook"]
-            <select class="ne-handled-book-select" value="@_bookName" disabled="@_confirming" @onchange="e => _bookName = e.Value as string">
+            <select class="ne-handled-book-select" value="@_bookName" disabled="@_confirming" @onchange="ChangeBook">
                 @foreach (var book in State.Session.Vault.Books)
                 {
                     <option value="@book.LinkName">@book.Title</option>
@@ -61,6 +65,17 @@
                             <span class="ne-handled-readonly">@L["HandledReadOnly"]</span>
                         }
                     </label>
+                    @if (_placeOptions.TryGetValue(key, out var places) && places.Count > 0)
+                    {
+                        <select class="ne-handled-place" aria-label="@L["HandledPlaceLabel"]" value="@PlaceValue(key)"
+                                disabled="@(_confirming || note.Page.IsReadOnly)" @onchange="e => ChoosePlace(key, e.Value as string)">
+                            <option value="">@L["HandledPlaceUnknown"]</option>
+                            @foreach (var place in places)
+                            {
+                                <option value="@place.TextBlockKey.ToString("D")">@place.Label</option>
+                            }
+                        </select>
+                    }
                 </li>
             }
         </ul>
@@ -97,6 +112,24 @@
     private string? _error;
     private HandledResult? _result;
 
+    /// <summary>How many suggested places each note gets.</summary>
+    private const int PlacementLimit = 3;
+
+    /// <summary>The longest text excerpt of a suggested place.</summary>
+    private const int ExcerptLength = 60;
+
+    /// <summary>The suggested places per note (key of the note), computed for the chosen book; empty without AI.</summary>
+    private Dictionary<Guid, List<PlaceOption>> _placeOptions = [];
+
+    /// <summary>The place the user chose per note (key of the note): a text block of the chosen book. Absent: place unknown.</summary>
+    private readonly Dictionary<Guid, Guid> _placeChoice = [];
+
+    private CancellationTokenSource? _placePending;
+    private int _placeGeneration;
+    private bool _disposed;
+
+    private sealed record PlaceOption(Guid TextBlockKey, string Label);
+
     [Parameter] public EventCallback OnClose { get; set; }
 
     private string BookTitle => State.Session?.Vault.FindBook(_bookName ?? "")?.Title ?? "";
@@ -115,6 +148,117 @@
         }
 
         _bookName = State.CurrentBook?.LinkName ?? session.Vault.Books.FirstOrDefault()?.LinkName;
+        StartPlacements();
+    }
+
+    public void Dispose()
+    {
+        _disposed = true;
+        _placeGeneration++;
+        _placePending?.Cancel();
+        _placePending?.Dispose();
+    }
+
+    private void ChangeBook(ChangeEventArgs e)
+    {
+        _bookName = e.Value as string;
+        StartPlacements();
+    }
+
+    private string PlaceValue(Guid noteKey) =>
+        _placeChoice.TryGetValue(noteKey, out var textBlockKey) ? textBlockKey.ToString("D") : "";
+
+    private void ChoosePlace(Guid noteKey, string? value)
+    {
+        if (Guid.TryParse(value, out var textBlockKey) && _placeOptions.GetValueOrDefault(noteKey)?.Any(p => p.TextBlockKey == textBlockKey) == true)
+        {
+            _placeChoice[noteKey] = textBlockKey;
+        }
+        else
+        {
+            _placeChoice.Remove(noteKey);
+        }
+    }
+
+    /// <summary>
+    /// Suggests places in the chosen book for the notes, if the AI is available: forgets the places of the previous book
+    /// and computes them in the background (latest wins). The notes' texts and the book snapshot are taken here on the
+    /// UI thread, since the vault model is not thread-safe; the labels are read from that snapshot.
+    /// </summary>
+    private void StartPlacements()
+    {
+        _placeGeneration++;
+        _placePending?.Cancel();
+        _placePending?.Dispose();
+        _placePending = null;
+        _placeOptions = [];
+        _placeChoice.Clear();
+        if (State.Session is not { } session || !session.Relevance.IsAvailable || session.Vault.FindBook(_bookName ?? "") is not { } book)
+        {
+            return;
+        }
+
+        var requests = _items.Where(n => !n.Page.IsReadOnly).Select(n => (n.Key, Text: EmbeddingText.ForNote(n))).ToList();
+        var source = _placePending = new CancellationTokenSource();
+        _ = ComputePlacementsAsync(session.Relevance, book, requests, _placeGeneration, source.Token);
+    }
+
+    private async Task ComputePlacementsAsync(
+        IRelevanceService relevance, Book book, List<(Guid Key, string Text)> requests, int generation, CancellationToken cancel)
+    {
+        try
+        {
+            var found = await Task.Run(
+                () =>
+                {
+                    var hits = new List<(Guid Key, IReadOnlyList<PlacementHit> Hits)>();
+                    foreach (var (key, text) in requests)
+                    {
+                        cancel.ThrowIfCancellationRequested();
+                        hits.Add((key, relevance.Placements(key, text, book, PlacementLimit)));
+                    }
+
+                    return hits;
+                },
+                cancel);
+            await InvokeAsync(() =>
+            {
+                if (_disposed || generation != _placeGeneration)
+                {
+                    return;
+                }
+
+                _placeOptions = found
+                    .Where(entry => entry.Hits.Count > 0)
+                    .ToDictionary(entry => entry.Key, entry => PlaceOptions(book, entry.Hits));
+                StateHasChanged();
+            });
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (ObjectDisposedException) when (_disposed)
+        {
+        }
+        catch (Exception ex)
+        {
+            // The suggestions are an aid: without them every place stays unknown.
+            Logger.LogWarning(ex, "Computing the places for [handled] notes failed");
+        }
+    }
+
+    /// <summary>The excerpt of each text block and its score in percent of the best hit's.</summary>
+    private static List<PlaceOption> PlaceOptions(Book book, IReadOnlyList<PlacementHit> hits)
+    {
+        var best = hits.Max(hit => hit.Score);
+        return
+        [
+            .. hits
+                .Where(hit => book.FindTextBlock(hit.TextBlockKey) is not null)
+                .Select(hit => new PlaceOption(
+                    hit.TextBlockKey,
+                    $"{Excerpt.FirstLine(book.FindTextBlock(hit.TextBlockKey)!.Text, ExcerptLength)} – {SearchTab.Percent(hit.Score, best)} %")),
+        ];
     }
 
     private void Select(Guid key, bool on)
@@ -167,6 +311,15 @@
 
             var notes = session.Handled.Find().Where(n => _selected.Contains(n.Key)).ToList();
             var pages = notes.Where(n => !n.Page.IsReadOnly).Select(n => n.Page).Distinct().ToList();
+            var placements = notes
+                .Where(n => !n.Page.IsReadOnly && _placeChoice.ContainsKey(n.Key))
+                .ToDictionary(n => n.Key, n => _placeChoice[n.Key]);
+            if (placements.Count > 0)
+            {
+                // A confirmed place changes the book page too (id:: and source::).
+                pages.Add(book.Page);
+            }
+
             if (pages.Any(p => session.HasOpenConflict(p.FilePath)))
             {
                 _error = L["AssistantConflict"];
@@ -176,9 +329,9 @@
 
             try
             {
-                _result = session.Handled.Apply(notes, book);
+                _result = session.Handled.Apply(notes, book, placements);
             }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or ArgumentException)
             {
                 // Pages saved before the failure stay saved; the others are taken from their files again.
                 Logger.LogWarning(ex, "Converting [handled] notes failed");
@@ -187,7 +340,12 @@
                     PageReload.FromDisk(session, page);
                 }
 
-                _error = ex is FileChangedExternallyException ? L["AssistantExternalChange"] : L["HandledFailed"];
+                _error = ex switch
+                {
+                    FileChangedExternallyException => L["AssistantExternalChange"],
+                    ArgumentException => L["HandledPlacementFailed"],
+                    _ => L["HandledFailed"],
+                };
                 _confirming = false;
             }
 

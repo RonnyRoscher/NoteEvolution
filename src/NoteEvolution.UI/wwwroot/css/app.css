@@ -627,6 +627,37 @@ html, body {
     margin-top: 6px;
 }
 
+.ne-note-whereto-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin: 6px 0 0;
+    padding: 0;
+    list-style: none;
+}
+
+.ne-shell .ne-note-whereto-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 8px;
+    width: 100%;
+    text-align: left;
+}
+
+.ne-note-whereto-title {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ne-note-whereto-percent {
+    color: var(--fg-muted);
+    font-size: 11px;
+}
+
 .ne-note-hint,
 .ne-note-info {
     margin-top: 4px;
@@ -1039,6 +1070,12 @@ html, body {
 
 .ne-handled-text {
     flex: 1;
+}
+
+.ne-handled-place {
+    display: block;
+    max-width: calc(100% - 26px);
+    margin: 2px 0 4px 26px;
 }
 
 .ne-handled-page,

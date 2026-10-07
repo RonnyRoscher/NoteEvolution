@@ -288,6 +288,21 @@
   <data name="NoteAdoptChildTitle" xml:space="preserve">
     <value>Diesen Unterpunkt ins Buch übernehmen</value>
   </data>
+  <data name="NoteWhereTo" xml:space="preserve">
+    <value>Wohin damit?</value>
+  </data>
+  <data name="NoteWhereToTitle" xml:space="preserve">
+    <value>Die Abschnitte des Buchs anzeigen, die zu dieser Notiz passen</value>
+  </data>
+  <data name="NoteWhereToBusy" xml:space="preserve">
+    <value>Passende Abschnitte werden gesucht …</value>
+  </data>
+  <data name="NoteWhereToNone" xml:space="preserve">
+    <value>Kein passender Abschnitt gefunden.</value>
+  </data>
+  <data name="NoteWhereToItemTitle" xml:space="preserve">
+    <value>Zu diesem Abschnitt springen</value>
+  </data>
   <data name="NoteOpenLogseq" xml:space="preserve">
     <value>In Logseq öffnen</value>
   </data>
@@ -502,6 +517,15 @@
   </data>
   <data name="HandledFailed" xml:space="preserve">
     <value>Die Notizen konnten nicht umgewandelt werden. Bereits geschriebene Dateien bleiben umgewandelt.</value>
+  </data>
+  <data name="HandledPlaceLabel" xml:space="preserve">
+    <value>Fundstelle im Buch</value>
+  </data>
+  <data name="HandledPlaceUnknown" xml:space="preserve">
+    <value>Stelle unbekannt</value>
+  </data>
+  <data name="HandledPlacementFailed" xml:space="preserve">
+    <value>Eine gewählte Fundstelle gibt es im Buch nicht mehr. Bitte die Fundstellen neu wählen; bereits geschriebene Dateien bleiben umgewandelt.</value>
   </data>
   <data name="DraftTitle" xml:space="preserve">
     <value>Entwurf in ein Buch umwandeln</value>
