@@ -1,4 +1,5 @@
 @using NoteEvolution.Core.Books
+@using NoteEvolution.Core.Links
 @using NoteEvolution.Core.Model
 @implements IDisposable
 @inject AppState State
@@ -49,6 +50,10 @@
 
     <button type="button" class="ne-undo" disabled="@(!CanUndo)" title="@_session?.Undo.NextDescription"
             @onclick="Undo">@L["Undo"]</button>
+    @if (_undoError is not null)
+    {
+        <span class="ne-undo-error" role="alert">@_undoError</span>
+    }
 
     <span class="ne-header-spacer"></span>
 
@@ -104,6 +109,9 @@
     private bool _assistantsOpen;
     private int _selectVersion;
 
+    /// <summary>Why the last undo was refused or failed; shown until the next undoable operation.</summary>
+    private string? _undoError;
+
     [Parameter] public EventCallback OnOpenVault { get; set; }
 
     /// <summary>Raised after a book was chosen in the selection (and made the current book).</summary>
@@ -150,6 +158,12 @@
 
     private void OnSessionChanged() => _ = InvokeAsync(StateHasChanged);
 
+    private void OnUndoPushed(IUndoAction action) => _ = InvokeAsync(() =>
+    {
+        _undoError = null;
+        StateHasChanged();
+    });
+
     /// <summary>Follows the undo stack and the conflicts of the current session (a vault switch brings a new one).</summary>
     private void TrackSession()
     {
@@ -160,9 +174,11 @@
 
         Unsubscribe();
         _session = State.Session;
+        _undoError = null;
         if (_session is not null)
         {
             _session.Undo.Changed += OnSessionChanged;
+            _session.Undo.Pushed += OnUndoPushed;
             _session.ConflictsChanged += OnSessionChanged;
         }
     }
@@ -172,6 +188,7 @@
         if (_session is not null)
         {
             _session.Undo.Changed -= OnSessionChanged;
+            _session.Undo.Pushed -= OnUndoPushed;
             _session.ConflictsChanged -= OnSessionChanged;
         }
     }
@@ -263,8 +280,9 @@
             return;
         }
 
-        // Refused while a conflict is open; a failure is logged by the session.
-        session.TryUndo(out _);
+        // Refused while a conflict is open, or when the action no longer fits (e.g. the editor already brought a
+        // deleted block back); the session logs the details, the header says that nothing was undone.
+        _undoError = session.TryUndo(out _) ? null : L[session.HasAnyOpenConflict ? "UndoConflict" : "UndoFailed"].Value;
 
         // The undone operation changed (and saved) the book page, or a failed one left the vault with the page as it
         // is on disk; views take it from the vault again.

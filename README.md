@@ -71,7 +71,8 @@ Editor
 - [ ] Tab, Umschalt+Tab und Strg+Umschalt+N funktionieren (Strg+Umschalt+N wird nicht von WebView2 abgefangen).
 - [ ] Rücktaste am Blockanfang verbindet zwei Blöcke; „Rückgängig“ in der Kopfzeile stellt den Block wieder her.
 - [ ] Einen verknüpften Block löschen, ca. 1 s warten, dann Strg+Z im Editor: der Block ist wieder verknüpft
-      (Quellen-Chip, `source::` im Buch, `used-in::` an der Notiz).
+      (Quellen-Chip, `source::` im Buch, `used-in::` an der Notiz). Danach „Rückgängig“ in der Kopfzeile:
+      es lehnt ab („Die Aktion konnte nicht rückgängig gemacht werden.“), der Block steht nur einmal im Buch.
 - [ ] Manuskriptansicht: einen Block (gepunkteter Griff links beim Überfahren) unter ein anderes Kapitel ziehen;
       danach ist er in der Datei richtig eingerückt.
 - [ ] Manuskriptansicht: Schalter „Quellen anzeigen“ und die Randmarkierung bei Blöcken mit Quellen.

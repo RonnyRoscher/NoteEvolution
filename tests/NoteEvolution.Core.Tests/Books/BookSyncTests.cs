@@ -612,6 +612,39 @@ public class BookSyncTests
     }
 
     [Fact]
+    public void UndoDelete_AfterTheEditorBroughtTheBlockBack_IsRefused_NoDuplicate()
+    {
+        using var s = new LinkSetup(TestBook, TestJournal);
+        var snapshot = Section(s, "Abschnitt");
+        var original = TextNode(snapshot, "Erster Textblock");
+        var deleted = BookSync.Apply(s.Book, Replace(snapshot, original), s.Vault);
+        s.Writer.Save(s.Book.Page);
+        s.Links.ApplySyncEffects(s.Book, deleted.Effects);
+        Assert.True(s.Undo.CanUndo);
+
+        // Editor Ctrl+Z after the autosave: the block is back (relinked, new id) and saved.
+        var book = Book.Load(s.Book.Page);
+        var current = BookSnapshot.Create(book, s.Vault, s.SectionKey("Abschnitt"), includeSubsections: false);
+        var relinked = BookSync.Apply(book, current with { Nodes = [original, .. current.Nodes] }, s.Vault);
+        s.Writer.Save(s.Book.Page);
+        s.Links.ApplySyncEffects(book, relinked.Effects);
+        var bookAfterCtrlZ = s.ReadBook();
+        var journalAfterCtrlZ = s.ReadJournal();
+
+        // The header's undo of the earlier delete would restore a second copy with the same key.
+        var refused = Assert.Throws<InvalidOperationException>(s.Undo.Undo);
+
+        Assert.Contains("schon wieder", refused.Message);
+        Assert.Equal(bookAfterCtrlZ, s.ReadBook());
+        Assert.Equal(journalAfterCtrlZ, s.ReadJournal());
+        Assert.Single(Book.Load(s.Book.Page).Root.Children.SelectMany(AllTextBlocks), t => t.Text == "Erster Textblock");
+        Assert.False(s.Undo.CanUndo);
+    }
+
+    private static IEnumerable<TextBlock> AllTextBlocks(OutlineNode node) =>
+        node.TextBlocks.Concat(node.Children.SelectMany(AllTextBlocks));
+
+    [Fact]
     public void Apply_NewBlockWithOnlyUnknownSources_OrWithoutVault_StaysUnlinked()
     {
         using var s = new LinkSetup(TestBook, TestJournal);

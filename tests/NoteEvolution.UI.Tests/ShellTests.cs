@@ -317,6 +317,32 @@ public class ShellTests : UiTestContext
         Assert.False(action.Undone);
     }
 
+    [Fact]
+    public async Task HeaderBar_Undo_Refused_ShowsTheFailure_UntilTheNextAction()
+    {
+        using var tv = TwoBooks();
+        var session = await OpenSessionAsync(tv);
+        session.Undo.Push(new RefusingUndo());
+        var cut = Render<HeaderBar>();
+        Assert.Empty(cut.FindAll(".ne-undo-error"));
+
+        cut.Find(".ne-undo").Click();
+
+        cut.WaitForAssertion(() => Assert.Equal(
+            "Die Aktion konnte nicht rückgängig gemacht werden.", cut.Find(".ne-undo-error").TextContent));
+
+        session.Undo.Push(new RecordingUndo("Übernehmen"));
+
+        cut.WaitForAssertion(() => Assert.Empty(cut.FindAll(".ne-undo-error")));
+    }
+
+    private sealed class RefusingUndo : IUndoAction
+    {
+        public string Description => "Löschen";
+
+        public void Undo() => throw new InvalidOperationException("Der gelöschte Textblock ist schon wieder im Buch.");
+    }
+
     private sealed class RecordingUndo(string description) : IUndoAction
     {
         public bool Undone { get; private set; }
