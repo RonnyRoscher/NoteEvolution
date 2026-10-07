@@ -1,0 +1,622 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+                <xsd:element name="comment" type="xsd:string" minOccurs="0" msdata:Ordinal="2" />
+              </xsd:sequence>
+              <xsd:attribute name="name" use="required" type="xsd:string" msdata:Ordinal="1" />
+              <xsd:attribute name="type" type="xsd:string" msdata:Ordinal="3" />
+              <xsd:attribute name="mimetype" type="xsd:string" msdata:Ordinal="4" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+
+  <!-- Vault -->
+  <data name="OpenVault" xml:space="preserve">
+    <value>Vault öffnen …</value>
+  </data>
+  <data name="PickVaultTitle" xml:space="preserve">
+    <value>Vault-Ordner wählen</value>
+  </data>
+  <data name="SaveFileTitle" xml:space="preserve">
+    <value>Speichern unter</value>
+  </data>
+  <data name="NoVaultOpen" xml:space="preserve">
+    <value>Noch kein Vault geöffnet. Wähle den Ordner deines Logseq-Graphen.</value>
+  </data>
+  <data name="VaultOpening" xml:space="preserve">
+    <value>Vault wird geöffnet …</value>
+  </data>
+  <data name="VaultOpenFailed" xml:space="preserve">
+    <value>Der Vault „{0}“ konnte nicht geöffnet werden. Details stehen im Protokoll.</value>
+    <comment>{0} = Ordnerpfad</comment>
+  </data>
+  <data name="LogseqHint" xml:space="preserve">
+    <value>Hinweis: Bearbeite dasselbe Buch nicht gleichzeitig in Logseq, sonst können sich Änderungen überschneiden.</value>
+  </data>
+  <data name="HintOk" xml:space="preserve">
+    <value>Verstanden</value>
+  </data>
+
+  <!-- Kopfleiste -->
+  <data name="Book" xml:space="preserve">
+    <value>Buch</value>
+  </data>
+  <data name="ViewMode" xml:space="preserve">
+    <value>Ansicht</value>
+  </data>
+  <data name="ModeSection" xml:space="preserve">
+    <value>Abschnitt</value>
+  </data>
+  <data name="ModeManuscript" xml:space="preserve">
+    <value>Manuskript</value>
+  </data>
+  <data name="Undo" xml:space="preserve">
+    <value>Rückgängig</value>
+  </data>
+  <data name="PdfExport" xml:space="preserve">
+    <value>PDF-Export</value>
+  </data>
+  <data name="LinkCheck" xml:space="preserve">
+    <value>Verknüpfungsprüfung</value>
+  </data>
+  <data name="Settings" xml:space="preserve">
+    <value>Einstellungen</value>
+  </data>
+  <data name="AiOff" xml:space="preserve">
+    <value>KI: aus</value>
+  </data>
+  <data name="ReadOnlyFiles" xml:space="preserve">
+    <value>Nicht sicher lesbare Dateien (nur Anzeige, werden nie geschrieben)</value>
+  </data>
+
+  <!-- Bereiche -->
+  <data name="Outline" xml:space="preserve">
+    <value>Gliederung</value>
+  </data>
+  <data name="Editor" xml:space="preserve">
+    <value>Text</value>
+  </data>
+  <data name="Notes" xml:space="preserve">
+    <value>Notizen</value>
+  </data>
+  <data name="OutlinePlaceholder" xml:space="preserve">
+    <value>Hier erscheint die Gliederung des Buchs.</value>
+  </data>
+  <data name="EditorNoBook" xml:space="preserve">
+    <value>In diesem Vault gibt es noch kein Buch. Hier erscheint der Text des gewählten Abschnitts.</value>
+  </data>
+  <data name="EditorShowChips" xml:space="preserve">
+    <value>Quellen anzeigen</value>
+  </data>
+  <data name="EditorReadOnly" xml:space="preserve">
+    <value>Die Buchdatei kann nicht sicher gelesen werden und ist schreibgeschützt. Bitte die Datei in Logseq korrigieren.</value>
+  </data>
+  <data name="EditorConflict" xml:space="preserve">
+    <value>Die Buchdatei wurde gleichzeitig von einem anderen Programm geändert. Bis der Konflikt gelöst ist, wird hier nichts gespeichert.</value>
+  </data>
+  <data name="EditorLoadFailed" xml:space="preserve">
+    <value>Der Editor konnte nicht geladen werden.</value>
+  </data>
+  <data name="EditorSaveInvalid" xml:space="preserve">
+    <value>Diese Änderung würde den Aufbau der Buchdatei verändern und wurde nicht gespeichert. Der Text zeigt wieder den Stand der Datei.</value>
+  </data>
+  <data name="EditorSaveFailed" xml:space="preserve">
+    <value>Der Text konnte nicht gespeichert werden. Beim nächsten Speichern wird es erneut versucht.</value>
+  </data>
+  <data name="EditorCloseUnsaved" xml:space="preserve">
+    <value>Der Text konnte nicht gespeichert werden, deshalb bleibt das Fenster offen. Wenn Sie es noch einmal schließen, gehen die letzten Änderungen verloren.</value>
+  </data>
+  <data name="EditorChangesLost" xml:space="preserve">
+    <value>Die letzten Änderungen konnten nicht gespeichert werden.</value>
+  </data>
+  <data name="EditorExternalChange" xml:space="preserve">
+    <value>Die Buchdatei wurde gleichzeitig von einem anderen Programm geändert. Der Text zeigt jetzt den zusammengeführten Stand.</value>
+  </data>
+  <data name="EditorChipConflict" xml:space="preserve">
+    <value>Die Quelle kann nicht entfernt werden, solange ein Konflikt mit einer Änderung von außen offen ist.</value>
+  </data>
+  <data name="EditorChipFailed" xml:space="preserve">
+    <value>Die Quelle konnte nicht entfernt werden.</value>
+  </data>
+  <data name="NotesPlaceholder" xml:space="preserve">
+    <value>Hier erscheinen Suche und Journal.</value>
+  </data>
+  <data name="Collapse" xml:space="preserve">
+    <value>Einklappen</value>
+  </data>
+  <data name="Expand" xml:space="preserve">
+    <value>Ausklappen</value>
+  </data>
+  <data name="ResizePane" xml:space="preserve">
+    <value>Breite ziehen</value>
+  </data>
+
+  <!-- Gliederung -->
+  <data name="OutlinePrologue" xml:space="preserve">
+    <value>Vorspann</value>
+  </data>
+  <data name="OutlineAddSub" xml:space="preserve">
+    <value>Unter-Überschrift hinzufügen</value>
+  </data>
+  <data name="OutlineAddRoot" xml:space="preserve">
+    <value>Überschrift hinzufügen</value>
+  </data>
+  <data name="OutlineNewTitle" xml:space="preserve">
+    <value>Neue Überschrift</value>
+  </data>
+  <data name="OutlineRenameTitle" xml:space="preserve">
+    <value>Titel der Überschrift</value>
+  </data>
+  <data name="OutlineWords" xml:space="preserve">
+    <value>{0} W</value>
+  </data>
+  <data name="OutlineWordsLong" xml:space="preserve">
+    <value>{0} Wörter</value>
+  </data>
+  <data name="OutlineSources" xml:space="preserve">
+    <value>{0} Q</value>
+  </data>
+  <data name="OutlineSourcesLong" xml:space="preserve">
+    <value>{0} Quellen</value>
+  </data>
+  <data name="OutlineTitleInvalid" xml:space="preserve">
+    <value>Der Titel darf nicht leer sein und nur eine Zeile haben.</value>
+  </data>
+  <data name="OutlineMoveInvalid" xml:space="preserve">
+    <value>Dort kann keine Überschrift eingefügt werden (nicht in sich selbst, höchstens sechs Ebenen).</value>
+  </data>
+  <data name="OutlineSaveFailed" xml:space="preserve">
+    <value>Die Änderung konnte nicht gespeichert werden. Die Gliederung zeigt wieder den Stand der Datei.</value>
+  </data>
+
+  <!-- Notizbereich -->
+  <data name="NotesTabSearch" xml:space="preserve">
+    <value>Suche</value>
+  </data>
+  <data name="NotesTabJournal" xml:space="preserve">
+    <value>Journal</value>
+  </data>
+  <data name="NotesHideUsed" xml:space="preserve">
+    <value>Verwendete ausblenden</value>
+  </data>
+  <data name="NotesFrom" xml:space="preserve">
+    <value>Von</value>
+  </data>
+  <data name="NotesTo" xml:space="preserve">
+    <value>Bis</value>
+  </data>
+  <data name="NotesSearchLabel" xml:space="preserve">
+    <value>Notizen durchsuchen</value>
+  </data>
+  <data name="NotesSearchPlaceholder" xml:space="preserve">
+    <value>Notizen durchsuchen …</value>
+  </data>
+  <data name="NotesSearchHint" xml:space="preserve">
+    <value>Gib einen Suchbegriff ein.</value>
+  </data>
+  <data name="NotesSearchEmpty" xml:space="preserve">
+    <value>Keine passenden Notizen.</value>
+  </data>
+  <data name="NotesJournalEmpty" xml:space="preserve">
+    <value>Keine Journal-Einträge.</value>
+  </data>
+  <data name="NotesJumpTo" xml:space="preserve">
+    <value>Springen zum Tag</value>
+  </data>
+  <data name="NotesShowMore" xml:space="preserve">
+    <value>Weitere anzeigen</value>
+  </data>
+  <data name="NoteFocused" xml:space="preserve">
+    <value>Ausgewählte Notiz</value>
+  </data>
+  <data name="NoteFocusedClose" xml:space="preserve">
+    <value>Schließen</value>
+  </data>
+  <data name="NoteScoreTitle" xml:space="preserve">
+    <value>Trefferquote im Vergleich zum besten Treffer</value>
+  </data>
+  <data name="NoteUsedTitle" xml:space="preserve">
+    <value>Verwendet in {0} Stelle(n) – zur Stelle springen</value>
+    <comment>{0} = Anzahl der Verwendungen</comment>
+  </data>
+  <data name="NoteAdopt" xml:space="preserve">
+    <value>Übernehmen</value>
+  </data>
+  <data name="NoteAdoptTitle" xml:space="preserve">
+    <value>Diese Notiz ins Buch übernehmen</value>
+  </data>
+  <data name="NoteAdoptChildTitle" xml:space="preserve">
+    <value>Diesen Unterpunkt ins Buch übernehmen</value>
+  </data>
+  <data name="NoteOpenLogseq" xml:space="preserve">
+    <value>In Logseq öffnen</value>
+  </data>
+  <data name="NoteMore" xml:space="preserve">
+    <value>mehr</value>
+  </data>
+  <data name="NoteLess" xml:space="preserve">
+    <value>weniger</value>
+  </data>
+  <data name="NoteReadOnlyHint" xml:space="preserve">
+    <value>Diese Notizdatei ist nicht sicher lesbar. Übernehmen ist nicht möglich.</value>
+  </data>
+  <data name="NoteAdoptConflict" xml:space="preserve">
+    <value>Für diese Seite liegt ein ungelöster Konflikt vor. Bitte zuerst den Konflikt lösen.</value>
+  </data>
+  <data name="NoteAdoptBookReadOnly" xml:space="preserve">
+    <value>Die Buchdatei ist schreibgeschützt. Es wurde nichts übernommen.</value>
+  </data>
+  <data name="NoteAdoptNoteReadOnly" xml:space="preserve">
+    <value>Die Notizdatei ist nicht sicher lesbar. Es wurde nichts übernommen.</value>
+  </data>
+  <data name="NoteAdoptExternalChange" xml:space="preserve">
+    <value>Die Buchdatei wurde von einem anderen Programm geändert. Die Änderung wurde eingelesen; bitte erneut übernehmen.</value>
+  </data>
+  <data name="NoteAdoptFailed" xml:space="preserve">
+    <value>Die Notiz konnte nicht übernommen werden. Angezeigt wird der Stand der Datei.</value>
+  </data>
+  <data name="NoteUpdatePending" xml:space="preserve">
+    <value>Verknüpfung in der Notiz wird nachgetragen.</value>
+  </data>
+
+  <!-- Dialoge allgemein -->
+  <data name="Close" xml:space="preserve">
+    <value>Schließen</value>
+  </data>
+  <data name="Ok" xml:space="preserve">
+    <value>OK</value>
+  </data>
+  <data name="Cancel" xml:space="preserve">
+    <value>Abbrechen</value>
+  </data>
+  <data name="Save" xml:space="preserve">
+    <value>Speichern</value>
+  </data>
+  <data name="Back" xml:space="preserve">
+    <value>Zurück</value>
+  </data>
+
+  <!-- Konflikt -->
+  <data name="ConflictTitle" xml:space="preserve">
+    <value>Konflikt mit einer Änderung von außen</value>
+  </data>
+  <data name="ConflictIntro" xml:space="preserve">
+    <value>Die Datei „{0}“ wurde von einem anderen Programm geändert, während hier ungespeicherte Änderungen vorlagen. Wähle für jeden Block, welche Fassung gelten soll.</value>
+    <comment>{0} = Dateiname</comment>
+  </data>
+  <data name="ConflictMore" xml:space="preserve">
+    <value>Danach folgen noch {0} weitere Datei(en) mit Konflikten.</value>
+    <comment>{0} = Anzahl</comment>
+  </data>
+  <data name="ConflictMine" xml:space="preserve">
+    <value>Meine Fassung</value>
+  </data>
+  <data name="ConflictTheirs" xml:space="preserve">
+    <value>Externe Fassung</value>
+  </data>
+  <data name="ConflictLocalRemoved" xml:space="preserve">
+    <value>Lokal gelöscht</value>
+  </data>
+  <data name="ConflictExternalMissing" xml:space="preserve">
+    <value>In der Datei nicht vorhanden (gelöscht)</value>
+  </data>
+  <data name="ConflictChoice" xml:space="preserve">
+    <value>Welche Fassung gilt?</value>
+  </data>
+  <data name="ConflictChoiceMine" xml:space="preserve">
+    <value>Meine Fassung</value>
+  </data>
+  <data name="ConflictChoiceTheirs" xml:space="preserve">
+    <value>Externe Fassung</value>
+  </data>
+  <data name="ConflictChoiceBoth" xml:space="preserve">
+    <value>Beide nebeneinander</value>
+  </data>
+  <data name="ConflictConfirm" xml:space="preserve">
+    <value>Übernehmen und speichern</value>
+  </data>
+  <data name="ConflictChangedAgain" xml:space="preserve">
+    <value>Die Datei wurde inzwischen erneut geändert. Bitte die aktuelle Gegenüberstellung prüfen.</value>
+  </data>
+  <data name="ConflictResolveFailed" xml:space="preserve">
+    <value>Die Datei konnte nicht gelesen werden. Es wurde nichts geändert; bitte erneut versuchen.</value>
+  </data>
+  <data name="ConflictSaveFailed" xml:space="preserve">
+    <value>Die gewählte Fassung konnte nicht gespeichert werden. Sie ist im Programm übernommen und wird beim nächsten Speichern erneut geschrieben.</value>
+  </data>
+
+  <!-- Verknüpfungsprüfung -->
+  <data name="LinkCheckNoVault" xml:space="preserve">
+    <value>Es ist kein Vault geöffnet.</value>
+  </data>
+  <data name="LinkCheckFixed" xml:space="preserve">
+    <value>{0} fehlende Verweise ergänzt.</value>
+    <comment>{0} = Anzahl</comment>
+  </data>
+  <data name="LinkCheckStillMissing" xml:space="preserve">
+    <value>{0} fehlende Verweise konnten nicht ergänzt werden.</value>
+    <comment>{0} = Anzahl</comment>
+  </data>
+  <data name="LinkCheckClean" xml:space="preserve">
+    <value>Alle Verknüpfungen sind in Ordnung.</value>
+  </data>
+  <data name="LinkCheckOrphans" xml:space="preserve">
+    <value>Verwaiste Verwendungen</value>
+  </data>
+  <data name="LinkCheckOrphansHint" xml:space="preserve">
+    <value>Diese Notizen sind als verwendet vermerkt, aber das Buch oder die Stelle im Buch gibt es nicht mehr.</value>
+  </data>
+  <data name="LinkCheckMarkUnknown" xml:space="preserve">
+    <value>Stelle unbekannt</value>
+  </data>
+  <data name="LinkCheckRemove" xml:space="preserve">
+    <value>Entfernen</value>
+  </data>
+  <data name="LinkCheckBroken" xml:space="preserve">
+    <value>Defekte Quellen</value>
+  </data>
+  <data name="LinkCheckBrokenHint" xml:space="preserve">
+    <value>Diese Textblöcke nennen eine Notiz, die es nicht mehr gibt. Ein Klick springt zum Block.</value>
+  </data>
+  <data name="LinkCheckConflict" xml:space="preserve">
+    <value>Für eine betroffene Datei liegt ein ungelöster Konflikt vor. Bitte zuerst den Konflikt lösen.</value>
+  </data>
+  <data name="LinkCheckFixFailed" xml:space="preserve">
+    <value>Nicht alle fehlenden Verweise konnten ergänzt werden.</value>
+  </data>
+  <data name="LinkCheckReadOnly" xml:space="preserve">
+    <value>Die Notizdatei ist nicht sicher lesbar und wird nicht verändert.</value>
+  </data>
+  <data name="LinkCheckExternalChange" xml:space="preserve">
+    <value>Die Notizdatei wurde von einem anderen Programm geändert. Die Änderung wurde eingelesen; bitte erneut versuchen.</value>
+  </data>
+  <data name="LinkCheckResolveFailed" xml:space="preserve">
+    <value>Die Änderung konnte nicht gespeichert werden.</value>
+  </data>
+  <data name="LinkCheckJumpFailed" xml:space="preserve">
+    <value>Der Block konnte nicht angezeigt werden.</value>
+  </data>
+  <data name="LinkCheckBookMissing" xml:space="preserve">
+    <value>Buch „{0}“ nicht gefunden</value>
+    <comment>{0} = Seitenname des Buchs</comment>
+  </data>
+  <data name="LinkCheckBlockMissing" xml:space="preserve">
+    <value>Stelle in „{0}“ nicht gefunden</value>
+    <comment>{0} = Seitenname des Buchs</comment>
+  </data>
+
+  <!-- Assistenten -->
+  <data name="Assistants" xml:space="preserve">
+    <value>Assistenten</value>
+  </data>
+  <data name="AssistantHandled" xml:space="preserve">
+    <value>[handled] umwandeln …</value>
+  </data>
+  <data name="AssistantDraft" xml:space="preserve">
+    <value>Entwurf in ein Buch umwandeln …</value>
+  </data>
+  <data name="AssistantFlushFailed" xml:space="preserve">
+    <value>Der Text im Editor konnte nicht gespeichert werden. Es wurde nichts umgewandelt.</value>
+  </data>
+  <data name="AssistantStale" xml:space="preserve">
+    <value>Der Vault hat sich inzwischen geändert. Es wurde nichts umgewandelt; bitte erneut wählen.</value>
+  </data>
+  <data name="AssistantConflict" xml:space="preserve">
+    <value>Für eine betroffene Datei liegt ein ungelöster Konflikt vor. Bitte zuerst den Konflikt lösen.</value>
+  </data>
+  <data name="AssistantExternalChange" xml:space="preserve">
+    <value>Eine Datei wurde gleichzeitig von einem anderen Programm geändert. Bereits geschriebene Dateien bleiben umgewandelt; bitte erneut versuchen.</value>
+  </data>
+  <data name="HandledTitle" xml:space="preserve">
+    <value>[handled] umwandeln</value>
+  </data>
+  <data name="HandledIntro" xml:space="preserve">
+    <value>Diese Notizen beginnen mit [handled]. Die Markierung wird entfernt und stattdessen das gewählte Buch als „verwendet in“ vermerkt. Das ändert den Text der Notizdateien.</value>
+  </data>
+  <data name="HandledNone" xml:space="preserve">
+    <value>Keine Notizen mit [handled] gefunden.</value>
+  </data>
+  <data name="HandledBook" xml:space="preserve">
+    <value>Buch</value>
+  </data>
+  <data name="HandledReadOnly" xml:space="preserve">
+    <value>Datei nicht sicher lesbar</value>
+  </data>
+  <data name="HandledConfirm" xml:space="preserve">
+    <value>{0} Notiz(en) werden umgewandelt und dem Buch „{1}“ zugeordnet. Die Notizdateien werden dabei verändert.</value>
+    <comment>{0} = Anzahl, {1} = Buchtitel</comment>
+  </data>
+  <data name="HandledConfirmYes" xml:space="preserve">
+    <value>Ja, umwandeln</value>
+  </data>
+  <data name="HandledConvert" xml:space="preserve">
+    <value>Umwandeln</value>
+  </data>
+  <data name="HandledDone" xml:space="preserve">
+    <value>{0} Notiz(en) umgewandelt.</value>
+    <comment>{0} = Anzahl</comment>
+  </data>
+  <data name="HandledSkipped" xml:space="preserve">
+    <value>{0} Notiz(en) übersprungen, weil ihre Datei nicht sicher lesbar ist:</value>
+    <comment>{0} = Anzahl</comment>
+  </data>
+  <data name="HandledFailed" xml:space="preserve">
+    <value>Die Notizen konnten nicht umgewandelt werden. Bereits geschriebene Dateien bleiben umgewandelt.</value>
+  </data>
+  <data name="DraftTitle" xml:space="preserve">
+    <value>Entwurf in ein Buch umwandeln</value>
+  </data>
+  <data name="DraftIntro" xml:space="preserve">
+    <value>Wähle die Seite mit dem Entwurf. Danach prüfst du, welche Blöcke Überschriften werden.</value>
+  </data>
+  <data name="DraftNoPages" xml:space="preserve">
+    <value>Es gibt keine Seite, die umgewandelt werden kann.</value>
+  </data>
+  <data name="DraftPreviewHint" xml:space="preserve">
+    <value>Vorschau für „{0}“. Mit dem Knopf vor einem Block wechselst du zwischen Überschrift und Textblock; die Ebene ergibt sich aus der Verschachtelung.</value>
+    <comment>{0} = Seitenname</comment>
+  </data>
+  <data name="DraftConfirm" xml:space="preserve">
+    <value>Die Seite „{0}“ wird zum Buch. Vorher wird eine Sicherung angelegt; nur die Überschriften-Markierungen und der Seitentyp werden ergänzt.</value>
+    <comment>{0} = Seitenname</comment>
+  </data>
+  <data name="DraftConfirmYes" xml:space="preserve">
+    <value>Ja, umwandeln</value>
+  </data>
+  <data name="DraftConvert" xml:space="preserve">
+    <value>Umwandeln</value>
+  </data>
+  <data name="DraftDone" xml:space="preserve">
+    <value>Die Seite „{0}“ ist jetzt ein Buch und steht in der Buchauswahl.</value>
+    <comment>{0} = Seitenname</comment>
+  </data>
+  <data name="DraftHeading" xml:space="preserve">
+    <value>Überschrift</value>
+  </data>
+  <data name="DraftText" xml:space="preserve">
+    <value>Textblock</value>
+  </data>
+  <data name="DraftLevel" xml:space="preserve">
+    <value>Ebene der Überschrift</value>
+  </data>
+  <data name="DraftReadOnly" xml:space="preserve">
+    <value>Die Datei ist nicht sicher lesbar und wird nicht verändert.</value>
+  </data>
+  <data name="DraftInvalid" xml:space="preserve">
+    <value>Die Umwandlung ist so nicht möglich (höchstens sechs Ebenen, und eine Überschrift darf nicht mit einem Codeblock beginnen). Es wurde nichts geändert.</value>
+  </data>
+  <data name="DraftFailed" xml:space="preserve">
+    <value>Die Seite konnte nicht umgewandelt werden. Angezeigt wird der Stand der Datei.</value>
+  </data>
+
+  <!-- PDF-Export -->
+  <data name="PdfNoBook" xml:space="preserve">
+    <value>Es ist kein Buch geöffnet.</value>
+  </data>
+  <data name="PdfScope" xml:space="preserve">
+    <value>Umfang</value>
+  </data>
+  <data name="PdfScopeBook" xml:space="preserve">
+    <value>Ganzes Buch „{0}“</value>
+    <comment>{0} = Buchtitel</comment>
+  </data>
+  <data name="PdfScopeSection" xml:space="preserve">
+    <value>Aktueller Abschnitt „{0}“ mit Teilbaum</value>
+    <comment>{0} = Titel des Abschnitts</comment>
+  </data>
+  <data name="PdfScopeSectionNone" xml:space="preserve">
+    <value>Aktueller Abschnitt (keiner gewählt)</value>
+  </data>
+  <data name="PdfSize" xml:space="preserve">
+    <value>Seitengröße</value>
+  </data>
+  <data name="PdfExportStart" xml:space="preserve">
+    <value>Exportieren …</value>
+  </data>
+  <data name="PdfSaved" xml:space="preserve">
+    <value>PDF gespeichert: {0}</value>
+    <comment>{0} = Dateipfad</comment>
+  </data>
+  <data name="PdfNoWarnings" xml:space="preserve">
+    <value>Der Export lief ohne Warnungen.</value>
+  </data>
+  <data name="PdfWarnings" xml:space="preserve">
+    <value>Hinweise zum Export:</value>
+  </data>
+  <data name="PdfFlushFailed" xml:space="preserve">
+    <value>Der Text im Editor konnte nicht gespeichert werden. Es wurde nichts exportiert.</value>
+  </data>
+  <data name="PdfFailed" xml:space="preserve">
+    <value>Das PDF konnte nicht geschrieben werden. Details stehen im Protokoll.</value>
+  </data>
+  <data name="PdfDefaultName" xml:space="preserve">
+    <value>Buch</value>
+  </data>
+
+  <!-- Einstellungen -->
+  <data name="SettingsFolders" xml:space="preserve">
+    <value>Notizordner</value>
+  </data>
+  <data name="SettingsFoldersHint" xml:space="preserve">
+    <value>Ein Ordner pro Zeile, relativ zum Vault. Eine Änderung lädt den Vault neu.</value>
+  </data>
+  <data name="SettingsTheme" xml:space="preserve">
+    <value>Design</value>
+  </data>
+  <data name="ThemeSystem" xml:space="preserve">
+    <value>Wie das System</value>
+  </data>
+  <data name="ThemeLight" xml:space="preserve">
+    <value>Hell</value>
+  </data>
+  <data name="ThemeDark" xml:space="preserve">
+    <value>Dunkel</value>
+  </data>
+  <data name="SettingsFontSize" xml:space="preserve">
+    <value>Schriftgröße im Text ({0}–{1} pt)</value>
+    <comment>{0} = Minimum, {1} = Maximum</comment>
+  </data>
+  <data name="SettingsLineWidth" xml:space="preserve">
+    <value>Zeilenbreite im Text ({0}–{1} Zeichen)</value>
+    <comment>{0} = Minimum, {1} = Maximum</comment>
+  </data>
+  <data name="SettingsFoldersEmpty" xml:space="preserve">
+    <value>Mindestens ein Notizordner ist nötig.</value>
+  </data>
+  <data name="SettingsSaveFailed" xml:space="preserve">
+    <value>Die Einstellungen konnten nicht gespeichert werden.</value>
+  </data>
+  <data name="SettingsConflict" xml:space="preserve">
+    <value>Die Notizordner können erst geändert werden, wenn der offene Konflikt gelöst ist.</value>
+  </data>
+  <data name="SettingsFlushFailed" xml:space="preserve">
+    <value>Der Text im Editor konnte nicht gespeichert werden. Die Notizordner wurden nicht geändert.</value>
+  </data>
+
+  <!-- Rückgängig-Hinweis -->
+  <data name="UndoToastDone" xml:space="preserve">
+    <value>„{0}“ ausgeführt.</value>
+    <comment>{0} = Name der Aktion</comment>
+  </data>
+  <data name="UndoFlushFailed" xml:space="preserve">
+    <value>Der Text im Editor konnte nicht gespeichert werden. Es wurde nichts rückgängig gemacht.</value>
+  </data>
+  <data name="UndoConflict" xml:space="preserve">
+    <value>Rückgängig ist nicht möglich, solange ein Konflikt offen ist.</value>
+  </data>
+  <data name="UndoFailed" xml:space="preserve">
+    <value>Die Aktion konnte nicht rückgängig gemacht werden.</value>
+  </data>
+</root>

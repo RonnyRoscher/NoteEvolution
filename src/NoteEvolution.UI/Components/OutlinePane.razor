@@ -1,0 +1,376 @@
+@using NoteEvolution.Core.Books
+@using NoteEvolution.Core.Format
+@using NoteEvolution.Core.Model
+@using NoteEvolution.Core.Storage
+@implements IDisposable
+@inject AppState State
+@inject IStringLocalizer<Strings> L
+@inject ILogger<OutlinePane> Logger
+
+@if (State.CurrentBook is not { } book)
+{
+    <div class="ne-placeholder">@L["OutlinePlaceholder"]</div>
+}
+else
+{
+    _warnings = WarningsByNode(book);
+    <div class="ne-outline-pane">
+        @if (_error is not null)
+        {
+            <div class="ne-outline-error" role="alert">@_error</div>
+        }
+        <ul class="ne-outline-tree">
+            @if (book.Root.TextBlocks.Any())
+            {
+                <OutlineItem Node="book.Root" Pane="this" />
+            }
+            @foreach (var child in book.Root.Children)
+            {
+                <OutlineItem Node="child" Pane="this" />
+            }
+        </ul>
+        <div class="ne-drop-end @(IsDropHint(Guid.Empty, before: true) ? "drop-here" : null)"
+             @ondragenter="() => DragEnter(Guid.Empty, before: true)" @ondragover:preventDefault
+             @ondrop="DropAtEnd" @ondrop:preventDefault></div>
+        <button type="button" class="ne-outline-add-root" disabled="@(!Editable)" @onclick="AddRoot">+ @L["OutlineAddRoot"]</button>
+    </div>
+}
+
+@code {
+    private VaultSession? _session;
+    private Dictionary<Guid, List<string>> _warnings = [];
+    private string? _error;
+    private Guid? _renamingKey;
+    private bool _committing;
+    private Guid? _draggedKey;
+    private (Guid Key, bool Before)? _dropHint;
+
+    /// <summary>The key of the heading whose title is being edited inline.</summary>
+    internal Guid? RenamingKey => _renamingKey;
+
+    /// <summary>The text in the inline rename field.</summary>
+    internal string RenameText { get; set; } = "";
+
+    internal Guid? DraggedKey => _draggedKey;
+
+    /// <summary>
+    /// The outline may be changed: the book page is safely readable and no conflict is open for its file (R26;
+    /// <see cref="VaultSession.TrySave"/> refuses it as well).
+    /// </summary>
+    internal bool Editable =>
+        State is { Session: { } session, CurrentBook.Page: { IsReadOnly: false } page } && !session.HasOpenConflict(page.FilePath);
+
+    protected override void OnInitialized()
+    {
+        State.Changed += OnStateChanged;
+        TrackSession();
+    }
+
+    public void Dispose()
+    {
+        State.Changed -= OnStateChanged;
+        Unsubscribe();
+    }
+
+    private void OnStateChanged() => _ = InvokeAsync(() =>
+    {
+        TrackSession();
+        StateHasChanged();
+    });
+
+    private void OnConflictsChanged() => _ = InvokeAsync(StateHasChanged);
+
+    /// <summary>Follows the conflicts of the current session (a vault switch brings a new one).</summary>
+    private void TrackSession()
+    {
+        if (ReferenceEquals(State.Session, _session))
+        {
+            return;
+        }
+
+        Unsubscribe();
+        _session = State.Session;
+        if (_session is not null)
+        {
+            _session.ConflictsChanged += OnConflictsChanged;
+        }
+    }
+
+    private void Unsubscribe()
+    {
+        if (_session is not null)
+        {
+            _session.ConflictsChanged -= OnConflictsChanged;
+        }
+    }
+
+    internal IReadOnlyList<string> WarningsFor(Guid nodeKey) =>
+        _warnings.TryGetValue(nodeKey, out var messages) ? messages : [];
+
+    internal bool IsDropHint(Guid key, bool before) => _dropHint == (key, before);
+
+    internal bool IsSelected(OutlineNode node) => State.CurrentSectionKey == node.Key;
+
+    internal void Select(OutlineNode node)
+    {
+        if (State.CurrentSectionKey == node.Key)
+        {
+            return;
+        }
+
+        State.CurrentSectionKey = node.Key;
+        State.CursorTextBlockKey = null;
+        State.Notify();
+    }
+
+    internal void StartRename(OutlineNode node)
+    {
+        if (node.Block is null || !Editable)
+        {
+            return;
+        }
+
+        _error = null;
+        _renamingKey = node.Key;
+        RenameText = node.Title;
+        StateHasChanged();
+    }
+
+    internal void CancelRename()
+    {
+        _renamingKey = null;
+        _error = null;
+        StateHasChanged();
+    }
+
+    internal async Task CommitRename(OutlineNode node)
+    {
+        if (_renamingKey != node.Key || _committing)
+        {
+            // Already committed or cancelled (a blur follows Enter and Escape), or being committed.
+            return;
+        }
+
+        if (RenameText.Trim() == node.Title)
+        {
+            CancelRename();
+            return;
+        }
+
+        var title = RenameText;
+        _committing = true;
+        try
+        {
+            if (await ApplyAsync(book => OutlineEditor.Rename(book, node.Key, title), "OutlineTitleInvalid") != ApplyResult.Invalid)
+            {
+                // An invalid title stays in the field with the error; otherwise the page is as the file has it now.
+                _renamingKey = null;
+                StateHasChanged();
+            }
+        }
+        finally
+        {
+            _committing = false;
+        }
+    }
+
+    /// <summary>Adds a sub-heading with a placeholder title and lets the user type the real one.</summary>
+    internal Task Add(OutlineNode parent) => AddHeading(parent.Key);
+
+    private Task AddRoot() => AddHeading(Guid.Empty);
+
+    private async Task AddHeading(Guid parentKey)
+    {
+        var title = L["OutlineNewTitle"].Value;
+        var added = Guid.Empty;
+        if (await ApplyAsync(book => added = OutlineEditor.AddHeading(book, parentKey, title), "OutlineMoveInvalid") == ApplyResult.Saved)
+        {
+            State.CurrentSectionKey = added;
+            State.CursorTextBlockKey = null;
+            _renamingKey = added;
+            RenameText = title;
+            State.Notify();
+            StateHasChanged();
+        }
+    }
+
+    internal void DragStart(OutlineNode node)
+    {
+        if (node.Block is not null && Editable)
+        {
+            _draggedKey = node.Key;
+        }
+    }
+
+    internal void DragEnd()
+    {
+        _draggedKey = null;
+        _dropHint = null;
+        StateHasChanged();
+    }
+
+    internal void DragEnter(Guid key, bool before)
+    {
+        if (_draggedKey is not null)
+        {
+            _dropHint = (key, before);
+            StateHasChanged();
+        }
+    }
+
+    /// <summary>The dragged section becomes the last sub-section of <paramref name="target"/>.</summary>
+    internal Task DropOnto(OutlineNode target) => MoveDragged(target.Key, beforeKey: null);
+
+    /// <summary>The dragged section moves in front of <paramref name="target"/>, under the same parent.</summary>
+    internal Task DropBefore(OutlineNode target) => MoveDragged(target.Parent?.Key ?? Guid.Empty, target.Key);
+
+    /// <summary>The dragged section becomes the last top-level section.</summary>
+    internal Task DropAtEnd() => MoveDragged(Guid.Empty, beforeKey: null);
+
+    private async Task MoveDragged(Guid parentKey, Guid? beforeKey)
+    {
+        var moved = _draggedKey;
+        DragEnd();
+        if (moved is not { } key || key == beforeKey || key == parentKey)
+        {
+            // Nothing dragged (e.g. a file from outside), or dropped on itself.
+            return;
+        }
+
+        await ApplyAsync(book =>
+        {
+            // The index counts the headings of the new parent without the moved one.
+            var siblings = book.FindNode(parentKey)?.Children.Where(child => child.Key != key).ToList() ?? [];
+            var index = beforeKey is { } before ? siblings.FindIndex(child => child.Key == before) : siblings.Count;
+            OutlineEditor.MoveSection(book, key, parentKey, Math.Max(index, 0));
+        }, "OutlineMoveInvalid");
+    }
+
+    private enum ApplyResult
+    {
+        /// <summary>The change was made and saved.</summary>
+        Saved,
+
+        /// <summary>The editor refused the arguments; nothing changed.</summary>
+        Invalid,
+
+        /// <summary>Nothing was saved (read-only, conflict, external change, write failure).</summary>
+        NotSaved,
+    }
+
+    /// <summary>
+    /// Runs an outline operation on the book page and saves it (R26: only through <see cref="VaultSession.TrySave"/>).
+    /// A refused argument is reported inline and changes nothing. If saving fails the page is read from the file
+    /// again, so the outline shows what is on disk; a change by another program was already handled by the session.
+    /// The editor saves its pending text first (it holds the same page).
+    /// </summary>
+    private async Task<ApplyResult> ApplyAsync(Action<Book> edit, string invalidText)
+    {
+        _error = null;
+        try
+        {
+            if (State.FlushEditor is { } flush)
+            {
+                await flush();
+            }
+        }
+        catch (Exception ex)
+        {
+            // The editor's text may not be saved, so the page is not changed behind it.
+            Logger.LogError(ex, "Saving the editor before an outline change failed");
+            _error = L["OutlineSaveFailed"];
+            StateHasChanged();
+            return ApplyResult.NotSaved;
+        }
+
+        // The flush may have saved the page: the book is taken from the vault again.
+        if (!Editable || State.Session is not { } session
+            || State.CurrentBook is not { } current || session.Vault.FindBook(current.LinkName) is not { } book)
+        {
+            return ApplyResult.NotSaved;
+        }
+
+        try
+        {
+            edit(book);
+        }
+        catch (ArgumentException)
+        {
+            _error = L[invalidText];
+            StateHasChanged();
+            return ApplyResult.Invalid;
+        }
+
+        var page = book.Page;
+        var saved = session.TrySave(page, out var error);
+        if (!saved && error is not FileChangedExternallyException && !session.HasOpenConflict(page.FilePath))
+        {
+            // A change by another program is merged or reported as a conflict by the session, and an open conflict
+            // keeps the local page for its resolution. Any other failure leaves the edited page unsaved: take the
+            // file's version.
+            ReloadFromDisk(session, page);
+            _error = L["OutlineSaveFailed"];
+        }
+
+        State.RefreshBook();
+        State.Notify();
+        StateHasChanged();
+        return saved ? ApplyResult.Saved : ApplyResult.NotSaved;
+    }
+
+    private static void ReloadFromDisk(VaultSession session, Page page)
+    {
+        try
+        {
+            session.Vault.ReplacePage(LogseqParser.Parse(page.FilePath, File.ReadAllBytes(page.FilePath)));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Unreadable as well: the vault keeps the edited page, the error text says the change was not saved.
+        }
+    }
+
+    /// <summary>
+    /// Maps each outline node to the warnings of its own heading and of blocks inside its text blocks (a heading
+    /// inside a text block is reported on the section it lies in; the prologue is the root, <see cref="Guid.Empty"/>).
+    /// </summary>
+    private static Dictionary<Guid, List<string>> WarningsByNode(Book book)
+    {
+        var result = new Dictionary<Guid, List<string>>();
+        if (book.Warnings.Count == 0)
+        {
+            return result;
+        }
+
+        var owner = new Dictionary<Guid, Guid>();
+        void Walk(OutlineNode node)
+        {
+            owner[node.Key] = node.Key;
+            foreach (var paragraph in node.TextBlocks.SelectMany(text => text.Paragraphs))
+            {
+                owner[paragraph.Block.Key] = node.Key;
+            }
+
+            foreach (var child in node.Children)
+            {
+                Walk(child);
+            }
+        }
+
+        Walk(book.Root);
+        foreach (var warning in book.Warnings)
+        {
+            if (owner.TryGetValue(warning.BlockKey, out var nodeKey))
+            {
+                if (!result.TryGetValue(nodeKey, out var messages))
+                {
+                    result[nodeKey] = messages = [];
+                }
+
+                messages.Add(warning.Message);
+            }
+        }
+
+        return result;
+    }
+}

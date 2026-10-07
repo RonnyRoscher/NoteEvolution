@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk.Razor">
+
+  <ItemGroup>
+    <SupportedPlatform Include="browser" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Components.Web" Version="10.0.12" />
+    <PackageReference Include="Microsoft.Extensions.Localization.Abstractions" Version="10.0.12" />
+  </ItemGroup>
+
+  <!-- The editor's JavaScript sources (built with Editor/js/build.mjs); only wwwroot/js/editor.bundle.js is shipped. -->
+  <ItemGroup>
+    <Content Remove="Editor\js\**" />
+    <None Remove="Editor\js\node_modules\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\NoteEvolution.Core\NoteEvolution.Core.csproj" />
+    <ProjectReference Include="..\NoteEvolution.AI\NoteEvolution.AI.csproj" />
+    <ProjectReference Include="..\NoteEvolution.Pdf\NoteEvolution.Pdf.csproj" />
+  </ItemGroup>
+
+</Project>

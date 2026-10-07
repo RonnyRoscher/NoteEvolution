@@ -1,0 +1,32 @@
+@inject IStringLocalizer<Strings> L
+
+<div class="ne-modal-backdrop">
+    <div class="ne-modal @CssClass" role="dialog" aria-modal="true" aria-label="@Title">
+        <div class="ne-modal-head">
+            <h2 class="ne-modal-title">@Title</h2>
+            @if (OnClose.HasDelegate)
+            {
+                <button type="button" class="ne-modal-close" aria-label="@L["Close"]" title="@L["Close"]" @onclick="OnClose">×</button>
+            }
+        </div>
+        <div class="ne-modal-body">@ChildContent</div>
+        @if (Footer is not null)
+        {
+            <div class="ne-modal-foot">@Footer</div>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Title { get; set; } = "";
+
+    [Parameter] public string? CssClass { get; set; }
+
+    /// <summary>Closes the dialog; without it the dialog has no close button (it ends by its own buttons).</summary>
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    /// <summary>The buttons at the bottom.</summary>
+    [Parameter] public RenderFragment? Footer { get; set; }
+}

@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk.Razor">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebView" Version="10.0.12" />
+    <PackageReference Include="Microsoft.Extensions.Localization" Version="10.0.12" />
+    <PackageReference Include="Photino.Blazor" Version="4.0.13" />
+    <PackageReference Include="Serilog.Extensions.Logging" Version="10.0.0" />
+    <PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\NoteEvolution.UI\NoteEvolution.UI.csproj" />
+  </ItemGroup>
+
+  <!--
+    Photino serves files only from wwwroot next to the executable. The host page goes there, and the UI library's
+    static assets go to _content/NoteEvolution.UI, where a publish puts them as well.
+  -->
+  <ItemGroup>
+    <Content Update="wwwroot\**" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\NoteEvolution.UI\wwwroot\**" Link="wwwroot\_content\NoteEvolution.UI\%(RecursiveDir)%(Filename)%(Extension)"
+          CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="Never" />
+  </ItemGroup>
+
+</Project>

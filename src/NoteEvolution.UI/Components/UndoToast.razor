@@ -1,0 +1,182 @@
+@using NoteEvolution.Core.Links
+@implements IDisposable
+@inject AppState State
+@inject TimeProvider Time
+@inject IStringLocalizer<Strings> L
+@inject ILogger<UndoToast> Logger
+
+@if (_visible)
+{
+    <div class="ne-toast" role="status">
+        <span class="ne-toast-text">@(_error ?? L["UndoToastDone", _description])</span>
+        <button type="button" class="ne-toast-undo" disabled="@_busy" @onclick="UndoAsync">@L["Undo"]</button>
+    </div>
+}
+
+@code {
+    /// <summary>How long the toast stays after an operation.</summary>
+    public static readonly TimeSpan Duration = TimeSpan.FromSeconds(8);
+
+    private VaultSession? _session;
+    private ITimer? _timer;
+    private bool _visible;
+    private bool _busy;
+    private IUndoAction? _action;
+    private string _description = "";
+    private string? _error;
+
+    protected override void OnInitialized()
+    {
+        State.Changed += OnStateChanged;
+        TrackSession();
+    }
+
+    public void Dispose()
+    {
+        State.Changed -= OnStateChanged;
+        Unsubscribe();
+        _timer?.Dispose();
+    }
+
+    private void OnStateChanged() => _ = InvokeAsync(() =>
+    {
+        TrackSession();
+        StateHasChanged();
+    });
+
+    /// <summary>Follows the undo stack of the current session (a vault switch brings a new one and hides the toast).</summary>
+    private void TrackSession()
+    {
+        if (ReferenceEquals(State.Session, _session))
+        {
+            return;
+        }
+
+        Unsubscribe();
+        Hide();
+        _session = State.Session;
+        if (_session is not null)
+        {
+            _session.Undo.Pushed += OnPushed;
+            _session.Undo.Changed += OnUndoChanged;
+        }
+    }
+
+    private void Unsubscribe()
+    {
+        if (_session is not null)
+        {
+            _session.Undo.Pushed -= OnPushed;
+            _session.Undo.Changed -= OnUndoChanged;
+        }
+    }
+
+    private void OnPushed(IUndoAction action) => _ = InvokeAsync(() =>
+    {
+        _action = action;
+        _description = action.Description;
+        _error = null;
+        Show();
+        StateHasChanged();
+    });
+
+    /// <summary>
+    /// The action the toast names is no longer the one an undo reverses next (it was undone, e.g. by the header's
+    /// undo, or another one was pushed): the toast hides, so its button never undoes a different action.
+    /// </summary>
+    private void OnUndoChanged() => _ = InvokeAsync(() =>
+    {
+        if (_visible && !IsOwnActionOnTop)
+        {
+            Hide();
+            StateHasChanged();
+        }
+    });
+
+    private bool IsOwnActionOnTop => _action is not null && _session is { } session && ReferenceEquals(session.Undo.Top, _action);
+
+    private void Show()
+    {
+        _visible = true;
+        _timer?.Dispose();
+        _timer = Time.CreateTimer(_ => _ = InvokeAsync(() =>
+        {
+            Hide();
+            StateHasChanged();
+        }), null, Duration, Timeout.InfiniteTimeSpan);
+    }
+
+    private void Hide()
+    {
+        _visible = false;
+        _error = null;
+        _timer?.Dispose();
+        _timer = null;
+    }
+
+    /// <summary>
+    /// Undoes the latest operation (R26: the editor saves first, only through <see cref="VaultSession.TryUndo"/>).
+    /// A refusal (open conflict) or failure stays visible in the toast.
+    /// </summary>
+    private async Task UndoAsync()
+    {
+        if (_busy || _session is not { } session)
+        {
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            try
+            {
+                if (State.FlushEditor is { } flush)
+                {
+                    await flush();
+                }
+            }
+            catch (Exception ex)
+            {
+                // The editor's text may not be saved, so nothing is undone behind it.
+                Logger.LogError(ex, "Saving the editor before undoing failed");
+                ShowError(L["UndoFlushFailed"]);
+                return;
+            }
+
+            if (!ReferenceEquals(session, State.Session))
+            {
+                return;
+            }
+
+            if (!IsOwnActionOnTop)
+            {
+                // The named action is gone from the top meanwhile; undoing now would reverse a different one.
+                Hide();
+                return;
+            }
+
+            if (session.TryUndo(out _))
+            {
+                Hide();
+            }
+            else
+            {
+                ShowError(session.HasAnyOpenConflict ? L["UndoConflict"] : L["UndoFailed"]);
+            }
+
+            // The undone operation changed (and saved) pages, or a failed one left them as their files are.
+            State.RefreshBook();
+            State.Notify();
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private void ShowError(string message)
+    {
+        _error = message;
+        Show();
+    }
+}

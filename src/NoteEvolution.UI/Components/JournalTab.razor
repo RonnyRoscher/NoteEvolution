@@ -1,0 +1,65 @@
+@using NoteEvolution.Core.Vaults
+@inject AppState State
+@inject IStringLocalizer<Strings> L
+
+@* The "Journal" tab: the root blocks of the journal pages, newest day first, from a chosen day on. *@
+@{
+    var visible = _entries.Where(note => _jump is not { } jump || note.Date <= jump).ToList();
+}
+
+<div class="ne-journal">
+    <label class="ne-journal-jump-label">
+        <span>@L["NotesJumpTo"]</span>
+        <input class="ne-journal-jump" type="date" value="@(_jump?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture))"
+               @onchange="OnJump" />
+    </label>
+    @if (visible.Count == 0)
+    {
+        <div class="ne-search-empty">@L["NotesJournalEmpty"]</div>
+    }
+    <div class="ne-journal-list">
+        @foreach (var note in visible.Take(_shown))
+        {
+            <NoteCard @key="note.Key" Note="note" />
+        }
+    </div>
+    @if (visible.Count > _shown)
+    {
+        <button type="button" class="ne-journal-more" @onclick="() => _shown += PageSize">@L["NotesShowMore"]</button>
+    }
+</div>
+
+@code {
+    /// <summary>How many entries are shown at first and added by each "Weitere anzeigen".</summary>
+    private const int PageSize = 50;
+
+    private (NoteFilter Filter, int Revision)? _last;
+    private IReadOnlyList<NoteBlock> _entries = [];
+    private DateOnly? _jump;
+    private int _shown = PageSize;
+
+    [Parameter, EditorRequired] public NoteFilter Filter { get; set; } = default!;
+
+    /// <summary>Changes whenever the vault's pages or the session changed, so the entries are read again.</summary>
+    [Parameter] public int Revision { get; set; }
+
+    protected override void OnParametersSet()
+    {
+        if (_last == (Filter, Revision))
+        {
+            return;
+        }
+
+        _last = (Filter, Revision);
+        _shown = PageSize;
+        _entries = State.Session?.Notes.Journal(Filter) ?? [];
+    }
+
+    private void OnJump(ChangeEventArgs e)
+    {
+        _jump = DateOnly.TryParseExact(e.Value?.ToString(), "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var day)
+            ? day
+            : null;
+        _shown = PageSize;
+    }
+}

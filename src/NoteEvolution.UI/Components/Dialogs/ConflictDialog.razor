@@ -1,0 +1,259 @@
+@using NoteEvolution.Core.Storage
+@implements IDisposable
+@inject AppState State
+@inject IStringLocalizer<Strings> L
+@inject ILogger<ConflictDialog> Logger
+
+@if (_notice is not null)
+{
+    <Modal Title="@L["ConflictTitle"]" CssClass="ne-conflict-notice" OnClose="DismissNotice">
+    <ChildContent>
+        <p class="ne-dialog-error" role="alert">@_notice</p>
+        </ChildContent>
+        <Footer>
+            <button type="button" class="ne-conflict-notice-ok" @onclick="DismissNotice">@L["Ok"]</button>
+        </Footer>
+    </Modal>
+}
+else if (Current is { } conflict)
+{
+    <Modal Title="@L["ConflictTitle"]" CssClass="ne-conflict">
+    <ChildContent>
+        <p class="ne-conflict-intro">@L["ConflictIntro", Path.GetFileName(conflict.Local.FilePath)]</p>
+        @if (_queue.Count > 1)
+        {
+            <p class="ne-conflict-more">@L["ConflictMore", _queue.Count - 1]</p>
+        }
+        @if (_changedAgain)
+        {
+            <p class="ne-conflict-again" role="status">@L["ConflictChangedAgain"]</p>
+        }
+        @if (_error is not null)
+        {
+            <p class="ne-dialog-error" role="alert">@_error</p>
+        }
+        @foreach (var item in conflict.Conflicts)
+        {
+            var key = item.Local.Key;
+            <fieldset class="ne-conflict-block">
+                <div class="ne-conflict-versions">
+                    <div class="ne-conflict-version ne-conflict-mine">
+                        <h3>@L["ConflictMine"]</h3>
+                        @if (item.LocalRemoved)
+                        {
+                            <p class="ne-conflict-missing">@L["ConflictLocalRemoved"]</p>
+                        }
+                        else
+                        {
+                            <pre>@item.Local.Content</pre>
+                        }
+                    </div>
+                    <div class="ne-conflict-version ne-conflict-theirs">
+                        <h3>@L["ConflictTheirs"]</h3>
+                        @if (item.External is null)
+                        {
+                            <p class="ne-conflict-missing">@L["ConflictExternalMissing"]</p>
+                        }
+                        else
+                        {
+                            <pre>@item.External.Content</pre>
+                        }
+                    </div>
+                </div>
+                <div class="ne-conflict-choices" role="radiogroup" aria-label="@L["ConflictChoice"]">
+                    @foreach (var choice in Choices)
+                    {
+                        <label class="ne-conflict-choice">
+                            <input type="radio" name="choice-@key" value="@choice"
+                                   checked="@(_choices.GetValueOrDefault(key) == choice)"
+                                   @onchange="() => _choices[key] = choice" />
+                            @L[ChoiceText(choice)]
+                        </label>
+                    }
+                </div>
+            </fieldset>
+        }
+        </ChildContent>
+        <Footer>
+            <button type="button" class="ne-conflict-confirm" disabled="@_busy" @onclick="Confirm">@L["ConflictConfirm"]</button>
+        </Footer>
+    </Modal>
+}
+
+@code {
+    private static readonly ConflictChoice[] Choices = [ConflictChoice.Mine, ConflictChoice.Theirs, ConflictChoice.Both];
+
+    private readonly List<ExternalChangeOutcome.Conflict> _queue = [];
+    private Dictionary<Guid, ConflictChoice> _choices = [];
+    private ExternalChangeOutcome.Conflict? _shown;
+    private VaultSession? _session;
+    private string? _error;
+    private string? _notice;
+    private bool _busy;
+    private bool _changedAgain;
+
+    private ExternalChangeOutcome.Conflict? Current
+    {
+        get
+        {
+            var current = _queue.FirstOrDefault();
+            if (!ReferenceEquals(current, _shown))
+            {
+                // Another conflict (or a newer one for the same file): the choices start over, with the local version.
+                _shown = current;
+                _choices = current?.Conflicts.ToDictionary(c => c.Local.Key, _ => ConflictChoice.Mine) ?? [];
+                _error = null;
+                _changedAgain &= current is not null;
+            }
+
+            return current;
+        }
+    }
+
+    protected override void OnInitialized()
+    {
+        State.Changed += OnStateChanged;
+        TrackSession();
+    }
+
+    public void Dispose()
+    {
+        State.Changed -= OnStateChanged;
+        Unsubscribe();
+    }
+
+    private static string ChoiceText(ConflictChoice choice) => choice switch
+    {
+        ConflictChoice.Mine => "ConflictChoiceMine",
+        ConflictChoice.Theirs => "ConflictChoiceTheirs",
+        _ => "ConflictChoiceBoth",
+    };
+
+    private void OnStateChanged() => _ = InvokeAsync(() =>
+    {
+        TrackSession();
+        StateHasChanged();
+    });
+
+    /// <summary>Follows the conflicts of the current session (a vault switch brings a new one and drops the queue).</summary>
+    private void TrackSession()
+    {
+        if (ReferenceEquals(State.Session, _session))
+        {
+            return;
+        }
+
+        Unsubscribe();
+        _queue.Clear();
+        _session = State.Session;
+        if (_session is not null)
+        {
+            _session.ConflictDetected += OnConflictDetected;
+            _session.ConflictsChanged += OnConflictsChanged;
+        }
+    }
+
+    private void Unsubscribe()
+    {
+        if (_session is not null)
+        {
+            _session.ConflictDetected -= OnConflictDetected;
+            _session.ConflictsChanged -= OnConflictsChanged;
+        }
+    }
+
+    private void OnConflictDetected(ExternalChangeOutcome.Conflict conflict) => _ = InvokeAsync(() =>
+    {
+        // A newer report for the same file replaces the older one (the file changed again).
+        var path = Path.GetFullPath(conflict.Local.FilePath);
+        _queue.RemoveAll(c => SamePath(c, path));
+        _queue.Add(conflict);
+        StateHasChanged();
+    });
+
+    private void OnConflictsChanged() => _ = InvokeAsync(() =>
+    {
+        Prune();
+        StateHasChanged();
+    });
+
+    /// <summary>Drops conflicts that are closed already (the file was merged after another change).</summary>
+    private void Prune()
+    {
+        if (_session is { } session)
+        {
+            _queue.RemoveAll(c => !session.HasOpenConflict(c.Local.FilePath));
+        }
+    }
+
+    private static bool SamePath(ExternalChangeOutcome.Conflict conflict, string fullPath) =>
+        string.Equals(Path.GetFullPath(conflict.Local.FilePath), fullPath, StringComparison.OrdinalIgnoreCase);
+
+    private void DismissNotice() => _notice = null;
+
+    /// <summary>
+    /// Applies the choices (<see cref="VaultSession.ResolveConflict"/>) and saves the resulting page (R26: only
+    /// through the session). If the file changed again meanwhile, the session handled that: either a newer conflict
+    /// for the file replaced this one, or the change was merged and the conflict is gone.
+    /// </summary>
+    private void Confirm()
+    {
+        if (_busy || _session is not { } session || Current is not { } conflict)
+        {
+            return;
+        }
+
+        _busy = true;
+        _error = null;
+        _changedAgain = false;
+        var path = Path.GetFullPath(conflict.Local.FilePath);
+        try
+        {
+            try
+            {
+                session.ResolveConflict(conflict, _choices);
+            }
+            catch (FileChangedExternallyException)
+            {
+                // The session handled the change again: a newer conflict replaced this one in the queue, or none is left.
+                _changedAgain = true;
+                Prune();
+                return;
+            }
+            catch (ObjectDisposedException)
+            {
+                _queue.Clear();
+                return;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // The file could not be read (also: access denied); the conflict stays open and nothing was applied.
+                Logger.LogWarning(ex, "Resolving the conflict in {Path} failed", path);
+                _error = L["ConflictResolveFailed"];
+                return;
+            }
+
+            _queue.RemoveAll(c => SamePath(c, path));
+            SaveResolved(session, path);
+        }
+        finally
+        {
+            _busy = false;
+            State.RefreshBook();
+            State.Notify();
+        }
+    }
+
+    private void SaveResolved(VaultSession session, string path)
+    {
+        if (session.Vault.FindPageByPath(path) is not { IsReadOnly: false, IsDirty: true } page)
+        {
+            return;
+        }
+
+        if (!session.TrySave(page, out var error) && error is not FileChangedExternallyException)
+        {
+            _notice = L["ConflictSaveFailed"];
+        }
+    }
+}

@@ -1,0 +1,16 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/NoteEvolution.AI/NoteEvolution.AI.csproj" />
+    <Project Path="src/NoteEvolution.Core/NoteEvolution.Core.csproj" />
+    <Project Path="src/NoteEvolution.Desktop/NoteEvolution.Desktop.csproj" />
+    <Project Path="src/NoteEvolution.Pdf/NoteEvolution.Pdf.csproj" />
+    <Project Path="src/NoteEvolution.UI/NoteEvolution.UI.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/NoteEvolution.AI.Tests/NoteEvolution.AI.Tests.csproj" />
+    <Project Path="tests/NoteEvolution.Core.Tests/NoteEvolution.Core.Tests.csproj" />
+    <Project Path="tests/NoteEvolution.Pdf.Tests/NoteEvolution.Pdf.Tests.csproj" />
+    <Project Path="tests/NoteEvolution.TestSupport/NoteEvolution.TestSupport.csproj" />
+    <Project Path="tests/NoteEvolution.UI.Tests/NoteEvolution.UI.Tests.csproj" />
+  </Folder>
+</Solution>

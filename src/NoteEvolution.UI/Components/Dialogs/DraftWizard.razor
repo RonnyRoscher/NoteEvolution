@@ -1,0 +1,243 @@
+@using NoteEvolution.Core.Assistants
+@using NoteEvolution.Core.Books
+@using NoteEvolution.Core.Model
+@using NoteEvolution.Core.Storage
+@inject AppState State
+@inject IStringLocalizer<Strings> L
+@inject ILogger<DraftWizard> Logger
+
+<Modal Title="@L["DraftTitle"]" CssClass="ne-draft" OnClose="OnClose">
+<ChildContent>
+    @if (_doneName is not null)
+    {
+        <p class="ne-draft-done" role="status">@L["DraftDone", _doneName]</p>
+    }
+    else if (State.Session is null)
+    {
+        <p>@L["LinkCheckNoVault"]</p>
+    }
+    else
+    {
+        @if (_error is not null)
+        {
+            <p class="ne-dialog-error" role="alert">@_error</p>
+        }
+        @if (_proposal is null)
+        {
+            <p class="ne-dialog-hint">@L["DraftIntro"]</p>
+            @if (_pages.Count == 0)
+            {
+                <p class="ne-draft-none">@L["DraftNoPages"]</p>
+            }
+            else
+            {
+                <ul class="ne-draft-pages">
+                    @foreach (var page in _pages)
+                    {
+                        <li><button type="button" class="ne-draft-page" @onclick="() => ChoosePage(page)">@(page.Name)</button></li>
+                    }
+                </ul>
+            }
+        }
+        else
+        {
+            <p class="ne-dialog-hint">@L["DraftPreviewHint", _page!.Name]</p>
+            <ul class="ne-draft-tree">
+                @foreach (var node in _proposal.Roots)
+                {
+                    @RenderNode(node)
+                }
+            </ul>
+            @if (_confirming)
+            {
+                <p class="ne-draft-confirm-text" role="alert">@L["DraftConfirm", _page!.Name]</p>
+            }
+        }
+    }
+    </ChildContent>
+    <Footer>
+        @if (_doneName is null && _proposal is not null)
+        {
+            @if (_confirming)
+            {
+                <button type="button" class="ne-draft-yes" disabled="@_busy" @onclick="ConvertAsync">@L["DraftConfirmYes"]</button>
+                <button type="button" class="ne-draft-no" disabled="@_busy" @onclick="() => _confirming = false">@L["Cancel"]</button>
+            }
+            else
+            {
+                <button type="button" class="ne-draft-convert" @onclick="() => _confirming = true">@L["DraftConvert"]</button>
+                <button type="button" class="ne-draft-back" @onclick="Back">@L["Back"]</button>
+            }
+        }
+        <button type="button" class="ne-draft-close" disabled="@_busy" @onclick="OnClose">@L["Close"]</button>
+    </Footer>
+</Modal>
+
+@code {
+    private IReadOnlyList<Page> _pages = [];
+    private Page? _page;
+    private DraftProposal? _proposal;
+    private bool _confirming;
+    private bool _busy;
+    private string? _error;
+    private string? _doneName;
+
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    protected override void OnInitialized()
+    {
+        if (State.Session is { } session)
+        {
+            _pages = [.. session.Vault.Pages.Where(p => !Book.IsBook(p) && !p.IsReadOnly)];
+        }
+    }
+
+    private RenderFragment RenderNode(DraftNode node) => __builder =>
+    {
+        var level = _proposal!.LevelOf(node);
+        <li class="ne-draft-node @(node.IsHeading ? "heading" : "text")">
+            <div class="ne-draft-row">
+                <button type="button" class="ne-draft-toggle" disabled="@(node.IsFixed || _confirming)"
+                        aria-pressed="@(node.IsHeading ? "true" : "false")" @onclick="() => Toggle(node)">
+                    @(node.IsHeading ? L["DraftHeading"] : L["DraftText"])
+                </button>
+                @if (node.IsHeading)
+                {
+                    <span class="ne-draft-level @(level > 6 ? "too-deep" : null)" title="@L["DraftLevel"]">H@(level)</span>
+                }
+                <span class="ne-draft-text">@Excerpt.FirstLine(node.Block.Content)</span>
+            </div>
+            @if (node.Children.Count > 0)
+            {
+                <ul class="ne-draft-children">
+                    @foreach (var child in node.Children)
+                    {
+                        @RenderNode(child)
+                    }
+                </ul>
+            }
+        </li>
+    };
+
+    private void ChoosePage(Page page)
+    {
+        _error = null;
+        if (State.Session is not { } session)
+        {
+            return;
+        }
+
+        _page = page;
+        _proposal = session.Drafts.Propose(page);
+    }
+
+    private void Back()
+    {
+        _proposal = null;
+        _page = null;
+        _error = null;
+    }
+
+    private void Toggle(DraftNode node)
+    {
+        if (!node.IsFixed)
+        {
+            node.IsHeading = !node.IsHeading;
+        }
+    }
+
+    /// <summary>
+    /// Writes the proposal (R26): the editor saves first, nothing is written for a page with an open conflict, and a
+    /// failure leaves the page as its file is. A proposal made for a page that was reloaded since is dropped, since
+    /// it refers to the old blocks.
+    /// </summary>
+    private async Task ConvertAsync()
+    {
+        if (_busy || State.Session is not { } session || _page is null || _proposal is null)
+        {
+            return;
+        }
+
+        _busy = true;
+        _error = null;
+        _confirming = false;
+        try
+        {
+            try
+            {
+                if (State.FlushEditor is { } flush)
+                {
+                    await flush();
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError(ex, "Saving the editor before converting a draft failed");
+                _error = L["AssistantFlushFailed"];
+                return;
+            }
+
+            var page = _page;
+            if (!ReferenceEquals(session, State.Session) || !ReferenceEquals(session.Vault.FindPageByPath(page.FilePath), page))
+            {
+                Back();
+                _error = L["AssistantStale"];
+                return;
+            }
+
+            if (session.HasOpenConflict(page.FilePath))
+            {
+                _error = L["AssistantConflict"];
+                return;
+            }
+
+            try
+            {
+                session.Drafts.Apply(page, _proposal);
+                _doneName = page.Name;
+            }
+            catch (ReadOnlyPageException)
+            {
+                _error = L["DraftReadOnly"];
+            }
+            catch (ArgumentException ex)
+            {
+                // A level above 6 or a heading that would not parse as one block; checked before anything changed.
+                Logger.LogInformation(ex, "The draft proposal for {Page} was refused", page.Name);
+                _error = L["DraftInvalid"];
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
+            {
+                Logger.LogWarning(ex, "Converting the draft {Page} failed", page.Name);
+                if (page.IsDirty)
+                {
+                    PageReload.FromDisk(session, page);
+                }
+
+                Back();
+                _error = ex is FileChangedExternallyException ? L["AssistantExternalChange"] : L["DraftFailed"];
+            }
+
+            UpdateSearch(session, page);
+        }
+        finally
+        {
+            _busy = false;
+            State.RefreshBook();
+            State.Notify();
+        }
+    }
+
+    private void UpdateSearch(VaultSession session, Page page)
+    {
+        try
+        {
+            // The page is a book now, so its blocks leave the notes index.
+            session.Search.UpdatePage(session.Notes, page.FilePath);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Updating the search index after converting a draft failed");
+        }
+    }
+}

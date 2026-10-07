@@ -1,0 +1,285 @@
+@using NoteEvolution.Core.Storage
+@using NoteEvolution.UI.Components.Dialogs
+@implements IDisposable
+@inject AppState State
+@inject UiSettings Settings
+@inject IPlatformServices Platform
+@inject IClock Clock
+@inject TimeProvider Time
+@inject ILoggerFactory LoggerFactory
+@inject IStringLocalizer<Strings> L
+
+<div class="ne-shell" data-theme="@ThemeAttribute" style="--font-size: @(Settings.FontSizePt)pt; --line-width: @(Settings.LineWidthCh)ch;">
+    <HeaderBar OnOpenVault="PickVaultAsync" OnPdfExport="() => Show(Dialog.Pdf)" OnLinkCheck="() => Show(Dialog.LinkCheck)"
+               OnSettings="() => Show(Dialog.Settings)" OnHandledWizard="() => Show(Dialog.Handled)" OnDraftWizard="() => Show(Dialog.Draft)" />
+
+    @if (_hintVisible)
+    {
+        <div class="ne-hint" role="status">
+            <span>@L["LogseqHint"]</span>
+            <button type="button" class="ne-hint-ok" @onclick="DismissHint">@L["HintOk"]</button>
+        </div>
+    }
+    @if (_failedRoot is not null)
+    {
+        <div class="ne-error" role="alert">@L["VaultOpenFailed", _failedRoot]</div>
+    }
+
+    <main class="ne-main">
+        <section class="ne-pane ne-outline @(Settings.OutlineCollapsed ? "collapsed" : null)" style="@PaneStyle(Settings.OutlineWidth, Settings.OutlineCollapsed)">
+            <div class="ne-pane-head">
+                @if (!Settings.OutlineCollapsed)
+                {
+                    <span class="ne-pane-title">@L["Outline"]</span>
+                }
+                <button type="button" class="ne-collapse" title="@(Settings.OutlineCollapsed ? L["Expand"] : L["Collapse"])"
+                        @onclick="ToggleOutline">@(Settings.OutlineCollapsed ? "›" : "‹")</button>
+            </div>
+            @if (!Settings.OutlineCollapsed)
+            {
+                <OutlinePane />
+            }
+        </section>
+        @if (!Settings.OutlineCollapsed)
+        {
+            <Splitter Width="Settings.OutlineWidth" WidthChanged="w => Settings.OutlineWidth = w" DragEnded="SaveSettings" />
+        }
+
+        <section class="ne-pane ne-editor" aria-label="@L["Editor"]">
+            @if (_opening)
+            {
+                <div class="ne-placeholder">@L["VaultOpening"]</div>
+            }
+            else if (State.Session is null)
+            {
+                <div class="ne-welcome">
+                    <p>@L["NoVaultOpen"]</p>
+                    <button type="button" class="ne-open-vault" @onclick="PickVaultAsync">@L["OpenVault"]</button>
+                </div>
+            }
+            else
+            {
+                <EditorPane />
+            }
+        </section>
+
+        @if (!Settings.NotesCollapsed)
+        {
+            <Splitter Width="Settings.NotesWidth" WidthChanged="w => Settings.NotesWidth = w" DragEnded="SaveSettings" PaneOnRight="true" />
+        }
+        <section class="ne-pane ne-notes @(Settings.NotesCollapsed ? "collapsed" : null)" style="@PaneStyle(Settings.NotesWidth, Settings.NotesCollapsed)">
+            <div class="ne-pane-head">
+                <button type="button" class="ne-collapse" title="@(Settings.NotesCollapsed ? L["Expand"] : L["Collapse"])"
+                        @onclick="ToggleNotes">@(Settings.NotesCollapsed ? "‹" : "›")</button>
+                @if (!Settings.NotesCollapsed)
+                {
+                    <span class="ne-pane-title">@L["Notes"]</span>
+                }
+            </div>
+            @if (!Settings.NotesCollapsed)
+            {
+                <NotesPane />
+            }
+        </section>
+    </main>
+
+    @switch (_dialog)
+    {
+        case Dialog.Pdf:
+            <PdfExportDialog OnClose="CloseDialog" />
+            break;
+        case Dialog.LinkCheck:
+            <LinkCheckDialog OnClose="CloseDialog" />
+            break;
+        case Dialog.Settings:
+            <SettingsDialog OnClose="CloseDialog" OnNoteFoldersChanged="ReopenVaultAsync" />
+            break;
+        case Dialog.Handled:
+            <HandledWizard OnClose="CloseDialog" />
+            break;
+        case Dialog.Draft:
+            <DraftWizard OnClose="CloseDialog" />
+            break;
+    }
+
+    <ConflictDialog />
+    <UndoToast />
+</div>
+
+@code {
+    private ILogger _logger = default!;
+    private VaultSession? _subscribed;
+    private bool _opening;
+    private bool _hintVisible;
+    private string? _failedRoot;
+    private Dialog _dialog;
+
+    private enum Dialog
+    {
+        None,
+        Pdf,
+        LinkCheck,
+        Settings,
+        Handled,
+        Draft,
+    }
+
+    private void Show(Dialog dialog) => _dialog = dialog;
+
+    private void CloseDialog() => _dialog = Dialog.None;
+
+    /// <summary>The note folders changed: the vault is opened again with them.</summary>
+    private async Task ReopenVaultAsync()
+    {
+        if (State.Session is { } session)
+        {
+            await OpenVaultAsync(session.Vault.Root);
+        }
+    }
+
+    private string? ThemeAttribute => Settings.Theme switch
+    {
+        ThemeChoice.Light => "light",
+        ThemeChoice.Dark => "dark",
+        _ => null,
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        _logger = LoggerFactory.CreateLogger<Shell>();
+        State.Changed += OnStateChanged;
+        if (Settings.LastVault is { } last && Directory.Exists(last))
+        {
+            await OpenVaultAsync(last);
+        }
+    }
+
+    public void Dispose()
+    {
+        State.Changed -= OnStateChanged;
+        if (_subscribed is not null)
+        {
+            _subscribed.PagesChanged -= OnPagesChanged;
+        }
+    }
+
+    private static string PaneStyle(double width, bool collapsed) =>
+        collapsed ? "" : $"width: {width.ToString(CultureInfo.InvariantCulture)}px";
+
+    private void OnStateChanged() => _ = InvokeAsync(StateHasChanged);
+
+    private async Task PickVaultAsync()
+    {
+        if (await Platform.PickFolderAsync() is { } root)
+        {
+            await OpenVaultAsync(root);
+        }
+    }
+
+    /// <summary>
+    /// Opens <paramref name="root"/> in the background and makes it the app's session, replacing the old one. The
+    /// editor's pending text is saved into the old vault first, while the editor still shows it.
+    /// </summary>
+    private async Task OpenVaultAsync(string root)
+    {
+        if (State.FlushEditor is { } flush)
+        {
+            try
+            {
+                await flush();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Saving the editor's text before opening {Root} failed", root);
+            }
+        }
+
+        _opening = true;
+        _failedRoot = null;
+        _dialog = Dialog.None;
+        StateHasChanged();
+        try
+        {
+            var session = await VaultSession.OpenAsync(
+                root, Clock, LoggerFactory.CreateLogger<VaultSession>(), Time, action => InvokeAsync(action));
+            Activate(session);
+            Settings.LastVault = root;
+            _hintVisible = !Settings.LogseqHintShown;
+            SaveSettings();
+            if (session.StartupReport is { } report && (report.Missing.Count + report.Orphans.Count + report.Broken.Count) > 0)
+            {
+                _logger.LogInformation(
+                    "Link check on opening: {Missing} missing, {Orphans} orphaned, {Broken} broken",
+                    report.Missing.Count, report.Orphans.Count, report.Broken.Count);
+                _dialog = Dialog.LinkCheck;
+            }
+        }
+        catch (Exception ex)
+        {
+            // Whatever went wrong, the app stays usable; the details go to the log.
+            _logger.LogError(ex, "Opening the vault {Root} failed", root);
+            _failedRoot = root;
+        }
+        finally
+        {
+            _opening = false;
+            State.Notify();
+        }
+    }
+
+    private void Activate(VaultSession session)
+    {
+        var old = State.Session;
+        if (_subscribed is not null)
+        {
+            _subscribed.PagesChanged -= OnPagesChanged;
+        }
+
+        session.PagesChanged += OnPagesChanged;
+        _subscribed = session;
+        State.Session = session;
+        State.CurrentBook = session.Vault.Books.FirstOrDefault();
+        State.CurrentSectionKey = State.CurrentBook?.Root.Key ?? Guid.Empty;
+        State.CursorTextBlockKey = null;
+        State.FocusedNoteKey = null;
+        old?.Dispose();
+    }
+
+    /// <summary>Raised on the UI thread (the session dispatches through <c>InvokeAsync</c>).</summary>
+    private void OnPagesChanged(string path)
+    {
+        State.RefreshBook();
+        State.Notify();
+    }
+
+    private void DismissHint()
+    {
+        _hintVisible = false;
+        Settings.LogseqHintShown = true;
+        SaveSettings();
+    }
+
+    private void ToggleOutline()
+    {
+        Settings.OutlineCollapsed = !Settings.OutlineCollapsed;
+        SaveSettings();
+    }
+
+    private void ToggleNotes()
+    {
+        Settings.NotesCollapsed = !Settings.NotesCollapsed;
+        SaveSettings();
+    }
+
+    private void SaveSettings()
+    {
+        try
+        {
+            Settings.Save(Platform.UserDataDirectory);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _logger.LogWarning(ex, "Saving the UI settings failed");
+        }
+    }
+}

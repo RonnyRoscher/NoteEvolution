@@ -1,0 +1,223 @@
+@using NoteEvolution.Core.Model
+@implements IDisposable
+@inject AppState State
+@inject IStringLocalizer<Strings> L
+@inject ILogger<HeaderBar> Logger
+
+<header class="ne-header">
+    <button type="button" class="ne-open-vault" @onclick="OnOpenVault">@L["OpenVault"]</button>
+
+    @if (State.Session is { } session)
+    {
+        <select class="ne-book-select" aria-label="@L["Book"]" value="@State.CurrentBook?.LinkName" @onchange="SelectBook">
+            @foreach (var book in session.Vault.Books)
+            {
+                <option value="@book.LinkName">@book.Title</option>
+            }
+        </select>
+    }
+
+    <div class="ne-mode" role="group" aria-label="@L["ViewMode"]">
+        <button type="button" class="ne-mode-section @Active(ViewMode.Section)" aria-pressed="@Pressed(ViewMode.Section)"
+                @onclick="() => SetMode(ViewMode.Section)">@L["ModeSection"]</button>
+        <button type="button" class="ne-mode-manuscript @Active(ViewMode.Manuscript)" aria-pressed="@Pressed(ViewMode.Manuscript)"
+                @onclick="() => SetMode(ViewMode.Manuscript)">@L["ModeManuscript"]</button>
+    </div>
+
+    <button type="button" class="ne-undo" disabled="@(!CanUndo)" title="@_session?.Undo.NextDescription"
+            @onclick="Undo">@L["Undo"]</button>
+
+    <span class="ne-header-spacer"></span>
+
+    @if (ReadOnlyPages() is { Count: > 0 } readOnly)
+    {
+        <div class="ne-readonly">
+            <button type="button" class="ne-readonly-toggle" title="@L["ReadOnlyFiles"]" aria-expanded="@(_readOnlyOpen ? "true" : "false")"
+                    @onclick="() => _readOnlyOpen = !_readOnlyOpen">⚠ @readOnly.Count</button>
+            @if (_readOnlyOpen)
+            {
+                <div class="ne-readonly-popup">
+                    <div class="ne-readonly-title">@L["ReadOnlyFiles"]</div>
+                    <ul class="ne-readonly-list">
+                        @foreach (var broken in readOnly)
+                        {
+                            <li><span class="ne-readonly-file">@Path.GetFileName(broken.FilePath)</span><span class="ne-readonly-error">@broken.ParseError</span></li>
+                        }
+                    </ul>
+                </div>
+            }
+        </div>
+    }
+
+    @if (OnHandledWizard.HasDelegate || OnDraftWizard.HasDelegate)
+    {
+        <div class="ne-assistants">
+            <button type="button" class="ne-assistants-toggle" disabled="@(State.Session is null)" aria-expanded="@(_assistantsOpen ? "true" : "false")"
+                    @onclick="() => _assistantsOpen = !_assistantsOpen">@L["Assistants"]</button>
+            @if (_assistantsOpen && State.Session is not null)
+            {
+                <div class="ne-assistants-popup">
+                    <button type="button" class="ne-assistant-handled" @onclick="OpenHandled">@L["AssistantHandled"]</button>
+                    <button type="button" class="ne-assistant-draft" @onclick="OpenDraft">@L["AssistantDraft"]</button>
+                </div>
+            }
+        </div>
+    }
+
+    <button type="button" class="ne-pdf" disabled="@(State.CurrentBook is null || !OnPdfExport.HasDelegate)"
+            @onclick="OnPdfExport">@L["PdfExport"]</button>
+    <button type="button" class="ne-linkcheck" disabled="@(State.Session is null || !OnLinkCheck.HasDelegate)"
+            @onclick="OnLinkCheck">@L["LinkCheck"]</button>
+    <button type="button" class="ne-settings" disabled="@(!OnSettings.HasDelegate)" @onclick="OnSettings">@L["Settings"]</button>
+    <span class="ne-ai">@L["AiOff"]</span>
+</header>
+
+@code {
+    private VaultSession? _session;
+    private bool _readOnlyOpen;
+    private bool _assistantsOpen;
+
+    [Parameter] public EventCallback OnOpenVault { get; set; }
+
+    /// <summary>Opens the <c>[handled]</c> assistant; the assistants menu is hidden while both assistants are unset.</summary>
+    [Parameter] public EventCallback OnHandledWizard { get; set; }
+
+    /// <summary>Opens the draft assistant; the assistants menu is hidden while both assistants are unset.</summary>
+    [Parameter] public EventCallback OnDraftWizard { get; set; }
+
+    /// <summary>Opens the PDF export dialog; the button is disabled while unset.</summary>
+    [Parameter] public EventCallback OnPdfExport { get; set; }
+
+    /// <summary>Opens the link check dialog; the button is disabled while unset.</summary>
+    [Parameter] public EventCallback OnLinkCheck { get; set; }
+
+    /// <summary>Opens the settings dialog; the button is disabled while unset.</summary>
+    [Parameter] public EventCallback OnSettings { get; set; }
+
+    protected override void OnInitialized()
+    {
+        State.Changed += OnStateChanged;
+        TrackSession();
+    }
+
+    public void Dispose()
+    {
+        State.Changed -= OnStateChanged;
+        Unsubscribe();
+    }
+
+    /// <summary>Undo is refused while a conflict is open (R26): it writes pages directly.</summary>
+    private bool CanUndo => _session is { HasAnyOpenConflict: false } session && session.Undo.CanUndo;
+
+    private void OnStateChanged() => _ = InvokeAsync(() =>
+    {
+        TrackSession();
+        StateHasChanged();
+    });
+
+    private void OnSessionChanged() => _ = InvokeAsync(StateHasChanged);
+
+    /// <summary>Follows the undo stack and the conflicts of the current session (a vault switch brings a new one).</summary>
+    private void TrackSession()
+    {
+        if (ReferenceEquals(State.Session, _session))
+        {
+            return;
+        }
+
+        Unsubscribe();
+        _session = State.Session;
+        if (_session is not null)
+        {
+            _session.Undo.Changed += OnSessionChanged;
+            _session.ConflictsChanged += OnSessionChanged;
+        }
+    }
+
+    private void Unsubscribe()
+    {
+        if (_session is not null)
+        {
+            _session.Undo.Changed -= OnSessionChanged;
+            _session.ConflictsChanged -= OnSessionChanged;
+        }
+    }
+
+    private List<Page> ReadOnlyPages() => State.Session?.Vault.Pages.Where(p => p.IsReadOnly).ToList() ?? [];
+
+    private string? Active(ViewMode mode) => State.Mode == mode ? "active" : null;
+
+    private string Pressed(ViewMode mode) => State.Mode == mode ? "true" : "false";
+
+    private void SelectBook(ChangeEventArgs e)
+    {
+        if (State.Session?.Vault.FindBook(e.Value as string ?? "") is not { } book)
+        {
+            return;
+        }
+
+        State.CurrentBook = book;
+        State.CurrentSectionKey = book.Root.Key;
+        State.CursorTextBlockKey = null;
+        State.Notify();
+    }
+
+    private void SetMode(ViewMode mode)
+    {
+        if (State.Mode == mode)
+        {
+            return;
+        }
+
+        State.Mode = mode;
+        State.Notify();
+    }
+
+    private async Task OpenHandled()
+    {
+        _assistantsOpen = false;
+        await OnHandledWizard.InvokeAsync();
+    }
+
+    private async Task OpenDraft()
+    {
+        _assistantsOpen = false;
+        await OnDraftWizard.InvokeAsync();
+    }
+
+    private async Task Undo()
+    {
+        if (_session is null)
+        {
+            return;
+        }
+
+        // The editor's pending text is saved first: undo writes the book page directly.
+        try
+        {
+            if (State.FlushEditor is { } flush)
+            {
+                await flush();
+            }
+        }
+        catch (Exception ex)
+        {
+            // The text may not be saved, so nothing is undone behind it.
+            Logger.LogError(ex, "Saving the editor before undoing failed");
+            return;
+        }
+
+        if (_session is not { } session || !ReferenceEquals(session, State.Session))
+        {
+            return;
+        }
+
+        // Refused while a conflict is open; a failure is logged by the session.
+        session.TryUndo(out _);
+
+        // The undone operation changed (and saved) the book page, or a failed one left the vault with the page as it
+        // is on disk; views take it from the vault again.
+        State.RefreshBook();
+        State.Notify();
+    }
+}

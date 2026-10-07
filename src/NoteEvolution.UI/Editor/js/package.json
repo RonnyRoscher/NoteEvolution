@@ -1,0 +1,21 @@
+{
+  "name": "noteevolution-editor",
+  "version": "1.0.0",
+  "private": true,
+  "description": "The TipTap editor of NoteEvolution, bundled into ../../wwwroot/js/editor.bundle.js",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "devDependencies": {
+    "@tiptap/core": "2.27.3",
+    "@tiptap/extension-bold": "2.27.3",
+    "@tiptap/extension-dropcursor": "2.27.3",
+    "@tiptap/extension-hard-break": "2.27.3",
+    "@tiptap/extension-history": "2.27.3",
+    "@tiptap/extension-italic": "2.27.3",
+    "@tiptap/extension-text": "2.27.3",
+    "@tiptap/pm": "2.27.3",
+    "esbuild": "0.25.12"
+  }
+}

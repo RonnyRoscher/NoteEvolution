@@ -1,0 +1,171 @@
+@using NoteEvolution.Core.Vaults
+@inject AppState State
+@inject UiSettings Settings
+@inject IPlatformServices Platform
+@inject IStringLocalizer<Strings> L
+@inject ILogger<SettingsDialog> Logger
+
+<Modal Title="@L["Settings"]" CssClass="ne-settings-dialog" OnClose="OnClose">
+<ChildContent>
+    @if (_error is not null)
+    {
+        <p class="ne-dialog-error" role="alert">@_error</p>
+    }
+    <div class="ne-settings-field">
+        <label for="ne-settings-folders">@L["SettingsFolders"]</label>
+        <textarea id="ne-settings-folders" class="ne-settings-folders" rows="4" disabled="@(State.Session is null)"
+                  @bind="_folders" @bind:event="oninput"></textarea>
+        <span class="ne-dialog-hint">@L["SettingsFoldersHint"]</span>
+    </div>
+    <div class="ne-settings-field">
+        <label for="ne-settings-theme">@L["SettingsTheme"]</label>
+        <select id="ne-settings-theme" class="ne-settings-theme" @bind="_theme">
+            <option value="@ThemeChoice.System">@L["ThemeSystem"]</option>
+            <option value="@ThemeChoice.Light">@L["ThemeLight"]</option>
+            <option value="@ThemeChoice.Dark">@L["ThemeDark"]</option>
+        </select>
+    </div>
+    <div class="ne-settings-field">
+        <label for="ne-settings-font">@L["SettingsFontSize", UiSettings.MinFontSizePt, UiSettings.MaxFontSizePt]</label>
+        <input id="ne-settings-font" class="ne-settings-font" type="number" min="@UiSettings.MinFontSizePt" max="@UiSettings.MaxFontSizePt"
+               @bind="_fontSize" @bind:event="onchange" />
+    </div>
+    <div class="ne-settings-field">
+        <label for="ne-settings-width">@L["SettingsLineWidth", UiSettings.MinLineWidthCh, UiSettings.MaxLineWidthCh]</label>
+        <input id="ne-settings-width" class="ne-settings-width" type="number" min="@UiSettings.MinLineWidthCh" max="@UiSettings.MaxLineWidthCh"
+               @bind="_lineWidth" @bind:event="onchange" />
+    </div>
+    </ChildContent>
+    <Footer>
+        <button type="button" class="ne-settings-save" disabled="@_busy" @onclick="SaveAsync">@L["Save"]</button>
+        <button type="button" class="ne-settings-cancel" disabled="@_busy" @onclick="OnClose">@L["Cancel"]</button>
+    </Footer>
+</Modal>
+
+@code {
+    private string _folders = "";
+    private ThemeChoice _theme;
+    private int _fontSize;
+    private int _lineWidth;
+    private bool _busy;
+    private string? _error;
+
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    /// <summary>The note folders changed and were saved: the vault is opened again (the dialog is closed before).</summary>
+    [Parameter] public EventCallback OnNoteFoldersChanged { get; set; }
+
+    protected override void OnInitialized()
+    {
+        _folders = string.Join('\n', State.Session?.Vault.Settings.NoteFolders ?? []);
+        _theme = Settings.Theme;
+        _fontSize = Settings.FontSizePt;
+        _lineWidth = Settings.LineWidthCh;
+    }
+
+    /// <summary>
+    /// Takes over the display settings (clamped to their range) and, if the note folders changed, saves them in the
+    /// vault's settings and has the vault opened again. That drops the open session, so the editor saves first and
+    /// nothing is changed while a conflict waits for a decision (R26).
+    /// </summary>
+    private async Task SaveAsync()
+    {
+        if (_busy)
+        {
+            return;
+        }
+
+        _busy = true;
+        _error = null;
+        try
+        {
+            var folders = Folders();
+            var foldersChanged = false;
+            if (State.Session is { } session)
+            {
+                foldersChanged = !folders.SequenceEqual(session.Vault.Settings.NoteFolders, StringComparer.Ordinal);
+                if (foldersChanged && folders.Count == 0)
+                {
+                    _error = L["SettingsFoldersEmpty"];
+                    return;
+                }
+
+                if (foldersChanged && !await PrepareReloadAsync(session))
+                {
+                    return;
+                }
+            }
+
+            Settings.Theme = _theme;
+            Settings.FontSizePt = _fontSize = Math.Clamp(_fontSize, UiSettings.MinFontSizePt, UiSettings.MaxFontSizePt);
+            Settings.LineWidthCh = _lineWidth = Math.Clamp(_lineWidth, UiSettings.MinLineWidthCh, UiSettings.MaxLineWidthCh);
+            try
+            {
+                Settings.Save(Platform.UserDataDirectory);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                Logger.LogWarning(ex, "Saving the UI settings failed");
+                _error = L["SettingsSaveFailed"];
+                return;
+            }
+
+            if (foldersChanged && State.Session is { } open)
+            {
+                try
+                {
+                    var vaultSettings = VaultSettings.Load(open.Vault.Root);
+                    vaultSettings.NoteFolders = folders;
+                    vaultSettings.Save(open.Vault.Root);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    Logger.LogWarning(ex, "Saving the vault settings failed");
+                    _error = L["SettingsSaveFailed"];
+                    return;
+                }
+            }
+
+            State.Notify();
+            await OnClose.InvokeAsync();
+            if (foldersChanged)
+            {
+                await OnNoteFoldersChanged.InvokeAsync();
+            }
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    /// <summary>Saves the editor's pending text and checks that opening the vault again loses nothing.</summary>
+    private async Task<bool> PrepareReloadAsync(VaultSession session)
+    {
+        if (session.HasAnyOpenConflict)
+        {
+            _error = L["SettingsConflict"];
+            return false;
+        }
+
+        try
+        {
+            if (State.FlushEditor is { } flush)
+            {
+                await flush();
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Saving the editor before changing the note folders failed");
+            _error = L["SettingsFlushFailed"];
+            return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>One folder per line; blank lines and repeats are dropped.</summary>
+    private List<string> Folders() =>
+        [.. _folders.Split('\n').Select(line => line.Trim()).Where(line => line.Length > 0).Distinct(StringComparer.Ordinal)];
+}

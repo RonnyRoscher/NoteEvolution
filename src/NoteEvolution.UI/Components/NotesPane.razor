@@ -1,0 +1,144 @@
+@using NoteEvolution.Core.Vaults
+@implements IDisposable
+@inject AppState State
+@inject UiSettings Settings
+@inject IPlatformServices Platform
+@inject ILoggerFactory LoggerFactory
+@inject IStringLocalizer<Strings> L
+
+@if (State.Session is not { } session)
+{
+    <div class="ne-placeholder">@L["NotesPlaceholder"]</div>
+}
+else
+{
+    var filter = new NoteFilter(Settings.HideUsed, _from, _to);
+    <div class="ne-notes-pane">
+        <div class="ne-notes-tabs" role="tablist">
+            <button type="button" role="tab" class="ne-tab ne-tab-search @(_tab == Tab.Search ? "active" : null)"
+                    aria-selected="@(_tab == Tab.Search)" @onclick="() => _tab = Tab.Search">@L["NotesTabSearch"]</button>
+            <button type="button" role="tab" class="ne-tab ne-tab-journal @(_tab == Tab.Journal ? "active" : null)"
+                    aria-selected="@(_tab == Tab.Journal)" @onclick="() => _tab = Tab.Journal">@L["NotesTabJournal"]</button>
+        </div>
+        <div class="ne-notes-filters">
+            <label class="ne-filter-hide"><input type="checkbox" class="ne-hide-used" checked="@Settings.HideUsed" @onchange="OnHideUsed" /> @L["NotesHideUsed"]</label>
+            <label class="ne-filter-date"><span>@L["NotesFrom"]</span>
+                <input type="date" class="ne-filter-from" value="@Format(_from)" @onchange="e => _from = Parse(e)" /></label>
+            <label class="ne-filter-date"><span>@L["NotesTo"]</span>
+                <input type="date" class="ne-filter-to" value="@Format(_to)" @onchange="e => _to = Parse(e)" /></label>
+        </div>
+        @if (State.FocusedNoteKey is { } focusedKey && session.Notes.Get(focusedKey) is { } focused)
+        {
+            <div class="ne-note-focused">
+                <div class="ne-note-focused-head">
+                    <span>@L["NoteFocused"]</span>
+                    <button type="button" class="ne-note-focused-close" title="@L["NoteFocusedClose"]"
+                            aria-label="@L["NoteFocusedClose"]" @onclick="CloseFocused">×</button>
+                </div>
+                <NoteCard Note="focused" />
+            </div>
+        }
+        @if (_tab == Tab.Search)
+        {
+            <SearchTab Query="@_query" QueryChanged="q => _query = q" Filter="filter" Revision="_revision" />
+        }
+        else
+        {
+            <JournalTab Filter="filter" Revision="_revision" />
+        }
+    </div>
+}
+
+@code {
+    private enum Tab
+    {
+        Search,
+        Journal,
+    }
+
+    private ILogger _logger = default!;
+    private VaultSession? _session;
+    private Tab _tab = Tab.Search;
+    private string _query = "";
+    private DateOnly? _from;
+    private DateOnly? _to;
+
+    /// <summary>Counts the changes of the vault's pages and of the session; the tabs read their notes again when it changes.</summary>
+    private int _revision;
+
+    protected override void OnInitialized()
+    {
+        _logger = LoggerFactory.CreateLogger<NotesPane>();
+        State.Changed += OnStateChanged;
+        TrackSession();
+    }
+
+    public void Dispose()
+    {
+        State.Changed -= OnStateChanged;
+        Unsubscribe();
+    }
+
+    private void OnStateChanged() => _ = InvokeAsync(() =>
+    {
+        TrackSession();
+        StateHasChanged();
+    });
+
+    private void OnPagesChanged(string path) => _ = InvokeAsync(() =>
+    {
+        _revision++;
+        StateHasChanged();
+    });
+
+    /// <summary>Follows the pages of the current session (a vault switch brings a new one and new notes).</summary>
+    private void TrackSession()
+    {
+        if (ReferenceEquals(State.Session, _session))
+        {
+            return;
+        }
+
+        Unsubscribe();
+        _session = State.Session;
+        _revision++;
+        if (_session is not null)
+        {
+            _session.PagesChanged += OnPagesChanged;
+        }
+    }
+
+    private void Unsubscribe()
+    {
+        if (_session is not null)
+        {
+            _session.PagesChanged -= OnPagesChanged;
+        }
+    }
+
+    private void OnHideUsed(ChangeEventArgs e)
+    {
+        Settings.HideUsed = e.Value is true;
+        try
+        {
+            Settings.Save(Platform.UserDataDirectory);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _logger.LogWarning(ex, "Saving the UI settings failed");
+        }
+    }
+
+    private void CloseFocused()
+    {
+        State.FocusedNoteKey = null;
+        State.Notify();
+    }
+
+    private static string? Format(DateOnly? day) => day?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+
+    private static DateOnly? Parse(ChangeEventArgs e) =>
+        DateOnly.TryParseExact(e.Value?.ToString(), "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var day)
+            ? day
+            : null;
+}

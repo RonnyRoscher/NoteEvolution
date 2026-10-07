@@ -1,0 +1,444 @@
+@using NoteEvolution.Core.Books
+@using NoteEvolution.Core.Links
+@using NoteEvolution.UI.Editor
+@implements IEditorCallbacks
+@implements IAsyncDisposable
+@inject AppState State
+@inject IEditorInterop Editor
+@inject TimeProvider Time
+@inject IStringLocalizer<Strings> L
+@inject ILogger<EditorPane> Logger
+
+@* The book text (spec 7): the current section, or the current part as manuscript, in the TipTap editor. Every change
+   is saved 1000 ms after the last one by reconciling the editor's document into the book page (BookTextSaver). *@
+<div class="ne-editor-pane">
+    @if (State.CurrentBook is null)
+    {
+        <div class="ne-placeholder">@L["EditorNoBook"]</div>
+    }
+    else
+    {
+        @if (State.Mode == ViewMode.Manuscript)
+        {
+            <div class="ne-editor-bar">
+                <label class="ne-editor-chips"><input type="checkbox" checked="@_showChips" @onchange="ToggleChipsAsync" /> @L["EditorShowChips"]</label>
+            </div>
+        }
+        @if (ReadOnlyReason is { } reason)
+        {
+            <div class="ne-editor-hint" role="status">@L[reason]</div>
+        }
+        @if (_saver.Message is { } message)
+        {
+            <div class="@(message.IsError ? "ne-editor-error" : "ne-editor-info")" role="@(message.IsError ? "alert" : "status")">@L[message.Key]</div>
+        }
+    }
+    <div class="ne-editor-host" hidden="@(State.CurrentBook is null)" inert="@(ReadOnlyReason is not null)" @ref="_host"></div>
+</div>
+
+@code {
+    /// <summary>Autosave delay after the last change (spec 5.3), measured with the injected <see cref="TimeProvider"/> (R4).</summary>
+    private static readonly TimeSpan Debounce = TimeSpan.FromMilliseconds(1000);
+
+    /// <summary>Loading, saving and the chip operations run one at a time (they await the editor in between).</summary>
+    private readonly SemaphoreSlim _gate = new(1, 1);
+
+    private BookTextSaver _saver = default!;
+    private ElementReference _host;
+    private VaultSession? _session;
+    private CancellationTokenSource? _debounce;
+    private bool _ready;
+    private bool _loading;
+    private bool _showChips;
+    private bool _shownChips;
+    private bool _disposed;
+
+    /// <summary>Why the book page cannot be edited now: it is read-only, or a conflict for its file is open (R26).</summary>
+    private string? ReadOnlyReason => State switch
+    {
+        { CurrentBook.Page.IsReadOnly: true } => "EditorReadOnly",
+        { Session: { } session, CurrentBook.Page: { } page } when session.HasOpenConflict(page.FilePath) => "EditorConflict",
+        _ => null,
+    };
+
+    protected override void OnInitialized()
+    {
+        _saver = new BookTextSaver(State, Logger);
+        State.Changed += OnStateChanged;
+        State.FlushEditor = FlushAsync;
+        State.WarnUnsavedText = WarnUnsavedText;
+        TrackSession();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            return;
+        }
+
+        try
+        {
+            await Editor.InitAsync(_host, this);
+        }
+        catch (Exception ex)
+        {
+            // Whatever failed (the bundle not found, a script error), the rest of the app stays usable.
+            Logger.LogError(ex, "Loading the editor failed");
+            _saver.Message = new AdoptMessage("EditorLoadFailed", true);
+            StateHasChanged();
+            return;
+        }
+
+        _ready = true;
+        await SyncAsync();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+        State.Changed -= OnStateChanged;
+        if (State.FlushEditor == (Func<Task>)FlushAsync)
+        {
+            State.FlushEditor = null;
+        }
+
+        if (State.WarnUnsavedText == (Func<bool>)WarnUnsavedText)
+        {
+            State.WarnUnsavedText = null;
+        }
+
+        Unsubscribe();
+        CancelDebounce();
+        try
+        {
+            // The last text typed is not lost when the editor goes away (e.g. while another vault opens).
+            _saver.Save();
+            _saver.SaveDirtyPage();
+            _saver.ApplyUnsavedEffects();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Saving the book text on closing the editor failed");
+        }
+
+        try
+        {
+            await Editor.DisposeAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Closing the editor failed");
+        }
+    }
+
+    /// <summary>
+    /// Saves the pending text now (the debounce is skipped) and shows what the book has. Registered as
+    /// <see cref="AppState.FlushEditor"/>: whoever changes the book page behind the editor's back awaits it first.
+    /// </summary>
+    public async Task FlushAsync()
+    {
+        if (!_ready || _disposed)
+        {
+            return;
+        }
+
+        await _gate.WaitAsync();
+        try
+        {
+            await SyncCoreAsync();
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    /// <summary>
+    /// Registered as <see cref="AppState.WarnUnsavedText"/>: before the window closes (after a flush), says whether text
+    /// could not be saved and, if so, shows that closing again loses it (R33).
+    /// </summary>
+    private bool WarnUnsavedText()
+    {
+        if (_disposed || !_saver.HasUnsavedText)
+        {
+            return false;
+        }
+
+        _saver.Message = new AdoptMessage("EditorCloseUnsaved", true);
+        StateHasChanged();
+        return true;
+    }
+
+    public Task OnDocumentChanged(string docJson)
+    {
+        // A change from before a newly loaded document, or in a page that cannot be saved, is not taken.
+        if (_loading || _saver.Shown is null || ReadOnlyReason is not null)
+        {
+            return Task.CompletedTask;
+        }
+
+        _saver.Pending = docJson;
+        CancelDebounce();
+        var source = _debounce = new CancellationTokenSource();
+        _ = SaveAfterDelayAsync(source.Token);
+        return Task.CompletedTask;
+    }
+
+    public Task OnCursorBlockChanged(Guid? textBlockKey)
+    {
+        State.CursorTextBlockKey = textBlockKey;
+        return Task.CompletedTask;
+    }
+
+    public Task OnChipClicked(Guid noteId)
+    {
+        if (State.Session?.Vault.FindBlockById(noteId) is { } found)
+        {
+            State.FocusedNoteKey = found.Block.Key;
+            State.Notify();
+        }
+
+        return Task.CompletedTask;
+    }
+
+    /// <summary>Removes the note from the block's sources and the usage from the note, after saving the pending text.</summary>
+    public async Task OnChipRemoved(Guid textBlockKey, Guid noteId)
+    {
+        if (!_ready || _disposed)
+        {
+            return;
+        }
+
+        await _gate.WaitAsync();
+        try
+        {
+            CancelDebounce();
+            _saver.Message = null;
+            _saver.Save();
+            _saver.RemoveSource(textBlockKey, noteId);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+
+        State.RefreshBook();
+        State.Notify();
+        StateHasChanged();
+    }
+
+    /// <summary>
+    /// Adopts the dropped note (<see cref="NoteAdoption"/>) after the given text block, at the start of the given
+    /// heading's section, or at the start of the current section.
+    /// </summary>
+    public async Task OnNoteDropped(Guid noteBlockKey, Guid? afterTextBlockKey)
+    {
+        var section = State.CurrentSectionKey;
+        _saver.Message = await NoteAdoption.AdoptAsync(
+            State,
+            noteBlockKey,
+            book => afterTextBlockKey switch
+            {
+                { } key when book.FindTextBlock(key) is not null => new InsertPosition.After(key),
+                { } key when book.FindNode(key) is not null => new InsertPosition.SectionStart(key),
+                _ => new InsertPosition.SectionStart(book.FindNode(section) is not null ? section : book.Root.Key),
+            },
+            Logger);
+        StateHasChanged();
+    }
+
+    private void OnStateChanged() => _ = InvokeAsync(async () =>
+    {
+        StateHasChanged();
+        await SyncAsync();
+    });
+
+    private void OnPagesChanged(string path) => _ = InvokeAsync(SyncAsync);
+
+    private void OnConflictsChanged() => _ = InvokeAsync(StateHasChanged);
+
+    /// <summary>
+    /// The session is about to bring in an external change: pending text of that page goes into the page first, so it
+    /// is merged with the external version (R30).
+    /// </summary>
+    private void OnExternalChangeStarting(string path)
+    {
+        CancelDebounce();
+        _saver.PutPendingIntoPage(path);
+    }
+
+    /// <summary>Follows the current session's page and conflict events (a vault switch brings a new one).</summary>
+    private void TrackSession()
+    {
+        if (ReferenceEquals(State.Session, _session))
+        {
+            return;
+        }
+
+        Unsubscribe();
+        _session = State.Session;
+        if (_session is not null)
+        {
+            _session.PagesChanged += OnPagesChanged;
+            _session.ConflictsChanged += OnConflictsChanged;
+            _session.ExternalChangeStarting += OnExternalChangeStarting;
+        }
+    }
+
+    private void Unsubscribe()
+    {
+        if (_session is not null)
+        {
+            _session.PagesChanged -= OnPagesChanged;
+            _session.ConflictsChanged -= OnConflictsChanged;
+            _session.ExternalChangeStarting -= OnExternalChangeStarting;
+        }
+    }
+
+    private async Task SaveAfterDelayAsync(CancellationToken cancel)
+    {
+        try
+        {
+            await Task.Delay(Debounce, Time, cancel);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+
+        await InvokeAsync(SyncAsync);
+    }
+
+    private void CancelDebounce()
+    {
+        _debounce?.Cancel();
+        _debounce?.Dispose();
+        _debounce = null;
+    }
+
+    /// <summary><see cref="FlushAsync"/> for events: failures are logged.</summary>
+    private async Task SyncAsync()
+    {
+        try
+        {
+            await FlushAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Updating the editor failed");
+        }
+    }
+
+    /// <summary>
+    /// Saves the pending text to the place it was typed in, then shows the current book, section and view. The editor
+    /// is only given a new document when that differs from what it shows (keeping the cursor while typing).
+    /// </summary>
+    private async Task SyncCoreAsync()
+    {
+        TrackSession();
+        CancelDebounce();
+        _saver.Save();
+        _saver.SaveDirtyPage();
+        _saver.ApplyUnsavedEffects();
+
+        if (State.Session is not { } session || State.CurrentBook is null
+            || session.Vault.FindBook(State.CurrentBook.LinkName) is not { } book)
+        {
+            _saver.Shown = null;
+            _saver.Pending = null;
+            StateHasChanged();
+            return;
+        }
+
+        var manuscript = State.Mode == ViewMode.Manuscript;
+        var scope = book.FindNode(State.CurrentSectionKey) is not null ? State.CurrentSectionKey : book.Root.Key;
+        var shown = _saver.Shown;
+        var sameTarget = shown is not null
+                         && ReferenceEquals(shown.Session, session)
+                         && string.Equals(shown.BookLink, book.LinkName, StringComparison.OrdinalIgnoreCase)
+                         && shown.Snapshot.ScopeKey == scope
+                         && shown.Snapshot.IncludeSubsections == manuscript;
+        if (_saver.Pending is not null)
+        {
+            // Saving failed and the text waits for the next try: keep showing it.
+            if (sameTarget)
+            {
+                StateHasChanged();
+                return;
+            }
+
+            _saver.Pending = null;
+            _saver.Message = new AdoptMessage("EditorChangesLost", true);
+        }
+        else if (!sameTarget)
+        {
+            _saver.Message = null;
+        }
+
+        var fresh = BookSnapshot.Create(book, session.Vault, scope, manuscript);
+        if (sameTarget && !_saver.ReloadNeeded && _shownChips == _showChips
+            && (SameContent(shown!.Snapshot, fresh) || (shown.FromEditor && SameShape(shown.Snapshot, fresh))))
+        {
+            // After its own save the editor keeps its document (cursor, undo history) even where the book holds a
+            // text slightly normalized; it is compared with the book's version from now on (R33).
+            _saver.Shown = shown with { Snapshot = fresh, FromEditor = false };
+            StateHasChanged();
+            return;
+        }
+
+        _loading = true;
+        try
+        {
+            await Editor.SetDocumentAsync(EditorDocMapper.ToJson(fresh), manuscript, _showChips);
+        }
+        finally
+        {
+            _loading = false;
+        }
+
+        _saver.Shown = new ShownText(session, book.LinkName, fresh);
+        _shownChips = _showChips;
+        _saver.ReloadNeeded = false;
+        StateHasChanged();
+    }
+
+    private async Task ToggleChipsAsync(ChangeEventArgs e)
+    {
+        _showChips = e.Value is true;
+        await SyncAsync();
+    }
+
+    /// <summary>Same nodes, texts, paragraphs and chips (<see cref="SnapshotTextBlock.SplitFrom"/> is left out).</summary>
+    private static bool SameContent(SectionSnapshot a, SectionSnapshot b) =>
+        a.ScopeKey == b.ScopeKey
+        && a.IncludeSubsections == b.IncludeSubsections
+        && a.Nodes.Count == b.Nodes.Count
+        && a.Nodes.Zip(b.Nodes).All(pair => (pair.First, pair.Second) switch
+        {
+            (SnapshotHeading x, SnapshotHeading y) => x == y,
+            (SnapshotTextBlock x, SnapshotTextBlock y) =>
+                x.Key == y.Key && x.Text == y.Text && x.Paragraphs.SequenceEqual(y.Paragraphs) && x.Sources.SequenceEqual(y.Sources),
+            _ => false,
+        });
+
+    /// <summary>Same keys, heading levels, paragraph depths and note flags, and the same chips; texts may differ.</summary>
+    private static bool SameShape(SectionSnapshot a, SectionSnapshot b) =>
+        a.ScopeKey == b.ScopeKey
+        && a.IncludeSubsections == b.IncludeSubsections
+        && a.Nodes.Count == b.Nodes.Count
+        && a.Nodes.Zip(b.Nodes).All(pair => (pair.First, pair.Second) switch
+        {
+            (SnapshotHeading x, SnapshotHeading y) => x.Key == y.Key && x.Level == y.Level,
+            (SnapshotTextBlock x, SnapshotTextBlock y) =>
+                x.Key == y.Key
+                && x.Paragraphs.Select(p => (p.Key, p.Depth, p.IsNote)).SequenceEqual(y.Paragraphs.Select(p => (p.Key, p.Depth, p.IsNote)))
+                && x.Sources.SequenceEqual(y.Sources),
+            _ => false,
+        });
+}
