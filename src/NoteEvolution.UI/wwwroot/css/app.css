@@ -537,6 +537,12 @@ html, body {
     cursor: grab;
 }
 
+/* A card a source just jumped to; the journal tab removes the class after two seconds. */
+.ne-note-card.ne-note-highlight {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent);
+}
+
 .ne-note-head {
     display: flex;
     align-items: center;

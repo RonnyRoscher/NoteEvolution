@@ -17,7 +17,7 @@
     var collapsible = lineCount > CollapsedLines;
 }
 
-<article class="ne-note-card" draggable="true" data-note-key="@Note.Key"
+<article @ref="_root" class="ne-note-card @(Highlighted ? "ne-note-highlight" : null)" tabindex="-1" draggable="true" data-note-key="@Note.Key"
          @ondragstart="OnDragStart" @ondragend="OnDragEnd">
     <header class="ne-note-head">
         <span class="ne-note-origin">@Origin</span>
@@ -107,6 +107,8 @@
     /// <summary>From this many lines on, the card is collapsed to three lines until "mehr" is clicked.</summary>
     private const int CollapsedLines = 3;
 
+    private ElementReference _root;
+    private int _focused;
     private bool _expanded;
     private AdoptMessage? _message;
 
@@ -130,6 +132,15 @@
 
     /// <summary>The hit's score in percent of the best hit; <c>null</c> outside the search.</summary>
     [Parameter] public int? Percent { get; set; }
+
+    /// <summary>The card is marked for a moment after a source jumped to its note (see <c>JournalTab</c>).</summary>
+    [Parameter] public bool Highlighted { get; set; }
+
+    /// <summary>
+    /// A new (positive) number puts the focus on the card after it rendered, which scrolls it into view; 0 asks for
+    /// nothing.
+    /// </summary>
+    [Parameter] public int FocusRequest { get; set; }
 
     /// <summary>The button is offered while the AI is ready and there is a book to place the note in.</summary>
     private bool WhereToAvailable => State is { Session: { } session, CurrentBook: not null } && session.Relevance.IsAvailable;
@@ -164,6 +175,15 @@
             _whereTo = null;
             _whereBusy = false;
             _whereNoteKey = Note.Key;
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (FocusRequest > 0 && FocusRequest != _focused)
+        {
+            _focused = FocusRequest;
+            await _root.FocusAsync();
         }
     }
 

@@ -1,5 +1,7 @@
 @using NoteEvolution.Core.Vaults
+@implements IDisposable
 @inject AppState State
+@inject TimeProvider Time
 @inject IStringLocalizer<Strings> L
 
 @* The "Journal" tab: the root blocks of the journal pages, newest day first, from a chosen day on. *@
@@ -20,7 +22,8 @@
     <div class="ne-journal-list">
         @foreach (var note in visible.Take(_shown))
         {
-            <NoteCard @key="note.Key" Note="note" />
+            <NoteCard @key="note.Key" Note="note" Highlighted="note.Key == _highlightKey"
+                      FocusRequest="note.Key == _highlightKey ? _focusRequest : 0" />
         }
     </div>
     @if (visible.Count > _shown)
@@ -37,22 +40,71 @@
     private IReadOnlyList<NoteBlock> _entries = [];
     private DateOnly? _jump;
     private int _shown = PageSize;
+    private (Guid? Key, int Sequence) _lastReveal;
+    private Guid? _highlightKey;
+    private int _focusRequest;
+    private ITimer? _highlightTimer;
+    private bool _disposed;
 
     [Parameter, EditorRequired] public NoteFilter Filter { get; set; } = default!;
 
     /// <summary>Changes whenever the vault's pages or the session changed, so the entries are read again.</summary>
     [Parameter] public int Revision { get; set; }
 
+    /// <summary>
+    /// The note a source jumped to: the tab sets its date jump to the note's day, makes sure the note is among the shown
+    /// entries, marks its card and focuses it. <see cref="RevealSequence"/> tells a new request from the same one again.
+    /// </summary>
+    [Parameter] public Guid? RevealKey { get; set; }
+
+    /// <summary>Counts the jump requests; the same note can be asked for again.</summary>
+    [Parameter] public int RevealSequence { get; set; }
+
+    /// <summary>How long a card stays marked after a jump (R4: measured with the injected <see cref="TimeProvider"/>).</summary>
+    public static readonly TimeSpan HighlightDuration = TimeSpan.FromSeconds(2);
+
     protected override void OnParametersSet()
     {
-        if (_last == (Filter, Revision))
+        if (_last != (Filter, Revision))
+        {
+            _last = (Filter, Revision);
+            _shown = PageSize;
+            _entries = State.Session?.Notes.Journal(Filter) ?? [];
+        }
+
+        if (RevealKey is { } key && (key, RevealSequence) != _lastReveal)
+        {
+            _lastReveal = (key, RevealSequence);
+            Reveal(key);
+        }
+    }
+
+    public void Dispose()
+    {
+        _disposed = true;
+        _highlightTimer?.Dispose();
+    }
+
+    private void Reveal(Guid key)
+    {
+        if (_entries.FirstOrDefault(note => note.Key == key) is not { Date: { } day })
         {
             return;
         }
 
-        _last = (Filter, Revision);
-        _shown = PageSize;
-        _entries = State.Session?.Notes.Journal(Filter) ?? [];
+        _jump = day;
+        _shown = Math.Max(_shown, _entries.Where(note => note.Date <= day).ToList().FindIndex(note => note.Key == key) + 1);
+        _highlightKey = key;
+        _focusRequest++;
+        _highlightTimer?.Dispose();
+        _highlightTimer = Time.CreateTimer(_ => _ = InvokeAsync(() =>
+        {
+            if (!_disposed)
+            {
+                _highlightKey = null;
+                StateHasChanged();
+            }
+        }), null, HighlightDuration, Timeout.InfiniteTimeSpan);
     }
 
     private void OnJump(ChangeEventArgs e)

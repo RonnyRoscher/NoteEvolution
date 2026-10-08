@@ -276,14 +276,10 @@
         return Task.CompletedTask;
     }
 
+    /// <summary>A click on a source chip brings the note into view in the notes pane (see <see cref="AppState.RevealNote"/>).</summary>
     public Task OnChipClicked(Guid noteId)
     {
-        if (State.Session?.Vault.FindBlockById(noteId) is { } found)
-        {
-            State.FocusedNoteKey = found.Block.Key;
-            State.Notify();
-        }
-
+        State.RevealNote(noteId);
         return Task.CompletedTask;
     }
 

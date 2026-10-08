@@ -490,16 +490,18 @@ public class EditorPaneTests : UiTestContext
     }
 
     [Fact]
-    public async Task Pane_ChipClick_FocusesNote_CursorIsTracked_FlushUnregisteredOnDispose()
+    public async Task Pane_ChipClick_RevealsNote_CursorIsTracked_FlushUnregisteredOnDispose()
     {
         using var tv = Alpha();
-        var (session, cut) = await RenderAsync(tv);
+        var (_, cut) = await RenderAsync(tv);
         var first = Section("Eins").TextBlocks.First().Key;
+        var revealed = new List<Guid>();
+        State.NoteRevealRequested += revealed.Add;
 
         await cut.InvokeAsync(() => Editor.Callbacks!.OnChipClicked(Guid.Parse(NoteId)));
         await cut.InvokeAsync(() => Editor.Callbacks!.OnCursorChanged(new CursorInfo(ElementKind.TextBlock, first, first, 0)));
 
-        Assert.Equal(session.Notes.All().Single(n => n.Block.Id == Guid.Parse(NoteId)).Key, State.FocusedNoteKey);
+        Assert.Equal([Guid.Parse(NoteId)], revealed);
         Assert.Equal(first, State.CursorTextBlockKey);
 
         await cut.InvokeAsync(() => Editor.Callbacks!.OnCursorChanged(new CursorInfo(ElementKind.Heading, Section("Zwei").Key, null, 0)));
