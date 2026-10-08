@@ -199,11 +199,15 @@
         return Task.CompletedTask;
     }
 
-    public Task OnCursorBlockChanged(Guid? textBlockKey)
+    public Task OnCursorChanged(CursorInfo? cursor)
     {
-        State.CursorTextBlockKey = textBlockKey;
+        State.CursorTextBlockKey = cursor is { Kind: not ElementKind.Heading } c ? c.TextBlockKey ?? c.Key : null;
         return Task.CompletedTask;
     }
+
+    public Task OnSectionCommand(SectionCommand command) => Task.CompletedTask;
+
+    public Task OnSectionBoxMoved(double barTop, bool visible) => Task.CompletedTask;
 
     public Task OnChipClicked(Guid noteId)
     {
@@ -404,7 +408,7 @@
         _loading = true;
         try
         {
-            await Editor.SetDocumentAsync(EditorDocMapper.ToJson(fresh), manuscript, _showChips);
+            await Editor.SetDocumentAsync(EditorDocMapper.ToJson(fresh), _showChips);
         }
         finally
         {

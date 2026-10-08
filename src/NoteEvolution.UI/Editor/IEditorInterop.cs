@@ -1,6 +1,36 @@
 using Microsoft.AspNetCore.Components;
+using NoteEvolution.Core.Books;
 
 namespace NoteEvolution.UI.Editor;
+
+/// <summary>The element at the editor cursor (spec 2, "Aktueller Abschnitt und Markierung").</summary>
+/// <param name="Kind">Whether the cursor is in a heading's title, a text block's own text or a detail.</param>
+/// <param name="Key">The key of the heading, the text block or the detail.</param>
+/// <param name="TextBlockKey">The text block of a text block or detail; <c>null</c> for a heading.</param>
+/// <param name="Offset">The cursor's character offset in the title or paragraph.</param>
+public sealed record CursorInfo(ElementKind Kind, Guid Key, Guid? TextBlockKey, int Offset);
+
+/// <summary>The structure commands of the current element (spec 3); the editor sends all but <see cref="Delete"/> as shortcuts.</summary>
+public enum SectionCommand
+{
+    /// <summary>Alt+Enter: a new empty element after the current one.</summary>
+    InsertAfter,
+
+    /// <summary>Alt+Shift+Enter: a new empty first child of the current element.</summary>
+    InsertChild,
+
+    /// <summary>Tab in a heading: one level deeper.</summary>
+    Indent,
+
+    /// <summary>Shift+Tab in a heading: one level higher.</summary>
+    Outdent,
+
+    /// <summary>Backspace at the start of a heading's title: the heading goes, its content stays.</summary>
+    RemoveHeading,
+
+    /// <summary>Button only: the element with everything it marks.</summary>
+    Delete,
+}
 
 /// <summary>What the editor reports; implemented by the component that shows it (<c>EditorPane</c>).</summary>
 public interface IEditorCallbacks
@@ -8,8 +38,18 @@ public interface IEditorCallbacks
     /// <summary>The document changed; <paramref name="docJson"/> is the whole document (see <see cref="EditorDocMapper"/>).</summary>
     Task OnDocumentChanged(string docJson);
 
-    /// <summary>The cursor moved into another text block; <c>null</c> outside text blocks.</summary>
-    Task OnCursorBlockChanged(Guid? textBlockKey);
+    /// <summary>The cursor moved to another element or offset; <c>null</c> when it is in no element.</summary>
+    Task OnCursorChanged(CursorInfo? cursor);
+
+    /// <summary>A structure command's shortcut was pressed for the element at the cursor.</summary>
+    Task OnSectionCommand(SectionCommand command);
+
+    /// <summary>
+    /// The marking box moved (selection change, scrolling, resizing). <paramref name="barTop"/> is the box's bottom in
+    /// px relative to <c>.ne-editor-pane</c>, held above the pane's visible bottom by the bar's height;
+    /// <paramref name="visible"/> says whether the box is in the visible part of the pane.
+    /// </summary>
+    Task OnSectionBoxMoved(double barTop, bool visible);
 
     /// <summary>A source chip was clicked; <paramref name="noteId"/> is the note's <c>id::</c>.</summary>
     Task OnChipClicked(Guid noteId);
@@ -33,8 +73,13 @@ public interface IEditorInterop : IAsyncDisposable
 
     /// <summary>
     /// Replaces the shown document without raising <see cref="IEditorCallbacks.OnDocumentChanged"/> (the editor's
-    /// undo history starts anew). <paramref name="manuscript"/> selects the manuscript view's look,
-    /// <paramref name="showChips"/> shows the source chips there too (the section view always shows them).
+    /// undo history starts anew). <paramref name="showChips"/> shows the source chips below the text blocks.
     /// </summary>
-    Task SetDocumentAsync(string docJson, bool manuscript, bool showChips);
+    Task SetDocumentAsync(string docJson, bool showChips);
+
+    /// <summary>
+    /// Puts the cursor at the start of the element's text and scrolls it into view; <see cref="Guid.Empty"/> is the
+    /// start of the book. An element the editor does not show is ignored.
+    /// </summary>
+    Task RevealAsync(Guid elementKey);
 }

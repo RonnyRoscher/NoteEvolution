@@ -6,6 +6,7 @@ using Microsoft.Extensions.Localization;
 using NoteEvolution.Core.Books;
 using NoteEvolution.TestSupport;
 using NoteEvolution.UI.Components;
+using NoteEvolution.UI.Editor;
 using NoteEvolution.UI.Resources;
 using NoteEvolution.UI.State;
 
@@ -102,8 +103,7 @@ public class EditorPaneTests : UiTestContext
         using var tv = Alpha();
         var (_, cut) = await RenderAsync(tv);
 
-        var (json, manuscript, showChips) = Editor.Documents.Single();
-        Assert.False(manuscript);
+        var (json, showChips) = Editor.Documents.Single();
         Assert.False(showChips);
         Assert.Equal("Erster Text|Zweiter Text", TextsOf(json));
         var chip = Blocks(Doc(json))[0]!["attrs"]!["sources"]![0]!;
@@ -342,8 +342,7 @@ public class EditorPaneTests : UiTestContext
 
         cut.WaitForAssertion(() =>
         {
-            var (json, manuscript, showChips) = Editor.Documents[^1];
-            Assert.True(manuscript);
+            var (json, showChips) = Editor.Documents[^1];
             Assert.False(showChips);
             Assert.Equal(["heading", "textBlock", "textBlock", "heading", "textBlock"], Blocks(Doc(json)).Select(n => (string?)n!["type"]));
         });
@@ -499,9 +498,15 @@ public class EditorPaneTests : UiTestContext
         var first = Section("Eins").TextBlocks.First().Key;
 
         await cut.InvokeAsync(() => Editor.Callbacks!.OnChipClicked(Guid.Parse(NoteId)));
-        await cut.InvokeAsync(() => Editor.Callbacks!.OnCursorBlockChanged(first));
+        await cut.InvokeAsync(() => Editor.Callbacks!.OnCursorChanged(new CursorInfo(ElementKind.TextBlock, first, first, 0)));
 
         Assert.Equal(session.Notes.All().Single(n => n.Block.Id == Guid.Parse(NoteId)).Key, State.FocusedNoteKey);
+        Assert.Equal(first, State.CursorTextBlockKey);
+
+        await cut.InvokeAsync(() => Editor.Callbacks!.OnCursorChanged(new CursorInfo(ElementKind.Heading, Section("Zwei").Key, null, 0)));
+        Assert.Null(State.CursorTextBlockKey);
+
+        await cut.InvokeAsync(() => Editor.Callbacks!.OnCursorChanged(new CursorInfo(ElementKind.Detail, Guid.NewGuid(), first, 2)));
         Assert.Equal(first, State.CursorTextBlockKey);
 
         await DisposeComponentsAsync();

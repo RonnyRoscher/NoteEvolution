@@ -3,12 +3,18 @@ using NoteEvolution.UI.Editor;
 
 namespace NoteEvolution.UI.Tests;
 
-/// <summary>The editor without JavaScript: records the shown documents; tests raise the editor's events via <see cref="Callbacks"/>.</summary>
+/// <summary>
+/// The editor without JavaScript: records the shown documents and revealed elements; tests raise the editor's events
+/// via <see cref="Callbacks"/>.
+/// </summary>
 public sealed class FakeEditorInterop : IEditorInterop
 {
     public IEditorCallbacks? Callbacks { get; private set; }
 
-    public List<(string Json, bool Manuscript, bool ShowChips)> Documents { get; } = [];
+    public List<(string Json, bool ShowChips)> Documents { get; } = [];
+
+    /// <summary>The keys passed to <see cref="RevealAsync"/>, in order.</summary>
+    public List<Guid> Reveals { get; } = [];
 
     /// <summary>The document shown last.</summary>
     public string Json => Documents[^1].Json;
@@ -21,9 +27,15 @@ public sealed class FakeEditorInterop : IEditorInterop
         return Task.CompletedTask;
     }
 
-    public Task SetDocumentAsync(string docJson, bool manuscript, bool showChips)
+    public Task SetDocumentAsync(string docJson, bool showChips)
     {
-        Documents.Add((docJson, manuscript, showChips));
+        Documents.Add((docJson, showChips));
+        return Task.CompletedTask;
+    }
+
+    public Task RevealAsync(Guid elementKey)
+    {
+        Reveals.Add(elementKey);
         return Task.CompletedTask;
     }
 

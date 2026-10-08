@@ -749,7 +749,8 @@ html, body {
 }
 
 .ne-heading {
-    margin: 1.2em 0 0.4em;
+    margin: 0;
+    padding: 0.7em 0 0.4em;
     font-weight: 600;
     line-height: 1.25;
 }
@@ -830,18 +831,9 @@ html, body {
     padding-left: 0 !important;
 }
 
-/* Section view: text blocks set apart, chips below each block. */
-.mode-section .ne-block {
-    margin: 0 0 12px;
-    padding: 8px 12px;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    background: var(--bg-raised);
-}
-
-/* Manuscript view: continuous text, blocks only spaced, sources as a margin mark, chips on request. */
+/* Manuscript look: continuous text, blocks only spaced, sources as a margin mark, chips on request. */
 .mode-manuscript .ne-block {
-    margin: 0 0 0.8em;
+    padding-bottom: 0.8em;
 }
 
 .mode-manuscript .ne-block[data-has-sources]::before {
@@ -849,12 +841,50 @@ html, body {
     position: absolute;
     left: -10px;
     top: 0.35em;
-    bottom: 0.35em;
+    bottom: 1.15em; /* 0.35em above the 0.8em spacing below the block */
     border-left: 2px solid var(--accent);
 }
 
 .mode-manuscript:not(.show-chips) .ne-chips {
     display: none;
+}
+
+/*
+ * The current element (spec 2): a frame with a bar on its left. Each marked node (a heading and its section, a text
+ * block, or a detail's paragraphs) draws its part; the nodes touch, so the parts form one box.
+ */
+.ne-current {
+    position: relative;
+}
+
+.ne-current::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: -16px;
+    right: -16px;
+    border-left: 3px solid var(--accent);
+    border-right: 1px solid var(--border);
+    pointer-events: none;
+}
+
+.ne-current-first::after {
+    top: -4px;
+    border-top: 1px solid var(--border);
+}
+
+.ne-heading.ne-current-first::after {
+    top: 0.3em;
+}
+
+.ne-current-last::after {
+    border-bottom: 1px solid var(--border);
+}
+
+/* A detail's box starts at its own indentation. */
+.ne-para.ne-current::after {
+    left: calc(var(--current-depth, 0) * 1.5em - 16px);
 }
 
 /* Assistants menu in the header */
