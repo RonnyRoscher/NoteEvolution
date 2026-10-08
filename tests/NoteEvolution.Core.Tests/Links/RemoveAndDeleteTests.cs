@@ -1,4 +1,5 @@
 using NoteEvolution.Core.Links;
+using NoteEvolution.Core.Storage;
 
 namespace NoteEvolution.Core.Tests.Links;
 
@@ -146,5 +147,90 @@ public class RemoveAndDeleteTests
         Assert.Equal(LinkedBook, s.ReadBook());
         Assert.Equal(LinkedJournal, s.ReadJournal());
         Assert.Empty(s.Pending.Load());
+    }
+
+    private const string B2 = "92c1b3d4-6d3f-4a0c-8e5b-3c4d5e6f7081";
+    private const string B3 = "a3d2c4e5-7e40-4b1d-9f6c-4d5e6f708192";
+    private const string N3 = "b4e3d5f6-8f51-4c2e-8a7d-5e6f70819203";
+
+    // A section with two linked text blocks and a sub-section with a third one.
+    private const string SectionBook =
+        "title:: Buch: Test\n" +
+        "type:: book\n" +
+        "\n" +
+        "- # Kapitel\n" +
+        "\t- ## Abschnitt\n" +
+        "\t\t- Text A\n" +
+        $"\t\t  id:: {B1}\n" +
+        $"\t\t  source:: (({N1}))\n" +
+        "\t\t- Text B\n" +
+        $"\t\t  id:: {B2}\n" +
+        $"\t\t  source:: (({N2}))\n" +
+        "\t\t\t- Absatz\n" +
+        "\t\t- ### Unterabschnitt\n" +
+        "\t\t\t- Text C\n" +
+        $"\t\t\t  id:: {B3}\n" +
+        $"\t\t\t  source:: (({N3}))\n" +
+        "\t- Anderer Text\n";
+
+    private const string SectionJournal =
+        "- Erste Quelle\r\n" +
+        $"  id:: {N1}\r\n" +
+        $"  used-in:: [[Buch - Test]] (({B1}))\r\n" +
+        "- Zweite Quelle\r\n" +
+        $"  id:: {N2}\r\n" +
+        $"  used-in:: [[Buch - Test]] (({B2})),[[Anderes Buch]]\r\n" +
+        "- Dritte Quelle\r\n" +
+        $"  id:: {N3}\r\n" +
+        $"  used-in:: [[Buch - Test]] (({B3}))\r\n";
+
+    [Fact]
+    public void DeleteSection_LinkedBlocks_RemovesUsages_UndoRestores()
+    {
+        using var s = new LinkSetup(SectionBook, SectionJournal);
+
+        s.Links.DeleteSection(s.Book, s.SectionKey("Abschnitt"));
+
+        Assert.Equal("title:: Buch: Test\ntype:: book\n\n- # Kapitel\n\t- Anderer Text\n", s.ReadBook());
+        Assert.Equal(
+            $"- Erste Quelle\r\n  id:: {N1}\r\n- Zweite Quelle\r\n  id:: {N2}\r\n  used-in:: [[Anderes Buch]]\r\n" +
+            $"- Dritte Quelle\r\n  id:: {N3}\r\n",
+            s.ReadJournal());
+        Assert.Equal("Löschen", s.Undo.NextDescription);
+
+        s.Undo.Undo();
+
+        Assert.Equal(SectionBook, s.ReadBook());
+        Assert.Equal(SectionJournal, s.ReadJournal());
+        Assert.NotNull(s.Book.FindNode(s.SectionKey("Abschnitt")));
+        Assert.False(s.Undo.CanUndo);
+        Assert.Empty(s.Pending.Load());
+    }
+
+    [Fact]
+    public void DeleteSection_Unknown_Throws()
+    {
+        using var s = new LinkSetup(SectionBook, SectionJournal);
+
+        Assert.Throws<ArgumentException>(() => s.Links.DeleteSection(s.Book, Guid.NewGuid()));
+        Assert.Throws<ArgumentException>(() => s.Links.DeleteSection(s.Book, Guid.Empty));
+
+        Assert.Equal(SectionBook, s.ReadBook());
+        Assert.Equal(SectionJournal, s.ReadJournal());
+        Assert.False(s.Undo.CanUndo);
+    }
+
+    [Fact]
+    public void DeleteSection_ReadOnlyBook_Throws_NothingChanged()
+    {
+        var book = SectionBook + "- ```\n  offen\n";
+        using var s = new LinkSetup(book, SectionJournal);
+        Assert.True(s.Book.Page.IsReadOnly);
+
+        Assert.Throws<ReadOnlyPageException>(() => s.Links.DeleteSection(s.Book, s.SectionKey("Abschnitt")));
+
+        Assert.Equal(book, s.ReadBook());
+        Assert.Equal(SectionJournal, s.ReadJournal());
+        Assert.False(s.Undo.CanUndo);
     }
 }

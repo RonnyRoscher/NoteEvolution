@@ -46,6 +46,14 @@ public interface ILinkService
     void DeleteTextBlock(Book book, Guid textBlockKey);
 
     /// <summary>
+    /// Deletes the heading with everything below it (sub-sections, text blocks, paragraphs) and removes the usages of
+    /// all linked text blocks in it from the notes. One undo action („Löschen“) puts the section and the notes back.
+    /// </summary>
+    /// <exception cref="ArgumentException">Unknown heading, or the root.</exception>
+    /// <exception cref="ReadOnlyPageException">The book page is read-only.</exception>
+    void DeleteSection(Book book, Guid headingKey);
+
+    /// <summary>
     /// Updates the notes after <see cref="BookSync.Apply"/> changed the book and the book was saved:
     /// <see cref="BlockSplit"/> adds the new block's usage to each source note; <see cref="BlockDeleted"/> removes
     /// the block's usage from each source note and records an undo action („Löschen“) that puts the block back.

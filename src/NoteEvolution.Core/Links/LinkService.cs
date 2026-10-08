@@ -127,9 +127,25 @@ public sealed class LinkService(IVault vault, IPageWriter writer, UndoManager un
 
     public void DeleteTextBlock(Book book, Guid textBlockKey)
     {
+        EnsureWritable(book.Page);
+        DeleteBlock(book, FindTextBlock(book, textBlockKey));
+    }
+
+    public void DeleteSection(Book book, Guid headingKey)
+    {
+        EnsureWritable(book.Page);
+        DeleteBlock(
+            book,
+            book.FindNode(headingKey)?.Block ?? throw new ArgumentException("No heading has this key.", nameof(headingKey)));
+    }
+
+    /// <summary>
+    /// Removes the book block with its subtree, saves the book, then removes the usages of all linked blocks in the
+    /// subtree from their notes and records the undo action „Löschen“.
+    /// </summary>
+    private void DeleteBlock(Book book, Block block)
+    {
         var page = book.Page;
-        EnsureWritable(page);
-        var block = FindTextBlock(book, textBlockKey);
         var parent = block.Parent;
         var index = IndexOf(page, block);
         page.RemoveBlock(block);
