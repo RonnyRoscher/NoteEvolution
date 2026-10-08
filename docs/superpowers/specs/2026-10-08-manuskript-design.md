@@ -28,6 +28,7 @@ Das Buch wird nur noch in einer Ansicht bearbeitet: dem Manuskript, das immer da
 
 - **Ansicht:** Der Editor zeigt immer das ganze Buch. Abschnittsansicht und Ansichtsumschalter gibt es nicht mehr.
 - **Markierung:** Der aktuelle Abschnitt ist mit einem Kasten und einem Balken am linken Rand markiert und bestimmt „Relevant“.
+- **Quellen:** Die Markierung zeigt, wie viele Quellen der aktuelle Abschnitt hat. Aufgeklappt listet sie jede Quelle; ein Klick springt im Reiter Journal zur Notiz.
 - **Struktur:** Abschnitte lassen sich im Editor per Knopf und Tastenkürzel anlegen, einrücken, ausrücken, entfernen und löschen. Jede dieser Änderungen ist mit „Rückgängig“ zurückzunehmen.
 - **Übernehmen:** Eine Notiz oder ein einzelner Unteranstrich lässt sich auf drei Arten übernehmen: am Cursor, danach, darunter.
 - **Gliederung:** Die Gliederung links springt zur Überschrift und hebt den Abschnitt am Cursor hervor. Umsortieren per Ziehen bleibt.
@@ -61,6 +62,23 @@ Das Buch wird nur noch in einer Ansicht bearbeitet: dem Manuskript, das immer da
 - **Markierung:** ein Kasten mit einem Balken am linken Rand um den aktuellen Abschnitt.
   - Bei einer Überschrift umfasst er ihren ganzen Abschnitt, bei einem Textblock den Block mit seinen Details, bei einem Detail das Detail mit seinen tieferen Details.
   - Die Abschnittsknöpfe (Abschnitt 3) sitzen am unteren Rand des Kastens. Reicht der Kasten über das Fenster hinaus, bleiben sie am unteren Fensterrand sichtbar.
+
+### Quellen des aktuellen Abschnitts
+
+- **Anzeige:** Am unteren Rand der Markierung steht neben den Knöpfen die Zahl der Quellen, zum Beispiel „3 Quellen ▸“. Gezählt werden verschiedene Notizen:
+  - bei einer Überschrift alle Quellen ihres ganzen Abschnitts,
+  - bei einem Textblock seine eigenen,
+  - bei einem Detail die seines Textblocks.
+
+  Ohne Quellen steht „Keine Quellen“, und es lässt sich nichts aufklappen.
+- **Aufgeklappt:** eine Liste der Quellen in der Reihenfolge ihres Datums.
+  - Jeder Eintrag zeigt das Datum und die erste Zeile der Notiz.
+  - Ein Verweis, der keine Notiz mehr findet, erscheint als „Quelle fehlt“ und ist nicht anklickbar.
+  - Der Zustand (auf- oder zugeklappt) bleibt beim Wechsel des aktuellen Abschnitts erhalten.
+- **Springen:** Ein Klick auf einen Eintrag bringt die Notiz rechts in den Blick:
+  - Notizen mit Datum: Die rechte Seite wechselt in den Reiter **Journal**, springt zum Datum der Notiz, scrollt zu ihr und hebt sie kurz hervor.
+  - Notizen ohne Datum (aus anderen Notizordnern): Sie erscheinen wie heute als hervorgehobene Karte oben im Notizbereich.
+  - Ein Klick auf einen Quellen-Chip im Text verhält sich genauso.
 
 ### Themenbereich für „Relevant“ (ersetzt 6.2)
 
@@ -151,6 +169,8 @@ An der Notizkarte und an jedem Unteranstrich wird „Übernehmen“ zu einem get
   - Befehle gesperrt bei Konflikt; Befehl unterbleibt bei ungesichertem Text
   - geteilter Übernehmen-Knopf mit drei Varianten
   - PDF „Aktueller Abschnitt“
+  - Quellenanzahl je Art von Element (verschiedene Notizen gezählt), aufklappbare Liste, fehlende Quelle
+  - Klick auf eine Quelle bzw. einen Chip: Wechsel in den Reiter Journal, Sprung zum Datum, Hervorhebung; Notiz ohne Datum als Karte oben
 - **Manuelle Abnahme (README):** Die Tastenkürzel im echten Fenster, die Markierung beim Scrollen und ein großes Buch (mehrere hundert Blöcke) mit flüssigem Tippen und Scrollen.
 
 ## 7. Nicht im Umfang (Paket B oder später)
