@@ -60,15 +60,29 @@ Buchs) und Fundstellen-Vorschläge im `[handled]`-Assistenten. Sie schreiben und
 Schreibaktion sind die Verknüpfungszeilen (`id::`, `source::`, `used-in::`) für Fundstellen, die du im Assistenten
 selbst gewählt und bestätigt hast. Ohne Modell arbeitet die App unverändert mit der Volltextsuche.
 
-- **Modell:** `multilingual-e5-small`, quantisiert (int8), etwa 120 MB, läuft mit ONNX Runtime auf der CPU. Quelle ist
-  Hugging Face, Repository `Xenova/multilingual-e5-small` (`onnx/model_quantized.onnx` und `sentencepiece.bpe.model`),
-  auf eine feste Revision gepinnt und per SHA-256 geprüft. Das ursprüngliche Modell `intfloat/multilingual-e5-small`
-  steht unter der MIT-Lizenz.
-- **Download:** nur nach deiner Bestätigung (Angebot beim Öffnen eines Vaults, Knopf im Reiter „Relevant“ oder in den
-  Einstellungen unter „KI-Modell“). Danach arbeitet alles offline, die App greift nicht mehr auf das Netz zu.
-- **Ablage:** das Modell liegt im Benutzerprofil, nicht im Vault: unter Windows
-  `%APPDATA%\NoteEvolution\models\multilingual-e5-small-int8\`, sonst `~/.config/NoteEvolution/models/multilingual-e5-small-int8/`.
-  Zum Entfernen den Ordner löschen; die App bietet den Download danach wieder an.
+- **Modelle:** du wählst eines von vier Modellen, alle quantisiert (int8), mit ONNX Runtime auf der CPU:
+
+  | Modell | Download | Arbeitsspeicher ca. | Einordnung |
+  |---|---|---|---|
+  | e5-small (Standard) | 123 MB | 0,4 GB | schnell, solide Qualität |
+  | e5-base | 284 MB | 0,7 GB | ausgewogen |
+  | e5-large | 567 MB | 1,3 GB | beste e5-Qualität, deutlich langsamer |
+  | bge-m3 | 575 MB | 1,3 GB | sehr gute mehrsprachige Qualität, langsam |
+
+  Quelle ist Hugging Face, Repositories `Xenova/multilingual-e5-small`, `-base`, `-large` und `Xenova/bge-m3`
+  (`onnx/model_quantized.onnx` und `sentencepiece.bpe.model`), jeweils auf eine feste Revision gepinnt und per SHA-256
+  geprüft. Die ursprünglichen Modelle (`intfloat/multilingual-e5-*`, `BAAI/bge-m3`) stehen unter der MIT-Lizenz.
+- **Download und Wahl:** nur nach deiner Bestätigung. Beim ersten Mal (Angebot beim Öffnen eines Vaults, Knopf im
+  Reiter „Relevant“) wählst du das Modell im Dialog aus; später in den Einstellungen unter „KI-Modell“ →
+  „Modell wählen…“. Danach arbeitet alles offline, die App greift nicht mehr auf das Netz zu.
+- **Wechsel:** das neue Modell wird heruntergeladen, während das alte weiterarbeitet. Danach sichert der Editor,
+  der Vault wird mit dem neuen Modell neu geöffnet und neu indexiert, und das alte Modell wird gelöscht. Scheitert
+  der Download oder brichst du ab, bleibt alles beim alten Modell. Solange ein Konflikt offen ist, ist der Wechsel
+  gesperrt. Die Wahl gilt für alle Vaults und steht in `ui.json` (`AiModelId`).
+- **Ablage:** das Modell liegt im Benutzerprofil, nicht im Vault: unter Windows `%APPDATA%\NoteEvolution\models\<Modell-Id>\`
+  (z. B. `multilingual-e5-small-int8`), sonst `~/.config/NoteEvolution/models/<Modell-Id>/`. Es liegt immer nur ein
+  Modell dort; Reste anderer Modelle räumt die App beim Start weg. Zum Entfernen den Ordner löschen; die App bietet
+  den Download danach wieder an.
 - **Bedeutungsvektoren:** `<vault>/.noteevolution/vectors.db` speichert die Vektoren der Notizen (neu berechnet wird
   nur, was sich geändert hat). Die Datei darf bei geschlossener App gelöscht werden, sie wird beim nächsten Öffnen neu aufgebaut
   (das Indexieren läuft im Hintergrund, die Kopfzeile zeigt den Fortschritt). Wie alles unter `.noteevolution/` kann
@@ -142,6 +156,10 @@ Lokale KI (Modell installiert, Test-Vault mit einigen Dutzend Notizen und einem 
       Notiz mit „Stelle unbekannt“ bekommt nur `used-in:: [[Buch]]`.
 - [ ] Verhalten ohne Netz: Netzwerk trennen, App neu starten; alle KI-Funktionen arbeiten weiter, es gibt keinen
       Download-Hinweis.
+- [ ] Modell wechseln (Einstellungen → „Modell wählen…“, e5-small → e5-base) bei offenem Vault: Fortschritt, danach
+      öffnet sich der Vault neu, die Kopfzeile zeigt den Indexfortschritt; unter `%APPDATA%\NoteEvolution\models`
+      liegt nur noch `multilingual-e5-base-int8`. Den Wechsel einmal mitten im Download abbrechen: alles bleibt beim
+      alten Modell.
 - [ ] Modellordner umbenennen: die App fällt auf die Volltextsuche zurück und bietet den Download an; `vectors.db`
       löschen und neu öffnen: sie wird neu aufgebaut.
 
