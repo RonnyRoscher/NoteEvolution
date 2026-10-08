@@ -18,7 +18,8 @@ public static class ManuscriptCommands
     /// Whether <paramref name="command"/> is possible now: the book is writable, no conflict is open for it (R26), and
     /// the command fits the cursor element (e.g. no indent without a previous heading of the same level, no outdent
     /// on level 1, indent, outdent and remove only on headings). Delete only takes the element the cursor itself is in
-    /// (<see cref="TargetOf"/>).
+    /// (<see cref="TargetOf"/>). Delete, indent, outdent and remove are not possible on a heading whose section holds a
+    /// heading that is not deeper (<see cref="IsIrregular"/>).
     /// </summary>
     public static bool CanRun(AppState state, SectionCommand command) =>
         state is { Session: { } session, CurrentBook: { Page.IsReadOnly: false } book }
@@ -31,9 +32,12 @@ public static class ManuscriptCommands
     /// refuses the command before anything changes. A read-only book or an open conflict refuses it too; a command
     /// that does not fit the element (<see cref="CanRun"/>) does nothing. The structure commands save the page through
     /// <see cref="VaultSession.TrySave"/> and push an undo action (<paramref name="undoDescription"/>) that is refused
-    /// once the page changed after the command; deleting a text block or a heading goes through the link service,
-    /// which also removes the usages from the notes. Whatever happens, the book view is taken from the vault again,
-    /// the new or moved element is revealed (the cursor goes there) and <see cref="AppState.Notify"/> is raised.
+    /// once the page changed after the command; removing a heading gets a targeted undo instead
+    /// (<see cref="RemovedHeading"/>), which later edits elsewhere do not block. Deleting a text block, a heading or a
+    /// detail with linked blocks goes through the link service, which also removes the usages from the notes; it is
+    /// refused while a conflict is open for one of those notes' pages (R26). Whatever happens, the book view is taken
+    /// from the vault again, the new or moved element is revealed (the cursor goes there) and
+    /// <see cref="AppState.Notify"/> is raised.
     /// </summary>
     /// <returns>The message to show, or <c>null</c> if the command ran (or did nothing) without remark.</returns>
     public static async Task<AdoptMessage?> RunAsync(AppState state, SectionCommand command, string undoDescription, ILogger logger)
@@ -101,8 +105,22 @@ public static class ManuscriptCommands
             return (null, null);
         }
 
-        return command == SectionCommand.Delete && element.Kind != ElementKind.Detail
-            ? (Delete(session, book, element, logger), null)
+        if (command != SectionCommand.Delete)
+        {
+            return RunStructure(session, book, element, command, undoDescription, logger);
+        }
+
+        // The notes whose usages a delete removes are written directly by the link service (R26).
+        var linked = SourceValue.LinkedBlocksIn(BlockOf(book, element)).ToList();
+        var notePages = linked.SelectMany(block => block.Sources).Distinct()
+            .Select(id => session.Vault.FindBlockById(id)?.Page.FilePath).OfType<string>().Distinct().ToList();
+        if (notePages.Any(session.HasOpenConflict))
+        {
+            return (new AdoptMessage("EditorConflict", true), null);
+        }
+
+        return element.Kind != ElementKind.Detail || linked.Count > 0
+            ? (Delete(session, book, element, notePages, logger), null)
             : RunStructure(session, book, element, command, undoDescription, logger);
     }
 
@@ -119,6 +137,8 @@ public static class ManuscriptCommands
     /// <summary>Whether <paramref name="command"/> fits <paramref name="element"/>, which must be in <paramref name="book"/>.</summary>
     private static bool Fits(Book book, BookElement element, SectionCommand command) =>
         BookElements.Find(book, element.Key) == element
+        && !(command is SectionCommand.Delete or SectionCommand.Indent or SectionCommand.Outdent or SectionCommand.RemoveHeading
+             && element.Kind == ElementKind.Heading && IsIrregular(book.FindNode(element.Key)!))
         && command switch
         {
             SectionCommand.InsertAfter or SectionCommand.Delete => true,
@@ -130,7 +150,27 @@ public static class ManuscriptCommands
         };
 
     /// <summary>
-    /// Runs a <see cref="ManuscriptEditor"/> command on the page, saves it and pushes its undo action. If saving fails
+    /// Whether the heading's section holds a heading of the same or a higher level (the outline warns about it). The
+    /// editor marks a heading's section up to the next heading that is not deeper, so it would show less than the
+    /// commands on the section's subtree act on.
+    /// </summary>
+    private static bool IsIrregular(OutlineNode heading)
+    {
+        static IEnumerable<OutlineNode> Below(OutlineNode node) => node.Children.SelectMany(child => Below(child).Prepend(child));
+        return Below(heading).Any(node => node.Level <= heading.Level);
+    }
+
+    /// <summary>The block of <paramref name="element"/>, which must be in <paramref name="book"/>.</summary>
+    private static Block BlockOf(Book book, BookElement element) => element.Kind switch
+    {
+        ElementKind.Heading => book.FindNode(element.Key)!.Block!,
+        ElementKind.TextBlock => book.FindTextBlock(element.Key)!.Block,
+        _ => BookElements.TextBlockOf(book, element)!.Paragraphs.First(p => p.Block.Key == element.Key).Block,
+    };
+
+    /// <summary>
+    /// Runs a <see cref="ManuscriptEditor"/> command on the page, saves it and pushes its undo action (for removing a
+    /// heading the targeted <see cref="RemoveHeadingUndo"/>, otherwise <see cref="StructureUndo"/>). If saving fails
     /// for another reason than a change by another program or a conflict (both handled by the session), the page is
     /// read from the file again.
     /// </summary>
@@ -140,6 +180,7 @@ public static class ManuscriptCommands
     {
         var page = book.Page;
         var before = PageStructureSnapshot.Capture(page);
+        RemovedHeading? removed = null;
         Guid? reveal = null;
         try
         {
@@ -160,7 +201,8 @@ public static class ManuscriptCommands
                     reveal = element.Key;
                     break;
                 case SectionCommand.RemoveHeading:
-                    reveal = ManuscriptEditor.RemoveHeading(book, element.Key);
+                    removed = ManuscriptEditor.RemoveHeading(book, element.Key);
+                    reveal = removed.Reveal;
                     break;
                 default:
                     ManuscriptEditor.DeleteDetail(book, element.Key);
@@ -179,15 +221,18 @@ public static class ManuscriptCommands
             return (SaveFailed(session, page, error), null);
         }
 
-        var after = PageStructureSnapshot.Capture(page);
-        session.Undo.Push(new StructureUndo(undoDescription, session, page.FilePath, before, after));
+        session.Undo.Push(removed is not null
+            ? new RemoveHeadingUndo(undoDescription, session, page.FilePath, removed)
+            : new StructureUndo(undoDescription, session, page.FilePath, before, PageStructureSnapshot.Capture(page)));
         return (null, reveal);
     }
 
     /// <summary>
     /// The message after <see cref="VaultSession.TrySave"/> failed. A change by another program was merged or reported
     /// as a conflict by the session, and an open conflict keeps the local page for its resolution; after any other
-    /// failure the page is read from the file again, so the editor shows what is on disk.
+    /// failure the page is read from the file again, so the editor shows what is on disk. A merged external change
+    /// brings the command's change into the file together with it, but without an undo entry (none is pushed after a
+    /// failed save).
     /// </summary>
     private static AdoptMessage SaveFailed(VaultSession session, Page page, Exception? error)
     {
@@ -206,22 +251,26 @@ public static class ManuscriptCommands
     }
 
     /// <summary>
-    /// Deletes a text block or a heading with its section through the link service, which removes the usages from the
-    /// notes and pushes its own undo action („Löschen“).
+    /// Deletes a text block, a heading with its section or a detail through the link service, which removes the usages
+    /// from the notes (on <paramref name="notePages"/>) and pushes its own undo action („Löschen“).
     /// </summary>
-    private static AdoptMessage? Delete(VaultSession session, Book book, BookElement element, ILogger logger)
+    private static AdoptMessage? Delete(
+        VaultSession session, Book book, BookElement element, IReadOnlyList<string> notePages, ILogger logger)
     {
         var bookPath = book.Page.FilePath;
-        var sources = BookElements.SourcesOf(book, element);
         try
         {
-            if (element.Kind == ElementKind.Heading)
+            switch (element.Kind)
             {
-                session.Links.DeleteSection(book, element.Key);
-            }
-            else
-            {
-                session.Links.DeleteTextBlock(book, element.Key);
+                case ElementKind.Heading:
+                    session.Links.DeleteSection(book, element.Key);
+                    break;
+                case ElementKind.TextBlock:
+                    session.Links.DeleteTextBlock(book, element.Key);
+                    break;
+                default:
+                    session.Links.DeleteDetail(book, element.Key);
+                    break;
             }
         }
         catch (FileChangedExternallyException)
@@ -243,7 +292,7 @@ public static class ManuscriptCommands
         }
 
         // The search index knows which notes are used; it is updated for the notes whose used-in changed.
-        foreach (var path in sources.Select(id => session.Vault.FindBlockById(id)?.Page.FilePath).OfType<string>().Distinct())
+        foreach (var path in notePages)
         {
             try
             {
@@ -279,16 +328,46 @@ public static class ManuscriptCommands
             }
 
             before.RestoreInto(page);
-            if (!session.TrySave(page, out var error))
-            {
-                if (error is not FileChangedExternallyException && !session.HasOpenConflict(path))
-                {
-                    // The restored page was not written: the vault takes the file's version again.
-                    PageReload.FromDisk(session, page);
-                }
+            SaveUndone(session, page, path);
+        }
+    }
 
-                throw new InvalidOperationException($"Saving '{path}' after undoing the structure command failed.", error);
+    /// <summary>
+    /// Undoes removing a heading (<see cref="RemovedHeading.RestoreInto"/>) and saves the page: the heading comes back
+    /// around the blocks it held, also after later edits elsewhere or in those blocks' text. Refused (no change) when
+    /// the heading's former parent is gone, a moved block is gone or was moved elsewhere, or the heading is back.
+    /// </summary>
+    private sealed class RemoveHeadingUndo(string description, VaultSession session, string path, RemovedHeading removed) : IUndoAction
+    {
+        public string Description => description;
+
+        /// <exception cref="InvalidOperationException">The heading cannot be put back, or saving the page failed.</exception>
+        public void Undo()
+        {
+            var page = session.Vault.FindPageByPath(path);
+            if (page is null || !removed.CanRestore(page))
+            {
+                throw new InvalidOperationException($"The heading removed from '{path}' cannot be put back; it is not undone.");
             }
+
+            removed.RestoreInto(page);
+            SaveUndone(session, page, path);
+        }
+    }
+
+    /// <summary>Saves the page after an undo; if that fails, the vault takes the file's version again where it should.</summary>
+    /// <exception cref="InvalidOperationException">Saving failed.</exception>
+    private static void SaveUndone(VaultSession session, Page page, string path)
+    {
+        if (!session.TrySave(page, out var error))
+        {
+            if (error is not FileChangedExternallyException && !session.HasOpenConflict(path))
+            {
+                // The restored page was not written: the vault takes the file's version again.
+                PageReload.FromDisk(session, page);
+            }
+
+            throw new InvalidOperationException($"Saving '{path}' after undoing the structure command failed.", error);
         }
     }
 }

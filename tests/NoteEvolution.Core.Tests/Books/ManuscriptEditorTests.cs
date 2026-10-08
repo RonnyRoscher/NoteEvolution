@@ -249,7 +249,7 @@ public class ManuscriptEditorTests
     {
         var book = Load(Text);
 
-        var reveal = ManuscriptEditor.RemoveHeading(book, KeyOf(book, "## Eins-A"));
+        var reveal = ManuscriptEditor.RemoveHeading(book, KeyOf(book, "## Eins-A")).Reveal;
 
         AssertResult(
             Text,
@@ -274,7 +274,7 @@ public class ManuscriptEditorTests
     {
         var book = Load(Text);
 
-        var reveal = ManuscriptEditor.RemoveHeading(book, KeyOf(book, "# Eins"));
+        var reveal = ManuscriptEditor.RemoveHeading(book, KeyOf(book, "# Eins")).Reveal;
 
         Assert.Equal(
             "type:: book\n" +
@@ -308,14 +308,101 @@ public class ManuscriptEditorTests
     public void RemoveHeading_WithoutContent_RevealsPreviousElement()
     {
         var book = Load(Text);
-        Assert.Equal(KeyOf(book, "Text zwei"), ManuscriptEditor.RemoveHeading(book, KeyOf(book, "## Zwei-A")));
+        Assert.Equal(KeyOf(book, "Text zwei"), ManuscriptEditor.RemoveHeading(book, KeyOf(book, "## Zwei-A")).Reveal);
         Assert.Equal(Text.Replace("\t- ## Zwei-A\n", ""), Serialize(book));
 
         var single = Load("type:: book\n\n- # Leer\n");
-        Assert.Equal(Guid.Empty, ManuscriptEditor.RemoveHeading(single, KeyOf(single, "# Leer")));
+        Assert.Equal(Guid.Empty, ManuscriptEditor.RemoveHeading(single, KeyOf(single, "# Leer")).Reveal);
         Assert.Equal("type:: book\n\n", Serialize(single));
 
         Assert.Throws<ArgumentException>(() => ManuscriptEditor.RemoveHeading(book, KeyOf(book, "Text zwei")));
+    }
+
+    [Theory]
+    [InlineData("## Eins-A")]
+    [InlineData("# Eins")]
+    [InlineData("## Zwei-A")]
+    [InlineData("### Eins-A-i")]
+    public void RemoveHeading_RestoreInto_NothingElseChanged_GivesOriginalBytes(string heading)
+    {
+        // Also with CRLF, spaces as indentation and no final line ending, so that every line ending is restored.
+        foreach (var text in new[] { Text, Text.Replace("\n", "\r\n")[..^2], Text.Replace("\t", "  ")[..^1] })
+        {
+            var book = Load(text);
+            var original = PageSerializer.Serialize(book.Page);
+            var keys = book.Page.AllBlocks().Select(b => b.Key).ToList();
+
+            var removed = ManuscriptEditor.RemoveHeading(book, KeyOf(book, heading));
+            book.Page.MarkSaved();
+            Assert.True(removed.CanRestore(book.Page));
+            removed.RestoreInto(book.Page);
+
+            Assert.Equal(original, PageSerializer.Serialize(book.Page));
+            Assert.Equal(keys, book.Page.AllBlocks().Select(b => b.Key));
+            Assert.True(book.Page.IsDirty);
+
+            // Once the heading is back, it is not restored a second time.
+            Assert.False(removed.CanRestore(book.Page));
+        }
+    }
+
+    [Fact]
+    public void RemoveHeading_RestoreInto_AfterOtherEdits_PutsHeadingBackAroundItsContent()
+    {
+        var book = Load(Text);
+        var einsA = KeyOf(book, "## Eins-A");
+        var removed = ManuscriptEditor.RemoveHeading(book, einsA);
+
+        // Later edits elsewhere in the book (text and structure) and inside the moved blocks (a text, a sub-heading's title).
+        BlockOf(book, "Text zwei").SetContent("Text zwei geändert");
+        var later = Book.Load(book.Page);
+        ManuscriptEditor.InsertAfter(later, BookElements.Find(later, KeyOf(book, "Text B"))!);
+        BlockOf(book, "Text A").SetContent("Text A neu");
+        BlockOf(book, "## Eins-A-i").SetContent("## Eins-A-i neu");
+
+        Assert.True(removed.CanRestore(book.Page));
+        removed.RestoreInto(book.Page);
+
+        Assert.Equal(
+            Text.Replace("\t\t- Text A\n\t\t- ### Eins-A-i\n", "\t\t- Text A neu\n\t\t- ### Eins-A-i neu\n")
+                .Replace("\t\t- Text B\n", "\t\t- Text B\n\t\t-\n")
+                .Replace("\t- Text zwei\n", "\t- Text zwei geändert\n"),
+            Serialize(book));
+        var reloaded = Book.Load(book.Page);
+        Assert.Equal(("Eins-A", 2), (reloaded.FindNode(einsA)!.Title, reloaded.FindNode(einsA)!.Level));
+        Assert.Equal(einsA, reloaded.FindNode(KeyOf(book, "### Eins-A-i neu"))!.Parent!.Key);
+        Assert.Equal(einsA, reloaded.FindTextBlock(KeyOf(book, "Text A neu"))!.Section.Key);
+        Assert.Empty(reloaded.Warnings);
+    }
+
+    [Fact]
+    public void RemoveHeading_RestoreInto_MovedChildGoneOrElsewhere_Refused_PageUnchanged()
+    {
+        // A moved child was deleted.
+        var deleted = Load(Text);
+        var removed = ManuscriptEditor.RemoveHeading(deleted, KeyOf(deleted, "## Eins-A"));
+        deleted.Page.RemoveBlock(BlockOf(deleted, "Text A"));
+        AssertRefused(deleted, removed);
+
+        // A moved child was moved into another section.
+        var moved = Load(Text);
+        removed = ManuscriptEditor.RemoveHeading(moved, KeyOf(moved, "## Eins-A"));
+        moved.Page.MoveBlock(BlockOf(moved, "Text A"), BlockOf(moved, "# Zwei"), 0);
+        AssertRefused(moved, removed);
+
+        // The heading's former parent is gone.
+        var parentGone = Load(Text);
+        removed = ManuscriptEditor.RemoveHeading(parentGone, KeyOf(parentGone, "### Eins-A-i"));
+        parentGone.Page.RemoveBlock(BlockOf(parentGone, "## Eins-A"));
+        AssertRefused(parentGone, removed);
+
+        static void AssertRefused(Book book, RemovedHeading removed)
+        {
+            var before = Serialize(book);
+            Assert.False(removed.CanRestore(book.Page));
+            Assert.Throws<InvalidOperationException>(() => removed.RestoreInto(book.Page));
+            Assert.Equal(before, Serialize(book));
+        }
     }
 
     [Fact]

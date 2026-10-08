@@ -359,6 +359,116 @@ public class ManuscriptCommandTests : UiTestContext
     }
 
     [Fact]
+    public async Task RemoveHeading_UndoAfterLaterEdits_RestoresHeading()
+    {
+        var session = await OpenSessionAsync(_vault);
+        CursorAt("## Eins-A");
+        Assert.Null(await RunAsync(SectionCommand.RemoveHeading));
+
+        // Later edits, saved: elsewhere in the book and in the text that moved up.
+        var book = session.Vault.FindBook("Buch - Alpha")!;
+        book.Page.AllBlocks().Single(b => b.Content == "Vorspann Text").SetContent("Vorspann geändert");
+        book.Page.AllBlocks().Single(b => b.Content == "Unter Text").SetContent("Unter Text neu");
+        session.Writer.Save(book.Page);
+
+        Assert.True(session.TryUndo(out var error), error?.ToString());
+
+        Assert.Equal(
+            BookText.Replace("- Vorspann Text\n", "- Vorspann geändert\n").Replace("\t\t- Unter Text\n", "\t\t- Unter Text neu\n"),
+            _vault.Read(BookPath));
+        Assert.False(session.Undo.CanUndo);
+    }
+
+    [Fact]
+    public async Task RemoveHeading_UndoAfterMovedTextDeleted_Refused()
+    {
+        var session = await OpenSessionAsync(_vault);
+        CursorAt("## Eins-A");
+        Assert.Null(await RunAsync(SectionCommand.RemoveHeading));
+        var book = session.Vault.FindBook("Buch - Alpha")!;
+        book.Page.RemoveBlock(book.Page.AllBlocks().Single(b => b.Content == "Unter Text"));
+        session.Writer.Save(book.Page);
+        var saved = _vault.Read(BookPath);
+
+        Assert.False(session.TryUndo(out _));
+
+        Assert.Equal(saved, _vault.Read(BookPath));
+    }
+
+    [Fact]
+    public async Task IrregularSection_SubtreeCommandsDisabled_NothingChanged()
+    {
+        // "## B2" is not deeper than "## B": the editor marks less of B than its section in the file holds.
+        const string text = "title:: Alpha\ntype:: book\n\n- # Eins\n\t- ## A\n\t- ## B\n\t\t- ## B2\n\t\t- Text B\n";
+        using var tv = TestVault.Create((BookPath, text));
+        var session = await OpenSessionAsync(tv);
+        Assert.NotEmpty(Book.Warnings);
+        CursorAt("## B");
+
+        foreach (var command in new[] { SectionCommand.Delete, SectionCommand.Indent, SectionCommand.Outdent, SectionCommand.RemoveHeading })
+        {
+            Assert.False(ManuscriptCommands.CanRun(State, command), $"{command}");
+            Assert.Null(await RunAsync(command));
+        }
+
+        Assert.True(ManuscriptCommands.CanRun(State, SectionCommand.InsertAfter));
+        Assert.Equal(text, tv.Read(BookPath));
+        Assert.False(session.Undo.CanUndo);
+
+        // A regular heading of the same book keeps them.
+        CursorAt("## A");
+        Assert.True(ManuscriptCommands.CanRun(State, SectionCommand.Delete));
+        Assert.True(ManuscriptCommands.CanRun(State, SectionCommand.Outdent));
+        Assert.True(ManuscriptCommands.CanRun(State, SectionCommand.RemoveHeading));
+    }
+
+    [Fact]
+    public async Task Delete_LinkedDetail_RemovesUsage_UndoRestoresBoth()
+    {
+        const string detailId = "cccccccc-cccc-4ccc-8ccc-ccccccccccc1";
+        const string otherId = "dddddddd-dddd-4ddd-8ddd-ddddddddddd1";
+        var bookText = BookText.Replace("\t\t- Ein Detail\n", $"\t\t- Ein Detail\n\t\t  id:: {detailId}\n\t\t  source:: (({otherId}))\n");
+        var noteText = NoteText + $"- Andere Notiz\n  id:: {otherId}\n  used-in:: [[Buch - Alpha]] (({detailId}))\n";
+        using var tv = TestVault.Create((BookPath, bookText), (NotePath, noteText));
+        var session = await OpenSessionAsync(tv);
+        CursorAt("Ein Detail");
+
+        Assert.Null(await RunAsync(SectionCommand.Delete));
+
+        Assert.Equal(BookText.Replace("\t\t- Ein Detail\n", ""), tv.Read(BookPath));
+        Assert.Equal(NoteText + $"- Andere Notiz\n  id:: {otherId}\n", tv.Read(NotePath));
+        Assert.Equal("Löschen", session.Undo.NextDescription);
+
+        Assert.True(session.TryUndo(out var error), error?.ToString());
+
+        Assert.Equal(bookText, tv.Read(BookPath));
+        Assert.Equal(noteText, tv.Read(NotePath));
+    }
+
+    [Fact]
+    public async Task Delete_SourceNoteConflictOpen_Refused()
+    {
+        var session = await OpenSessionAsync(_vault);
+
+        // A local change of the note collides with an external change of the same line.
+        var notePath = Path.Combine(_vault.Root, NotePath);
+        session.Vault.FindPageByPath(notePath)!.AllBlocks().Single(b => b.Content == "Eine Notiz").SetContent("Notiz lokal");
+        var external = NoteText.Replace("- Eine Notiz\n", "- Notiz extern\n");
+        File.WriteAllText(notePath, external);
+        session.HandleExternalChange(notePath);
+        Assert.True(session.HasOpenConflict(notePath));
+
+        // The section of "Dritter Text", whose source is that note.
+        CursorAt("# Zwei");
+        var message = await RunAsync(SectionCommand.Delete);
+
+        Assert.Equal(new AdoptMessage("EditorConflict", true), message);
+        Assert.Equal(BookText, _vault.Read(BookPath));
+        Assert.Equal(external, _vault.Read(NotePath));
+        Assert.False(session.Undo.CanUndo);
+    }
+
+    [Fact]
     public async Task Shortcut_RaisesCommand_ViaFakeEditor()
     {
         var session = await OpenSessionAsync(_vault);

@@ -29,7 +29,7 @@ public static partial class SourceValue
     /// The blocks of <paramref name="root"/>'s subtree (root first, depth-first) that have an <c>id::</c> and at least
     /// one source, with their distinct sources.
     /// </summary>
-    internal static IEnumerable<(Guid Id, IReadOnlyList<Guid> Sources)> LinkedBlocksIn(Block root)
+    public static IEnumerable<(Guid Id, IReadOnlyList<Guid> Sources)> LinkedBlocksIn(Block root)
     {
         if (root.Id is { } id && Parse(root.GetProperty("source") ?? "") is { Count: > 0 } sources)
             yield return (id, [.. sources.Distinct()]);

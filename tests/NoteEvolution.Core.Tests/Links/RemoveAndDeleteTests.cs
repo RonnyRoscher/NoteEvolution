@@ -98,6 +98,43 @@ public class RemoveAndDeleteTests
     }
 
     [Fact]
+    public void DeleteDetail_LinkedDetail_RemovesUsedIn_UndoRestoresBothFiles()
+    {
+        // A detail carrying its own id and source (possible in existing files), with a deeper detail.
+        var book =
+            "title:: Buch: Test\n" +
+            "type:: book\n" +
+            "\n" +
+            "- # Kapitel\n" +
+            "\t- Text\n" +
+            "\t\t- Verknüpftes Detail\n" +
+            $"\t\t  id:: {B1}\n" +
+            $"\t\t  source:: (({N1}))\n" +
+            "\t\t\t- Tiefer\n" +
+            "\t\t- Anderes Detail\n";
+        var journal = $"- Erste Quelle\n  id:: {N1}\n  used-in:: [[Buch - Test]] (({B1}))\n";
+        using var s = new LinkSetup(book, journal);
+        var detail = s.Book.Page.AllBlocks().Single(b => b.Content == "Verknüpftes Detail").Key;
+
+        s.Links.DeleteDetail(s.Book, detail);
+
+        Assert.Equal(book.Replace($"\t\t- Verknüpftes Detail\n\t\t  id:: {B1}\n\t\t  source:: (({N1}))\n\t\t\t- Tiefer\n", ""), s.ReadBook());
+        Assert.Equal($"- Erste Quelle\n  id:: {N1}\n", s.ReadJournal());
+        Assert.Equal("Löschen", s.Undo.NextDescription);
+
+        s.Undo.Undo();
+
+        Assert.Equal(book, s.ReadBook());
+        Assert.Equal(journal, s.ReadJournal());
+        Assert.False(s.Undo.CanUndo);
+
+        // Only a detail is taken.
+        Assert.Throws<ArgumentException>(() => s.Links.DeleteDetail(s.Book, s.Text("Text").Key));
+        Assert.Throws<ArgumentException>(() => s.Links.DeleteDetail(s.Book, Guid.NewGuid()));
+        Assert.Equal(book, s.ReadBook());
+    }
+
+    [Fact]
     public void DeleteTextBlock_AfterAdopt_UndoRestoresFilesExceptNewId()
     {
         using var s = new LinkSetup();

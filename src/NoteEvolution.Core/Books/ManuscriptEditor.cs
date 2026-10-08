@@ -107,24 +107,43 @@ public static class ManuscriptEditor
     /// (its own sub-headings the levels below).
     /// </summary>
     /// <returns>
-    /// The key to reveal afterwards: the first moved item, else the element before the heading in the file, else
-    /// <see cref="Guid.Empty"/>.
+    /// What was done, for a targeted undo (<see cref="RemovedHeading.RestoreInto"/>), with the key to reveal afterwards
+    /// (<see cref="RemovedHeading.Reveal"/>): the first moved item, else the element before the heading in the file,
+    /// else <see cref="Guid.Empty"/>.
     /// </returns>
     /// <exception cref="ArgumentException">Unknown heading.</exception>
-    public static Guid RemoveHeading(Book book, Guid headingKey)
+    public static RemovedHeading RemoveHeading(Book book, Guid headingKey)
     {
         var node = OutlineEditor.FindHeading(book, headingKey, nameof(headingKey));
         var heading = node.Block!;
         var page = book.Page;
+        var parent = heading.Parent;
         var children = heading.Children.ToList();
         var reveal = children.FirstOrDefault()?.Key
                      ?? page.AllBlocks().TakeWhile(block => block != heading).LastOrDefault()?.Key
                      ?? Guid.Empty;
 
+        // Every moved block with its lines before, and each moved heading with its level before and after (as Relevel sets it).
+        var moved = children.SelectMany(Subtree).Select(block => (Block: block, Before: block.Lines.ToList())).ToList();
+        var levels = new Dictionary<Guid, (int Before, int After)>();
+        void NewLevels(OutlineNode sub, int level)
+        {
+            levels[sub.Key] = (sub.Level, level);
+            foreach (var child in sub.Children)
+            {
+                NewLevels(child, level + 1);
+            }
+        }
+
+        foreach (var child in node.Children)
+        {
+            NewLevels(child, node.Parent!.Level + 1);
+        }
+
         var index = IndexOf(page, heading);
         for (var i = 0; i < children.Count; i++)
         {
-            page.MoveBlock(children[i], heading.Parent, index + i);
+            page.MoveBlock(children[i], parent, index + i);
         }
 
         page.RemoveBlock(heading);
@@ -133,7 +152,14 @@ public static class ManuscriptEditor
             OutlineEditor.Relevel(child, node.Parent!.Level + 1);
         }
 
-        return reveal;
+        return new RemovedHeading(
+            reveal,
+            heading,
+            parent?.Key,
+            index,
+            [.. children.Select(child => child.Key)],
+            [.. moved.Select(m => new RemovedHeading.MovedBlock(
+                m.Block.Key, m.Before, [.. m.Block.Lines], levels.TryGetValue(m.Block.Key, out var level) ? level : null))]);
     }
 
     /// <summary>Deletes a detail with its deeper details.</summary>
@@ -188,4 +214,7 @@ public static class ManuscriptEditor
         node.Parent!.Children.TakeWhile(sibling => sibling != node).LastOrDefault(sibling => sibling.Level == node.Level);
 
     private static bool CanOutdent(OutlineNode node) => node.Level > 1 && node.Parent is { Block: not null };
+
+    /// <summary>The block and all blocks below it, depth-first in file order.</summary>
+    private static IEnumerable<Block> Subtree(Block block) => block.Children.SelectMany(Subtree).Prepend(block);
 }

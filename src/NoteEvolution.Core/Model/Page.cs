@@ -345,7 +345,7 @@ public sealed class Page
     }
 
     /// <summary>Only the last line of the file may lack a line ending; any other such line gets <see cref="NewLine"/>.</summary>
-    private void RepairEndings()
+    internal void RepairEndings()
     {
         // (owner, index) of every line in file order; owner null = prefix line.
         var lines = Enumerable.Range(0, _prefixLines.Count).Select(i => ((Block?)null, i))

@@ -59,6 +59,14 @@ public interface ILinkService
     void DeleteTextBlock(Book book, Guid textBlockKey);
 
     /// <summary>
+    /// Deletes the detail with its deeper details and removes the usages of the linked blocks among them (a detail
+    /// with its own <c>id::</c> and <c>source::</c>) from the notes. Can be undone („Löschen“).
+    /// </summary>
+    /// <exception cref="ArgumentException">No detail has this key.</exception>
+    /// <exception cref="ReadOnlyPageException">The book page is read-only.</exception>
+    void DeleteDetail(Book book, Guid detailKey);
+
+    /// <summary>
     /// Deletes the heading with everything below it (sub-sections, text blocks, paragraphs) and removes the usages of
     /// all linked text blocks in it from the notes. One undo action („Löschen“) puts the section and the notes back.
     /// </summary>

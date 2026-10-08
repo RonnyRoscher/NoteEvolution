@@ -207,6 +207,12 @@ public sealed class LinkService(IVault vault, IPageWriter writer, UndoManager un
         DeleteBlock(book, FindTextBlock(book, textBlockKey));
     }
 
+    public void DeleteDetail(Book book, Guid detailKey)
+    {
+        EnsureWritable(book.Page);
+        DeleteBlock(book, FindElement(book, detailKey, detailOnly: true).Element);
+    }
+
     public void DeleteSection(Book book, Guid headingKey)
     {
         EnsureWritable(book.Page);
