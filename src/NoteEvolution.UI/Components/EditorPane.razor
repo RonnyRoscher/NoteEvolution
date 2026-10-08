@@ -11,7 +11,8 @@
 
 @* The book text (spec 7): the whole book as manuscript in the TipTap editor. Every change is saved 1000 ms after the
    last one by reconciling the editor's document into the book page (BookTextSaver). The cursor element sets the
-   current section; revealed elements (outline, jumps) are scrolled to once the editor shows the book. *@
+   current section, and the section bar sits at the bottom of its marking; revealed elements (outline, jumps) are
+   scrolled to once the editor shows the book. *@
 <div class="ne-editor-pane">
     @if (State.CurrentBook is null)
     {
@@ -32,6 +33,11 @@
         }
     }
     <div class="ne-editor-host" hidden="@(State.CurrentBook is null)" inert="@(ReadOnlyReason is not null)" @ref="_host"></div>
+    @if (State.CurrentBook is not null)
+    {
+        <SectionBar Top="_barTop" Visible="_barVisible" Element="State.CurrentElement" Locked="ReadOnlyReason is not null"
+                    OnCommand="OnSectionCommand" />
+    }
 </div>
 
 @code {
@@ -50,6 +56,11 @@
     private bool _showChips;
     private bool _shownChips;
     private bool _disposed;
+
+    /// <summary>Where the section bar goes (pixels from the pane's top) and whether the marking is in view, as the editor reports it.</summary>
+    private double _barTop;
+
+    private bool _barVisible;
 
     /// <summary>
     /// True while <see cref="OnCursorChanged"/> or <see cref="FollowCursorSection"/> notifies the other components (see
@@ -242,14 +253,28 @@
         return Task.CompletedTask;
     }
 
-    /// <summary>Runs the structure command on the cursor element (<see cref="ManuscriptCommands"/>) and shows its message.</summary>
+    /// <summary>
+    /// Runs the structure command on the cursor element (<see cref="ManuscriptCommands"/>) and shows its message; the
+    /// editor's shortcuts and the buttons of the section bar both come here.
+    /// </summary>
     public async Task OnSectionCommand(SectionCommand command)
     {
         _saver.Message = await ManuscriptCommands.RunAsync(State, command, L["UndoStructure"], Logger);
         StateHasChanged();
     }
 
-    public Task OnSectionBoxMoved(double barTop, bool visible) => Task.CompletedTask;
+    /// <summary>Moves the section bar to the bottom of the marking, or hides it while the marking is out of view.</summary>
+    public Task OnSectionBoxMoved(double barTop, bool visible)
+    {
+        if ((barTop, visible) != (_barTop, _barVisible))
+        {
+            _barTop = barTop;
+            _barVisible = visible;
+            StateHasChanged();
+        }
+
+        return Task.CompletedTask;
+    }
 
     public Task OnChipClicked(Guid noteId)
     {

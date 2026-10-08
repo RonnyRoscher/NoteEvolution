@@ -658,6 +658,7 @@ html, body {
 /* Editor */
 
 .ne-editor-pane {
+    position: relative;
     display: flex;
     flex-direction: column;
     flex: 1;
@@ -862,6 +863,106 @@ html, body {
 /* A detail's box starts at its own indentation. */
 .ne-para.ne-current::after {
     left: calc(var(--current-depth, 0) * 1.5em - 16px);
+}
+
+/*
+ * The section bar (spec 2, 3) at the bottom of the marking: at least as wide as the marking box (the text column plus
+ * the box's 16 px on each side, measured in the text's font), wider if its buttons need it, at most the pane; 40 px
+ * high (TipTapInterop.BarHeight).
+ */
+.ne-section-bar {
+    position: absolute;
+    left: 0;
+    right: 0;
+    margin: 0 auto;
+    width: fit-content;
+    min-width: min(100%, calc(var(--line-width, 70ch) + 32px));
+    max-width: 100%;
+    height: 40px;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 0 8px;
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    border-top: none;
+    border-left: 3px solid var(--accent);
+    font-family: var(--font-text);
+    font-size: var(--font-size, 12pt);
+    z-index: 2;
+}
+
+.ne-section-bar[hidden] {
+    display: none;
+}
+
+.ne-sec-buttons,
+.ne-sec-sources-area {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-family: var(--font-ui);
+    font-size: 12px;
+}
+
+/* In a narrow pane the buttons scroll instead of leaving the bar's 40 px. */
+.ne-sec-buttons {
+    min-width: 0;
+    overflow-x: auto;
+}
+
+.ne-sec-buttons button,
+.ne-sec-sources {
+    white-space: nowrap;
+}
+
+.ne-sec-sources-area {
+    position: relative;
+    flex-shrink: 0;
+}
+
+.ne-sec-no-sources {
+    color: var(--fg-muted);
+}
+
+/* The list opens upwards: below the bar may be the bottom of the window. */
+.ne-sec-source-list {
+    position: absolute;
+    right: 0;
+    bottom: calc(100% + 6px);
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 2px;
+    min-width: 260px;
+    max-width: 420px;
+    max-height: 260px;
+    overflow-y: auto;
+    padding: 4px;
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.ne-shell .ne-sec-source {
+    border: none;
+    background: transparent;
+    text-align: left;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.ne-shell .ne-sec-source:hover {
+    background: var(--hint-bg);
+}
+
+.ne-sec-source-broken {
+    padding: 3px 10px;
+    color: var(--danger);
 }
 
 /* Assistants menu in the header */

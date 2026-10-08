@@ -90,7 +90,7 @@ public sealed class NoteRepository : INoteRepository
     }
 
     /// <summary>The day from a <c>yyyy_MM_dd.md</c> file name directly inside a folder named <c>journals</c>.</summary>
-    internal static DateOnly? DateOf(Page page)
+    public static DateOnly? DateOf(Page page)
     {
         var folder = Path.GetFileName(Path.GetDirectoryName(page.FilePath));
         if (!string.Equals(folder, "journals", StringComparison.OrdinalIgnoreCase)

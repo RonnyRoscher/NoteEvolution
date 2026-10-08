@@ -93,6 +93,9 @@ public sealed class AppState
     /// <summary>An element is to be revealed in the editor (see <see cref="RevealElement"/>).</summary>
     public event Action<Guid>? RevealRequested;
 
+    /// <summary>A note is to be brought into view in the notes pane (see <see cref="RevealNote"/>).</summary>
+    public event Action<Guid>? NoteRevealRequested;
+
     /// <summary>Someone asked for the AI model dialog (e.g. the settings' download button); the shell shows it.</summary>
     public event Action? AiModelDialogRequested;
 
@@ -100,6 +103,12 @@ public sealed class AppState
 
     /// <summary>Asks the shell to show the AI model dialog, which offers the download.</summary>
     public void RequestAiModelDialog() => AiModelDialogRequested?.Invoke();
+
+    /// <summary>
+    /// Asks the notes pane to bring the note with the block id <paramref name="noteId"/> (the <c>id::</c> a
+    /// <c>source::</c> refers to) into view, e.g. after a click on a source of the current section.
+    /// </summary>
+    public void RevealNote(Guid noteId) => NoteRevealRequested?.Invoke(noteId);
 
     /// <summary>
     /// Asks the editor to scroll to the element of <see cref="CurrentBook"/> with <paramref name="elementKey"/> (a

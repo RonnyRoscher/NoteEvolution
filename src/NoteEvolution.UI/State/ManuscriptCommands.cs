@@ -17,12 +17,13 @@ public static class ManuscriptCommands
     /// <summary>
     /// Whether <paramref name="command"/> is possible now: the book is writable, no conflict is open for it (R26), and
     /// the command fits the cursor element (e.g. no indent without a previous heading of the same level, no outdent
-    /// on level 1, indent, outdent and remove only on headings).
+    /// on level 1, indent, outdent and remove only on headings). Delete only takes the element the cursor itself is in
+    /// (<see cref="TargetOf"/>).
     /// </summary>
     public static bool CanRun(AppState state, SectionCommand command) =>
         state is { Session: { } session, CurrentBook: { Page.IsReadOnly: false } book }
         && !session.HasOpenConflict(book.Page.FilePath)
-        && state.CurrentElement is { } element
+        && TargetOf(state, book, command) is { } element
         && Fits(book, element, command);
 
     /// <summary>
@@ -95,7 +96,7 @@ public static class ManuscriptCommands
             return (new AdoptMessage("EditorConflict", true), null);
         }
 
-        if (state.CurrentElement is not { } element || !Fits(book, element, command))
+        if (TargetOf(state, book, command) is not { } element || !Fits(book, element, command))
         {
             return (null, null);
         }
@@ -104,6 +105,16 @@ public static class ManuscriptCommands
             ? (Delete(session, book, element, logger), null)
             : RunStructure(session, book, element, command, undoDescription, logger);
     }
+
+    /// <summary>
+    /// The element <paramref name="command"/> acts on: <see cref="AppState.CurrentElement"/>, but for Delete only the
+    /// element with the cursor's own key in <paramref name="book"/>, never the fallback (a text block or a whole section
+    /// the user may not see as the cursor's place); <c>null</c> if there is none.
+    /// </summary>
+    private static BookElement? TargetOf(AppState state, Book book, SectionCommand command) =>
+        command != SectionCommand.Delete ? state.CurrentElement
+        : state.Cursor is { } cursor ? BookElements.Find(book, cursor.Key)
+        : null;
 
     /// <summary>Whether <paramref name="command"/> fits <paramref name="element"/>, which must be in <paramref name="book"/>.</summary>
     private static bool Fits(Book book, BookElement element, SectionCommand command) =>

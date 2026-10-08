@@ -176,6 +176,44 @@
     <value>Gliederung ändern</value>
     <comment>Name der Aktion für „Rückgängig“ nach einem Gliederungsbefehl im Manuskript</comment>
   </data>
+  <data name="SectionInsertAfter" xml:space="preserve">
+    <value>Neuer Abschnitt danach</value>
+  </data>
+  <data name="SectionInsertChild" xml:space="preserve">
+    <value>Neuer Unterabschnitt</value>
+  </data>
+  <data name="SectionIndent" xml:space="preserve">
+    <value>Einrücken</value>
+  </data>
+  <data name="SectionOutdent" xml:space="preserve">
+    <value>Ausrücken</value>
+  </data>
+  <data name="SectionRemoveHeading" xml:space="preserve">
+    <value>Überschrift entfernen</value>
+  </data>
+  <data name="SectionDelete" xml:space="preserve">
+    <value>Abschnitt löschen</value>
+  </data>
+  <data name="SectionSources" xml:space="preserve">
+    <value>{0} Quellen ▸</value>
+    <comment>Zugeklappte Quellen des aktuellen Abschnitts; {0} = Anzahl verschiedener Notizen</comment>
+  </data>
+  <data name="SectionSourcesOpen" xml:space="preserve">
+    <value>{0} Quellen ▾</value>
+    <comment>Aufgeklappte Quellen des aktuellen Abschnitts; {0} = Anzahl verschiedener Notizen</comment>
+  </data>
+  <data name="SectionSourcesOne" xml:space="preserve">
+    <value>1 Quelle ▸</value>
+  </data>
+  <data name="SectionSourcesOneOpen" xml:space="preserve">
+    <value>1 Quelle ▾</value>
+  </data>
+  <data name="SectionNoSources" xml:space="preserve">
+    <value>Keine Quellen</value>
+  </data>
+  <data name="SectionSourceMissing" xml:space="preserve">
+    <value>Quelle fehlt</value>
+  </data>
   <data name="NotesPlaceholder" xml:space="preserve">
     <value>Hier erscheinen Suche und Journal.</value>
   </data>

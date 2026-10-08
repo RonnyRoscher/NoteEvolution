@@ -105,9 +105,13 @@ public static class BookSnapshot
             null,
             BlockTextEscape.Unescape(text.Text),
             [.. text.Paragraphs.Select(p => new SnapshotParagraph(p.Block.Key, ParagraphText(p.Block.Content), p.Depth, p.IsNote))],
-            [.. text.Sources.Distinct().Select(id => Source(id, vault))]);
+            [.. text.Sources.Distinct().Select(id => SourceOf(id, vault))]);
 
-    private static SourceInfo Source(Guid noteId, IVault vault)
+    /// <summary>
+    /// The source chip of the note with the block id <paramref name="noteId"/>: its label (see <see cref="SourceInfo"/>),
+    /// or the id itself, marked broken, if no block in <paramref name="vault"/> has it.
+    /// </summary>
+    public static SourceInfo SourceOf(Guid noteId, IVault vault)
     {
         if (vault.FindBlockById(noteId) is not { } found)
         {

@@ -286,6 +286,29 @@ public class ManuscriptCommandTests : UiTestContext
     }
 
     [Fact]
+    public async Task Delete_UnknownCursorKey_DisabledAndNothingChanged()
+    {
+        var session = await OpenSessionAsync(_vault);
+        State.CurrentSectionKey = KeyOf("# Eins");
+
+        // A detail the book does not know (yet): the cursor element falls back to its text block, which Delete never takes.
+        State.Cursor = new CursorInfo(ElementKind.Detail, Guid.NewGuid(), KeyOf("Erster Text"), 0);
+        Assert.Equal(new BookElement(ElementKind.TextBlock, KeyOf("Erster Text")), State.CurrentElement);
+        Assert.True(ManuscriptCommands.CanRun(State, SectionCommand.InsertAfter));
+        Assert.False(ManuscriptCommands.CanRun(State, SectionCommand.Delete));
+        Assert.Null(await RunAsync(SectionCommand.Delete));
+
+        // Without a known text block it falls back to the heading of the current section.
+        State.Cursor = new CursorInfo(ElementKind.TextBlock, Guid.NewGuid(), null, 0);
+        Assert.Equal(new BookElement(ElementKind.Heading, KeyOf("# Eins")), State.CurrentElement);
+        Assert.False(ManuscriptCommands.CanRun(State, SectionCommand.Delete));
+        Assert.Null(await RunAsync(SectionCommand.Delete));
+
+        Assert.Equal(BookText, _vault.Read(BookPath));
+        Assert.False(session.Undo.CanUndo);
+    }
+
+    [Fact]
     public async Task Undo_RestoresFile_ForEachStructureCommand()
     {
         var session = await OpenSessionAsync(_vault);
