@@ -46,6 +46,9 @@ public abstract class UiTestContext : BunitContext
     /// <summary>The AI runtime registered by <see cref="UseAi"/>; <c>null</c> without one (the AI is off).</summary>
     protected AiRuntime? Ai { get; private set; }
 
+    /// <summary>The model folders of <see cref="Ai"/>; <c>null</c> without one.</summary>
+    protected ModelStore? Store { get; private set; }
+
     /// <summary>Serves the test model to <see cref="Ai"/>'s downloads.</summary>
     protected FakeModelHandler ModelServer { get; } = new(TestModelData);
 
@@ -79,7 +82,7 @@ public abstract class UiTestContext : BunitContext
     protected AiRuntime UseAi(bool installed, Func<IEmbedder> loadEmbedder, IReadOnlyList<ModelInfo>? catalog = null)
     {
         _models = new TempDir();
-        var store = new ModelStore(_models.Path);
+        var store = Store = new ModelStore(_models.Path);
         catalog ??= [TestModel("test-model")];
         if (installed)
         {

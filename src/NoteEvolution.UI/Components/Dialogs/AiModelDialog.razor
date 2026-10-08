@@ -172,7 +172,9 @@
         try
         {
             await Ai.DownloadAsync(model, new Progress(this), download.Token);
-            return true;
+
+            // Cancelled (the dialog closed) after the download had ended: nothing more is done with it.
+            return !download.IsCancellationRequested;
         }
         catch (OperationCanceledException) when (download.IsCancellationRequested)
         {
