@@ -4,8 +4,9 @@ using NoteEvolution.AI.Model;
 namespace NoteEvolution.AI.Embeddings;
 
 /// <summary>
-/// Embeds with an e5 ONNX model on the CPU: one padded batch per call, mean pooling of <c>last_hidden_state</c> over the
-/// attention mask, then L2 normalization. Safe to call from several threads: <c>InferenceSession.Run</c> is thread-safe.
+/// Embeds with a SentencePiece ONNX encoder model (e5, bge-m3) on the CPU: one padded batch per call, the model's role
+/// prefixes, pooling of <c>last_hidden_state</c> as the model prescribes (mean over the attention mask, or the first
+/// token), then L2 normalization. Safe to call from several threads: <c>InferenceSession.Run</c> is thread-safe.
 /// <see cref="Dispose"/> terminates running inference (those calls end with <see cref="OperationCanceledException"/>) and
 /// waits for it before releasing the native session; later calls throw <see cref="ObjectDisposedException"/>.
 /// </summary>
@@ -18,6 +19,7 @@ public sealed class OnnxEmbedder : IEmbedder, IDisposable
 
     private readonly InferenceSession _session;
     private readonly E5Tokenizer _tokenizer;
+    private readonly ModelInfo _model;
     private readonly int _maxTokens;
     private readonly bool _needsTokenTypeIds;
 
@@ -31,6 +33,7 @@ public sealed class OnnxEmbedder : IEmbedder, IDisposable
     {
         _session = session;
         _tokenizer = tokenizer;
+        _model = model;
         _maxTokens = model.MaxTokens;
         Dimensions = model.Dimensions;
 
@@ -81,8 +84,9 @@ public sealed class OnnxEmbedder : IEmbedder, IDisposable
         var encoded = new List<(int Index, long[] Ids)>();
         for (var i = 0; i < texts.Count; i++)
         {
-            if (string.IsNullOrWhiteSpace(texts[i])) result[i] = new float[Dimensions];
-            else encoded.Add((i, _tokenizer.Encode(texts[i], _maxTokens)));
+            var text = EmbeddingText.ForModel(texts[i], _model);
+            if (string.IsNullOrWhiteSpace(text)) result[i] = new float[Dimensions];
+            else encoded.Add((i, _tokenizer.Encode(text, _maxTokens)));
         }
 
         if (encoded.Count > 0) EmbedBatch(encoded, result, ct);
@@ -142,8 +146,10 @@ public sealed class OnnxEmbedder : IEmbedder, IDisposable
                     throw new InvalidOperationException($"{LastHiddenState} has {hidden.Length} values, expected {batch}×{tokens}×{Dimensions}.");
                 for (var b = 0; b < batch; b++)
                 {
-                    result[encoded[b].Index] = VectorMath.MeanPoolNormalize(
-                        hidden.Slice(b * sequence, sequence), tokens, Dimensions, mask.AsSpan(b * tokens, tokens));
+                    var states = hidden.Slice(b * sequence, sequence);
+                    result[encoded[b].Index] = _model.Pooling == Pooling.Cls
+                        ? VectorMath.ClsNormalize(states, tokens, Dimensions)
+                        : VectorMath.MeanPoolNormalize(states, tokens, Dimensions, mask.AsSpan(b * tokens, tokens));
                 }
             }
         }
