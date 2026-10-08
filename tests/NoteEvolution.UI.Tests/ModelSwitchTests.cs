@@ -59,20 +59,25 @@ public class ModelSwitchTests : UiTestContext
         Settings.LastVault = tv.Root;
         Settings.RememberBook(tv.Root, Path.Combine(tv.Root, BetaPath));
         var cut = Render<Shell>();
-        WaitForVaultOpened(cut);
+        WaitForVaultOpened(cut, timeout: Wait);
         Assert.Equal("Beta", State.CurrentBook!.Title);
         var session = State.Session!;
         await Eventually(() => session.AiStatus.State == AiState.Ready);
         return cut;
     }
 
-    /// <summary>Opens the model dialog from the settings, selects model b and starts the switch.</summary>
+    /// <summary>
+    /// Opens the model dialog from the settings, selects model b and starts the switch. Each step waits for the render of
+    /// the one before: the session's background work (indexing) may hold the renderer meanwhile.
+    /// </summary>
     private static void SwitchToB(IRenderedComponent<Shell> cut)
     {
         cut.Find(".ne-settings").Click();
+        cut.WaitForAssertion(() => Assert.Single(cut.FindAll(".ne-settings-ai-choose")), Wait);
         cut.Find(".ne-settings-ai-choose").Click();
-        cut.WaitForAssertion(() => Assert.Single(cut.FindAll(".ne-ai-model-dialog")));
+        cut.WaitForAssertion(() => Assert.Single(cut.FindAll(".ne-ai-model-dialog")), Wait);
         cut.FindAll(".ne-ai-model-option input[type=radio]")[1].Change(true);
+        cut.WaitForAssertion(() => Assert.False(cut.Find(".ne-ai-switch").HasAttribute("disabled")), Wait);
         cut.Find(".ne-ai-switch").Click();
     }
 
@@ -117,7 +122,7 @@ public class ModelSwitchTests : UiTestContext
         SwitchToB(cut);
 
         await Eventually(() => Ai!.Model.Id == "b");
-        WaitForVaultOpened(cut, old);
+        WaitForVaultOpened(cut, old, Wait);
         var session = State.Session!;
         Assert.True(IsDisposed(old));
         Assert.Equal("Beta", State.CurrentBook!.Title);
@@ -148,7 +153,7 @@ public class ModelSwitchTests : UiTestContext
         SwitchToB(cut);
 
         await Eventually(() => Ai!.Model.Id == "b");
-        WaitForVaultOpened(cut, old);
+        WaitForVaultOpened(cut, old, Wait);
 
         // The editor's text is saved once into the old, still open session; opening the vault again finds no session
         // to save into (the editor of the old one is still registered until the shell renders without it).
@@ -201,7 +206,7 @@ public class ModelSwitchTests : UiTestContext
 
         // The dialog shows the error once the vault is open again.
         cut.WaitForAssertion(() => Assert.Contains("model b", cut.Find(".ne-ai-model-error").TextContent), Wait);
-        WaitForVaultOpened(cut, old);
+        WaitForVaultOpened(cut, old, Wait);
         Assert.Equal("a", Ai.Model.Id);
         Assert.True(Ai.ModelInstalled);
         Assert.Equal("Beta", State.CurrentBook!.Title);
@@ -233,7 +238,7 @@ public class ModelSwitchTests : UiTestContext
 
         ModelServer.Hang = false;
 
-        cut.WaitForAssertion(() => Assert.Single(cut.FindAll(".ne-ai-switch-conflict")));
+        cut.WaitForAssertion(() => Assert.Single(cut.FindAll(".ne-ai-switch-conflict")), Wait);
         cut.WaitForAssertion(() => Assert.Empty(cut.FindAll(".ne-ai-cancel")), Wait); // the download has ended
         Assert.Single(cut.FindAll(".ne-ai-switch-conflict"));
         Assert.Empty(cut.FindAll(".ne-ai-model-error"));
@@ -241,6 +246,42 @@ public class ModelSwitchTests : UiTestContext
         Assert.Same(old, State.Session);
         Assert.False(IsDisposed(old));
         Assert.Null(Settings.AiModelId);
+    }
+
+    [Fact]
+    public async Task Switch_ConflictOpenedByFlush_NoSwitch()
+    {
+        var tv = Vault();
+        var cut = await OpenShellAsync(tv);
+        var old = State.Session!;
+        var path = Path.Combine(tv.Root, JournalPath);
+        var flushed = false;
+
+        // Saving the editor's text yields; meanwhile a conflict opens in the session (on the UI thread, as the flush runs there).
+        State.FlushEditor = () =>
+        {
+            old.Vault.FindPageByPath(path)!.Roots[1].SetContent("Lokal geändert");
+            File.WriteAllText(path, "- Vertrauen wächst\n- Extern geändert\n", new UTF8Encoding(false));
+            old.HandleExternalChange(path);
+            flushed = true;
+            return Task.CompletedTask;
+        };
+
+        SwitchToB(cut);
+
+        await Eventually(() => flushed);
+        cut.WaitForAssertion(() =>
+        {
+            Assert.Single(cut.FindAll(".ne-ai-switch-conflict"));
+            Assert.False(cut.Find(".ne-ai-close").HasAttribute("disabled")); // the switch has ended
+        }, Wait);
+        Assert.True(old.HasAnyOpenConflict);
+        Assert.Equal("a", Ai!.Model.Id);
+        Assert.Same(old, State.Session);
+        Assert.False(IsDisposed(old));
+        Assert.Null(Settings.AiModelId);
+        Assert.Null(UiSettings.Load(Platform.UserDataDirectory).AiModelId);
+        Assert.Empty(cut.FindAll(".ne-ai-model-error"));
     }
 
     [Fact]
@@ -253,7 +294,7 @@ public class ModelSwitchTests : UiTestContext
         SwitchToB(cut);
 
         await Eventually(() => Ai!.Model.Id == "b");
-        cut.WaitForAssertion(() => Assert.Empty(cut.FindAll(".ne-ai-model-dialog")));
+        cut.WaitForAssertion(() => Assert.Empty(cut.FindAll(".ne-ai-model-dialog")), Wait);
         Assert.True(Ai!.ModelInstalled);
         Assert.False(Directory.Exists(Store!.DirectoryOf(ModelA)));
         Assert.Equal("b", Settings.AiModelId);

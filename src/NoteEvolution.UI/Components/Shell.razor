@@ -185,6 +185,14 @@
                 }
             }
 
+            // A conflict opened meanwhile (the flush yields, or its save found one): the vault must not be opened again
+            // (R26), so nothing is switched; the dialog shows the conflict hint.
+            if (session.HasAnyOpenConflict)
+            {
+                State.Notify();
+                return;
+            }
+
             if (_subscribed is not null)
             {
                 _subscribed.PagesChanged -= OnPagesChanged;

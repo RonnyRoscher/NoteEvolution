@@ -183,6 +183,9 @@ public class AiModelDialogTests : UiTestContext
         _vaults.Add(tv);
         var ai = UseCatalog(installed: true);
         var session = await OpenSessionAsync(tv, ai);
+
+        // The session opens its vector cache in the background; the vault folder is deleted only after that.
+        await Eventually(() => session.AiStatus.State == AiState.Ready);
         var path = Path.Combine(tv.Root, "journals", "2026_03_01.md");
         session.Vault.FindPageByPath(path)!.Roots[1].SetContent("Lokal geändert");
         File.WriteAllText(path, "- Vertrauen wächst\n- Extern geändert\n", new UTF8Encoding(false));

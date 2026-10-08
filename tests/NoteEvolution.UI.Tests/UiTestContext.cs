@@ -125,15 +125,16 @@ public abstract class UiTestContext : BunitContext
 
     /// <summary>
     /// Waits until the shell has finished opening a vault (other than <paramref name="previous"/>): the session is set
-    /// before the opening ends, so the test waits for the editor to be shown again as well.
+    /// before the opening ends, so the test waits for the editor to be shown again as well. It waits up to
+    /// <paramref name="timeout"/> (bUnit's default if <c>null</c>).
     /// </summary>
-    protected void WaitForVaultOpened(IRenderedComponent<Components.Shell> cut, VaultSession? previous = null) =>
+    protected void WaitForVaultOpened(IRenderedComponent<Components.Shell> cut, VaultSession? previous = null, TimeSpan? timeout = null) =>
         cut.WaitForAssertion(() =>
         {
             Assert.NotNull(State.Session);
             Assert.NotSame(previous, State.Session);
             Assert.Single(cut.FindAll(".ne-editor-pane"));
-        });
+        }, timeout);
 
     protected override void Dispose(bool disposing)
     {
