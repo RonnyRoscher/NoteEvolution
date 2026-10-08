@@ -29,6 +29,19 @@ public interface ILinkService
     AdoptResult Adopt(Book book, Guid noteBlockKey, InsertPosition position);
 
     /// <summary>
+    /// Copies the note block's text and sub-bullets (without property lines) into an existing text block or detail
+    /// (<paramref name="position"/>), adds the note's id to the enclosing text block's <c>source::</c> unless it is
+    /// there (the text block gets an <c>id::</c> if needed; a detail never gets a source of its own), then adds the
+    /// usage to the note's <c>used-in::</c>. The result names the enclosing text block. Can be undone („Übernehmen“)
+    /// as long as the text block with its details is still as this left it.
+    /// </summary>
+    /// <exception cref="ArgumentException">Unknown note block or position, or the text would not stay one block.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">The offset of <see cref="IntoPosition.AtCursor"/> is outside the element's text.</exception>
+    /// <exception cref="ReadOnlyPageException">The book page is read-only.</exception>
+    /// <exception cref="InvalidOperationException">The note's page is read-only; nothing was changed.</exception>
+    AdoptResult AdoptInto(Book book, Guid noteBlockKey, IntoPosition position);
+
+    /// <summary>
     /// Fully links an existing text block and a note block (a confirmed placement): gives both an <c>id::</c>, adds
     /// the note's id to the text block's <c>source::</c>, then sets <c>used-in:: [[book]] ((text block id))</c> on the
     /// note, replacing an entry for the same book that has no block reference. Writes only property lines; what is
