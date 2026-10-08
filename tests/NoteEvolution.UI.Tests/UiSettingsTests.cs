@@ -76,6 +76,17 @@ public class UiSettingsTests
         Assert.Null(loaded.LastBookOf(dir.Path));
     }
 
+    [Fact]
+    public void AiModelId_RoundTrips()
+    {
+        using var dir = new TempDir();
+        Assert.Null(new UiSettings().AiModelId);
+
+        new UiSettings { AiModelId = "bge-m3-int8" }.Save(dir.Path);
+
+        Assert.Equal("bge-m3-int8", UiSettings.Load(dir.Path).AiModelId);
+    }
+
     [Theory]
     [InlineData(2, 10, 5, 50)]
     [InlineData(99, 20, 500, 100)]

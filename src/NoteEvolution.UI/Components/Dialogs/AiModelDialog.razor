@@ -63,7 +63,7 @@
         var download = _download = new CancellationTokenSource();
         try
         {
-            await Ai.DownloadAsync(new Progress(this), download.Token);
+            await Ai.DownloadAsync(Ai.Model, new Progress(this), download.Token);
             await OnClose.InvokeAsync();
         }
         catch (OperationCanceledException) when (download.IsCancellationRequested)
