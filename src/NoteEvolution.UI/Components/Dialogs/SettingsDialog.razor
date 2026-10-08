@@ -42,20 +42,10 @@
     {
         <div class="ne-settings-field ne-settings-ai">
             <span class="ne-settings-label">@L["SettingsAiModel"]</span>
-            @if (ai.IsDownloading)
-            {
-                <span class="ne-settings-ai-status">@L["SettingsAiDownloading"]</span>
-            }
-            else if (ai.ModelInstalled)
-            {
-                <span class="ne-settings-ai-status">@L["SettingsAiInstalled", ai.Model.DisplayName]</span>
-            }
-            else
-            {
-                <span class="ne-settings-ai-status">@L["SettingsAiMissing"]</span>
-                @* The AI model dialog asks for the confirmation; these settings stay open underneath. *@
-                <button type="button" class="ne-settings-ai-download" @onclick="State.RequestAiModelDialog">@L["AiDownload"]</button>
-            }
+            <span class="ne-settings-ai-active">@L["SettingsAiActive", ai.Model.DisplayName, ModelSizes.Megabytes(ai.Model.TotalSize), ModelSizes.Gigabytes(ai.Model.MemoryEstimate)]</span>
+            <span class="ne-settings-ai-status">@L[ai.IsDownloading ? "SettingsAiDownloading" : ai.ModelInstalled ? "SettingsAiInstalled" : "SettingsAiMissing"]</span>
+            @* The AI model dialog lets the user choose and asks for the confirmation; these settings stay open underneath. *@
+            <button type="button" class="ne-settings-ai-choose" disabled="@ai.IsDownloading" @onclick="State.RequestAiModelDialog">@L["SettingsAiChoose"]</button>
         </div>
     }
     </ChildContent>

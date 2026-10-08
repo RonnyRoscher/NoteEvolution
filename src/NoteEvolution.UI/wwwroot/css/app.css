@@ -1151,10 +1151,60 @@ html, body {
     align-items: flex-start;
 }
 
+.ne-settings-ai-active,
+.ne-settings-ai-status {
+    color: var(--fg-muted);
+    font-size: 12px;
+}
+
 /* AI model dialog */
 
 .ne-ai-progress {
     width: 100%;
+}
+
+.ne-ai-model-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 12px;
+}
+
+.ne-ai-model-option {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: baseline;
+    column-gap: 8px;
+    padding: 6px 10px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    cursor: pointer;
+}
+
+.ne-ai-model-option:has(input:checked) {
+    border-color: var(--accent);
+}
+
+.ne-ai-model-option:has(input:disabled) {
+    cursor: default;
+    opacity: 0.7;
+}
+
+.ne-ai-model-name {
+    font-weight: 600;
+}
+
+.ne-ai-model-active {
+    color: var(--accent);
+    font-size: 12px;
+}
+
+.ne-ai-model-size,
+.ne-ai-model-note {
+    grid-column: 2 / -1;
+    color: var(--fg-muted);
+    font-size: 12px;
 }
 
 /* Undo toast */
