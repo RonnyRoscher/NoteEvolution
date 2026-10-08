@@ -33,7 +33,7 @@
         }
         else
         {
-            <span class="ne-outline-title">@(isPrologue ? L["OutlinePrologue"] : Node.Title)</span>
+            <span class="ne-outline-title">@(isPrologue ? L["OutlinePrologue"] : Node.Title.Length > 0 ? Node.Title : L["OutlineUntitled"])</span>
         }
         <span class="ne-outline-meta">
             @if (warnings.Count > 0)

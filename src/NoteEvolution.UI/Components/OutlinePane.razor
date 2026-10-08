@@ -111,15 +111,13 @@ else
 
     internal bool IsSelected(OutlineNode node) => State.CurrentSectionKey == node.Key;
 
+    /// <summary>
+    /// Scrolls the editor to the node's heading (the prologue: the start of the book) and puts the cursor there; the
+    /// node becomes the current section. A second click reveals it again.
+    /// </summary>
     internal void Select(OutlineNode node)
     {
-        if (State.CurrentSectionKey == node.Key)
-        {
-            return;
-        }
-
-        State.CurrentSectionKey = node.Key;
-        State.CursorTextBlockKey = null;
+        State.RevealElement(node.Key);
         State.Notify();
     }
 
@@ -185,8 +183,9 @@ else
         var added = Guid.Empty;
         if (await ApplyAsync(book => added = OutlineEditor.AddHeading(book, parentKey, title), "OutlineMoveInvalid") == ApplyResult.Saved)
         {
+            // Not revealed: the editor would take the focus from the rename field.
             State.CurrentSectionKey = added;
-            State.CursorTextBlockKey = null;
+            State.Cursor = null;
             _renamingKey = added;
             RenameText = title;
             State.Notify();

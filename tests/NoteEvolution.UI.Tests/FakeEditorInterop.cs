@@ -16,6 +16,9 @@ public sealed class FakeEditorInterop : IEditorInterop
     /// <summary>The keys passed to <see cref="RevealAsync"/>, in order.</summary>
     public List<Guid> Reveals { get; } = [];
 
+    /// <summary>All calls in order: <c>doc</c> for <see cref="SetDocumentAsync"/>, <c>reveal:{key}</c> for <see cref="RevealAsync"/>.</summary>
+    public List<string> Calls { get; } = [];
+
     /// <summary>The document shown last.</summary>
     public string Json => Documents[^1].Json;
 
@@ -30,12 +33,14 @@ public sealed class FakeEditorInterop : IEditorInterop
     public Task SetDocumentAsync(string docJson, bool showChips)
     {
         Documents.Add((docJson, showChips));
+        Calls.Add("doc");
         return Task.CompletedTask;
     }
 
     public Task RevealAsync(Guid elementKey)
     {
         Reveals.Add(elementKey);
+        Calls.Add($"reveal:{elementKey}");
         return Task.CompletedTask;
     }
 

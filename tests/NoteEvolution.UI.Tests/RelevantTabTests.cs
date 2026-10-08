@@ -222,20 +222,19 @@ public class RelevantTabTests : UiTestContext
     }
 
     [Fact]
-    public async Task Relevant_ManuscriptMode_UsesCursorBlock()
+    public async Task Relevant_CursorInTextBlock_UsesCursorBlock()
     {
         var tv = Vault();
         await OpenReadyAsync(tv, new FakeEmbedder());
-        State.Mode = ViewMode.Manuscript;
         State.CurrentSectionKey = State.CurrentBook!.Root.Key;
-        State.CursorTextBlockKey = State.CurrentBook.Root.Children.ElementAt(1).TextBlocks.First().Key;
+        SetCursorInTextBlock(State.CurrentBook.Root.Children.ElementAt(1).TextBlocks.First().Key);
         var cut = Render<NotesPane>();
 
         cut.WaitForAssertion(() => Assert.Contains(Music, Texts(cut)[0]));
 
         Act(cut, () =>
         {
-            State.CursorTextBlockKey = State.CurrentBook.Root.Children.ElementAt(2).TextBlocks.First().Key;
+            SetCursorInTextBlock(State.CurrentBook.Root.Children.ElementAt(2).TextBlocks.First().Key);
             State.Notify();
         });
         Time.Advance(Debounce);

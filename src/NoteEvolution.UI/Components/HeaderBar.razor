@@ -43,13 +43,6 @@
         </select>
     }
 
-    <div class="ne-mode" role="group" aria-label="@L["ViewMode"]">
-        <button type="button" class="ne-mode-section @Active(ViewMode.Section)" aria-pressed="@Pressed(ViewMode.Section)"
-                @onclick="() => SetMode(ViewMode.Section)">@L["ModeSection"]</button>
-        <button type="button" class="ne-mode-manuscript @Active(ViewMode.Manuscript)" aria-pressed="@Pressed(ViewMode.Manuscript)"
-                @onclick="() => SetMode(ViewMode.Manuscript)">@L["ModeManuscript"]</button>
-    </div>
-
     <button type="button" class="ne-undo" disabled="@(!CanUndo)" title="@_session?.Undo.NextDescription"
             @onclick="Undo">@L["Undo"]</button>
     @if (_undoError is not null)
@@ -226,10 +219,6 @@
 
     private List<Page> ReadOnlyPages() => State.Session?.Vault.Pages.Where(p => p.IsReadOnly).ToList() ?? [];
 
-    private string? Active(ViewMode mode) => State.Mode == mode ? "active" : null;
-
-    private string Pressed(ViewMode mode) => State.Mode == mode ? "true" : "false";
-
     private async Task SelectBook(ChangeEventArgs e)
     {
         if (State.Session is not { } session || e.Value is not string value)
@@ -256,20 +245,9 @@
 
         State.CurrentBook = book;
         State.CurrentSectionKey = book.Root.Key;
-        State.CursorTextBlockKey = null;
+        State.Cursor = null;
         State.Notify();
         await OnBookSelected.InvokeAsync(book);
-    }
-
-    private void SetMode(ViewMode mode)
-    {
-        if (State.Mode == mode)
-        {
-            return;
-        }
-
-        State.Mode = mode;
-        State.Notify();
     }
 
     private async Task OpenHandled()

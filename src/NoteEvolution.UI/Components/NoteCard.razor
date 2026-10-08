@@ -233,8 +233,8 @@
 
     /// <summary>
     /// Goes to the place where the note is used: the book of its first <c>used-in::</c> entry with a block
-    /// reference (else its first entry) and the section containing that block (an entry without a block, or a block
-    /// that is not found, only switches the book).
+    /// reference (else its first entry), where the editor reveals that block (an entry without a block, or a block that
+    /// is not found, only switches the book).
     /// </summary>
     private void GoToUsage()
     {
@@ -251,12 +251,18 @@
         }
 
         var sameBook = string.Equals(State.CurrentBook?.LinkName, book.LinkName, StringComparison.OrdinalIgnoreCase);
-        var section = entry.BookBlockId is { } blockId ? SectionOf(book.Root, blockId) : null;
+        var target = entry.BookBlockId is { } blockId ? TargetOf(book.Root, blockId) : null;
         State.CurrentBook = book;
-        State.CurrentSectionKey = section ?? (sameBook && book.FindNode(State.CurrentSectionKey) is not null
-            ? State.CurrentSectionKey
-            : book.Root.Key);
-        State.CursorTextBlockKey = null;
+        if (target is { } key)
+        {
+            State.RevealElement(key);
+        }
+        else if (!sameBook)
+        {
+            State.CurrentSectionKey = book.Root.Key;
+            State.Cursor = null;
+        }
+
         State.Notify();
     }
 
@@ -311,8 +317,8 @@
     private static string SectionTitle(Book book, OutlineNode section) => section.Level == 0 ? book.Title : section.Title;
 
     /// <summary>
-    /// Goes to a section of the list: the editor saves first (the view changes behind it), then the book (if the
-    /// current one changed since) and the section are selected and the cursor is cleared.
+    /// Goes to a section of the list: the editor saves first, then the book (if the current one changed since) is
+    /// selected and the editor reveals the section's heading (the book root: the start of the book).
     /// </summary>
     private async Task GoToSectionAsync(Guid sectionKey)
     {
@@ -355,21 +361,27 @@
             return;
         }
 
-        State.CurrentSectionKey = sectionKey;
-        State.CursorTextBlockKey = null;
+        State.RevealElement(sectionKey);
         State.Notify();
     }
 
-    /// <summary>The key of the section whose heading, text block or paragraph has the id <paramref name="blockId"/>.</summary>
-    private static Guid? SectionOf(OutlineNode node, Guid blockId)
+    /// <summary>
+    /// The key of the heading or text block with the id <paramref name="blockId"/>; for a paragraph (detail) the key of
+    /// its text block.
+    /// </summary>
+    private static Guid? TargetOf(OutlineNode node, Guid blockId)
     {
-        if (node.Block?.Id == blockId
-            || node.TextBlocks.Any(text => text.Block.Id == blockId || text.Paragraphs.Any(p => p.Block.Id == blockId)))
+        if (node.Block?.Id == blockId)
         {
             return node.Key;
         }
 
-        return node.Children.Select(child => SectionOf(child, blockId)).FirstOrDefault(key => key is not null);
+        if (node.TextBlocks.FirstOrDefault(text => text.Block.Id == blockId || text.Paragraphs.Any(p => p.Block.Id == blockId)) is { } textBlock)
+        {
+            return textBlock.Key;
+        }
+
+        return node.Children.Select(child => TargetOf(child, blockId)).FirstOrDefault(key => key is not null);
     }
 
     /// <summary>

@@ -82,15 +82,6 @@
   <data name="ChooseBookPlaceholder" xml:space="preserve">
     <value>Seite als Buch wählen …</value>
   </data>
-  <data name="ViewMode" xml:space="preserve">
-    <value>Ansicht</value>
-  </data>
-  <data name="ModeSection" xml:space="preserve">
-    <value>Abschnitt</value>
-  </data>
-  <data name="ModeManuscript" xml:space="preserve">
-    <value>Manuskript</value>
-  </data>
   <data name="Undo" xml:space="preserve">
     <value>Rückgängig</value>
   </data>
@@ -191,6 +182,9 @@
   <!-- Gliederung -->
   <data name="OutlinePrologue" xml:space="preserve">
     <value>Vorspann</value>
+  </data>
+  <data name="OutlineUntitled" xml:space="preserve">
+    <value>(ohne Titel)</value>
   </data>
   <data name="OutlineAddSub" xml:space="preserve">
     <value>Unter-Überschrift hinzufügen</value>

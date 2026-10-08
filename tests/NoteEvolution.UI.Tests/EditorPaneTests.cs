@@ -41,13 +41,11 @@ public class EditorPaneTests : UiTestContext
     private OutlineNode Section(string title) =>
         State.Session!.Vault.FindBook("Buch - Alpha")!.Root.Children.First(n => n.Title == title);
 
-    /// <summary>Opens the vault, selects <paramref name="section"/> and renders the editor (section view unless told otherwise).</summary>
-    private async Task<(VaultSession Session, IRenderedComponent<EditorPane> Cut)> RenderAsync(
-        TestVault tv, string section = "Eins", ViewMode mode = ViewMode.Section)
+    /// <summary>Opens the vault, selects <paramref name="section"/> and renders the editor (it shows the whole book).</summary>
+    private async Task<(VaultSession Session, IRenderedComponent<EditorPane> Cut)> RenderAsync(TestVault tv, string section = "Eins")
     {
         var session = await OpenSessionAsync(tv);
         State.CurrentSectionKey = Section(section).Key;
-        State.Mode = mode;
         var cut = Render<EditorPane>();
         cut.WaitForAssertion(() => Assert.NotEmpty(Editor.Documents));
         return (session, cut);
@@ -56,6 +54,10 @@ public class EditorPaneTests : UiTestContext
     private static JsonNode Doc(string json) => JsonNode.Parse(json)!;
 
     private static JsonArray Blocks(JsonNode doc) => doc["content"]!.AsArray();
+
+    /// <summary>The index in <see cref="Blocks"/> of the text block at <paramref name="index"/> (counting text blocks only).</summary>
+    private static int At(JsonNode doc, int index) =>
+        Blocks(doc).Select((n, i) => (Type: (string?)n!["type"], Index: i)).Where(n => n.Type == "textBlock").ElementAt(index).Index;
 
     /// <summary>Replaces the own text of the text block at <paramref name="index"/> (counting text blocks only).</summary>
     private static void SetText(JsonNode doc, int index, string text)
@@ -98,15 +100,15 @@ public class EditorPaneTests : UiTestContext
     private string Text(string key) => Services.GetRequiredService<IStringLocalizer<Strings>>()[key].Value;
 
     [Fact]
-    public async Task Pane_ShowsSectionWithChips()
+    public async Task Pane_ShowsWholeBookWithChips()
     {
         using var tv = Alpha();
         var (_, cut) = await RenderAsync(tv);
 
         var (json, showChips) = Editor.Documents.Single();
         Assert.False(showChips);
-        Assert.Equal("Erster Text|Zweiter Text", TextsOf(json));
-        var chip = Blocks(Doc(json))[0]!["attrs"]!["sources"]![0]!;
+        Assert.Equal("Erster Text|Zweiter Text|Dritter Text", TextsOf(json));
+        var chip = Blocks(Doc(json))[At(Doc(json), 0)]!["attrs"]!["sources"]![0]!;
         Assert.Equal(NoteId, (string?)chip["id"]);
         Assert.StartsWith("Ideen – Gedächtnis wird", (string?)chip["label"]);
         Assert.Null(cut.Find(".ne-editor-host").GetAttribute("inert"));
@@ -180,7 +182,7 @@ public class EditorPaneTests : UiTestContext
         File.WriteAllText(path, tv.Read(BookPath).Replace("\t- Zweiter Text\n", "\t- Zweiter Text, extern\n"));
         await cut.InvokeAsync(() => State.Session!.HandleExternalChange(path));
 
-        cut.WaitForAssertion(() => Assert.Equal("Erster Text|Zweiter Text, extern", TextsOf(Editor.Json)));
+        cut.WaitForAssertion(() => Assert.Equal("Erster Text|Zweiter Text, extern|Dritter Text", TextsOf(Editor.Json)));
     }
 
     [Fact]
@@ -190,7 +192,7 @@ public class EditorPaneTests : UiTestContext
         var (session, cut) = await RenderAsync(tv);
         var original = Doc(Editor.Json);
         var deleted = original.DeepClone();
-        Blocks(deleted).RemoveAt(0);
+        Blocks(deleted).RemoveAt(At(deleted, 0));
         await ChangeAsync(cut, deleted);
         await cut.InvokeAsync(() => State.FlushEditor!());
         Assert.DoesNotContain("used-in::", tv.Read(NotesPath));
@@ -225,7 +227,7 @@ public class EditorPaneTests : UiTestContext
         cut.WaitForAssertion(() =>
         {
             Assert.Equal(2, Editor.Documents.Count);
-            Assert.Equal("Erster Text|Gedächtnis braucht Schlaf|Zweiter Text", TextsOf(Editor.Json));
+            Assert.Equal("Erster Text|Gedächtnis braucht Schlaf|Zweiter Text|Dritter Text", TextsOf(Editor.Json));
         });
     }
 
@@ -233,7 +235,7 @@ public class EditorPaneTests : UiTestContext
     public async Task Pane_DropOnHeading_AdoptsAtThatSectionsStart()
     {
         using var tv = Alpha();
-        var (session, cut) = await RenderAsync(tv, mode: ViewMode.Manuscript);
+        var (session, cut) = await RenderAsync(tv);
         State.CurrentSectionKey = Guid.Empty;
         await cut.InvokeAsync(State.Notify);
         var note = session.Notes.All().Single(n => n.Block.Content == "Gedächtnis braucht Schlaf");
@@ -259,7 +261,7 @@ public class EditorPaneTests : UiTestContext
         Assert.DoesNotContain("source::", book);
         Assert.DoesNotContain("used-in::", tv.Read(NotesPath));
         // The new document comes through the state change (InvokeAsync), after the chip call has returned.
-        cut.WaitForAssertion(() => Assert.Empty(Blocks(Doc(Editor.Json))[0]!["attrs"]!["sources"]!.AsArray()));
+        cut.WaitForAssertion(() => Assert.Empty(Blocks(Doc(Editor.Json))[At(Doc(Editor.Json), 0)]!["attrs"]!["sources"]!.AsArray()));
     }
 
     [Fact]
@@ -268,12 +270,12 @@ public class EditorPaneTests : UiTestContext
         using var tv = Alpha();
         var (_, cut) = await RenderAsync(tv);
         var doc = Doc(Editor.Json);
-        var first = Blocks(doc)[0]!;
+        var first = Blocks(doc)[At(doc, 0)]!;
         var split = first.DeepClone();
         var newKey = Guid.CreateVersion7().ToString("D");
         split["attrs"]!["key"] = newKey;
         split["attrs"]!["splitFrom"] = first["attrs"]!["key"]!.GetValue<string>();
-        Blocks(doc).Insert(1, split);
+        Blocks(doc).Insert(At(doc, 0) + 1, split);
         SetText(doc, 0, "Erster");
         SetText(doc, 1, "Text");
         await ChangeAsync(cut, doc);
@@ -299,12 +301,12 @@ public class EditorPaneTests : UiTestContext
         var doc = Doc(Editor.Json);
 
         // Backspace at the start of the second block: its paragraph moves into the first (R29).
-        var second = Blocks(doc)[1]!;
+        var second = Blocks(doc)[At(doc, 1)]!;
         var para = second["content"]![0]!.DeepClone();
         para["attrs"]!["key"] = Guid.CreateVersion7().ToString("D");
         para["attrs"]!["depth"] = 1;
-        Blocks(doc)[0]!["content"]!.AsArray().Add(para);
-        Blocks(doc).RemoveAt(1);
+        Blocks(doc)[At(doc, 0)]!["content"]!.AsArray().Add(para);
+        Blocks(doc).RemoveAt(At(doc, 1));
         await ChangeAsync(cut, doc);
         await cut.InvokeAsync(() => State.FlushEditor!());
 
@@ -314,7 +316,7 @@ public class EditorPaneTests : UiTestContext
     }
 
     [Fact]
-    public async Task Pane_SectionSwitch_SavesPendingTextToTheOldSection()
+    public async Task Pane_SectionSwitch_SavesPendingText_KeepsTheDocument()
     {
         using var tv = Alpha();
         var (_, cut) = await RenderAsync(tv);
@@ -326,19 +328,16 @@ public class EditorPaneTests : UiTestContext
         await cut.InvokeAsync(State.Notify);
 
         cut.WaitForAssertion(() =>
-        {
-            Assert.Contains("\t- Zweiter Text, noch nicht gespeichert\n- # Zwei\n\t- Dritter Text\n", tv.Read(BookPath));
-            Assert.Equal("Dritter Text", TextsOf(Editor.Json));
-        });
+            Assert.Contains("\t- Zweiter Text, noch nicht gespeichert\n- # Zwei\n\t- Dritter Text\n", tv.Read(BookPath)));
+        await cut.InvokeAsync(() => State.FlushEditor!());
+        Assert.Single(Editor.Documents);
     }
 
     [Fact]
-    public async Task Pane_ManuscriptView_ShowsHeadingsAndChipToggle()
+    public async Task Pane_ShowsHeadingsAndChipToggle()
     {
         using var tv = Alpha();
-        var (_, cut) = await RenderAsync(tv, mode: ViewMode.Manuscript);
-        State.CurrentSectionKey = Guid.Empty;
-        await cut.InvokeAsync(State.Notify);
+        var (_, cut) = await RenderAsync(tv);
 
         cut.WaitForAssertion(() =>
         {
@@ -368,7 +367,7 @@ public class EditorPaneTests : UiTestContext
         var book = tv.Read(BookPath);
         Assert.Contains("\t- Erster Text, lokal\n", book);
         Assert.Contains("\t- Zweiter Text, extern\n", book);
-        cut.WaitForAssertion(() => Assert.Equal("Erster Text, lokal|Zweiter Text, extern", TextsOf(Editor.Json)));
+        cut.WaitForAssertion(() => Assert.Equal("Erster Text, lokal|Zweiter Text, extern|Dritter Text", TextsOf(Editor.Json)));
     }
 
     [Fact]
@@ -465,7 +464,7 @@ public class EditorPaneTests : UiTestContext
         var (_, cut) = await RenderAsync(tv);
         var before = tv.Read(BookPath);
         var doc = Doc(Editor.Json);
-        Blocks(doc)[1]!["attrs"]!["key"] = Blocks(doc)[0]!["attrs"]!["key"]!.GetValue<string>(); // duplicate keys
+        Blocks(doc)[At(doc, 1)]!["attrs"]!["key"] = Blocks(doc)[At(doc, 0)]!["attrs"]!["key"]!.GetValue<string>(); // duplicate keys
 
         await ChangeAsync(cut, doc);
         await cut.InvokeAsync(() => State.FlushEditor!());

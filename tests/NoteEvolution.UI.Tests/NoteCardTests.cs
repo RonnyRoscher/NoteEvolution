@@ -39,7 +39,7 @@ public class NoteCardTests : UiTestContext
         var section = beta.Root.Children.Single().Children.Single();
         Assert.Equal("Beta Unter", section.Title);
         Assert.Equal(section.Key, State.CurrentSectionKey);
-        Assert.Null(State.CursorTextBlockKey);
+        Assert.Equal(section.TextBlocks.Single().Key, State.CursorTextBlockKey);
     }
 
     [Fact]
@@ -108,7 +108,7 @@ public class NoteCardTests : UiTestContext
         using var tv = Create();
         var session = await OpenAlphaAsync(tv);
         var first = State.CurrentBook!.Root.Children.First().TextBlocks.First();
-        State.CursorTextBlockKey = first.Key;
+        SetCursorInTextBlock(first.Key);
         var cut = RenderCard(Note(session, "Gedächtnis braucht"));
 
         cut.Find(".ne-note-adopt").Click();

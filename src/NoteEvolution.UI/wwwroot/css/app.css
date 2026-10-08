@@ -107,29 +107,6 @@ html, body {
     min-width: 0;
 }
 
-.ne-mode {
-    display: inline-flex;
-}
-
-.ne-mode button {
-    border-radius: 0;
-}
-
-.ne-mode button:first-child {
-    border-radius: 4px 0 0 4px;
-}
-
-.ne-mode button:last-child {
-    border-radius: 0 4px 4px 0;
-    border-left: none;
-}
-
-.ne-mode button.active {
-    background: var(--accent);
-    color: var(--accent-fg);
-    border-color: var(--accent);
-}
-
 .ne-ai {
     color: var(--fg-muted);
     font-size: 12px;

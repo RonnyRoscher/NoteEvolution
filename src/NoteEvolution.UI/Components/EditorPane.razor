@@ -9,8 +9,9 @@
 @inject IStringLocalizer<Strings> L
 @inject ILogger<EditorPane> Logger
 
-@* The book text (spec 7): the current section, or the current part as manuscript, in the TipTap editor. Every change
-   is saved 1000 ms after the last one by reconciling the editor's document into the book page (BookTextSaver). *@
+@* The book text (spec 7): the whole book as manuscript in the TipTap editor. Every change is saved 1000 ms after the
+   last one by reconciling the editor's document into the book page (BookTextSaver). The cursor element sets the
+   current section; revealed elements (outline, jumps) are scrolled to once the editor shows the book. *@
 <div class="ne-editor-pane">
     @if (State.CurrentBook is null)
     {
@@ -18,12 +19,9 @@
     }
     else
     {
-        @if (State.Mode == ViewMode.Manuscript)
-        {
-            <div class="ne-editor-bar">
-                <label class="ne-editor-chips"><input type="checkbox" checked="@_showChips" @onchange="ToggleChipsAsync" /> @L["EditorShowChips"]</label>
-            </div>
-        }
+        <div class="ne-editor-bar">
+            <label class="ne-editor-chips"><input type="checkbox" checked="@_showChips" @onchange="ToggleChipsAsync" /> @L["EditorShowChips"]</label>
+        </div>
         @if (ReadOnlyReason is { } reason)
         {
             <div class="ne-editor-hint" role="status">@L[reason]</div>
@@ -53,6 +51,9 @@
     private bool _shownChips;
     private bool _disposed;
 
+    /// <summary>True while <see cref="OnCursorChanged"/> notifies the other components (see <see cref="OnStateChanged"/>).</summary>
+    private bool _notifyingCursor;
+
     /// <summary>Why the book page cannot be edited now: it is read-only, or a conflict for its file is open (R26).</summary>
     private string? ReadOnlyReason => State switch
     {
@@ -65,6 +66,7 @@
     {
         _saver = new BookTextSaver(State, Logger);
         State.Changed += OnStateChanged;
+        State.RevealRequested += OnRevealRequested;
         State.FlushEditor = FlushAsync;
         State.WarnUnsavedText = WarnUnsavedText;
         State.HasUnsavedEditorText = HasUnsavedText;
@@ -104,6 +106,7 @@
 
         _disposed = true;
         State.Changed -= OnStateChanged;
+        State.RevealRequested -= OnRevealRequested;
         if (State.FlushEditor == (Func<Task>)FlushAsync)
         {
             State.FlushEditor = null;
@@ -199,9 +202,40 @@
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// Takes the cursor element and its section into <see cref="AppState"/> (without a cursor the section stays).
+    /// Components are only notified when the element or the section changed, not for every keystroke. The editor is
+    /// never reloaded for it (it reports the cursor after every new document), and typed text waits for its debounce.
+    /// </summary>
     public Task OnCursorChanged(CursorInfo? cursor)
     {
-        State.CursorTextBlockKey = cursor is { Kind: not ElementKind.Heading } c ? c.TextBlockKey ?? c.Key : null;
+        var before = State.Cursor;
+        if (cursor == before)
+        {
+            return Task.CompletedTask;
+        }
+
+        var section = State.CurrentSectionKey;
+        State.Cursor = cursor;
+        if (cursor is not null && State.CurrentBook is { } book)
+        {
+            State.CurrentSectionKey = State.CurrentElement is { } element ? BookElements.SectionOf(book, element) : Guid.Empty;
+        }
+
+        if (before is null || cursor is null || (before.Kind, before.Key, before.TextBlockKey) != (cursor.Kind, cursor.Key, cursor.TextBlockKey)
+            || section != State.CurrentSectionKey)
+        {
+            _notifyingCursor = true;
+            try
+            {
+                State.Notify();
+            }
+            finally
+            {
+                _notifyingCursor = false;
+            }
+        }
+
         return Task.CompletedTask;
     }
 
@@ -266,13 +300,27 @@
         StateHasChanged();
     }
 
-    private void OnStateChanged() => _ = InvokeAsync(async () =>
+    private void OnStateChanged()
     {
-        StateHasChanged();
-        await SyncAsync();
-    });
+        if (_notifyingCursor)
+        {
+            // The pane's own cursor notification: nothing the document depends on changed, the text waits for its
+            // debounce.
+            _ = InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        _ = InvokeAsync(async () =>
+        {
+            StateHasChanged();
+            await SyncAsync();
+        });
+    }
 
     private void OnPagesChanged(string path) => _ = InvokeAsync(SyncAsync);
+
+    /// <summary>Shows the current book (if it is not shown yet), then reveals the element (see <see cref="RevealPendingAsync"/>).</summary>
+    private void OnRevealRequested(Guid elementKey) => _ = InvokeAsync(SyncAsync);
 
     private void OnConflictsChanged() => _ = InvokeAsync(StateHasChanged);
 
@@ -349,8 +397,8 @@
     }
 
     /// <summary>
-    /// Saves the pending text to the place it was typed in, then shows the current book, section and view. The editor
-    /// is only given a new document when that differs from what it shows (keeping the cursor while typing).
+    /// Saves the pending text to the place it was typed in, then shows the current book and reveals a pending element.
+    /// The editor is only given a new document when that differs from what it shows (keeping the cursor while typing).
     /// </summary>
     private async Task SyncCoreAsync()
     {
@@ -369,20 +417,17 @@
             return;
         }
 
-        var manuscript = State.Mode == ViewMode.Manuscript;
-        var scope = book.FindNode(State.CurrentSectionKey) is not null ? State.CurrentSectionKey : book.Root.Key;
         var shown = _saver.Shown;
         var sameTarget = shown is not null
                          && ReferenceEquals(shown.Session, session)
-                         && string.Equals(shown.BookLink, book.LinkName, StringComparison.OrdinalIgnoreCase)
-                         && shown.Snapshot.ScopeKey == scope
-                         && shown.Snapshot.IncludeSubsections == manuscript;
+                         && string.Equals(shown.BookLink, book.LinkName, StringComparison.OrdinalIgnoreCase);
         if (_saver.Pending is not null)
         {
             // Saving failed and the text waits for the next try: keep showing it.
             if (sameTarget)
             {
                 StateHasChanged();
+                await RevealPendingAsync();
                 return;
             }
 
@@ -394,7 +439,7 @@
             _saver.Message = null;
         }
 
-        var fresh = BookSnapshot.Create(book, session.Vault, scope, manuscript);
+        var fresh = BookSnapshot.Create(book, session.Vault, book.Root.Key, true);
         if (sameTarget && !_saver.ReloadNeeded && _shownChips == _showChips
             && (SameContent(shown!.Snapshot, fresh) || (shown.FromEditor && SameShape(shown.Snapshot, fresh))))
         {
@@ -402,6 +447,7 @@
             // text slightly normalized; it is compared with the book's version from now on (R33).
             _saver.Shown = shown with { Snapshot = fresh, FromEditor = false };
             StateHasChanged();
+            await RevealPendingAsync();
             return;
         }
 
@@ -419,6 +465,16 @@
         _shownChips = _showChips;
         _saver.ReloadNeeded = false;
         StateHasChanged();
+        await RevealPendingAsync();
+    }
+
+    /// <summary>Scrolls to the element <see cref="AppState.RevealElement"/> asked for, now that the book is shown.</summary>
+    private async Task RevealPendingAsync()
+    {
+        if (State.TakePendingReveal() is { } elementKey)
+        {
+            await Editor.RevealAsync(elementKey);
+        }
     }
 
     private async Task ToggleChipsAsync(ChangeEventArgs e)

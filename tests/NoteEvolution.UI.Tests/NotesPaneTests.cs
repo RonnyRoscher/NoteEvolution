@@ -179,7 +179,7 @@ public class NotesPaneTests : UiTestContext
     {
         using var tv = Create();
         await OpenAlphaAsync(tv);
-        State.CursorTextBlockKey = State.CurrentBook!.Root.Children.First().TextBlocks.First().Key;
+        SetCursorInTextBlock(State.CurrentBook!.Root.Children.First().TextBlocks.First().Key);
         var cut = Render<NotesPane>();
         ShowJournal(cut);
 

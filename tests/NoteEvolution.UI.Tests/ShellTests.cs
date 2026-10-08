@@ -195,23 +195,6 @@ public class ShellTests : UiTestContext
     }
 
     [Fact]
-    public void HeaderBar_ModeToggle_SwitchesViewMode()
-    {
-        var cut = Render<HeaderBar>();
-        Assert.Equal(ViewMode.Section, State.Mode);
-
-        cut.Find(".ne-mode-manuscript").Click();
-
-        Assert.Equal(ViewMode.Manuscript, State.Mode);
-        Assert.Equal("true", cut.Find(".ne-mode-manuscript").GetAttribute("aria-pressed"));
-        Assert.Equal("false", cut.Find(".ne-mode-section").GetAttribute("aria-pressed"));
-
-        cut.Find(".ne-mode-section").Click();
-
-        Assert.Equal(ViewMode.Section, State.Mode);
-    }
-
-    [Fact]
     public void HeaderBar_ShowsAiOff()
     {
         var cut = Render<HeaderBar>();

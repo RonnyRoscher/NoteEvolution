@@ -1,15 +1,7 @@
 using NoteEvolution.Core.Books;
+using NoteEvolution.UI.Editor;
 
 namespace NoteEvolution.UI.State;
-
-public enum ViewMode
-{
-    /// <summary>Only the current section, text blocks set apart.</summary>
-    Section,
-
-    /// <summary>The current part as continuous text with headings.</summary>
-    Manuscript,
-}
 
 /// <summary>
 /// What the user is looking at, shared by all components (a DI singleton). Whoever changes it calls
@@ -23,13 +15,48 @@ public sealed class AppState
 
     public Book? CurrentBook { get; set; }
 
-    /// <summary>The <see cref="OutlineNode.Key"/> of the selected outline node (<see cref="Guid.Empty"/> = book root).</summary>
+    /// <summary>
+    /// The <see cref="OutlineNode.Key"/> of the current section (<see cref="Guid.Empty"/> = book root, the prologue): the
+    /// heading the cursor element belongs to. Without a cursor in the book the last one stays.
+    /// </summary>
     public Guid CurrentSectionKey { get; set; }
 
-    public ViewMode Mode { get; set; }
+    /// <summary>The element at the editor cursor as the editor reported it; <c>null</c> if the cursor is in none.</summary>
+    public CursorInfo? Cursor { get; set; }
 
-    /// <summary>The text block the editor cursor is in; <c>null</c> if none.</summary>
-    public Guid? CursorTextBlockKey { get; set; }
+    /// <summary>The text block the editor cursor is in (also in one of its details); <c>null</c> on a heading or without a cursor.</summary>
+    public Guid? CursorTextBlockKey => Cursor is { Kind: not ElementKind.Heading } c ? c.TextBlockKey ?? c.Key : null;
+
+    /// <summary>
+    /// The <see cref="Cursor"/>'s element in <see cref="CurrentBook"/>. A key the book does not have (a paragraph the
+    /// book stored under another key after a save) falls back to the cursor's text block, else to the heading of
+    /// <see cref="CurrentSectionKey"/> (the nearest heading before it); <c>null</c> without a cursor, or when neither
+    /// is found (the start of the book).
+    /// </summary>
+    public BookElement? CurrentElement
+    {
+        get
+        {
+            if (Cursor is not { } cursor || CurrentBook is not { } book)
+            {
+                return null;
+            }
+
+            return BookElements.Find(book, cursor.Key)
+                   ?? (cursor.TextBlockKey is { } textBlock && book.FindTextBlock(textBlock) is not null
+                       ? new BookElement(ElementKind.TextBlock, textBlock)
+                       : null)
+                   ?? (book.FindNode(CurrentSectionKey) is { Block: not null } heading
+                       ? new BookElement(ElementKind.Heading, heading.Key)
+                       : null);
+        }
+    }
+
+    /// <summary>
+    /// The element the editor is to scroll to and put the cursor at, until the editor has done so (after its next
+    /// document load if the book is still being loaded); <c>null</c> if none.
+    /// </summary>
+    public Guid? PendingReveal { get; private set; }
 
     /// <summary>The note the notes pane should show (e.g. after a click on a source chip).</summary>
     public Guid? FocusedNoteKey { get; set; }
@@ -63,6 +90,9 @@ public sealed class AppState
 
     public event Action? Changed;
 
+    /// <summary>An element is to be revealed in the editor (see <see cref="RevealElement"/>).</summary>
+    public event Action<Guid>? RevealRequested;
+
     /// <summary>Someone asked for the AI model dialog (e.g. the settings' download button); the shell shows it.</summary>
     public event Action? AiModelDialogRequested;
 
@@ -70,6 +100,41 @@ public sealed class AppState
 
     /// <summary>Asks the shell to show the AI model dialog, which offers the download.</summary>
     public void RequestAiModelDialog() => AiModelDialogRequested?.Invoke();
+
+    /// <summary>
+    /// Asks the editor to scroll to the element of <see cref="CurrentBook"/> with <paramref name="elementKey"/> (a
+    /// heading, text block or detail; <see cref="Guid.Empty"/> = the start of the book) and to put the cursor at its
+    /// start. Its section becomes the current section and the cursor is taken to be there; an element the book does not
+    /// have changes neither. The editor reveals it once it shows the book (<see cref="PendingReveal"/>). The caller
+    /// calls <see cref="Notify"/>.
+    /// </summary>
+    public void RevealElement(Guid elementKey)
+    {
+        if (CurrentBook is { } book)
+        {
+            if (elementKey == Guid.Empty)
+            {
+                CurrentSectionKey = Guid.Empty;
+                Cursor = null;
+            }
+            else if (BookElements.Find(book, elementKey) is { } element)
+            {
+                CurrentSectionKey = BookElements.SectionOf(book, element);
+                Cursor = new CursorInfo(element.Kind, element.Key, BookElements.TextBlockOf(book, element)?.Key, 0);
+            }
+        }
+
+        PendingReveal = elementKey;
+        RevealRequested?.Invoke(elementKey);
+    }
+
+    /// <summary>Returns <see cref="PendingReveal"/> and clears it; called by the editor when it reveals the element.</summary>
+    public Guid? TakePendingReveal()
+    {
+        var pending = PendingReveal;
+        PendingReveal = null;
+        return pending;
+    }
 
     /// <summary>
     /// Takes <see cref="CurrentBook"/> from the session's vault again, after its page was saved, reloaded or removed:
@@ -84,7 +149,7 @@ public sealed class AppState
         if (CurrentBook?.FindNode(CurrentSectionKey) is null)
         {
             CurrentSectionKey = CurrentBook?.Root.Key ?? Guid.Empty;
-            CursorTextBlockKey = null;
+            Cursor = null;
         }
     }
 }

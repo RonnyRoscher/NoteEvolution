@@ -184,8 +184,8 @@
     }
 
     /// <summary>
-    /// Goes to the section holding the book block whose <c>source::</c> is broken and closes the dialog. The editor
-    /// saves its pending text first.
+    /// Reveals the book block whose <c>source::</c> is broken in the editor (switching the book if needed) and closes
+    /// the dialog. The editor saves its pending text first.
     /// </summary>
     private async Task GoToAsync(BrokenSource broken)
     {
@@ -210,23 +210,21 @@
         }
 
         State.CurrentBook = book;
-        State.CurrentSectionKey = SectionOf(book.Root, broken.TextBlockKey) ?? book.Root.Key;
-        State.CursorTextBlockKey = null;
+        State.RevealElement(TargetOf(book, broken.TextBlockKey));
         State.Notify();
         await OnClose.InvokeAsync();
     }
 
-    /// <summary>The key of the section whose heading, text block or paragraph is the block with <paramref name="blockKey"/>.</summary>
-    private static Guid? SectionOf(OutlineNode node, Guid blockKey)
+    /// <summary>
+    /// The heading or text block with <paramref name="blockKey"/>, for a paragraph (detail) its text block;
+    /// <see cref="Guid.Empty"/> (the start of the book) if the book does not have it.
+    /// </summary>
+    private static Guid TargetOf(Book book, Guid blockKey) => BookElements.Find(book, blockKey) switch
     {
-        if (node.Block?.Key == blockKey
-            || node.TextBlocks.Any(text => text.Block.Key == blockKey || text.Paragraphs.Any(p => p.Block.Key == blockKey)))
-        {
-            return node.Key;
-        }
-
-        return node.Children.Select(child => SectionOf(child, blockKey)).FirstOrDefault(key => key is not null);
-    }
+        { Kind: ElementKind.Detail } detail => BookElements.TextBlockOf(book, detail)!.Key,
+        { } element => element.Key,
+        null => Guid.Empty,
+    };
 
     private void UpdateSearch(VaultSession session, IEnumerable<Page> pages)
     {

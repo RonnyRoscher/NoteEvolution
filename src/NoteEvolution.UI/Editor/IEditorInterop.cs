@@ -78,8 +78,9 @@ public interface IEditorInterop : IAsyncDisposable
     Task SetDocumentAsync(string docJson, bool showChips);
 
     /// <summary>
-    /// Puts the cursor at the start of the element's text and scrolls it into view; <see cref="Guid.Empty"/> is the
-    /// start of the book. An element the editor does not show is ignored.
+    /// Puts the cursor at the start of the element's text, scrolls it into view and gives the editor the focus (unless
+    /// a text field has it); <see cref="Guid.Empty"/> is the start of the book. An element the editor does not show is
+    /// ignored.
     /// </summary>
     Task RevealAsync(Guid elementKey);
 }

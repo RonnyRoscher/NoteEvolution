@@ -64,7 +64,7 @@ public class WhereToTests : UiTestContext
             flushed++;
             return Task.CompletedTask;
         };
-        State.CursorTextBlockKey = book.Root.Children.First().TextBlocks.First().Key;
+        SetCursorInTextBlock(book.Root.Children.First().TextBlocks.First().Key);
         var cut = RenderCard(session);
 
         cut.Find(".ne-note-whereto").Click();

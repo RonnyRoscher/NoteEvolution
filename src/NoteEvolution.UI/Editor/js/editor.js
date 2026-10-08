@@ -749,7 +749,13 @@ export function createEditor(host, dotnet, options = {}) {
                 return;
             }
             editor.view.dispatch(editor.state.tr.setSelection(TextSelection.create(doc, target.at)));
-            // ProseMirror scrolls to the selection only while the editor has the focus.
+            // The user types on right there; a text field that has the focus meanwhile (e.g. renaming an outline
+            // heading after a double click) keeps it.
+            const active = document.activeElement;
+            if (!(active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement || active instanceof HTMLSelectElement)) {
+                editor.view.focus();
+            }
+            // ProseMirror scrolls to the selection only while the editor has the focus, and focus() does not scroll.
             const dom = editor.view.nodeDOM(target.pos);
             if (dom instanceof Element) {
                 const rect = dom.getBoundingClientRect();
