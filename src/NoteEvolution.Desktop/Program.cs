@@ -24,8 +24,9 @@ internal static class Program
         Log.Logger = new LoggerConfiguration().MinimumLevel.Information().WriteTo.Sink(logSink).CreateLogger();
         AppDomain.CurrentDomain.UnhandledException += (_, e) => Log.Fatal(e.ExceptionObject as Exception, "Unhandled exception");
 
-        // The model lives in the user profile; it is downloaded only when the user confirms it (AiModelDialog).
+        // The models live in the user profile; one is downloaded only when the user confirms it (AiModelDialog).
         var models = new ModelStore(userData);
+        var settings = UiSettings.Load(userData);
         using var http = new HttpClient { Timeout = TimeSpan.FromMinutes(30) };
 
         AppState? state = null;
@@ -37,7 +38,7 @@ internal static class Program
             builder.Services.AddLocalization();
             builder.Services.AddSingleton<PhotinoPlatformServices>();
             builder.Services.AddSingleton<IPlatformServices>(sp => sp.GetRequiredService<PhotinoPlatformServices>());
-            builder.Services.AddSingleton(UiSettings.Load(userData));
+            builder.Services.AddSingleton(settings);
             builder.Services.AddSingleton<AppState>();
             builder.Services.AddSingleton<IClock, SystemClock>();
             builder.Services.AddSingleton(TimeProvider.System);
@@ -45,8 +46,10 @@ internal static class Program
             builder.Services.AddSingleton(sp => new AiRuntime(
                 models,
                 new ModelDownloader(http, models),
-                () => OnnxEmbedder.Load(models, ModelCatalog.E5Small),
-                sp.GetRequiredService<ILogger<AiRuntime>>()));
+                m => OnnxEmbedder.Load(models, m),
+                sp.GetRequiredService<ILogger<AiRuntime>>(),
+                ModelCatalog.All,
+                settings.AiModelId));
             builder.Services.AddTransient<IEditorInterop, TipTapInterop>();
             builder.RootComponents.Add<Shell>("#app");
 

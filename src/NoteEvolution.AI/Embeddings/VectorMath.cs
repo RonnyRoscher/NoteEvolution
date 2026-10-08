@@ -27,6 +27,18 @@ public static class VectorMath
         return NormalizeInPlace(sum);
     }
 
+    /// <summary>
+    /// Takes the first token's vector ([CLS]) of one sequence (<paramref name="hidden"/> is <c>tokens × dims</c>, row-major)
+    /// and L2-normalizes it. A zero first row gives a zero vector.
+    /// </summary>
+    public static float[] ClsNormalize(ReadOnlySpan<float> hidden, int tokens, int dims)
+    {
+        if (tokens < 1 || hidden.Length != tokens * dims)
+            throw new ArgumentException($"Expected {tokens}×{dims} values.");
+
+        return NormalizeInPlace(hidden[..dims].ToArray());
+    }
+
     /// <summary>Returns <paramref name="v"/> scaled to unit length as a new array; a zero vector stays a zero vector.</summary>
     public static float[] Normalize(float[] v) => NormalizeInPlace((float[])v.Clone());
 

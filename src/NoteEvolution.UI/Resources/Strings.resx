@@ -674,11 +674,38 @@
 
   <!-- KI-Modell -->
   <data name="AiModelTitle" xml:space="preserve">
-    <value>KI-Modell herunterladen</value>
+    <value>KI-Modell wählen</value>
   </data>
   <data name="AiModelText" xml:space="preserve">
-    <value>Für die KI-Funktionen (Relevant, Suche nach Bedeutung, Wohin damit?) braucht NoteEvolution ein Sprachmodell von etwa {0} MB.</value>
-    <comment>{0} = Größe in MB</comment>
+    <value>Für die KI-Funktionen (Relevant, Suche nach Bedeutung, Wohin damit?) braucht NoteEvolution ein Sprachmodell. Größere Modelle finden Passendes genauer, brauchen aber mehr Speicher und indizieren langsamer.</value>
+  </data>
+  <data name="AiModelOption" xml:space="preserve">
+    <value>Download ca. {0} MB · Arbeitsspeicher ca. {1} GB</value>
+    <comment>{0} = Größe des Downloads in MB, {1} = Arbeitsspeicher in GB</comment>
+  </data>
+  <data name="AiModelActive" xml:space="preserve">
+    <value>aktiv</value>
+  </data>
+  <data name="AiModelNote_multilingual-e5-small-int8" xml:space="preserve">
+    <value>schnell, solide Qualität</value>
+  </data>
+  <data name="AiModelNote_multilingual-e5-base-int8" xml:space="preserve">
+    <value>ausgewogen</value>
+  </data>
+  <data name="AiModelNote_multilingual-e5-large-int8" xml:space="preserve">
+    <value>beste e5-Qualität, deutlich langsamer</value>
+  </data>
+  <data name="AiModelNote_bge-m3-int8" xml:space="preserve">
+    <value>sehr gute mehrsprachige Qualität, langsam</value>
+  </data>
+  <data name="AiSwitch" xml:space="preserve">
+    <value>Wechseln</value>
+  </data>
+  <data name="AiModelSwitchHint" xml:space="preserve">
+    <value>Beim Wechsel wird der Index neu aufgebaut und das bisherige Modell gelöscht.</value>
+  </data>
+  <data name="AiModelSwitchConflict" xml:space="preserve">
+    <value>Solange ein Konflikt offen ist, kann das Modell nicht gewechselt werden.</value>
   </data>
   <data name="AiModelOffline" xml:space="preserve">
     <value>Der Download ist einmalig, danach arbeitet die KI offline auf diesem Rechner. Ohne Modell sucht die App nur im Volltext.</value>
@@ -690,6 +717,12 @@
   <data name="AiModelDownloadFailed" xml:space="preserve">
     <value>Das Modell konnte nicht heruntergeladen werden.</value>
   </data>
+  <data name="AiModelSwitchFailed" xml:space="preserve">
+    <value>Das Modell konnte nicht gewechselt werden.</value>
+  </data>
+  <data name="AiModelSwitchUnsaved" xml:space="preserve">
+    <value>Der Text im Editor konnte nicht gespeichert werden; das Modell wurde nicht gewechselt.</value>
+  </data>
   <data name="AiDownload" xml:space="preserve">
     <value>Herunterladen</value>
   </data>
@@ -699,9 +732,15 @@
   <data name="SettingsAiModel" xml:space="preserve">
     <value>KI-Modell</value>
   </data>
+  <data name="SettingsAiActive" xml:space="preserve">
+    <value>{0} – Download ca. {1} MB · Arbeitsspeicher ca. {2} GB</value>
+    <comment>{0} = Name des Modells, {1} = Größe des Downloads in MB, {2} = Arbeitsspeicher in GB</comment>
+  </data>
+  <data name="SettingsAiChoose" xml:space="preserve">
+    <value>Modell wählen…</value>
+  </data>
   <data name="SettingsAiInstalled" xml:space="preserve">
-    <value>{0} ist installiert.</value>
-    <comment>{0} = Name des Modells</comment>
+    <value>Installiert.</value>
   </data>
   <data name="SettingsAiMissing" xml:space="preserve">
     <value>Das Modell ist nicht installiert; die Suche arbeitet nur im Volltext.</value>

@@ -55,6 +55,12 @@ public sealed class AppState
     /// </summary>
     public Func<bool>? WarnUnsavedText { get; set; }
 
+    /// <summary>
+    /// Asked on the UI thread after <see cref="FlushEditor"/>: <c>true</c> if the editor still holds text it could not
+    /// save (without telling the user, unlike <see cref="WarnUnsavedText"/>); <c>null</c> while no editor is shown.
+    /// </summary>
+    public Func<bool>? HasUnsavedEditorText { get; set; }
+
     public event Action? Changed;
 
     /// <summary>Someone asked for the AI model dialog (e.g. the settings' download button); the shell shows it.</summary>

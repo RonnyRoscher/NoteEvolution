@@ -1,6 +1,7 @@
 @using NoteEvolution.AI.Model
 @implements IDisposable
 @inject AiRuntime Ai
+@inject AppState State
 @inject UiSettings Settings
 @inject IPlatformServices Platform
 @inject IStringLocalizer<Strings> L
@@ -9,27 +10,64 @@
 @* The download starts only here, after the user confirmed it; it ends with the dialog (Cancel, or a vault switch). *@
 <Modal Title="@L["AiModelTitle"]" CssClass="ne-ai-model-dialog">
     <ChildContent>
-        <p class="ne-ai-model-text">@L["AiModelText", Megabytes(Ai.Model.TotalSize)]</p>
+        <p class="ne-ai-model-text">@L["AiModelText"]</p>
+        <div class="ne-ai-model-list" role="radiogroup" aria-label="@L["AiModelTitle"]">
+            @foreach (var model in Ai.Models)
+            {
+                var candidate = model;
+                <label class="ne-ai-model-option">
+                    <input type="radio" name="ne-ai-model" checked="@(candidate.Id == Selected.Id)" disabled="@Busy"
+                           @onchange="() => _selected = candidate" />
+                    <span class="ne-ai-model-name">@candidate.DisplayName</span>
+                    @if (Ai.ModelInstalled && candidate.Id == Ai.Model.Id)
+                    {
+                        <span class="ne-ai-model-active">@L["AiModelActive"]</span>
+                    }
+                    <span class="ne-ai-model-size">@L["AiModelOption", ModelSizes.Megabytes(candidate.TotalSize), ModelSizes.Gigabytes(candidate.MemoryEstimate)]</span>
+                    @if (Note(candidate) is { } note)
+                    {
+                        <span class="ne-ai-model-note">@note</span>
+                    }
+                </label>
+            }
+        </div>
         <p class="ne-dialog-hint">@L["AiModelOffline"]</p>
+        @if (Ai.ModelInstalled)
+        {
+            <p class="ne-dialog-hint ne-ai-switch-hint">@L["AiModelSwitchHint"]</p>
+            @if (SwitchBlocked)
+            {
+                <p class="ne-dialog-error ne-ai-switch-conflict" role="alert">@L["AiModelSwitchConflict"]</p>
+            }
+        }
         @if (_progress is { } progress)
         {
             <progress class="ne-ai-progress" max="@progress.BytesTotal" value="@progress.BytesDone"></progress>
-            <span class="ne-dialog-hint">@L["AiModelProgress", Megabytes(progress.BytesDone), Megabytes(progress.BytesTotal)]</span>
+            <span class="ne-dialog-hint">@L["AiModelProgress", ModelSizes.Megabytes(progress.BytesDone), ModelSizes.Megabytes(progress.BytesTotal)]</span>
         }
-        @if (_error is not null)
+        @if (_failure is { } failure && _error is { } error)
         {
-            <p class="ne-dialog-error" role="alert">@L["AiModelDownloadFailed"] <span class="ne-ai-model-error">@_error</span></p>
+            <p class="ne-dialog-error ne-ai-model-failure" role="alert">@L[failure] <span class="ne-ai-model-error">@error</span></p>
+        }
+        else if (_failure is { } message)
+        {
+            <p class="ne-dialog-error ne-ai-model-failure" role="alert">@L[message]</p>
         }
     </ChildContent>
     <Footer>
-        @if (_download is null)
+        @if (_download is not null)
         {
-            <button type="button" class="ne-ai-download" @onclick="DownloadAsync">@L["AiDownload"]</button>
-            <button type="button" class="ne-ai-not-now" @onclick="NotNowAsync">@L["AiNotNow"]</button>
+            <button type="button" class="ne-ai-cancel" @onclick="CancelDownload">@L["Cancel"]</button>
+        }
+        else if (!Ai.ModelInstalled)
+        {
+            <button type="button" class="ne-ai-download" disabled="@Busy" @onclick="LoadFirstAsync">@L["AiDownload"]</button>
+            <button type="button" class="ne-ai-not-now" disabled="@Busy" @onclick="NotNowAsync">@L["AiNotNow"]</button>
         }
         else
         {
-            <button type="button" class="ne-ai-cancel" @onclick="CancelDownload">@L["Cancel"]</button>
+            <button type="button" class="ne-ai-switch" disabled="@(Busy || SwitchBlocked || Selected.Id == Ai.Model.Id)" @onclick="SwitchAsync">@L["AiSwitch"]</button>
+            <button type="button" class="ne-ai-close" disabled="@Busy" @onclick="OnClose">@L["Cancel"]</button>
         }
     </Footer>
 </Modal>
@@ -39,41 +77,133 @@
     private CancellationTokenSource? _download;
 
     private DownloadProgress? _progress;
-    private string? _error;
 
-    /// <summary>The dialog is done: the model was downloaded, or the user chose "not now".</summary>
+    /// <summary>What failed (a key in <c>Strings.resx</c>: the download, or the switch); <c>null</c> while nothing did.</summary>
+    private string? _failure;
+
+    /// <summary>The details of <see cref="_failure"/>, if any.</summary>
+    private string? _error;
+    private ModelInfo? _selected;
+
+    /// <summary>The download ended and <see cref="OnSwitch"/> runs: nothing can be started or changed meanwhile.</summary>
+    private bool _switching;
+
+    /// <summary>The dialog is done: the model was downloaded and activated, or the user chose "not now" or closed it.</summary>
     [Parameter] public EventCallback OnClose { get; set; }
 
-    /// <summary>Whole megabytes, rounded to tens above 100 MB (the size is an estimate for the user).</summary>
-    private static long Megabytes(long bytes)
+    /// <summary>
+    /// The selected model was downloaded while another model is installed; the owner makes it the active one (it closes
+    /// the vault session first, as the embedder is replaced).
+    /// </summary>
+    [Parameter] public EventCallback<ModelInfo> OnSwitch { get; set; }
+
+    /// <summary>The chosen model; the active one until the user chooses another.</summary>
+    private ModelInfo Selected => _selected ?? Ai.Model;
+
+    private bool Busy => _download is not null || _switching || Ai.IsDownloading;
+
+    /// <summary>A conflict is open: the vault must not be opened again (R26), so the model cannot be switched.</summary>
+    private bool SwitchBlocked => State.Session is { HasAnyOpenConflict: true };
+
+    /// <summary>The note on the model (data of the app's catalog); none for a model without one.</summary>
+    private string? Note(ModelInfo model)
     {
-        var mb = (long)Math.Round(bytes / 1_000_000.0);
-        return mb > 100 ? (long)Math.Round(mb / 10.0) * 10 : mb;
+        var note = L["AiModelNote_" + model.Id];
+        return note.ResourceNotFound ? null : note.Value;
     }
 
-    private async Task DownloadAsync()
+    /// <summary>No model is installed yet: the chosen one is downloaded, becomes the active model and is remembered.</summary>
+    private async Task LoadFirstAsync()
     {
-        if (_download is not null)
+        var model = Selected;
+        if (!await DownloadSelectedAsync(model))
         {
             return;
         }
 
-        _error = null;
-        _progress = new DownloadProgress(0, Ai.Model.TotalSize);
+        // Saved before the activation deletes other models' folders; taken back if the activation fails.
+        var previous = Settings.AiModelId;
+        Settings.AiModelId = model.Id;
+        SaveSettings();
+        try
+        {
+            Ai.Activate(model);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Activating the AI model failed");
+            Settings.AiModelId = previous;
+            SaveSettings();
+            Fail("AiModelSwitchFailed", ex.Message);
+            return;
+        }
+
+        await OnClose.InvokeAsync();
+    }
+
+    /// <summary>Another model is installed: the chosen one is downloaded; the owner switches to it unless a conflict has opened meanwhile.</summary>
+    private async Task SwitchAsync()
+    {
+        var model = Selected;
+        if (Busy || SwitchBlocked || model.Id == Ai.Model.Id)
+        {
+            return;
+        }
+
+        if (!await DownloadSelectedAsync(model) || SwitchBlocked)
+        {
+            return;
+        }
+
+        _switching = true;
+        try
+        {
+            await OnSwitch.InvokeAsync(model);
+        }
+        catch (UnsavedEditorTextException)
+        {
+            // Nothing was switched; the downloaded model stays, so trying again needs no download.
+            Fail("AiModelSwitchUnsaved", null);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Switching the AI model failed");
+            Fail("AiModelSwitchFailed", ex.Message);
+        }
+        finally
+        {
+            _switching = false;
+        }
+    }
+
+    /// <summary>Downloads <paramref name="model"/> and tells whether it worked (not when cancelled or failed; an error is shown).</summary>
+    private async Task<bool> DownloadSelectedAsync(ModelInfo model)
+    {
+        if (_download is not null)
+        {
+            return false;
+        }
+
+        Fail(null, null);
+        _progress = new DownloadProgress(0, model.TotalSize);
         var download = _download = new CancellationTokenSource();
         try
         {
-            await Ai.DownloadAsync(new Progress(this), download.Token);
-            await OnClose.InvokeAsync();
+            await Ai.DownloadAsync(model, new Progress(this), download.Token);
+
+            // Cancelled (the dialog closed) after the download had ended: nothing more is done with it.
+            return !download.IsCancellationRequested;
         }
         catch (OperationCanceledException) when (download.IsCancellationRequested)
         {
             // cancelled by the user (or by closing the dialog): nothing to report
+            return false;
         }
         catch (Exception ex)
         {
             Logger.LogWarning(ex, "Downloading the AI model failed");
-            _error = ex.Message;
+            Fail("AiModelDownloadFailed", ex.Message);
+            return false;
         }
         finally
         {
@@ -87,6 +217,19 @@
     private async Task NotNowAsync()
     {
         Settings.AiModelDeclined = true;
+        SaveSettings();
+        await OnClose.InvokeAsync();
+    }
+
+    /// <summary>Shows what failed (<paramref name="failure"/>, a key in <c>Strings.resx</c>) with its details; <c>null</c> clears it.</summary>
+    private void Fail(string? failure, string? error)
+    {
+        _failure = failure;
+        _error = error;
+    }
+
+    private void SaveSettings()
+    {
         try
         {
             Settings.Save(Platform.UserDataDirectory);
@@ -95,8 +238,6 @@
         {
             Logger.LogWarning(ex, "Saving the UI settings failed");
         }
-
-        await OnClose.InvokeAsync();
     }
 
     private void CancelDownload() => _download?.Cancel();

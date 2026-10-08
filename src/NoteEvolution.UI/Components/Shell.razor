@@ -1,3 +1,4 @@
+@using NoteEvolution.AI.Model
 @using NoteEvolution.Core.Books
 @using NoteEvolution.Core.Model
 @using NoteEvolution.Core.Storage
@@ -110,7 +111,7 @@
     @* Above the other dialogs: it may be asked for from the settings, which stay open underneath. *@
     @if (_aiDialogOpen && _ai is not null)
     {
-        <AiModelDialog OnClose="CloseAiDialog" />
+        <AiModelDialog OnClose="CloseAiDialog" OnSwitch="SwitchAiModelAsync" />
     }
 
     <ConflictDialog />
@@ -159,6 +160,89 @@
     }
 
     private void CloseAiDialog() => _aiDialogOpen = false;
+
+    /// <summary>
+    /// The model dialog downloaded <paramref name="target"/>: it becomes the active model. The vault session shares the
+    /// embedder that is replaced, so it is closed first (after the editor's text is saved into it) and opened again
+    /// afterwards, with the remembered book. An exception of the activation reaches the dialog, which stays open and
+    /// shows it; the vault is opened again in any case. If the editor's text cannot be saved, nothing is closed or
+    /// switched (<see cref="UnsavedEditorTextException"/>).
+    /// </summary>
+    private async Task SwitchAiModelAsync(ModelInfo target)
+    {
+        var session = State.Session;
+        var root = session?.Vault.Root;
+        if (session is not null)
+        {
+            if (State.FlushEditor is { } flush)
+            {
+                try
+                {
+                    await flush();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Saving the editor's text before switching the AI model failed");
+                    throw new UnsavedEditorTextException(ex);
+                }
+            }
+
+            // A conflict opened meanwhile (the flush yields, or its save found one): the vault must not be opened again
+            // (R26), so nothing is switched; the dialog shows the conflict hint.
+            if (session.HasAnyOpenConflict)
+            {
+                State.Notify();
+                return;
+            }
+
+            // The save failed (e.g. the file is locked): closing the vault would lose the text the editor still holds.
+            if (State.HasUnsavedEditorText?.Invoke() == true)
+            {
+                throw new UnsavedEditorTextException();
+            }
+
+            if (_subscribed is not null)
+            {
+                _subscribed.PagesChanged -= OnPagesChanged;
+            }
+
+            State.Session = null;
+            State.CurrentBook = null;
+            _subscribed = null;
+            session.Dispose();
+        }
+
+        try
+        {
+            // Saved before the activation deletes the old model's folder; taken back if the activation fails.
+            var previous = Settings.AiModelId;
+            Settings.AiModelId = target.Id;
+            SaveSettings();
+            try
+            {
+                _ai!.Activate(target);
+            }
+            catch
+            {
+                Settings.AiModelId = previous;
+                SaveSettings();
+                throw;
+            }
+
+            _aiDialogOpen = false;
+        }
+        finally
+        {
+            if (root is not null)
+            {
+                await OpenVaultAsync(root);
+            }
+            else
+            {
+                State.Notify();
+            }
+        }
+    }
 
     /// <summary>Raised by whoever asks for the AI model dialog (the settings, the "Relevant" tab).</summary>
     private void OnAiModelDialogRequested() => _ = InvokeAsync(() =>

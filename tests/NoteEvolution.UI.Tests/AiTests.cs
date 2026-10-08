@@ -9,6 +9,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Localization;
 using Microsoft.Extensions.Logging;
 using NoteEvolution.AI.Embeddings;
+using NoteEvolution.AI.Model;
 using NoteEvolution.AI.Relevance;
 using NoteEvolution.AI.Search;
 using NoteEvolution.AI.Tests;
@@ -146,11 +147,32 @@ public class AiTests : UiTestContext
 
         cut.Find(".ne-settings").Click();
         Assert.Contains(Text("SettingsAiMissing"), cut.Find(".ne-settings-ai").TextContent);
-        cut.Find(".ne-settings-ai-download").Click();
+        cut.Find(".ne-settings-ai-choose").Click();
 
         cut.WaitForAssertion(() => Assert.Single(cut.FindAll(".ne-ai-model-dialog")));
         Assert.Equal(0, loads);
         Assert.Equal(0, ModelServer.Requests);
+    }
+
+    // ---- Settings ----
+
+    [Theory]
+    [InlineData(false, "SettingsAiMissing")]
+    [InlineData(true, "SettingsAiInstalled")]
+    public void Settings_ShowsActiveModelWithSizes_AndChooseButton(bool installed, string stateKey)
+    {
+        var ai = UseAi(installed, () => new FakeEmbedder());
+
+        var cut = Render<SettingsDialog>();
+
+        var section = cut.Find(".ne-settings-ai").TextContent;
+        var model = ai.Model;
+        Assert.Contains(
+            Text("SettingsAiActive", model.DisplayName, ModelSizes.Megabytes(model.TotalSize), ModelSizes.Gigabytes(model.MemoryEstimate)),
+            section);
+        Assert.Contains(Text(stateKey), section);
+        Assert.Single(cut.FindAll(".ne-settings-ai-choose"));
+        Assert.False(cut.Find(".ne-settings-ai-choose").HasAttribute("disabled"));
     }
 
     [Fact]
@@ -427,7 +449,7 @@ public class AiTests : UiTestContext
     public void NoGermanLiterals_InNewComponents()
     {
         Services.AddSingleton<IStringLocalizer<Strings>>(new KeyLocalizer());
-        UseAi(installed: false, () => new FakeEmbedder());
+        UseAi(installed: false, () => new FakeEmbedder(), RealIdCatalog);
         var resources = new ResourceManager(typeof(Strings));
 
         var header = Render<HeaderBar>();
@@ -435,9 +457,10 @@ public class AiTests : UiTestContext
 
         var settings = Render<SettingsDialog>();
         AssertKeys(settings, resources);
-        Assert.Single(settings.FindAll(".ne-settings-ai-download"));
+        Assert.Single(settings.FindAll(".ne-settings-ai-choose"));
 
         var dialog = Render<AiModelDialog>();
+        Assert.Equal(2, dialog.FindAll(".ne-ai-model-option").Count);
         AssertKeys(dialog, resources);
 
         ModelServer.Hang = true;
@@ -455,6 +478,25 @@ public class AiTests : UiTestContext
         AssertKeys(dialog, resources);
     }
 
+    [Fact]
+    public void NoGermanLiterals_InTheSwitchVariant()
+    {
+        Services.AddSingleton<IStringLocalizer<Strings>>(new KeyLocalizer());
+        UseAi(installed: true, () => new FakeEmbedder(), RealIdCatalog);
+        var resources = new ResourceManager(typeof(Strings));
+
+        var dialog = Render<AiModelDialog>();
+
+        Assert.Single(dialog.FindAll(".ne-ai-switch"));
+        Assert.Single(dialog.FindAll(".ne-ai-switch-hint"));
+        Assert.Single(dialog.FindAll(".ne-ai-model-active"));
+        AssertKeys(dialog, resources);
+    }
+
+    /// <summary>Test models with ids of the real catalog, so that their note texts are resource keys too.</summary>
+    private static readonly IReadOnlyList<ModelInfo> RealIdCatalog =
+        [TestModel(ModelCatalog.E5Small.Id), TestModel(ModelCatalog.E5Base.Id)];
+
     private static void AssertKeys<T>(IRenderedComponent<T> cut, ResourceManager resources)
         where T : IComponent
     {
@@ -466,12 +508,12 @@ public class AiTests : UiTestContext
         }
     }
 
-    /// <summary>Texts of the element and its descendants; the error detail (an exception message) is data.</summary>
+    /// <summary>Texts of the element and its descendants; the error detail (an exception message) and model names are data.</summary>
     private static IEnumerable<string> UiTexts(IElement root)
     {
         foreach (var element in root.QuerySelectorAll("*").Prepend(root))
         {
-            if (element.Closest(".ne-ai-model-error, .ne-settings-folders") is not null)
+            if (element.Closest(".ne-ai-model-error, .ne-ai-model-name, .ne-settings-folders") is not null)
             {
                 continue;
             }

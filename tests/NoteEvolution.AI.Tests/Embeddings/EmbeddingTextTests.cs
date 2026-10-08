@@ -1,4 +1,5 @@
 using NoteEvolution.AI.Embeddings;
+using NoteEvolution.AI.Model;
 using NoteEvolution.Core.Books;
 using NoteEvolution.Core.Vaults;
 using NoteEvolution.TestSupport;
@@ -112,6 +113,22 @@ public class EmbeddingTextTests
     [Fact]
     public void ForSearch_TrimsText() =>
         Assert.Equal("query: Vertrauen", EmbeddingText.ForSearch("  Vertrauen \n"));
+
+    [Fact]
+    public void ForModel_E5_KeepsMarkers()
+    {
+        Assert.Equal("query: a", EmbeddingText.ForModel("query: a", ModelCatalog.E5Small));
+        Assert.Equal("passage: b", EmbeddingText.ForModel("passage: b", ModelCatalog.E5Small));
+    }
+
+    [Fact]
+    public void ForModel_BgeM3_RemovesMarkers()
+    {
+        Assert.Equal("a", EmbeddingText.ForModel("query: a", ModelCatalog.BgeM3));
+        Assert.Equal("b", EmbeddingText.ForModel("passage: b", ModelCatalog.BgeM3));
+        Assert.Equal("ohne", EmbeddingText.ForModel("ohne", ModelCatalog.BgeM3));
+        Assert.Equal("xquery: a", EmbeddingText.ForModel("xquery: a", ModelCatalog.BgeM3));
+    }
 
     [Fact]
     public void Hash_DependsOnModelAndText()

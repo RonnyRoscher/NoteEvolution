@@ -27,6 +27,18 @@ public class VectorMathTests
     }
 
     [Fact]
+    public void ClsNormalize_TakesFirstTokenNormalized()
+    {
+        // two tokens of two dimensions; only the first row ([CLS]) counts
+        var v = VectorMath.ClsNormalize([3, 4, 9, 9], tokens: 2, dims: 2);
+
+        Assert.Equal(0.6f, v[0], 6);
+        Assert.Equal(0.8f, v[1], 6);
+        Assert.Equal([0f, 0f], VectorMath.ClsNormalize([0, 0, 9, 9], tokens: 2, dims: 2));
+        Assert.Throws<ArgumentException>(() => VectorMath.ClsNormalize([1, 2, 3], tokens: 2, dims: 2));
+    }
+
+    [Fact]
     public void Normalize_ScalesToUnitLength_WithoutChangingInput()
     {
         float[] input = [3, 4];

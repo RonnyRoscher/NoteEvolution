@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using NoteEvolution.AI.Model;
 using NoteEvolution.Core.Books;
 using NoteEvolution.Core.Model;
 using NoteEvolution.Core.Text;
@@ -8,8 +9,9 @@ using NoteEvolution.Core.Vaults;
 namespace NoteEvolution.AI.Embeddings;
 
 /// <summary>
-/// Decides exactly which text each embedding sees. e5 models expect a prefix: <c>passage: </c> for the texts
+/// Decides exactly which text each embedding sees. The texts carry a role marker: <c>passage: </c> for the texts
 /// that are searched (notes), <c>query: </c> for the texts that search (book sections, cursor, search box).
+/// e5 models take the marker as their prefix; <see cref="ForModel"/> maps it to the prefix of other models.
 /// </summary>
 public static class EmbeddingText
 {
@@ -61,6 +63,19 @@ public static class EmbeddingText
     }
 
     public static string ForSearch(string userText) => QueryPrefix + userText.Trim();
+
+    /// <summary>
+    /// Maps the role marker (<see cref="QueryPrefix"/> / <see cref="PassagePrefix"/>) at the start of
+    /// <paramref name="markedText"/> to the prefix <paramref name="model"/> expects (possibly none). Other text is unchanged.
+    /// </summary>
+    public static string ForModel(string markedText, ModelInfo model)
+    {
+        if (markedText.StartsWith(QueryPrefix, StringComparison.Ordinal))
+            return model.QueryPrefix + markedText[QueryPrefix.Length..];
+        if (markedText.StartsWith(PassagePrefix, StringComparison.Ordinal))
+            return model.PassagePrefix + markedText[PassagePrefix.Length..];
+        return markedText;
+    }
 
     /// <summary>Lowercase hex SHA-256 over <c>modelId + "\n" + text</c>; changes when the model or the text changes.</summary>
     public static string Hash(string modelId, string text) =>
