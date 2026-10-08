@@ -29,9 +29,17 @@ public sealed class FakeEditorInterop : IEditorInterop
 
     /// <summary>
     /// Simulates the editor's report after a new document: when set, the cursor it returns is reported to
-    /// <see cref="Callbacks"/> from within every <see cref="SetDocumentAsync"/> (whatever was asked of the selection).
+    /// <see cref="Callbacks"/> from within <see cref="SetDocumentAsync"/>. Without <c>keepCursor</c> it is reported
+    /// anyway (an editor that reports more than asked, which the pane must ignore); with <c>keepCursor</c> only when
+    /// <see cref="CursorPlaced"/>, as the editor reports the kept cursor only if one had been reported before.
     /// </summary>
     public Func<CursorInfo?>? CursorAfterLoad { get; set; }
+
+    /// <summary>
+    /// Whether the editor has reported a cursor for the shown document (tests set it when they place the cursor via
+    /// <see cref="Callbacks"/>). Each <see cref="SetDocumentAsync"/> keeps it only with <c>keepCursor</c> and a report.
+    /// </summary>
+    public bool CursorPlaced { get; set; }
 
     public Task InitAsync(ElementReference host, IEditorCallbacks callbacks)
     {
@@ -44,8 +52,11 @@ public sealed class FakeEditorInterop : IEditorInterop
         Documents.Add((docJson, showChips));
         KeepCursor.Add(keepCursor);
         Calls.Add("doc");
-        if (CursorAfterLoad is { } cursor && Callbacks is { } callbacks)
+        var placed = CursorPlaced;
+        CursorPlaced = false;
+        if (CursorAfterLoad is { } cursor && Callbacks is { } callbacks && (!keepCursor || placed))
         {
+            CursorPlaced = keepCursor;
             await callbacks.OnCursorChanged(cursor());
         }
     }

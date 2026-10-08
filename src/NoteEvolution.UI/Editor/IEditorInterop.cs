@@ -74,9 +74,9 @@ public interface IEditorInterop : IAsyncDisposable
     /// <summary>
     /// Replaces the shown document without raising <see cref="IEditorCallbacks.OnDocumentChanged"/> (the editor's
     /// undo history starts anew). <paramref name="showChips"/> shows the source chips below the text blocks. With
-    /// <paramref name="keepCursor"/> (the same book again) the cursor stays near where it was and is reported;
-    /// otherwise (another book or session, the first document) the selection goes to the document's start without a
-    /// report, so no cursor is invented before the user places one.
+    /// <paramref name="keepCursor"/> (the same book again) the cursor stays near where it was and is reported if one
+    /// had been reported for the previous document; otherwise (another book or session, the first document) the
+    /// selection goes to the document's start without a report, so no cursor is invented before the user places one.
     /// </summary>
     Task SetDocumentAsync(string docJson, bool showChips, bool keepCursor);
 

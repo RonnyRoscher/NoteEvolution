@@ -712,8 +712,9 @@ export function createEditor(host, dotnet, options = {}) {
     return {
         /**
          * Shows a new document (no change event, fresh undo history). With keepCursor (the same book again) the cursor
-         * stays near where it was and is reported. Otherwise (another book) the selection goes to the document's start
-         * and is not reported: the cursor is first reported when the user places it (a selection change, or focusing
+         * stays near where it was and is reported, but only if one had been reported for the previous document.
+         * Otherwise (another book, or no cursor placed yet) the cursor is not reported (for another book the selection
+         * goes to the document's start): it is first reported when the user places it (a selection change, or focusing
          * the editor) or an element is revealed.
          */
         setDocument(json, showChips, keepCursor) {
@@ -725,8 +726,9 @@ export function createEditor(host, dotnet, options = {}) {
             editor.view.updateState(EditorState.create({ doc, plugins: editor.state.plugins, selection }));
             root.classList.toggle('show-chips', showChips);
             // updateState raises no selection update, but the cursor may now be in another element.
+            const placed = lastCursor !== undefined;
             lastCursor = undefined;
-            if (keepCursor) {
+            if (keepCursor && placed) {
                 reportCursor(editor.state);
             }
             scheduleBox();

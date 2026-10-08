@@ -573,12 +573,20 @@ public class EditorPaneTests : UiTestContext
         var cursor = CursorInText("Zweiter Text");
         Editor.CursorAfterLoad = () => cursor;
 
-        // Showing the chips loads the same book again: the editor keeps its cursor and reports it.
+        // Before the user placed a cursor, loading the same book again (showing the chips) invents none.
         cut.Find(".ne-editor-chips input").Change(true);
 
         cut.WaitForAssertion(() => Assert.Equal(2, Editor.Documents.Count));
+        Assert.Null(State.Cursor);
+
+        // Once the user placed one, the editor keeps its cursor on such a reload and reports it.
+        await cut.InvokeAsync(() => Editor.Callbacks!.OnCursorChanged(CursorInText("Erster Text")));
+        Editor.CursorPlaced = true;
+        cut.Find(".ne-editor-chips input").Change(false);
+
+        cut.WaitForAssertion(() => Assert.Equal(3, Editor.Documents.Count));
         Assert.Equal(cursor, State.Cursor);
         Assert.Equal(Section("Eins").Key, State.CurrentSectionKey);
-        Assert.Equal([false, true], Editor.KeepCursor);
+        Assert.Equal([false, true, true], Editor.KeepCursor);
     }
 }
