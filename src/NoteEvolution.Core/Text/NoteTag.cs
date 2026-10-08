@@ -37,4 +37,9 @@ public static partial class NoteTag
         TokenWithSpaceRegex().Replace(content, m => m.Groups["before"].Success ? m.Groups["after"].Value : "");
 
     public static string Add(string text) => text + " " + Tag;
+
+    /// <summary>The spans <see cref="Remove"/> takes out (each token with the space it removes), in text order.</summary>
+    internal static IReadOnlyList<(int Index, int Length)> RemovedSpans(string content) =>
+        [.. TokenWithSpaceRegex().Matches(content).Select(m =>
+            m.Groups["before"].Success ? (m.Index, m.Length - m.Groups["after"].Length) : (m.Index, m.Length))];
 }

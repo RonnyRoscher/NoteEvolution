@@ -17,7 +17,8 @@ public abstract record IntoPosition
     /// <param name="ElementKey">The text block or the detail.</param>
     /// <param name="Offset">
     /// Counts characters of the element's text as the editor shows it: unescaped
-    /// (<see cref="Text.BlockTextEscape.Unescape"/>), without Markdown markers, <c>"\n"</c> counting as 1.
+    /// (<see cref="Text.BlockTextEscape.Unescape"/>), without Markdown markers, <c>"\n"</c> counting as 1; for a detail
+    /// also without its <c>#notiz</c> tag (<see cref="Books.BookSnapshot.ParagraphText"/>), which stays where it is.
     /// </param>
     public sealed record AtCursor(Guid ElementKey, int Offset) : IntoPosition;
 

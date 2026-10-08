@@ -41,11 +41,24 @@ public static class InlineMarkdown
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="plainOffset"/> is outside 0 … the length of the shown text.</exception>
     public static (string Before, string After) SplitAt(string content, int plainOffset)
     {
-        var runs = Parse(BlockTextEscape.Unescape(content));
+        var (before, after) = SplitText(BlockTextEscape.Unescape(content), plainOffset);
+        return before.Length == 0 ? ("", content)
+            : after.Length == 0 ? (content, "")
+            : (BlockTextEscape.Escape(before), BlockTextEscape.Escape(after));
+    }
+
+    /// <summary>
+    /// <see cref="SplitAt"/> for editor text (already unescaped): the halves are not escaped, and at offset 0 or at the
+    /// end <paramref name="text"/> is returned unchanged as the one non-empty half.
+    /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="plainOffset"/> is outside 0 … <see cref="TextLength"/>.</exception>
+    internal static (string Before, string After) SplitText(string text, int plainOffset)
+    {
+        var runs = Parse(text);
         ArgumentOutOfRangeException.ThrowIfNegative(plainOffset);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(plainOffset, runs.Sum(run => ShownLength(run.Text, run.Text.Length)));
         if (plainOffset == 0)
-            return ("", content);
+            return ("", text);
 
         var before = new List<InlineRun>();
         var after = new List<InlineRun>();
@@ -58,10 +71,11 @@ public static class InlineMarkdown
             remaining -= ShownLength(run.Text, cut);
         }
 
-        return after.Count == 0
-            ? (content, "")
-            : (BlockTextEscape.Escape(Format(before)), BlockTextEscape.Escape(Format(after)));
+        return after.Count == 0 ? (text, "") : (Format(before), Format(after));
     }
+
+    /// <summary>The number of characters the editor shows for <paramref name="text"/> (editor text, already unescaped).</summary>
+    internal static int TextLength(string text) => Parse(text).Sum(run => ShownLength(run.Text, run.Text.Length));
 
     /// <summary>The number of shown characters in <c>text[..end]</c>; <c>\*</c> and <c>\_</c> show as one.</summary>
     private static int ShownLength(string text, int end)

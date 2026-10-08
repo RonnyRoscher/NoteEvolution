@@ -218,6 +218,55 @@ public class AdoptTests
         AssertChangedLines(LinkSetup.DefaultJournal, s.ReadJournal(), removed: [], added: [2, 3]);
     }
 
+    [Theory]
+    [InlineData("#notiz foo bar", 4, "#notiz foo Zweite Notizbar", "foo Zweite Notizbar")] // tag at the start
+    [InlineData("#notiz foo bar", 0, "#notiz Zweite Notizfoo bar", "Zweite Notizfoo bar")]
+    [InlineData("foo #notiz bar", 5, "foo #notiz bZweite Notizar", "foo bZweite Notizar")] // in the middle
+    [InlineData("foo #notiz bar", 3, "fooZweite Notiz #notiz bar", "fooZweite Notiz bar")]
+    [InlineData("foo #notiz bar", 2, "foZweite Notizo #notiz bar", "foZweite Notizo bar")]
+    [InlineData("foo bar #notiz", 7, "foo barZweite Notiz #notiz", "foo barZweite Notiz")] // at the end
+    [InlineData("foo bar #notiz", 0, "Zweite Notizfoo bar #notiz", "Zweite Notizfoo bar")]
+    public void AdoptInto_AtCursor_NoteDetail_OffsetOfShownText_TagStaysInPlace(
+        string detail, int offset, string expected, string expectedShown)
+    {
+        var book = "title:: Buch: Test\ntype:: book\n\n- # Kapitel\n\t- Hallo Welt\n" + $"\t\t- {detail}\n" + "\t- Nächster Textblock\n";
+        using var s = new LinkSetup(book);
+
+        var r = s.Links.AdoptInto(s.Book, s.Note("Zweite Notiz").Key, new IntoPosition.AtCursor(BookBlock(s, detail).Key, offset));
+
+        var noteId = s.Note("Zweite Notiz").Id;
+        Assert.Equal(
+            "title:: Buch: Test\ntype:: book\n\n- # Kapitel\n" +
+            $"\t- Hallo Welt\n\t  id:: {r.TextBlockId}\n\t  source:: (({noteId}))\n" +
+            $"\t\t- {expected}\n\t- Nächster Textblock\n",
+            s.ReadBook());
+        AssertChangedLines(book, s.ReadBook(), removed: [5], added: [5, 6, 7]);
+        var paragraph = Book.Load(s.Book.Page).FindTextBlock(r.TextBlockKey)!.Paragraphs.Single();
+        Assert.True(paragraph.IsNote);
+        Assert.Equal(expectedShown, BookSnapshot.ParagraphText(paragraph.Block.Content));
+        Assert.Contains($"  used-in:: [[Buch - Test]] (({r.TextBlockId}))\n", s.ReadJournal());
+    }
+
+    [Fact]
+    public void AdoptInto_AtCursor_NoteDetail_TagOnItsOwnLine_GetsTheSpaceItNeeds()
+    {
+        var book = "title:: Buch: Test\ntype:: book\n\n- # Kapitel\n\t- Hallo Welt\n\t\t- foo\n\t\t  #notiz\n";
+        using var s = new LinkSetup(book);
+
+        var r = s.Links.AdoptInto(s.Book, s.Note("Zweite Notiz").Key, new IntoPosition.AtCursor(BookBlock(s, "foo\n#notiz").Key, 4));
+
+        var noteId = s.Note("Zweite Notiz").Id;
+        Assert.Equal(
+            "title:: Buch: Test\ntype:: book\n\n- # Kapitel\n" +
+            $"\t- Hallo Welt\n\t  id:: {r.TextBlockId}\n\t  source:: (({noteId}))\n" +
+            "\t\t- foo\n\t\t  Zweite Notiz #notiz\n",
+            s.ReadBook());
+        AssertChangedLines(book, s.ReadBook(), removed: [6], added: [5, 6, 8]);
+        var paragraph = Book.Load(s.Book.Page).FindTextBlock(r.TextBlockKey)!.Paragraphs.Single();
+        Assert.True(paragraph.IsNote);
+        Assert.Equal("foo\nZweite Notiz", BookSnapshot.ParagraphText(paragraph.Block.Content));
+    }
+
     [Fact]
     public void AdoptInto_AfterDetail_AfterDeeperDetails_SameDepth()
     {

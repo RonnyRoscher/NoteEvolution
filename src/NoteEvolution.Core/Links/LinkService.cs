@@ -70,10 +70,7 @@ public sealed class LinkService(IVault vault, IPageWriter writer, UndoManager un
         string? content = null;
         if (position is IntoPosition.AtCursor cursor)
         {
-            // Joined as the editor shows the text, so that only real line starts get escaped.
-            var (before, after) = InlineMarkdown.SplitAt(element.Content, cursor.Offset);
-            content = BlockTextEscape.Escape(
-                BlockTextEscape.Unescape(before) + BlockTextEscape.Unescape(copy.Content) + BlockTextEscape.Unescape(after));
+            content = InsertText(element.Content, isDetail: element != textBlock, cursor.Offset, copy.Content);
             Block.ValidateContent(content);
         }
 
@@ -717,6 +714,44 @@ public sealed class LinkService(IVault vault, IPageWriter writer, UndoManager un
 
         throw new ArgumentException(
             detailOnly ? "No detail has this key." : "No text block or detail has this key.", "position");
+    }
+
+    /// <summary>
+    /// <paramref name="content"/> with <paramref name="insert"/> (block content) put in at <paramref name="offset"/> of the
+    /// text as the editor shows it (<see cref="IntoPosition.AtCursor.Offset"/>); joined as editor text and escaped once, so
+    /// that only real line starts get escaped. A detail's editor text has no <c>#notiz</c> tag
+    /// (<see cref="BookSnapshot.ParagraphText"/>): there the offset counts the text between the tags, and every tag stays
+    /// as it is where it is. At a tag the insertion goes on the side where the tag keeps the space
+    /// <see cref="NoteTag.Remove"/> takes away (a tag without one gets it), so the editor then shows exactly its text
+    /// with the insertion.
+    /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="offset"/> is outside the shown text.</exception>
+    private static string InsertText(string content, bool isDetail, int offset, string insert)
+    {
+        var text = BlockTextEscape.Unescape(content);
+        var note = BlockTextEscape.Unescape(insert);
+        IReadOnlyList<(int Index, int Length)> tags = isDetail ? NoteTag.RemovedSpans(text) : [];
+        var shown = 0;
+        var start = 0;
+        foreach (var (index, length) in tags)
+        {
+            var segment = text[start..index];
+            var segmentLength = InlineMarkdown.TextLength(segment);
+            var tag = text.Substring(index, length);
+            // At the tag: before it if the tag's space is on its left (or it has none), else after it (next segment).
+            if (offset < shown + segmentLength || (offset == shown + segmentLength && !tag.EndsWith(' ')))
+            {
+                var (before, after) = InlineMarkdown.SplitText(segment, offset - shown);
+                var space = after.Length == 0 && !tag.StartsWith(' ') ? " " : "";
+                return BlockTextEscape.Escape(text[..start] + before + note + space + after + text[index..]);
+            }
+
+            shown += segmentLength;
+            start = index + length;
+        }
+
+        var (head, rest) = InlineMarkdown.SplitText(text[start..], offset - shown);
+        return BlockTextEscape.Escape(text[..start] + head + note + rest);
     }
 
     /// <summary>Adds <paramref name="noteId"/> to the block's <c>source::</c> unless it is there; returns whether it was added.</summary>
