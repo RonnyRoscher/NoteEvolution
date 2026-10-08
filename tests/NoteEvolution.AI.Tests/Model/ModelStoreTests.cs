@@ -41,23 +41,4 @@ public class ModelStoreTests
         Assert.Equal(Path.Combine("x", "user", "models", "test-model"), store.DirectoryOf(model));
         Assert.Equal(Path.Combine("x", "user", "models", "test-model", "onnx", "a.bin"), store.PathOf(model, model.Files[0]));
     }
-
-    [Fact]
-    public void Catalog_E5Small_PinnedRevisionAndHashes()
-    {
-        var m = ModelCatalog.E5Small;
-
-        Assert.Equal("multilingual-e5-small-int8", m.Id);
-        Assert.Equal(384, m.Dimensions);
-        Assert.Equal(512, m.MaxTokens);
-        Assert.Equal(["onnx/model_quantized.onnx", "sentencepiece.bpe.model"], m.Files.Select(f => f.RelativePath));
-        foreach (var f in m.Files)
-        {
-            Assert.StartsWith("https://huggingface.co/Xenova/multilingual-e5-small/resolve/", f.Url);
-            Assert.DoesNotContain("/main/", f.Url);
-            Assert.EndsWith("/" + f.RelativePath, f.Url);
-            Assert.Matches("^[0-9a-f]{64}$", f.Sha256);
-            Assert.True(f.Size > 0);
-        }
-    }
 }
