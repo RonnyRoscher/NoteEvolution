@@ -75,6 +75,7 @@ public class AiModelDialogTests : UiTestContext
         Assert.Null(options[1].QuerySelector(".ne-ai-model-active"));
         Assert.True(options[0].QuerySelector("input[type=radio]")!.HasAttribute("checked"));
         Assert.False(options[1].QuerySelector("input[type=radio]")!.HasAttribute("checked"));
+        Assert.Equal(Text("AiModelTitle"), cut.Find("[role=radiogroup]").GetAttribute("aria-label"));
     }
 
     [Fact]
@@ -98,10 +99,37 @@ public class AiModelDialogTests : UiTestContext
         cut.Find(".ne-ai-download").Click();
 
         await Eventually(() => ai.Model.Id == "b" && ai.ModelInstalled);
-        cut.WaitForAssertion(() => Assert.Equal(1, _closed));
+        cut.WaitForAssertion(() => Assert.Equal(1, _closed), Wait);
         Assert.Equal("b", Settings.AiModelId);
         Assert.Equal("b", UiSettings.Load(Platform.UserDataDirectory).AiModelId);
         Assert.Empty(_switched);
+    }
+
+    [Fact]
+    public async Task FirstLoad_ActivationFails_SwitchErrorShown_SettingUnchanged()
+    {
+        var ai = UseCatalog(installed: false);
+
+        // The model's files vanish between the end of its download and its activation.
+        ai.ModelChanged += () =>
+        {
+            if (!ai.IsDownloading && Directory.Exists(Store!.DirectoryOf(ModelB)))
+            {
+                Directory.Delete(Store.DirectoryOf(ModelB), recursive: true);
+            }
+        };
+        var cut = RenderDialog();
+        Select(cut, 1);
+
+        cut.Find(".ne-ai-download").Click();
+
+        cut.WaitForAssertion(() => Assert.Contains("model b", cut.Find(".ne-ai-model-error").TextContent), Wait);
+        Assert.StartsWith(Text("AiModelSwitchFailed"), cut.Find(".ne-ai-model-failure").TextContent);
+        Assert.Equal("a", ai.Model.Id);
+        Assert.False(ai.ModelInstalled);
+        Assert.Null(Settings.AiModelId);
+        Assert.Null(UiSettings.Load(Platform.UserDataDirectory).AiModelId);
+        Assert.Equal(0, _closed);
     }
 
     [Fact]
@@ -119,6 +147,7 @@ public class AiModelDialogTests : UiTestContext
         Select(cut, 1);
 
         Assert.False(cut.Find(".ne-ai-switch").HasAttribute("disabled"));
+        Assert.Equal(Text("Cancel"), cut.Find(".ne-ai-close").TextContent);
 
         cut.Find(".ne-ai-close").Click();
         Assert.Equal(1, _closed);
@@ -151,7 +180,9 @@ public class AiModelDialogTests : UiTestContext
         cut.Find(".ne-ai-switch").Click();
 
         await Task.Yield();
-        cut.WaitForAssertion(() => Assert.Contains("switch broke", cut.Find(".ne-ai-model-error").TextContent));
+        cut.WaitForAssertion(() => Assert.Contains("switch broke", cut.Find(".ne-ai-model-error").TextContent), Wait);
+        Assert.StartsWith(Text("AiModelSwitchFailed"), cut.Find(".ne-ai-model-failure").TextContent);
+        Assert.DoesNotContain(Text("AiModelDownloadFailed"), cut.Find(".ne-ai-model-failure").TextContent);
     }
 
     [Fact]
@@ -164,13 +195,13 @@ public class AiModelDialogTests : UiTestContext
 
         cut.Find(".ne-ai-download").Click();
 
-        cut.WaitForAssertion(() => Assert.Single(cut.FindAll(".ne-ai-cancel")));
+        cut.WaitForAssertion(() => Assert.Single(cut.FindAll(".ne-ai-cancel")), Wait);
         Assert.All(cut.FindAll(".ne-ai-model-option input[type=radio]"), r => Assert.True(r.HasAttribute("disabled")));
         Assert.Empty(cut.FindAll(".ne-ai-download"));
 
         cut.Find(".ne-ai-cancel").Click();
 
-        cut.WaitForAssertion(() => Assert.Single(cut.FindAll(".ne-ai-download")));
+        cut.WaitForAssertion(() => Assert.Single(cut.FindAll(".ne-ai-download")), Wait);
         Assert.All(cut.FindAll(".ne-ai-model-option input[type=radio]"), r => Assert.False(r.HasAttribute("disabled")));
     }
 

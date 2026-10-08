@@ -165,7 +165,8 @@
     /// The model dialog downloaded <paramref name="target"/>: it becomes the active model. The vault session shares the
     /// embedder that is replaced, so it is closed first (after the editor's text is saved into it) and opened again
     /// afterwards, with the remembered book. An exception of the activation reaches the dialog, which stays open and
-    /// shows it; the vault is opened again in any case.
+    /// shows it; the vault is opened again in any case. If the editor's text cannot be saved, nothing is closed or
+    /// switched (<see cref="UnsavedEditorTextException"/>).
     /// </summary>
     private async Task SwitchAiModelAsync(ModelInfo target)
     {
@@ -182,6 +183,7 @@
                 catch (Exception ex)
                 {
                     _logger.LogError(ex, "Saving the editor's text before switching the AI model failed");
+                    throw new UnsavedEditorTextException(ex);
                 }
             }
 
@@ -191,6 +193,12 @@
             {
                 State.Notify();
                 return;
+            }
+
+            // The save failed (e.g. the file is locked): closing the vault would lose the text the editor still holds.
+            if (State.HasUnsavedEditorText?.Invoke() == true)
+            {
+                throw new UnsavedEditorTextException();
             }
 
             if (_subscribed is not null)
@@ -206,9 +214,21 @@
 
         try
         {
-            _ai!.Activate(target);
+            // Saved before the activation deletes the old model's folder; taken back if the activation fails.
+            var previous = Settings.AiModelId;
             Settings.AiModelId = target.Id;
             SaveSettings();
+            try
+            {
+                _ai!.Activate(target);
+            }
+            catch
+            {
+                Settings.AiModelId = previous;
+                SaveSettings();
+                throw;
+            }
+
             _aiDialogOpen = false;
         }
         finally

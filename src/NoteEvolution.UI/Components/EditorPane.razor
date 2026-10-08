@@ -67,6 +67,7 @@
         State.Changed += OnStateChanged;
         State.FlushEditor = FlushAsync;
         State.WarnUnsavedText = WarnUnsavedText;
+        State.HasUnsavedEditorText = HasUnsavedText;
         TrackSession();
     }
 
@@ -111,6 +112,11 @@
         if (State.WarnUnsavedText == (Func<bool>)WarnUnsavedText)
         {
             State.WarnUnsavedText = null;
+        }
+
+        if (State.HasUnsavedEditorText == (Func<bool>)HasUnsavedText)
+        {
+            State.HasUnsavedEditorText = null;
         }
 
         Unsubscribe();
@@ -174,6 +180,9 @@
         StateHasChanged();
         return true;
     }
+
+    /// <summary>Registered as <see cref="AppState.HasUnsavedEditorText"/>: whether text could not be saved (after a flush).</summary>
+    private bool HasUnsavedText() => !_disposed && _saver.HasUnsavedText;
 
     public Task OnDocumentChanged(string docJson)
     {

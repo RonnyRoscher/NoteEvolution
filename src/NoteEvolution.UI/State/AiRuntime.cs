@@ -220,6 +220,17 @@ public sealed class AiRuntime : IDisposable
     /// <exception cref="InvalidOperationException">The files of <paramref name="model"/> are not in place.</exception>
     public void Activate(ModelInfo model)
     {
+        // Checked before waiting for _loadGate: a session may hold it for the whole load of the embedder, and the
+        // dialog calls this on the UI thread.
+        lock (_gate)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            if (model.Id == _model.Id && _installed)
+            {
+                return;
+            }
+        }
+
         lock (_loadGate)
         {
             lock (_gate)

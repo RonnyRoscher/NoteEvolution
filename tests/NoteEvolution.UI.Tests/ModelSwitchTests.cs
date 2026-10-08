@@ -2,10 +2,13 @@ using System.Net;
 using System.Text;
 using Bunit;
 using Microsoft.Data.Sqlite;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Localization;
 using NoteEvolution.AI.Model;
 using NoteEvolution.AI.Tests;
 using NoteEvolution.TestSupport;
 using NoteEvolution.UI.Components;
+using NoteEvolution.UI.Resources;
 using NoteEvolution.UI.State;
 
 namespace NoteEvolution.UI.Tests;
@@ -41,6 +44,8 @@ public class ModelSwitchTests : UiTestContext
         _vaults.Add(vault);
         return vault;
     }
+
+    private string Text(string key) => Services.GetRequiredService<IStringLocalizer<Strings>>()[key].Value;
 
     private static async Task Eventually(Func<bool> condition)
     {
@@ -119,6 +124,16 @@ public class ModelSwitchTests : UiTestContext
         var old = State.Session!;
         Assert.Equal("a", CachedModel(tv.Root));
 
+        // The choice is saved before the activation deletes the old model's folder.
+        string? savedOnActivation = null;
+        Ai!.ModelChanged += () =>
+        {
+            if (Ai.Model.Id == "b")
+            {
+                savedOnActivation ??= UiSettings.Load(Platform.UserDataDirectory).AiModelId;
+            }
+        };
+
         SwitchToB(cut);
 
         await Eventually(() => Ai!.Model.Id == "b");
@@ -133,6 +148,7 @@ public class ModelSwitchTests : UiTestContext
         Assert.True(Store.IsInstalled(ModelB));
         Assert.Equal("b", Settings.AiModelId);
         Assert.Equal("b", UiSettings.Load(Platform.UserDataDirectory).AiModelId);
+        Assert.Equal("b", savedOnActivation);
         Assert.Empty(cut.FindAll(".ne-ai-model-dialog"));
         Assert.Empty(cut.FindAll(".ne-settings-dialog"));
     }
@@ -177,6 +193,7 @@ public class ModelSwitchTests : UiTestContext
         SwitchToB(cut);
 
         cut.WaitForAssertion(() => Assert.Contains("404", cut.Find(".ne-ai-model-error").TextContent), Wait);
+        Assert.StartsWith(Text("AiModelDownloadFailed"), cut.Find(".ne-ai-model-failure").TextContent);
         Assert.Equal("a", Ai!.Model.Id);
         Assert.Same(old, State.Session);
         Assert.False(IsDisposed(old));
@@ -206,6 +223,7 @@ public class ModelSwitchTests : UiTestContext
 
         // The dialog shows the error once the vault is open again.
         cut.WaitForAssertion(() => Assert.Contains("model b", cut.Find(".ne-ai-model-error").TextContent), Wait);
+        Assert.StartsWith(Text("AiModelSwitchFailed"), cut.Find(".ne-ai-model-failure").TextContent);
         WaitForVaultOpened(cut, old, Wait);
         Assert.Equal("a", Ai.Model.Id);
         Assert.True(Ai.ModelInstalled);
@@ -214,6 +232,7 @@ public class ModelSwitchTests : UiTestContext
         await Eventually(() => session.AiStatus.State == AiState.Ready);
         Assert.Equal("a", CachedModel(tv.Root));
         Assert.Null(Settings.AiModelId);
+        Assert.Null(UiSettings.Load(Platform.UserDataDirectory).AiModelId);
     }
 
     [Fact]
@@ -282,6 +301,65 @@ public class ModelSwitchTests : UiTestContext
         Assert.Null(Settings.AiModelId);
         Assert.Null(UiSettings.Load(Platform.UserDataDirectory).AiModelId);
         Assert.Empty(cut.FindAll(".ne-ai-model-error"));
+    }
+
+    [Fact]
+    public async Task Switch_FlushLeavesUnsavedText_NoSwitch()
+    {
+        var tv = Vault();
+        var cut = await OpenShellAsync(tv);
+        var old = State.Session!;
+        var flushed = false;
+
+        // Saving the editor's text failed (e.g. the file is locked by a sync client): the editor keeps it.
+        State.FlushEditor = () =>
+        {
+            flushed = true;
+            return Task.CompletedTask;
+        };
+        State.HasUnsavedEditorText = () => true;
+
+        SwitchToB(cut);
+
+        await Eventually(() => flushed);
+        AssertNotSwitchedForUnsavedText(cut, old);
+    }
+
+    [Fact]
+    public async Task Switch_FlushThrows_NoSwitch()
+    {
+        var tv = Vault();
+        var cut = await OpenShellAsync(tv);
+        var old = State.Session!;
+        var flushed = false;
+        State.FlushEditor = () =>
+        {
+            flushed = true;
+            return Task.FromException(new IOException("locked"));
+        };
+
+        SwitchToB(cut);
+
+        await Eventually(() => flushed);
+        AssertNotSwitchedForUnsavedText(cut, old);
+    }
+
+    /// <summary>The switch was refused before anything was closed: the dialog says why, the downloaded model stays for a retry.</summary>
+    private void AssertNotSwitchedForUnsavedText(IRenderedComponent<Shell> cut, VaultSession old)
+    {
+        cut.WaitForAssertion(() =>
+        {
+            Assert.Equal(Text("AiModelSwitchUnsaved"), cut.Find(".ne-ai-model-failure").TextContent.Trim());
+            Assert.False(cut.Find(".ne-ai-close").HasAttribute("disabled")); // the switch has ended
+        }, Wait);
+        Assert.Empty(cut.FindAll(".ne-ai-model-error"));
+        Assert.Equal("a", Ai!.Model.Id);
+        Assert.Same(old, State.Session);
+        Assert.False(IsDisposed(old));
+        Assert.Null(Settings.AiModelId);
+        Assert.Null(UiSettings.Load(Platform.UserDataDirectory).AiModelId);
+        Assert.True(Store!.IsInstalled(ModelA));
+        Assert.True(Store.IsInstalled(ModelB));
     }
 
     [Fact]

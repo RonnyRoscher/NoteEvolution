@@ -10,6 +10,8 @@ namespace NoteEvolution.UI.Tests;
 
 public sealed class AiRuntimeTests : IDisposable
 {
+    private static readonly TimeSpan Wait = TimeSpan.FromSeconds(10);
+
     private readonly TempDir _dir = new();
     private readonly FakeModelHandler _server = new(UiTestContext.TestModelData);
     private readonly HttpClient _http;
@@ -54,7 +56,13 @@ public sealed class AiRuntimeTests : IDisposable
         using var cts = new CancellationTokenSource();
 
         var download = ai.DownloadAsync(_b, null, cts.Token);
-        while (_server.Requests == 0) await Task.Delay(5);
+        var until = DateTime.UtcNow + Wait;
+        while (_server.Requests == 0)
+        {
+            Assert.True(DateTime.UtcNow < until, "The download did not start in time.");
+            await Task.Delay(5);
+        }
+
         await cts.CancelAsync();
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => download);
@@ -130,6 +138,44 @@ public sealed class AiRuntimeTests : IDisposable
         Assert.False(_embedders[0].Disposed);
         Assert.Same(_embedders[0], ai.Embedder);
         Assert.Single(_loads);
+    }
+
+    [Fact]
+    public async Task Activate_ActiveInstalled_DoesNotWaitForRunningLoad()
+    {
+        UiTestContext.Install(_store, _a);
+        using var loading = new ManualResetEventSlim();
+        using var release = new ManualResetEventSlim();
+        using var ai = new AiRuntime(
+            _store,
+            new ModelDownloader(_http, _store),
+            _ =>
+            {
+                loading.Set();
+                release.Wait(Wait);
+                return new DisposableEmbedder();
+            },
+            NullLogger<AiRuntime>.Instance,
+            [_a, _b]);
+
+        // A session loads the embedder (a long ONNX load) while the UI thread activates the active model.
+        var load = Task.Run(() => ai.Embedder);
+        try
+        {
+            Assert.True(loading.Wait(Wait));
+
+            var activate = Task.Run(() => ai.Activate(_a));
+
+            // Times out if Activate waits for the running load.
+            await activate.WaitAsync(Wait);
+            Assert.Same(_a, ai.Model);
+        }
+        finally
+        {
+            release.Set();
+        }
+
+        Assert.NotNull(await load);
     }
 
     [Fact]

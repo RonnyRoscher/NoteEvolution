@@ -11,7 +11,7 @@
 <Modal Title="@L["AiModelTitle"]" CssClass="ne-ai-model-dialog">
     <ChildContent>
         <p class="ne-ai-model-text">@L["AiModelText"]</p>
-        <div class="ne-ai-model-list" role="radiogroup">
+        <div class="ne-ai-model-list" role="radiogroup" aria-label="@L["AiModelTitle"]">
             @foreach (var model in Ai.Models)
             {
                 var candidate = model;
@@ -45,9 +45,13 @@
             <progress class="ne-ai-progress" max="@progress.BytesTotal" value="@progress.BytesDone"></progress>
             <span class="ne-dialog-hint">@L["AiModelProgress", ModelSizes.Megabytes(progress.BytesDone), ModelSizes.Megabytes(progress.BytesTotal)]</span>
         }
-        @if (_error is not null)
+        @if (_failure is { } failure && _error is { } error)
         {
-            <p class="ne-dialog-error" role="alert">@L["AiModelDownloadFailed"] <span class="ne-ai-model-error">@_error</span></p>
+            <p class="ne-dialog-error ne-ai-model-failure" role="alert">@L[failure] <span class="ne-ai-model-error">@error</span></p>
+        }
+        else if (_failure is { } message)
+        {
+            <p class="ne-dialog-error ne-ai-model-failure" role="alert">@L[message]</p>
         }
     </ChildContent>
     <Footer>
@@ -63,7 +67,7 @@
         else
         {
             <button type="button" class="ne-ai-switch" disabled="@(Busy || SwitchBlocked || Selected.Id == Ai.Model.Id)" @onclick="SwitchAsync">@L["AiSwitch"]</button>
-            <button type="button" class="ne-ai-close" disabled="@Busy" @onclick="OnClose">@L["Close"]</button>
+            <button type="button" class="ne-ai-close" disabled="@Busy" @onclick="OnClose">@L["Cancel"]</button>
         }
     </Footer>
 </Modal>
@@ -73,6 +77,11 @@
     private CancellationTokenSource? _download;
 
     private DownloadProgress? _progress;
+
+    /// <summary>What failed (a key in <c>Strings.resx</c>: the download, or the switch); <c>null</c> while nothing did.</summary>
+    private string? _failure;
+
+    /// <summary>The details of <see cref="_failure"/>, if any.</summary>
     private string? _error;
     private ModelInfo? _selected;
 
@@ -112,16 +121,20 @@
             return;
         }
 
+        // Saved before the activation deletes other models' folders; taken back if the activation fails.
+        var previous = Settings.AiModelId;
+        Settings.AiModelId = model.Id;
+        SaveSettings();
         try
         {
             Ai.Activate(model);
-            Settings.AiModelId = model.Id;
-            SaveSettings();
         }
         catch (Exception ex)
         {
             Logger.LogWarning(ex, "Activating the AI model failed");
-            _error = ex.Message;
+            Settings.AiModelId = previous;
+            SaveSettings();
+            Fail("AiModelSwitchFailed", ex.Message);
             return;
         }
 
@@ -147,10 +160,15 @@
         {
             await OnSwitch.InvokeAsync(model);
         }
+        catch (UnsavedEditorTextException)
+        {
+            // Nothing was switched; the downloaded model stays, so trying again needs no download.
+            Fail("AiModelSwitchUnsaved", null);
+        }
         catch (Exception ex)
         {
             Logger.LogWarning(ex, "Switching the AI model failed");
-            _error = ex.Message;
+            Fail("AiModelSwitchFailed", ex.Message);
         }
         finally
         {
@@ -166,7 +184,7 @@
             return false;
         }
 
-        _error = null;
+        Fail(null, null);
         _progress = new DownloadProgress(0, model.TotalSize);
         var download = _download = new CancellationTokenSource();
         try
@@ -184,7 +202,7 @@
         catch (Exception ex)
         {
             Logger.LogWarning(ex, "Downloading the AI model failed");
-            _error = ex.Message;
+            Fail("AiModelDownloadFailed", ex.Message);
             return false;
         }
         finally
@@ -201,6 +219,13 @@
         Settings.AiModelDeclined = true;
         SaveSettings();
         await OnClose.InvokeAsync();
+    }
+
+    /// <summary>Shows what failed (<paramref name="failure"/>, a key in <c>Strings.resx</c>) with its details; <c>null</c> clears it.</summary>
+    private void Fail(string? failure, string? error)
+    {
+        _failure = failure;
+        _error = error;
     }
 
     private void SaveSettings()

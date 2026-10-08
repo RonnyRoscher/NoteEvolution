@@ -717,6 +717,12 @@
   <data name="AiModelDownloadFailed" xml:space="preserve">
     <value>Das Modell konnte nicht heruntergeladen werden.</value>
   </data>
+  <data name="AiModelSwitchFailed" xml:space="preserve">
+    <value>Das Modell konnte nicht gewechselt werden.</value>
+  </data>
+  <data name="AiModelSwitchUnsaved" xml:space="preserve">
+    <value>Der Text im Editor konnte nicht gespeichert werden; das Modell wurde nicht gewechselt.</value>
+  </data>
   <data name="AiDownload" xml:space="preserve">
     <value>Herunterladen</value>
   </data>

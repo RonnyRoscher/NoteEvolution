@@ -21,6 +21,10 @@ public class ModelCatalogTests
     }
 
     [Fact]
+    public void DisplayNames_AsInSpec() =>
+        Assert.Equal(["e5-small", "e5-base", "e5-large", "bge-m3"], ModelCatalog.All.Select(m => m.DisplayName));
+
+    [Fact]
     public void Find_KnownAndUnknown()
     {
         foreach (var m in ModelCatalog.All)
