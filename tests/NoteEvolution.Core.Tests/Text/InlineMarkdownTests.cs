@@ -152,4 +152,54 @@ public class InlineMarkdownTests
     {
         Assert.Equal([new InlineRun("snake_case_name", false, false)], InlineMarkdown.Parse("snake_case_name"));
     }
+
+    [Fact]
+    public void SplitAt_PlainText()
+    {
+        Assert.Equal(("Hallo", " Welt"), InlineMarkdown.SplitAt("Hallo Welt", 5));
+    }
+
+    [Fact]
+    public void SplitAt_InsideBold_ClosesAndReopens()
+    {
+        Assert.Equal(("**ab**", "**cd**"), InlineMarkdown.SplitAt("**abcd**", 2));
+    }
+
+    [Fact]
+    public void SplitAt_Start_And_End()
+    {
+        // The whole content stays as it is, also where Format would write it differently (_b_ → *b*).
+        Assert.Equal(("", "a _b_"), InlineMarkdown.SplitAt("a _b_", 0));
+        Assert.Equal(("a _b_", ""), InlineMarkdown.SplitAt("a _b_", 3));
+        Assert.Equal(("", ""), InlineMarkdown.SplitAt("", 0));
+    }
+
+    [Fact]
+    public void SplitAt_AfterLineBreak()
+    {
+        Assert.Equal(("eins\n", "zwei"), InlineMarkdown.SplitAt("eins\nzwei", 5));
+    }
+
+    [Fact]
+    public void SplitAt_EscapedLeadingDash_StaysEscaped()
+    {
+        // The editor shows "- eins zwei"; the backslash is no character of the shown text.
+        Assert.Equal(("\\- eins", " zwei"), InlineMarkdown.SplitAt("\\- eins zwei", 6));
+        Assert.Equal(("eins\n", "\\- zwei"), InlineMarkdown.SplitAt("eins\n\\- zwei", 5));
+    }
+
+    [Fact]
+    public void SplitAt_EscapedMarker_CountsAsOneCharacter()
+    {
+        // The editor shows \* as "*".
+        Assert.Equal(("a\\*", "b"), InlineMarkdown.SplitAt("a\\*b", 2));
+    }
+
+    [Fact]
+    public void SplitAt_OffsetOutOfRange_Throws()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => InlineMarkdown.SplitAt("Hallo Welt", -1));
+        Assert.Throws<ArgumentOutOfRangeException>(() => InlineMarkdown.SplitAt("Hallo Welt", 11));
+        Assert.Throws<ArgumentOutOfRangeException>(() => InlineMarkdown.SplitAt("**ab**", 3));
+    }
 }

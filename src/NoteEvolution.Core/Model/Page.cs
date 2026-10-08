@@ -245,6 +245,30 @@ public sealed class Page
         RepairEndings();
     }
 
+    /// <summary>
+    /// Rebuilds the whole block tree from <paramref name="blocks"/> (each block with its parent, depth-first in file
+    /// order), so that undo of structure changes restores the file exactly: blocks not listed are dropped, the listed
+    /// ones (also removed ones) get their former places and keep their lines as they are.
+    /// </summary>
+    internal void RestoreTree(IReadOnlyList<(Block Block, Block? Parent)> blocks)
+    {
+        foreach (var block in AllBlocks().ToList().Concat(blocks.Select(b => b.Block)))
+        {
+            block.TakeChildren();
+            block.Parent = null;
+            block.SetPage(null);
+        }
+
+        _roots.Clear();
+        foreach (var (block, parent) in blocks)
+        {
+            InsertAt(parent, ChildrenOf(parent).Count, block);
+        }
+
+        _structureChanged = true;
+        RepairEndings();
+    }
+
     private SavedState CaptureSaved()
     {
         var blocks = new List<SavedBlock>();
@@ -321,7 +345,7 @@ public sealed class Page
     }
 
     /// <summary>Only the last line of the file may lack a line ending; any other such line gets <see cref="NewLine"/>.</summary>
-    private void RepairEndings()
+    internal void RepairEndings()
     {
         // (owner, index) of every line in file order; owner null = prefix line.
         var lines = Enumerable.Range(0, _prefixLines.Count).Select(i => ((Block?)null, i))

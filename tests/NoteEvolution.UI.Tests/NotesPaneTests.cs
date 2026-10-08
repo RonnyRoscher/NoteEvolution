@@ -179,11 +179,13 @@ public class NotesPaneTests : UiTestContext
     {
         using var tv = Create();
         await OpenAlphaAsync(tv);
-        State.CursorTextBlockKey = State.CurrentBook!.Root.Children.First().TextBlocks.First().Key;
+        SetCursorInTextBlock(State.CurrentBook!.Root.Children.First().TextBlocks.First().Key);
         var cut = Render<NotesPane>();
         ShowJournal(cut);
 
-        cut.FindAll(".ne-note-adopt")[1].Click();
+        // "Danach" in the menu of variants (a click on the button itself adopts at the cursor, see AdoptVariantTests).
+        cut.FindAll(".ne-note-adopt-more")[1].Click();
+        cut.Find(".ne-adopt-after").Click();
 
         Assert.Equal(
             ["Erster Text", "Eine ganz andere Idee", "Zweiter Text"],

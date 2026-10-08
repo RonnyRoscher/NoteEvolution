@@ -7,7 +7,7 @@
 @inject IStringLocalizer<Strings> L
 @inject ILogger<RelevantTab> Logger
 
-@* The "Relevant" tab: the notes that fit the book section (manuscript view: the text at the cursor) the user is working on. *@
+@* The "Relevant" tab: the notes that fit the text at the cursor (on a heading: its section) the user is working on. *@
 <div class="ne-relevant">
     @if (State.Session is { } session)
     {
@@ -91,8 +91,8 @@
     [Parameter] public int Revision { get; set; }
 
     /// <remarks>
-    /// The pane renders again on every <see cref="AppState.Changed"/>, which calls this: book, section, cursor and
-    /// view mode are read from <see cref="AppState"/> here.
+    /// The pane renders again on every <see cref="AppState.Changed"/>, which calls this: book, section and cursor are
+    /// read from <see cref="AppState"/> here.
     /// </remarks>
     protected override void OnParametersSet()
     {
@@ -152,10 +152,9 @@
     private void Refresh()
     {
         var session = State.Session;
-        var manuscript = State.Mode == ViewMode.Manuscript;
         var status = session?.AiStatus;
         var available = session?.Relevance.IsAvailable == true;
-        var current = (session, State.CurrentBook, State.CurrentSectionKey, manuscript ? State.CursorTextBlockKey : null, manuscript,
+        var current = (session, State.CurrentBook, State.CurrentSectionKey, State.CursorTextBlockKey, State.CursorTextBlockKey is not null,
             Filter, Revision, status?.State ?? AiState.Off, available, _indexVersion);
         if (_last == current)
         {
@@ -231,8 +230,8 @@
             return null;
         }
 
-        var manuscript = State.Mode == ViewMode.Manuscript;
-        var topic = new TopicRequest(book, State.CurrentSectionKey, manuscript ? State.CursorTextBlockKey : null, manuscript);
+        // In a text block or detail: that text block and its neighbours; on a heading: its section.
+        var topic = new TopicRequest(book, State.CurrentSectionKey, State.CursorTextBlockKey, Manuscript: State.CursorTextBlockKey is not null);
         var filter = Filter;
         var allowed = session.Notes.All()
             .Where(note => session.Notes.Matches(note, filter))

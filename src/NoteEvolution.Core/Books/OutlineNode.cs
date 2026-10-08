@@ -48,7 +48,8 @@ public sealed class OutlineNode : BookItem
 
     internal void Add(BookItem item) => _items.Add(item);
 
-    private IEnumerable<TextBlock> AllTextBlocks() => _items.SelectMany(item => item switch
+    /// <summary>The text blocks of the whole subtree in file order.</summary>
+    internal IEnumerable<TextBlock> AllTextBlocks() => _items.SelectMany(item => item switch
     {
         OutlineNode node => node.AllTextBlocks(),
         TextBlock text => [text],

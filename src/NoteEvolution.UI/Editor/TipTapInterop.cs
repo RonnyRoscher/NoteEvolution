@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Components;
 using Microsoft.JSInterop;
+using NoteEvolution.Core.Books;
 using NoteEvolution.UI.State;
 
 namespace NoteEvolution.UI.Editor;
@@ -12,6 +13,9 @@ public sealed class TipTapInterop(IJSRuntime js, AppState state) : IEditorIntero
 {
     private const string ModulePath = "./_content/NoteEvolution.UI/js/editor.bundle.js";
 
+    /// <summary>The height of the section bar in px; the script keeps the bar's top this far above the pane's visible bottom.</summary>
+    private const int BarHeight = 40;
+
     private IJSObjectReference? _module;
     private IJSObjectReference? _editor;
     private DotNetObjectReference<TipTapInterop>? _self;
@@ -22,25 +26,68 @@ public sealed class TipTapInterop(IJSRuntime js, AppState state) : IEditorIntero
         _callbacks = callbacks;
         _self = DotNetObjectReference.Create(this);
         _module = await js.InvokeAsync<IJSObjectReference>("import", ModulePath);
-        _editor = await _module.InvokeAsync<IJSObjectReference>("createEditor", host, _self);
+        _editor = await _module.InvokeAsync<IJSObjectReference>("createEditor", host, _self, new { barHeight = BarHeight });
     }
 
-    public async Task SetDocumentAsync(string docJson, bool manuscript, bool showChips)
-    {
-        if (_editor is null)
-        {
-            throw new InvalidOperationException("The editor is not initialized.");
-        }
+    public async Task SetDocumentAsync(string docJson, bool showChips, bool keepCursor) =>
+        await Initialized.InvokeVoidAsync("setDocument", docJson, showChips, keepCursor);
 
-        await _editor.InvokeVoidAsync("setDocument", docJson, manuscript, showChips);
-    }
+    public async Task RevealAsync(Guid elementKey) =>
+        await Initialized.InvokeVoidAsync("reveal", elementKey == Guid.Empty ? null : elementKey.ToString("D"));
 
     [JSInvokable]
     public Task DocumentChanged(string docJson) => _callbacks?.OnDocumentChanged(docJson) ?? Task.CompletedTask;
 
+    /// <summary>
+    /// The cursor moved: <paramref name="kind"/> is <c>heading</c>, <c>textBlock</c> or <c>detail</c> (<c>null</c>
+    /// when the cursor is in no element). A call with an unknown kind or a key that is not a GUID is ignored.
+    /// </summary>
     [JSInvokable]
-    public Task CursorBlockChanged(string? textBlockKey) =>
-        _callbacks?.OnCursorBlockChanged(ParseOrNull(textBlockKey)) ?? Task.CompletedTask;
+    public Task CursorChanged(string? kind, string? key, string? textBlockKey, int offset)
+    {
+        if (_callbacks is null)
+        {
+            return Task.CompletedTask;
+        }
+
+        if (kind is null)
+        {
+            return _callbacks.OnCursorChanged(null);
+        }
+
+        ElementKind? parsed = kind switch
+        {
+            "heading" => ElementKind.Heading,
+            "textBlock" => ElementKind.TextBlock,
+            "detail" => ElementKind.Detail,
+            _ => null,
+        };
+        if (parsed is not { } elementKind || !Guid.TryParse(key, out var elementKey))
+        {
+            return Task.CompletedTask;
+        }
+
+        if (elementKind == ElementKind.Heading)
+        {
+            return _callbacks.OnCursorChanged(new CursorInfo(elementKind, elementKey, null, offset));
+        }
+
+        return Guid.TryParse(textBlockKey, out var blockKey)
+            ? _callbacks.OnCursorChanged(new CursorInfo(elementKind, elementKey, blockKey, offset))
+            : Task.CompletedTask;
+    }
+
+    /// <summary>A structure command's shortcut; <paramref name="name"/> is a <see cref="Editor.SectionCommand"/> member name, others are ignored.</summary>
+    [JSInvokable]
+    public Task SectionCommand(string name) =>
+        // TryParse also takes numbers; only the exact member name counts.
+        _callbacks is not null && Enum.TryParse<SectionCommand>(name, out var command) && name == command.ToString()
+            ? _callbacks.OnSectionCommand(command)
+            : Task.CompletedTask;
+
+    [JSInvokable]
+    public Task SectionBoxMoved(double barTop, bool visible) =>
+        _callbacks?.OnSectionBoxMoved(barTop, visible) ?? Task.CompletedTask;
 
     [JSInvokable]
     public Task ChipClicked(string noteId) =>
@@ -86,6 +133,8 @@ public sealed class TipTapInterop(IJSRuntime js, AppState state) : IEditorIntero
         _self?.Dispose();
         _callbacks = null;
     }
+
+    private IJSObjectReference Initialized => _editor ?? throw new InvalidOperationException("The editor is not initialized.");
 
     private static Guid? ParseOrNull(string? value) => Guid.TryParse(value, out var guid) ? guid : null;
 }

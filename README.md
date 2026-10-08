@@ -32,6 +32,30 @@ node build.mjs
 
 `node_modules` wird nicht eingecheckt.
 
+## Das Manuskript
+
+Der Editor zeigt immer das ganze Buch. Der **aktuelle Abschnitt** ist das Element am Cursor (Überschrift, Textblock
+oder Detail-Unterpunkt); ein Kasten mit Balken links markiert ihn, und er bestimmt „Relevant“. Ein Klick in der
+Gliederung springt zur Überschrift.
+
+Am unteren Rand der Markierung stehen die Abschnittsknöpfe und die Quellen:
+
+| Befehl | Tastenkürzel |
+| --- | --- |
+| Neuer Abschnitt danach (gleiche Ebene) | Alt+Enter |
+| Neuer Unterabschnitt (als erstes Element) | Alt+Umschalt+Enter |
+| Überschrift ein-/ausrücken | Tab / Umschalt+Tab in der Überschrift |
+| Überschrift entfernen (Inhalt bleibt) | Rücktaste am Anfang des Titels |
+| Abschnitt löschen | nur Knopf |
+
+Jeder Befehl lässt sich mit „Rückgängig“ in der Kopfzeile zurücknehmen, solange danach nichts an der Buchdatei
+geändert wurde. „N Quellen ▸“ klappt die Quellen des Abschnitts auf; ein Klick springt im Reiter Journal zur Notiz.
+Ist „Verwendete ausblenden“ eingeschaltet, erscheint die Notiz stattdessen als Karte oben im Notizbereich.
+
+„Übernehmen“ an einer Notiz oder einem Unteranstrich übernimmt mit einem Klick **am Cursor** (in den aktuellen Block);
+der Pfeil daneben bietet zusätzlich **Danach** (neues Element nach dem aktuellen) und **Darunter** (als erstes
+Unterelement). Die Quelle hängt immer am umgebenden Textblock.
+
 ## Wo was liegt
 
 | Was | Ort |
@@ -42,7 +66,7 @@ node build.mjs
 | Vault-Einstellungen (Notizordner) | `<vault>/.noteevolution/settings.json` |
 | Tägliche Sicherungen vor dem ersten Schreiben einer Datei (30 Tage) | `<vault>/.noteevolution/backups/<datum>/` |
 | Noch nicht geschriebene Notiz-Änderungen (z. B. schreibgeschützte Notiz) | `<vault>/.noteevolution/pending.json` |
-| KI-Modell (nach dem einmaligen Download) | `<Benutzerdaten>/models/multilingual-e5-small-int8/` |
+| KI-Modell (nach dem Download; immer nur eines) | `<Benutzerdaten>/models/<Modell-Id>/` |
 | Gespeicherte Bedeutungsvektoren der Notizen | `<vault>/.noteevolution/vectors.db` |
 
 `<Benutzerdaten>` ist der Ordner `NoteEvolution` im Anwendungsdatenordner des Systems (Windows:
@@ -111,9 +135,17 @@ Editor
 - [ ] Einen verknüpften Block löschen, ca. 1 s warten, dann Strg+Z im Editor: der Block ist wieder verknüpft
       (Quellen-Chip, `source::` im Buch, `used-in::` an der Notiz). Danach „Rückgängig“ in der Kopfzeile:
       es lehnt ab („Die Aktion konnte nicht rückgängig gemacht werden.“), der Block steht nur einmal im Buch.
-- [ ] Manuskriptansicht: einen Block (gepunkteter Griff links beim Überfahren) unter ein anderes Kapitel ziehen;
-      danach ist er in der Datei richtig eingerückt.
-- [ ] Manuskriptansicht: Schalter „Quellen anzeigen“ und die Randmarkierung bei Blöcken mit Quellen.
+- [ ] Einen Block (gepunkteter Griff links beim Überfahren) unter ein anderes Kapitel ziehen; danach ist er in der
+      Datei richtig eingerückt.
+- [ ] Schalter „Quellen anzeigen“ und die Randmarkierung bei Blöcken mit Quellen.
+- [ ] Markierung: Cursor in Überschrift, Textblock und Detail setzen; der Kasten umfasst jeweils das richtige Element,
+      die Leiste sitzt am unteren Rand und bleibt beim Scrollen eines langen Abschnitts am Fensterrand sichtbar.
+- [ ] Alt+Enter, Alt+Umschalt+Enter, Tab/Umschalt+Tab in einer Überschrift und Rücktaste am Titelanfang wirken im
+      echten Fenster (werden nicht von WebView2 abgefangen); danach „Rückgängig“ in der Kopfzeile.
+- [ ] „Abschnitt löschen“ an einer Überschrift mit verknüpften Blöcken: die `used-in::`-Einträge verschwinden,
+      „Rückgängig“ bringt Buch und Notizen zurück.
+- [ ] Quellen der Markierung aufklappen, eine Quelle anklicken: der Reiter Journal springt zur Notiz und hebt sie hervor.
+- [ ] Großes Buch (mehrere hundert Blöcke): Tippen und Scrollen bleiben flüssig.
 - [ ] Eine nicht sicher lesbare Buchdatei (z. B. offener Codeblock) zeigt den Hinweis, dass sie schreibgeschützt ist;
       der Editor ist gesperrt.
 - [ ] Fenster schließen, während der Text nicht gespeichert werden kann (z. B. Buchdatei schreibgeschützt): das
@@ -124,6 +156,8 @@ Notizen und Übernehmen
       Buchblock einen Quellen-Chip, der Hinweis bietet 8 s lang „Rückgängig“; in der Notizdatei kam nur eine
       `id::`/`used-in::`-Zeile hinzu.
 - [ ] „Verwendete ausblenden“ blendet verwendete Notizen aus.
+- [ ] Die drei Arten zu übernehmen: am Cursor mitten in einem Absatz (der Rest rückt dahinter), „Danach“ und
+      „Darunter“ bei Textblock, Detail und Überschrift; die Quelle steht jeweils am umgebenden Textblock.
 
 Logseq und Obsidian
 - [ ] Den Vault in Logseq öffnen: keine Fehler, Buch und Notizen sehen wie erwartet aus.
@@ -143,8 +177,8 @@ Lokale KI (Modell installiert, Test-Vault mit einigen Dutzend Notizen und einem 
       „Relevant“ bietet den Download an, die Suche arbeitet im Volltext; „Wohin damit?“ ist nicht zu sehen.
 - [ ] Modell herunterladen (Bestätigung, Fortschritt); danach zeigt die Kopfzeile „KI: lokal“, anfangs mit
       Indexfortschritt.
-- [ ] Der Reiter „Relevant“ folgt dem Abschnitt: einen anderen Abschnitt wählen, nach etwa 1,5 s ändert sich die
-      Liste; in der Manuskriptansicht folgt sie der Textstelle am Cursor.
+- [ ] Der Reiter „Relevant“ folgt dem Cursor: in eine andere Überschrift oder einen anderen Block klicken, nach etwa
+      1,5 s ändert sich die Liste.
 - [ ] „Verwendete ausblenden“ und der Zeitraum wirken auch in „Relevant“.
 - [ ] Die Suche findet sinnverwandte Notizen ohne gleiche Wörter (z. B. nach „Müdigkeit“ suchen und eine Notiz über
       „Schlaf“ finden), Treffer mit dem gesuchten Wort stehen weiter oben.

@@ -16,11 +16,11 @@ else
     <div class="ne-notes-pane">
         <div class="ne-notes-tabs" role="tablist">
             <button type="button" role="tab" class="ne-tab ne-tab-relevant @(_tab == Tab.Relevant ? "active" : null)"
-                    aria-selected="@(_tab == Tab.Relevant)" @onclick="() => _tab = Tab.Relevant">@L["NotesTabRelevant"]</button>
+                    aria-selected="@(_tab == Tab.Relevant)" @onclick="() => SelectTab(Tab.Relevant)">@L["NotesTabRelevant"]</button>
             <button type="button" role="tab" class="ne-tab ne-tab-search @(_tab == Tab.Search ? "active" : null)"
-                    aria-selected="@(_tab == Tab.Search)" @onclick="() => _tab = Tab.Search">@L["NotesTabSearch"]</button>
+                    aria-selected="@(_tab == Tab.Search)" @onclick="() => SelectTab(Tab.Search)">@L["NotesTabSearch"]</button>
             <button type="button" role="tab" class="ne-tab ne-tab-journal @(_tab == Tab.Journal ? "active" : null)"
-                    aria-selected="@(_tab == Tab.Journal)" @onclick="() => _tab = Tab.Journal">@L["NotesTabJournal"]</button>
+                    aria-selected="@(_tab == Tab.Journal)" @onclick="() => SelectTab(Tab.Journal)">@L["NotesTabJournal"]</button>
         </div>
         <div class="ne-notes-filters">
             <label class="ne-filter-hide"><input type="checkbox" class="ne-hide-used" checked="@Settings.HideUsed" @onchange="OnHideUsed" /> @L["NotesHideUsed"]</label>
@@ -50,7 +50,7 @@ else
         }
         else
         {
-            <JournalTab Filter="filter" Revision="_revision" />
+            <JournalTab Filter="filter" Revision="_revision" RevealKey="_revealKey" RevealSequence="_revealSequence" />
         }
     </div>
 }
@@ -73,16 +73,23 @@ else
     /// <summary>Counts the changes of the vault's pages and of the session; the tabs read their notes again when it changes.</summary>
     private int _revision;
 
+    /// <summary>The journal note the Journal tab jumps to and highlights, with the sequence number of that request.</summary>
+    private Guid? _revealKey;
+
+    private int _revealSequence;
+
     protected override void OnInitialized()
     {
         _logger = LoggerFactory.CreateLogger<NotesPane>();
         State.Changed += OnStateChanged;
+        State.NoteRevealRequested += OnNoteRevealRequested;
         TrackSession();
     }
 
     public void Dispose()
     {
         State.Changed -= OnStateChanged;
+        State.NoteRevealRequested -= OnNoteRevealRequested;
         Unsubscribe();
     }
 
@@ -91,6 +98,49 @@ else
         TrackSession();
         StateHasChanged();
     });
+
+    /// <summary>
+    /// Brings the note with the block id <paramref name="noteId"/> into view: the Journal tab jumps to it if the note is
+    /// a journal entry the filter shows; else (no date, or hidden by the filter) its card is shown at the top of the pane.
+    /// The block can be a sub-bullet; the card is always its root note's.
+    /// </summary>
+    private void OnNoteRevealRequested(Guid noteId) => _ = InvokeAsync(() =>
+    {
+        if (State.Session is not { } session || session.Vault.FindBlockById(noteId) is not { } found)
+        {
+            return;
+        }
+
+        var root = found.Block;
+        while (root.Parent is { } parent)
+        {
+            root = parent;
+        }
+
+        if (session.Notes.Get(root.Key) is not { } note)
+        {
+            return;
+        }
+
+        if (note.Date is not null && session.Notes.Journal(new NoteFilter(Settings.HideUsed, _from, _to)).Any(entry => entry.Key == note.Key))
+        {
+            _tab = Tab.Journal;
+            _revealKey = note.Key;
+            _revealSequence++;
+            StateHasChanged();
+        }
+        else
+        {
+            State.FocusedNoteKey = note.Key;
+            State.Notify();
+        }
+    });
+
+    private void SelectTab(Tab tab)
+    {
+        _tab = tab;
+        _revealKey = null;
+    }
 
     private void OnPagesChanged(string path) => _ = InvokeAsync(() =>
     {
@@ -109,6 +159,7 @@ else
         Unsubscribe();
         _session = State.Session;
         _revision++;
+        _revealKey = null;
         if (_session is not null)
         {
             _session.PagesChanged += OnPagesChanged;

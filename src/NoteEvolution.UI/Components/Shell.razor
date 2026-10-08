@@ -288,7 +288,7 @@
 
         State.CurrentBook = book;
         State.CurrentSectionKey = book.Root.Key;
-        State.CursorTextBlockKey = null;
+        State.Cursor = null;
         RememberBook(book);
         State.Notify();
     }
@@ -420,7 +420,7 @@
         State.CurrentBook = BookChoices.Remembered(session.Vault, Settings.LastBookOf(session.Vault.Root))
             ?? BookChoices.Books(session.Vault).FirstOrDefault();
         State.CurrentSectionKey = State.CurrentBook?.Root.Key ?? Guid.Empty;
-        State.CursorTextBlockKey = null;
+        State.Cursor = null;
         State.FocusedNoteKey = null;
         old?.Dispose();
     }

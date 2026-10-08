@@ -31,6 +31,74 @@ public static class InlineMarkdown
     }
 
     /// <summary>
+    /// Splits block content at a character offset of its text as the editor shows it: after
+    /// <see cref="BlockTextEscape.Unescape"/>, without emphasis markers, <c>"\n"</c> counting as 1 and <c>\*</c> or
+    /// <c>\_</c> as the one character they show. Emphasis across the offset is closed in <c>Before</c> and reopened in
+    /// <c>After</c>; each half is written with <see cref="Format"/> and <see cref="BlockTextEscape.Escape"/>, so that it
+    /// reads back as its part of the text. At offset 0 or at the end the content is returned unchanged as the one
+    /// non-empty half.
+    /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="plainOffset"/> is outside 0 … the length of the shown text.</exception>
+    public static (string Before, string After) SplitAt(string content, int plainOffset)
+    {
+        var (before, after) = SplitText(BlockTextEscape.Unescape(content), plainOffset);
+        return before.Length == 0 ? ("", content)
+            : after.Length == 0 ? (content, "")
+            : (BlockTextEscape.Escape(before), BlockTextEscape.Escape(after));
+    }
+
+    /// <summary>
+    /// <see cref="SplitAt"/> for editor text (already unescaped): the halves are not escaped, and at offset 0 or at the
+    /// end <paramref name="text"/> is returned unchanged as the one non-empty half.
+    /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="plainOffset"/> is outside 0 … <see cref="TextLength"/>.</exception>
+    internal static (string Before, string After) SplitText(string text, int plainOffset)
+    {
+        var runs = Parse(text);
+        ArgumentOutOfRangeException.ThrowIfNegative(plainOffset);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(plainOffset, runs.Sum(run => ShownLength(run.Text, run.Text.Length)));
+        if (plainOffset == 0)
+            return ("", text);
+
+        var before = new List<InlineRun>();
+        var after = new List<InlineRun>();
+        var remaining = plainOffset;
+        foreach (var run in runs)
+        {
+            var cut = RawIndex(run.Text, remaining);
+            if (cut > 0) before.Add(run with { Text = run.Text[..cut] });
+            if (cut < run.Text.Length) after.Add(run with { Text = run.Text[cut..] });
+            remaining -= ShownLength(run.Text, cut);
+        }
+
+        return after.Count == 0 ? (text, "") : (Format(before), Format(after));
+    }
+
+    /// <summary>The number of characters the editor shows for <paramref name="text"/> (editor text, already unescaped).</summary>
+    internal static int TextLength(string text) => Parse(text).Sum(run => ShownLength(run.Text, run.Text.Length));
+
+    /// <summary>The number of shown characters in <c>text[..end]</c>; <c>\*</c> and <c>\_</c> show as one.</summary>
+    private static int ShownLength(string text, int end)
+    {
+        var count = 0;
+        for (var i = 0; i < end; i += ShownCharLength(text, i))
+            count++;
+        return count;
+    }
+
+    /// <summary>The index in <paramref name="text"/> after <paramref name="shown"/> shown characters, at most its length.</summary>
+    private static int RawIndex(string text, int shown)
+    {
+        var i = 0;
+        for (; shown > 0 && i < text.Length; shown--)
+            i += ShownCharLength(text, i);
+        return i;
+    }
+
+    private static int ShownCharLength(string text, int i) =>
+        text[i] == '\\' && i + 1 < text.Length && text[i + 1] is '*' or '_' ? 2 : 1;
+
+    /// <summary>
     /// Nested form with stars (that is how emphasis is usually typed), else with underscores for italic where a
     /// star cluster at a style boundary would be misread; null if neither reads back as <paramref name="normalized"/>.
     /// </summary>

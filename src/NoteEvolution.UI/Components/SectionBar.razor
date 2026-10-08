@@ -1,0 +1,120 @@
+@using NoteEvolution.Core.Books
+@using NoteEvolution.Core.Vaults
+@using NoteEvolution.UI.Editor
+@inject AppState State
+@inject IStringLocalizer<Strings> L
+
+@* The bar at the bottom of the marking (spec 2, 3): the structure commands of the cursor element and the notes the
+   current section is based on. EditorPane places it where the editor reports the marking's bottom; the bar renders
+   with every render of EditorPane (its element is an object parameter), which follows the state and the conflicts. *@
+<div class="ne-section-bar" hidden="@(!Visible)" style="top: @(Top.ToString(CultureInfo.InvariantCulture))px">
+    @* The bar may render on its own (the list toggled) before EditorPane passes the element of a changed book. *@
+    @if (State.CurrentBook is { } book && Element is { } element && BookElements.Find(book, element.Key) == element)
+    {
+        var sources = BookElements.SourcesOf(book, element);
+        <div class="ne-sec-buttons">
+            @foreach (var (css, command, key, headingOnly) in Commands)
+            {
+                if (headingOnly && element.Kind != ElementKind.Heading)
+                {
+                    continue;
+                }
+
+                <button type="button" class="@css" disabled="@(Locked || !ManuscriptCommands.CanRun(State, command))"
+                        @onclick="() => OnCommand.InvokeAsync(command)">@L[key]</button>
+            }
+        </div>
+        <div class="ne-sec-sources-area">
+            @if (sources.Count == 0)
+            {
+                <span class="ne-sec-no-sources">@L["SectionNoSources"]</span>
+            }
+            else
+            {
+                <button type="button" class="ne-sec-sources" aria-expanded="@(_expanded ? "true" : "false")"
+                        @onclick="() => _expanded = !_expanded">@SourcesText(sources.Count)</button>
+                @if (_expanded)
+                {
+                    <div class="ne-sec-source-list">
+                        @foreach (var source in Sorted(sources))
+                        {
+                            if (source.IsBroken)
+                            {
+                                <span class="ne-sec-source-broken">@L["SectionSourceMissing"]</span>
+                            }
+                            else
+                            {
+                                <button type="button" class="ne-sec-source" @onclick="() => State.RevealNote(source.NoteId)">@source.Label</button>
+                            }
+                        }
+                    </div>
+                }
+            }
+        </div>
+    }
+</div>
+
+@code {
+    /// <summary>The buttons in their order: class, command, resource key, and whether only a heading has it.</summary>
+    private static readonly (string Css, SectionCommand Command, string Key, bool HeadingOnly)[] Commands =
+    [
+        ("ne-sec-after", SectionCommand.InsertAfter, "SectionInsertAfter", false),
+        ("ne-sec-child", SectionCommand.InsertChild, "SectionInsertChild", false),
+        ("ne-sec-indent", SectionCommand.Indent, "SectionIndent", true),
+        ("ne-sec-outdent", SectionCommand.Outdent, "SectionOutdent", true),
+        ("ne-sec-remove-heading", SectionCommand.RemoveHeading, "SectionRemoveHeading", true),
+        ("ne-sec-delete", SectionCommand.Delete, "SectionDelete", false),
+    ];
+
+    /// <summary>Whether the list of sources is open; it stays so while the current section changes.</summary>
+    private bool _expanded;
+
+    /// <summary>Where the bar's top is, in pixels from the top of <c>.ne-editor-pane</c>.</summary>
+    [Parameter]
+    public double Top { get; set; }
+
+    /// <summary>Whether the marking is in view; the bar is hidden otherwise.</summary>
+    [Parameter]
+    public bool Visible { get; set; }
+
+    /// <summary>The cursor element (<see cref="AppState.CurrentElement"/>) of the current book; <c>null</c> shows nothing.</summary>
+    [Parameter]
+    public BookElement? Element { get; set; }
+
+    /// <summary>The book cannot be changed now (read-only, or a conflict is open): all commands are disabled.</summary>
+    [Parameter]
+    public bool Locked { get; set; }
+
+    /// <summary>Runs a structure command on the cursor element, the same way as its shortcut.</summary>
+    [Parameter]
+    public EventCallback<SectionCommand> OnCommand { get; set; }
+
+    private string SourcesText(int count) => (count, _expanded) switch
+    {
+        (1, false) => L["SectionSourcesOne"],
+        (1, true) => L["SectionSourcesOneOpen"],
+        (_, false) => L["SectionSources", count],
+        _ => L["SectionSourcesOpen", count],
+    };
+
+    /// <summary>
+    /// The sources (<see cref="BookSnapshot.SourceOf"/>) by the date of their note's journal day, then by label; notes
+    /// without a date, and missing ones, come last by label.
+    /// </summary>
+    private IEnumerable<SourceInfo> Sorted(IReadOnlyList<Guid> noteIds)
+    {
+        if (State.Session?.Vault is not { } vault)
+        {
+            return [];
+        }
+
+        return noteIds
+            .Select(id => (
+                Source: BookSnapshot.SourceOf(id, vault),
+                Date: vault.FindBlockById(id) is { } found ? NoteRepository.DateOf(found.Page) : null))
+            .OrderBy(entry => entry.Date is null)
+            .ThenBy(entry => entry.Date)
+            .ThenBy(entry => entry.Source.Label, StringComparer.CurrentCulture)
+            .Select(entry => entry.Source);
+    }
+}

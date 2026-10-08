@@ -13,16 +13,19 @@ namespace NoteEvolution.Core.Books;
 /// <param name="IsBroken">No block in the vault has this id.</param>
 public sealed record SourceInfo(Guid NoteId, string Label, bool IsBroken);
 
-/// <summary>What the editor shows of a book: one section, or a whole subtree (manuscript view).</summary>
+/// <summary>
+/// What the editor shows of a book: a whole subtree with its headings (the manuscript; the editor shows the root's), or
+/// only one section's text blocks (no longer shown by the UI).
+/// </summary>
 /// <param name="ScopeKey">The <see cref="OutlineNode.Key"/> of the shown section (<see cref="Guid.Empty"/> = root).</param>
-/// <param name="IncludeSubsections"><c>false</c>: section view; <c>true</c>: manuscript view.</param>
+/// <param name="IncludeSubsections"><c>true</c>: the manuscript (subtree with headings); <c>false</c>: one section's text blocks.</param>
 /// <param name="Nodes">Headings and text blocks in the editor's order.</param>
 public sealed record SectionSnapshot(Guid ScopeKey, bool IncludeSubsections, IReadOnlyList<SnapshotNode> Nodes);
 
 /// <summary>An editor node; <paramref name="Key"/> is the <see cref="Model.Block.Key"/> of its block.</summary>
 public abstract record SnapshotNode(Guid Key);
 
-/// <summary>A heading (manuscript view only); <paramref name="Text"/> is the title without <c>#</c>, spaces kept.</summary>
+/// <summary>A heading (manuscript only); <paramref name="Text"/> is the title without <c>#</c>, spaces kept.</summary>
 public sealed record SnapshotHeading(Guid Key, int Level, string Text) : SnapshotNode(Key);
 
 /// <summary>A text block. Texts are inline Markdown, line breaks within a block are <c>"\n"</c>.</summary>
@@ -51,8 +54,8 @@ public static class BookSnapshot
     private const int LabelTextLength = 40;
 
     /// <summary>
-    /// Section view (<paramref name="includeSubsections"/> <c>false</c>): only the text blocks of the node.
-    /// Manuscript view: the node's subtree in file order with headings; the node's own heading comes first
+    /// Without <paramref name="includeSubsections"/>: only the text blocks of the node (not used by the UI).
+    /// Manuscript: the node's subtree in file order with headings; the node's own heading comes first
     /// (the root has none). Texts are unescaped (<see cref="BlockTextEscape"/>).
     /// </summary>
     /// <exception cref="ArgumentException">No node has <paramref name="scopeKey"/>.</exception>
@@ -105,9 +108,13 @@ public static class BookSnapshot
             null,
             BlockTextEscape.Unescape(text.Text),
             [.. text.Paragraphs.Select(p => new SnapshotParagraph(p.Block.Key, ParagraphText(p.Block.Content), p.Depth, p.IsNote))],
-            [.. text.Sources.Distinct().Select(id => Source(id, vault))]);
+            [.. text.Sources.Distinct().Select(id => SourceOf(id, vault))]);
 
-    private static SourceInfo Source(Guid noteId, IVault vault)
+    /// <summary>
+    /// The source chip of the note with the block id <paramref name="noteId"/>: its label (see <see cref="SourceInfo"/>),
+    /// or the id itself, marked broken, if no block in <paramref name="vault"/> has it.
+    /// </summary>
+    public static SourceInfo SourceOf(Guid noteId, IVault vault)
     {
         if (vault.FindBlockById(noteId) is not { } found)
         {

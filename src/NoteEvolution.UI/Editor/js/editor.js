@@ -9,6 +9,7 @@ import Italic from '@tiptap/extension-italic';
 import Text from '@tiptap/extension-text';
 import { Mapping } from '@tiptap/pm/transform';
 import { EditorState, Plugin, PluginKey, TextSelection } from '@tiptap/pm/state';
+import { Decoration, DecorationSet } from '@tiptap/pm/view';
 
 /** A new lower-case UUID; crypto.randomUUID needs a secure context, getRandomValues does not. */
 function newKey() {
@@ -46,7 +47,10 @@ const Doc = Node.create({
     content: '(textBlock | heading)+',
 });
 
-/** A heading of the manuscript view; only its title can be edited (the outline changes headings). */
+/**
+ * A heading of the manuscript; only its title can be edited here, the structure commands and the outline add, move
+ * and remove headings.
+ */
 const Heading = Node.create({
     name: 'heading',
     content: 'text*',
@@ -326,16 +330,38 @@ function toggleNote({ tr, dispatch }) {
     return true;
 }
 
+const inHeading = state => state.selection.$from.parent.type.name === 'heading';
+
+/**
+ * The editing shortcuts. The structure commands (spec 3) run in C#: their shortcuts call options.onSectionCommand
+ * with the SectionCommand member name.
+ */
 const Keys = Extension.create({
     name: 'noteEvolutionKeys',
     priority: 1000,
+    addOptions() {
+        return { onSectionCommand: () => {} };
+    },
     addKeyboardShortcuts() {
         const run = command => () => this.editor.commands.command(command);
+        const section = name => () => {
+            this.options.onSectionCommand(name);
+            return true;
+        };
+        const inHeadingOr = (name, otherwise) => () => (inHeading(this.editor.state) ? section(name)() : otherwise());
         return {
             Enter: run(newParagraph),
             'Mod-Enter': run(splitTextBlock),
-            Tab: run(shiftDepth(1)),
-            'Shift-Tab': run(shiftDepth(-1)),
+            'Alt-Enter': section('InsertAfter'),
+            'Alt-Shift-Enter': section('InsertChild'),
+            Tab: inHeadingOr('Indent', run(shiftDepth(1))),
+            'Shift-Tab': inHeadingOr('Outdent', run(shiftDepth(-1))),
+            Backspace: () => {
+                const { selection } = this.editor.state;
+                return selection.empty && selection.$from.parentOffset === 0 && inHeading(this.editor.state)
+                    ? section('RemoveHeading')()
+                    : false;
+            },
             'Mod-Shift-n': run(toggleNote),
             'Mod-Shift-N': run(toggleNote),
         };
@@ -429,7 +455,10 @@ function headingList(doc) {
     return list.join('|');
 }
 
-/** Headings can be renamed here, but not added, removed or moved: the outline does that. */
+/**
+ * Headings can be renamed here (an empty title is allowed), but not added, removed or moved by typing: the structure
+ * commands and the outline do that.
+ */
 const FixedHeadings = Extension.create({
     name: 'fixedHeadings',
     addProseMirrorPlugins() {
@@ -441,6 +470,114 @@ const FixedHeadings = Extension.create({
         ];
     },
 });
+
+/**
+ * The element at the selection (spec 2): { kind, key, textBlockKey, offset, nodes }, or null outside every element.
+ * kind is 'heading', 'textBlock' (the block's own text, depth 0) or 'detail' (a paragraph of depth >= 1); nodes are
+ * the [position, node] pairs the element marks: a heading with its section (up to the next heading of the same or a
+ * higher level), a text block, or a detail with the deeper paragraphs that follow it.
+ */
+function currentElement(state) {
+    const { selection, doc } = state;
+    const { $from } = selection;
+    let top;
+    let topPos;
+    if ($from.depth >= 1) {
+        top = $from.node(1);
+        topPos = $from.before(1);
+    } else if (selection.node) {
+        // A dragged block (a node selection of a top-level node).
+        top = selection.node;
+        topPos = selection.from;
+    } else {
+        return null;
+    }
+    const offset = $from.parent.isTextblock ? $from.parentOffset : 0;
+    if (top.type.name === 'heading') {
+        const nodes = [[topPos, top]];
+        for (let i = doc.resolve(topPos).index(0) + 1, pos = topPos + top.nodeSize; i < doc.childCount; i++) {
+            const node = doc.child(i);
+            if (node.type.name === 'heading' && node.attrs.level <= top.attrs.level) {
+                break;
+            }
+            nodes.push([pos, node]);
+            pos += node.nodeSize;
+        }
+        return { kind: 'heading', key: top.attrs.key, textBlockKey: null, offset, nodes };
+    }
+    const para = $from.depth >= 2 ? $from.node(2) : null;
+    if (!para || para.attrs.depth < 1) {
+        return { kind: 'textBlock', key: top.attrs.key, textBlockKey: top.attrs.key, offset, nodes: [[topPos, top]] };
+    }
+    const nodes = [];
+    for (let i = $from.index(1), pos = $from.before(2); i < top.childCount; i++) {
+        const node = top.child(i);
+        if (nodes.length > 0 && node.attrs.depth <= para.attrs.depth) {
+            break;
+        }
+        nodes.push([pos, node]);
+        pos += node.nodeSize;
+    }
+    return { kind: 'detail', key: para.attrs.key, textBlockKey: top.attrs.key, offset, nodes };
+}
+
+/**
+ * Marks the current element with the class ne-current on each of its nodes (ne-current-first / -last on the ends, so
+ * the nodes draw one box); a detail's paragraphs get its depth as --current-depth, where its box starts.
+ */
+const CurrentElement = Extension.create({
+    name: 'currentElement',
+    addProseMirrorPlugins() {
+        return [
+            new Plugin({
+                key: new PluginKey('currentElement'),
+                props: {
+                    decorations: state => {
+                        const element = currentElement(state);
+                        if (!element) {
+                            return DecorationSet.empty;
+                        }
+                        const last = element.nodes.length - 1;
+                        const depth = element.kind === 'detail' ? element.nodes[0][1].attrs.depth : null;
+                        return DecorationSet.create(state.doc, element.nodes.map(([pos, node], i) => {
+                            const classes = ['ne-current'];
+                            if (i === 0) {
+                                classes.push('ne-current-first');
+                            }
+                            if (i === last) {
+                                classes.push('ne-current-last');
+                            }
+                            const attrs = { class: classes.join(' ') };
+                            if (depth !== null) {
+                                attrs.style = `--current-depth: ${depth}`;
+                            }
+                            return Decoration.node(pos, pos + node.nodeSize, attrs);
+                        }));
+                    },
+                },
+            }),
+        ];
+    },
+});
+
+/** The nearest scrolling ancestor of element (the document's scroller if none). */
+function scrollParent(element) {
+    for (let e = element.parentElement; e; e = e.parentElement) {
+        if (/(auto|scroll)/.test(getComputedStyle(e).overflowY)) {
+            return e;
+        }
+    }
+    return document.scrollingElement ?? document.documentElement;
+}
+
+/** The part of the window that scroller shows, as { top, bottom } in client coordinates. */
+function visibleArea(scroller) {
+    if (scroller === document.scrollingElement || scroller === document.documentElement) {
+        return { top: 0, bottom: window.innerHeight };
+    }
+    const rect = scroller.getBoundingClientRect();
+    return { top: Math.max(rect.top, 0), bottom: Math.min(rect.bottom, window.innerHeight) };
+}
 
 /**
  * The key of the text block or heading after which a note dropped at the event's position goes, or null for the
@@ -462,15 +599,59 @@ function dropTarget(view, event) {
 }
 
 /**
- * Creates the editor in host. dotnet receives DocumentChanged(json), CursorBlockChanged(key), ChipClicked(noteId),
- * ChipRemoved(blockKey, noteId) and NoteDropped(afterKey).
+ * Creates the editor in host. dotnet receives DocumentChanged(json), CursorChanged(kind, key, textBlockKey, offset),
+ * SectionCommand(name), SectionBoxMoved(barTop, visible), ChipClicked(noteId), ChipRemoved(blockKey, noteId) and
+ * NoteDropped(afterKey). options.barHeight is the height of the section bar C# shows at the marking box's bottom.
  */
-export function createEditor(host, dotnet) {
+export function createEditor(host, dotnet, options = {}) {
+    const barHeight = options.barHeight ?? 0;
     const root = document.createElement('div');
-    root.className = 'ne-editor-root mode-section';
+    root.className = 'ne-editor-root mode-manuscript';
     host.appendChild(root);
     const call = (method, ...args) => dotnet.invokeMethodAsync(method, ...args).catch(error => console.error(error));
     let lastCursor;
+    let lastBox;
+    let boxFrame = 0;
+
+    /** Reports the element at the cursor when it, or the offset in it, changed. */
+    const reportCursor = state => {
+        const element = currentElement(state);
+        const cursor = element ? [element.kind, element.key, element.textBlockKey, element.offset] : [null, null, null, 0];
+        const id = cursor.join('|');
+        if (id !== lastCursor) {
+            lastCursor = id;
+            call('CursorChanged', ...cursor);
+        }
+    };
+
+    /**
+     * Reports where the section bar goes: at the marking box's bottom (relative to .ne-editor-pane), but at least
+     * barHeight above the visible bottom of the scrolling pane; and whether the box is visible at all (never before a
+     * cursor was reported for the shown book). The marked nodes follow each other, so the first one's top and the last
+     * one's bottom are the box.
+     */
+    const reportBox = () => {
+        boxFrame = 0;
+        if (!root.isConnected) {
+            return;
+        }
+        const pane = host.closest('.ne-editor-pane') ?? host;
+        const area = visibleArea(scrollParent(host));
+        const first = root.querySelector('.ne-current-first');
+        const last = root.querySelector('.ne-current-last');
+        const top = first && lastCursor !== undefined ? first.getBoundingClientRect().top : Infinity;
+        const bottom = last && lastCursor !== undefined ? last.getBoundingClientRect().bottom : -Infinity;
+        const visible = bottom > top && bottom > area.top && top < area.bottom;
+        const barTop = visible ? Math.min(bottom, area.bottom - barHeight) - pane.getBoundingClientRect().top : 0;
+        if (lastBox && lastBox.visible === visible && Math.abs(lastBox.barTop - barTop) < 1) {
+            return;
+        }
+        lastBox = { barTop, visible };
+        call('SectionBoxMoved', barTop, visible);
+    };
+    const scheduleBox = () => {
+        boxFrame ||= requestAnimationFrame(reportBox);
+    };
 
     const editor = new Editor({
         element: root,
@@ -492,13 +673,17 @@ export function createEditor(host, dotnet) {
             }),
             History,
             Dropcursor,
-            Keys,
+            Keys.configure({ onSectionCommand: name => call('SectionCommand', name) }),
             UniqueKeys,
             FixedHeadings,
+            CurrentElement,
         ],
         content: { type: 'doc', content: [{ type: 'textBlock', attrs: { key: newKey() }, content: [{ type: 'para' }] }] },
         editorProps: {
             attributes: { class: 'ne-doc', spellcheck: 'true' },
+            // The section bar covers the pane's bottom: the line being typed in or moved to stays above it.
+            scrollThreshold: { top: 0, right: 0, bottom: barHeight + 8, left: 0 },
+            scrollMargin: { top: 5, right: 5, bottom: barHeight + 8, left: 5 },
             handleDOMEvents: {
                 drop: (view, event) => {
                     if (view.dragging) {
@@ -512,35 +697,89 @@ export function createEditor(host, dotnet) {
             },
         },
         onUpdate: ({ editor: e }) => call('DocumentChanged', JSON.stringify(e.getJSON())),
-        onSelectionUpdate: ({ editor: e }) => {
-            const { $from } = e.state.selection;
-            const block = $from.depth >= 1 ? $from.node(1) : null;
-            const key = block && block.type.name === 'textBlock' ? block.attrs.key : null;
-            if (key !== lastCursor) {
-                lastCursor = key;
-                call('CursorBlockChanged', key);
-            }
-        },
+        onSelectionUpdate: ({ editor: e }) => reportCursor(e.state),
+        // A click on the place the selection already has changes no selection; after a new book it places the cursor.
+        onFocus: ({ editor: e }) => reportCursor(e.state),
+        onTransaction: scheduleBox,
     });
 
+    // Scrolling (of any pane; the frame and the 1 px check keep that cheap) and resizing move the box too.
+    document.addEventListener('scroll', scheduleBox, { capture: true, passive: true });
+    window.addEventListener('resize', scheduleBox);
+    const resizes = new ResizeObserver(scheduleBox);
+    resizes.observe(root);
+
     return {
-        /** Shows a new document (no change event, fresh undo history); the cursor stays near where it was. */
-        setDocument(json, manuscript, showChips) {
+        /**
+         * Shows a new document (no change event, fresh undo history). With keepCursor (the same book again) the cursor
+         * stays near where it was and is reported, but only if one had been reported for the previous document.
+         * Otherwise (another book, or no cursor placed yet) the cursor is not reported (for another book the selection
+         * goes to the document's start): it is first reported when the user places it (a selection change, or focusing
+         * the editor) or an element is revealed.
+         */
+        setDocument(json, showChips, keepCursor) {
             const doc = editor.schema.nodeFromJSON(JSON.parse(json));
             doc.check();
-            const at = Math.min(editor.state.selection.from, doc.content.size);
-            const state = EditorState.create({
-                doc,
-                plugins: editor.state.plugins,
-                selection: TextSelection.near(doc.resolve(at)),
-            });
-            editor.view.updateState(state);
-            root.classList.toggle('mode-section', !manuscript);
-            root.classList.toggle('mode-manuscript', manuscript);
+            const selection = keepCursor
+                ? TextSelection.near(doc.resolve(Math.min(editor.state.selection.from, doc.content.size)))
+                : TextSelection.atStart(doc);
+            editor.view.updateState(EditorState.create({ doc, plugins: editor.state.plugins, selection }));
             root.classList.toggle('show-chips', showChips);
+            // updateState raises no selection update, but the cursor may now be in another element.
+            const placed = lastCursor !== undefined;
             lastCursor = undefined;
+            if (keepCursor && placed) {
+                reportCursor(editor.state);
+            }
+            scheduleBox();
+        },
+        /**
+         * Puts the cursor at the start of the text of the heading, text block or detail with the key (null: the start
+         * of the document) and scrolls it into view; an unknown key does nothing.
+         */
+        reveal(key) {
+            const doc = editor.state.doc;
+            let target = key ? null : { pos: 0, at: TextSelection.atStart(doc).from };
+            doc.forEach((node, offset) => {
+                if (target) {
+                    return;
+                }
+                if (node.attrs.key === key) {
+                    // A heading's title starts inside it, a text block's text inside its first paragraph.
+                    target = { pos: offset, at: offset + (node.type.name === 'heading' ? 1 : 2) };
+                } else if (node.type.name === 'textBlock') {
+                    node.forEach((para, paraOffset, index) => {
+                        if (!target && index > 0 && para.attrs.key === key) {
+                            target = { pos: offset + 1 + paraOffset, at: offset + 2 + paraOffset };
+                        }
+                    });
+                }
+            });
+            if (!target) {
+                return;
+            }
+            editor.view.dispatch(editor.state.tr.setSelection(TextSelection.create(doc, target.at)));
+            // The user types on right there; a text field that has the focus meanwhile (e.g. renaming an outline
+            // heading after a double click) keeps it.
+            const active = document.activeElement;
+            if (!(active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement || active instanceof HTMLSelectElement)) {
+                editor.view.focus();
+            }
+            // ProseMirror scrolls to the selection only while the editor has the focus, and focus() does not scroll.
+            const dom = editor.view.nodeDOM(target.pos);
+            if (dom instanceof Element) {
+                const rect = dom.getBoundingClientRect();
+                const area = visibleArea(scrollParent(host));
+                if (rect.top < area.top || rect.bottom > area.bottom) {
+                    dom.scrollIntoView({ block: 'start' });
+                }
+            }
         },
         destroy() {
+            cancelAnimationFrame(boxFrame);
+            resizes.disconnect();
+            document.removeEventListener('scroll', scheduleBox, { capture: true });
+            window.removeEventListener('resize', scheduleBox);
             editor.destroy();
             root.remove();
         },

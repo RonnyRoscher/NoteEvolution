@@ -11,7 +11,7 @@ namespace NoteEvolution.Core.Books;
 /// </summary>
 public static class OutlineEditor
 {
-    private const int MaxLevel = 6;
+    internal const int MaxLevel = 6;
 
     /// <summary>
     /// Adds a heading <c>"#" * (parent level + 1) + " " + title</c> as the last child of the parent
@@ -94,7 +94,7 @@ public static class OutlineEditor
     private static OutlineNode FindSection(Book book, Guid key, string paramName) =>
         book.FindNode(key) ?? throw new ArgumentException("There is no such heading in the book.", paramName);
 
-    private static OutlineNode FindHeading(Book book, Guid key, string paramName)
+    internal static OutlineNode FindHeading(Book book, Guid key, string paramName)
     {
         var node = FindSection(book, key, paramName);
         return node.Block is null ? throw new ArgumentException("The root is not a heading.", paramName) : node;
@@ -116,10 +116,10 @@ public static class OutlineEditor
     }
 
     /// <summary>Number of heading levels in the subtree including the node itself.</summary>
-    private static int Height(OutlineNode node) => 1 + node.Children.Select(Height).DefaultIfEmpty(0).Max();
+    internal static int Height(OutlineNode node) => 1 + node.Children.Select(Height).DefaultIfEmpty(0).Max();
 
     /// <summary>Gives <paramref name="node"/> the level <paramref name="level"/> and its sub-headings the levels below.</summary>
-    private static void Relevel(OutlineNode node, int level)
+    internal static void Relevel(OutlineNode node, int level)
     {
         if (node.Level != level)
         {

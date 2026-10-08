@@ -1,7 +1,7 @@
+@using Microsoft.JSInterop
 @using NoteEvolution.AI.Embeddings
 @using NoteEvolution.AI.Relevance
 @using NoteEvolution.Core.Books
-@using NoteEvolution.Core.Links
 @using NoteEvolution.Core.Model
 @using NoteEvolution.Core.Vaults
 @implements IDisposable
@@ -17,7 +17,7 @@
     var collapsible = lineCount > CollapsedLines;
 }
 
-<article class="ne-note-card" draggable="true" data-note-key="@Note.Key"
+<article @ref="_root" class="ne-note-card @(Highlighted ? "ne-note-highlight" : null)" tabindex="-1" draggable="true" data-note-key="@Note.Key"
          @ondragstart="OnDragStart" @ondragend="OnDragEnd">
     <header class="ne-note-head">
         <span class="ne-note-origin">@Origin</span>
@@ -47,8 +47,17 @@
         {
             <div class="ne-note-child" style="margin-left: @(depth * 12)px">
                 <span class="ne-note-child-text">@child.Content</span>
-                <button type="button" class="ne-note-child-adopt" title="@L["NoteAdoptChildTitle"]"
-                        disabled="@(!CanAdopt)" @onclick="() => AdoptAsync(child)">@L["NoteAdopt"]</button>
+                <span class="ne-adopt-split">
+                    <button type="button" class="ne-note-child-adopt" title="@L["NoteAdoptChildTitle"]"
+                            disabled="@(!CanAdopt)" @onclick="() => AdoptAsync(child, AdoptVariant.AtCursor)">@L["NoteAdopt"]</button>
+                    <button type="button" class="ne-note-child-adopt-more" title="@L["NoteAdoptMore"]" aria-label="@L["NoteAdoptMore"]"
+                            aria-haspopup="menu" aria-expanded="@(_adoptMenu == child.Key)"
+                            disabled="@(!CanAdopt)" @onclick="() => ToggleAdoptMenu(child.Key)">▾</button>
+                    @if (_adoptMenu == child.Key)
+                    {
+                        @AdoptMenu(child)
+                    }
+                </span>
             </div>
         }
     </div>
@@ -57,8 +66,17 @@
         <div class="ne-note-hint">@L["NoteReadOnlyHint"]</div>
     }
     <footer class="ne-note-actions">
-        <button type="button" class="ne-note-adopt" title="@L["NoteAdoptTitle"]"
-                disabled="@(!CanAdopt)" @onclick="() => AdoptAsync(Note.Block)">@L["NoteAdopt"]</button>
+        <span class="ne-adopt-split">
+            <button type="button" class="ne-note-adopt" title="@L["NoteAdoptTitle"]"
+                    disabled="@(!CanAdopt)" @onclick="() => AdoptAsync(Note.Block, AdoptVariant.AtCursor)">@L["NoteAdopt"]</button>
+            <button type="button" class="ne-note-adopt-more" title="@L["NoteAdoptMore"]" aria-label="@L["NoteAdoptMore"]"
+                    aria-haspopup="menu" aria-expanded="@(_adoptMenu == Note.Block.Key)"
+                    disabled="@(!CanAdopt)" @onclick="() => ToggleAdoptMenu(Note.Block.Key)">▾</button>
+            @if (_adoptMenu == Note.Block.Key)
+            {
+                @AdoptMenu(Note.Block)
+            }
+        </span>
         @if (WhereToAvailable)
         {
             <button type="button" class="ne-note-whereto" title="@L["NoteWhereToTitle"]"
@@ -107,8 +125,13 @@
     /// <summary>From this many lines on, the card is collapsed to three lines until "mehr" is clicked.</summary>
     private const int CollapsedLines = 3;
 
+    private ElementReference _root;
+    private int _focused;
     private bool _expanded;
     private AdoptMessage? _message;
+
+    /// <summary>The key of the block (the note or a sub-bullet) whose menu of adopt variants is open; <c>null</c> if none.</summary>
+    private Guid? _adoptMenu;
 
     /// <summary>How many sections "Wohin damit?" lists.</summary>
     private const int WhereToLimit = 5;
@@ -130,6 +153,15 @@
 
     /// <summary>The hit's score in percent of the best hit; <c>null</c> outside the search.</summary>
     [Parameter] public int? Percent { get; set; }
+
+    /// <summary>The card is marked for a moment after a source jumped to its note (see <c>JournalTab</c>).</summary>
+    [Parameter] public bool Highlighted { get; set; }
+
+    /// <summary>
+    /// A new (positive) number puts the focus on the card after it rendered, which scrolls it into view; 0 asks for
+    /// nothing.
+    /// </summary>
+    [Parameter] public int FocusRequest { get; set; }
 
     /// <summary>The button is offered while the AI is ready and there is a book to place the note in.</summary>
     private bool WhereToAvailable => State is { Session: { } session, CurrentBook: not null } && session.Relevance.IsAvailable;
@@ -164,6 +196,23 @@
             _whereTo = null;
             _whereBusy = false;
             _whereNoteKey = Note.Key;
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (FocusRequest > 0 && FocusRequest != _focused)
+        {
+            _focused = FocusRequest;
+            try
+            {
+                await _root.FocusAsync();
+            }
+            catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException or InvalidOperationException)
+            {
+                // The focus is only a help for the keyboard (the card may be gone or the window closing).
+                Logger.LogDebug(ex, "Focusing the note card failed");
+            }
         }
     }
 
@@ -233,8 +282,8 @@
 
     /// <summary>
     /// Goes to the place where the note is used: the book of its first <c>used-in::</c> entry with a block
-    /// reference (else its first entry) and the section containing that block (an entry without a block, or a block
-    /// that is not found, only switches the book).
+    /// reference (else its first entry), where the editor reveals that block (an entry without a block, or a block that
+    /// is not found, only switches the book).
     /// </summary>
     private void GoToUsage()
     {
@@ -251,12 +300,18 @@
         }
 
         var sameBook = string.Equals(State.CurrentBook?.LinkName, book.LinkName, StringComparison.OrdinalIgnoreCase);
-        var section = entry.BookBlockId is { } blockId ? SectionOf(book.Root, blockId) : null;
+        var target = entry.BookBlockId is { } blockId ? TargetOf(book.Root, blockId) : null;
         State.CurrentBook = book;
-        State.CurrentSectionKey = section ?? (sameBook && book.FindNode(State.CurrentSectionKey) is not null
-            ? State.CurrentSectionKey
-            : book.Root.Key);
-        State.CursorTextBlockKey = null;
+        if (target is { } key)
+        {
+            State.RevealElement(key);
+        }
+        else if (!sameBook)
+        {
+            State.CurrentSectionKey = book.Root.Key;
+            State.Cursor = null;
+        }
+
         State.Notify();
     }
 
@@ -311,8 +366,8 @@
     private static string SectionTitle(Book book, OutlineNode section) => section.Level == 0 ? book.Title : section.Title;
 
     /// <summary>
-    /// Goes to a section of the list: the editor saves first (the view changes behind it), then the book (if the
-    /// current one changed since) and the section are selected and the cursor is cleared.
+    /// Goes to a section of the list: the editor saves first, then the book (if the current one changed since) is
+    /// selected and the editor reveals the section's heading (the book root: the start of the book).
     /// </summary>
     private async Task GoToSectionAsync(Guid sectionKey)
     {
@@ -355,36 +410,62 @@
             return;
         }
 
-        State.CurrentSectionKey = sectionKey;
-        State.CursorTextBlockKey = null;
+        State.RevealElement(sectionKey);
         State.Notify();
     }
 
-    /// <summary>The key of the section whose heading, text block or paragraph has the id <paramref name="blockId"/>.</summary>
-    private static Guid? SectionOf(OutlineNode node, Guid blockId)
+    /// <summary>
+    /// The key of the heading or text block with the id <paramref name="blockId"/>; for a paragraph (detail) the key of
+    /// its text block.
+    /// </summary>
+    private static Guid? TargetOf(OutlineNode node, Guid blockId)
     {
-        if (node.Block?.Id == blockId
-            || node.TextBlocks.Any(text => text.Block.Id == blockId || text.Paragraphs.Any(p => p.Block.Id == blockId)))
+        if (node.Block?.Id == blockId)
         {
             return node.Key;
         }
 
-        return node.Children.Select(child => SectionOf(child, blockId)).FirstOrDefault(key => key is not null);
+        if (node.TextBlocks.FirstOrDefault(text => text.Block.Id == blockId || text.Paragraphs.Any(p => p.Block.Id == blockId)) is { } textBlock)
+        {
+            return textBlock.Key;
+        }
+
+        return node.Children.Select(child => TargetOf(child, blockId)).FirstOrDefault(key => key is not null);
     }
 
     /// <summary>
-    /// Adopts <paramref name="block"/> (the note itself or one of its sub-bullets) into the current book: after the
-    /// text block under the cursor, else at the end of the current section (see <see cref="NoteAdoption"/>).
+    /// Opens the menu of adopt variants of <paramref name="blockKey"/> (closing any other), or closes it. A sub-bullet's
+    /// menu expands the card, so a collapsed body does not cut it off.
     /// </summary>
-    private async Task AdoptAsync(Block block)
+    private void ToggleAdoptMenu(Guid blockKey)
     {
+        _adoptMenu = _adoptMenu == blockKey ? null : blockKey;
+        if (_adoptMenu is not null && blockKey != Note.Block.Key)
+        {
+            _expanded = true;
+        }
+    }
+
+    /// <summary>The menu of adopt variants (spec 4) for <paramref name="block"/>.</summary>
+    private RenderFragment AdoptMenu(Block block) =>
+        @<div class="ne-adopt-menu" role="menu">
+            <button type="button" role="menuitem" class="ne-adopt-at-cursor"
+                    @onclick="() => AdoptAsync(block, AdoptVariant.AtCursor)">@L["AdoptAtCursor"]</button>
+            <button type="button" role="menuitem" class="ne-adopt-after"
+                    @onclick="() => AdoptAsync(block, AdoptVariant.After)">@L["AdoptAfter"]</button>
+            <button type="button" role="menuitem" class="ne-adopt-below"
+                    @onclick="() => AdoptAsync(block, AdoptVariant.Below)">@L["AdoptBelow"]</button>
+        </div>;
+
+    /// <summary>
+    /// Adopts <paramref name="block"/> (the note itself or one of its sub-bullets) into the current book the way
+    /// <paramref name="variant"/> says, relative to the element at the cursor (see <see cref="NoteAdoption"/>); closes
+    /// the menu.
+    /// </summary>
+    private async Task AdoptAsync(Block block, AdoptVariant variant)
+    {
+        _adoptMenu = null;
         _message = null;
-        _message = await NoteAdoption.AdoptAsync(
-            State,
-            block.Key,
-            book => State.CursorTextBlockKey is { } cursor && book.FindTextBlock(cursor) is not null
-                ? new InsertPosition.After(cursor)
-                : new InsertPosition.SectionEnd(State.CurrentSectionKey),
-            Logger);
+        _message = await NoteAdoption.AdoptAsync(State, block.Key, variant, Logger);
     }
 }

@@ -29,6 +29,19 @@ public interface ILinkService
     AdoptResult Adopt(Book book, Guid noteBlockKey, InsertPosition position);
 
     /// <summary>
+    /// Copies the note block's text and sub-bullets (without property lines) into an existing text block or detail
+    /// (<paramref name="position"/>), adds the note's id to the enclosing text block's <c>source::</c> unless it is
+    /// there (the text block gets an <c>id::</c> if needed; a detail never gets a source of its own), then adds the
+    /// usage to the note's <c>used-in::</c>. The result names the enclosing text block. Can be undone („Übernehmen“)
+    /// as long as the text block with its details is still as this left it.
+    /// </summary>
+    /// <exception cref="ArgumentException">Unknown note block or position, or the text would not stay one block.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">The offset of <see cref="IntoPosition.AtCursor"/> is outside the element's text.</exception>
+    /// <exception cref="ReadOnlyPageException">The book page is read-only.</exception>
+    /// <exception cref="InvalidOperationException">The note's page is read-only; nothing was changed.</exception>
+    AdoptResult AdoptInto(Book book, Guid noteBlockKey, IntoPosition position);
+
+    /// <summary>
     /// Fully links an existing text block and a note block (a confirmed placement): gives both an <c>id::</c>, adds
     /// the note's id to the text block's <c>source::</c>, then sets <c>used-in:: [[book]] ((text block id))</c> on the
     /// note, replacing an entry for the same book that has no block reference. Writes only property lines; what is
@@ -44,6 +57,22 @@ public interface ILinkService
 
     /// <summary>Deletes the text block with its paragraphs and removes its usages from the notes. Can be undone („Löschen“).</summary>
     void DeleteTextBlock(Book book, Guid textBlockKey);
+
+    /// <summary>
+    /// Deletes the detail with its deeper details and removes the usages of the linked blocks among them (a detail
+    /// with its own <c>id::</c> and <c>source::</c>) from the notes. Can be undone („Löschen“).
+    /// </summary>
+    /// <exception cref="ArgumentException">No detail has this key.</exception>
+    /// <exception cref="ReadOnlyPageException">The book page is read-only.</exception>
+    void DeleteDetail(Book book, Guid detailKey);
+
+    /// <summary>
+    /// Deletes the heading with everything below it (sub-sections, text blocks, paragraphs) and removes the usages of
+    /// all linked text blocks in it from the notes. One undo action („Löschen“) puts the section and the notes back.
+    /// </summary>
+    /// <exception cref="ArgumentException">Unknown heading, or the root.</exception>
+    /// <exception cref="ReadOnlyPageException">The book page is read-only.</exception>
+    void DeleteSection(Book book, Guid headingKey);
 
     /// <summary>
     /// Updates the notes after <see cref="BookSync.Apply"/> changed the book and the book was saved:

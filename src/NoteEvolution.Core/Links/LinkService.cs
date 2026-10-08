@@ -4,6 +4,7 @@ using NoteEvolution.Core.Books;
 using NoteEvolution.Core.Format;
 using NoteEvolution.Core.Model;
 using NoteEvolution.Core.Storage;
+using NoteEvolution.Core.Text;
 using NoteEvolution.Core.Vaults;
 
 namespace NoteEvolution.Core.Links;
@@ -52,6 +53,86 @@ public sealed class LinkService(IVault vault, IPageWriter writer, UndoManager un
         return new AdoptResult(copy.Key, textBlockId, noteUpdatePending);
     }
 
+    public AdoptResult AdoptInto(Book book, Guid noteBlockKey, IntoPosition position)
+    {
+        var bookPage = book.Page;
+        EnsureWritable(bookPage);
+        var (notePage, note) = FindWritableNote(noteBlockKey);
+
+        var (textBlock, element) = position switch
+        {
+            IntoPosition.AtCursor at => FindElement(book, at.ElementKey, detailOnly: false),
+            IntoPosition.AfterDetail after => FindElement(book, after.DetailKey, detailOnly: true),
+            IntoPosition.FirstChild first => FindElement(book, first.ElementKey, detailOnly: false),
+            _ => throw new ArgumentException("Unknown position.", nameof(position)),
+        };
+        var copy = note.CloneDetached(withoutProperties: true);
+        string? content = null;
+        if (position is IntoPosition.AtCursor cursor)
+        {
+            content = InsertText(element.Content, isDetail: element != textBlock, cursor.Offset, copy.Content);
+            Block.ValidateContent(content);
+        }
+
+        var linesBefore = CaptureSubtree(textBlock);
+        var noteLines = note.Lines.ToList();
+        var noteWasDirty = note.IsDirty;
+        var noteId = note.EnsureId();
+        List<Block> inserted;
+        switch (position)
+        {
+            case IntoPosition.AtCursor:
+                element.SetContent(content!);
+                inserted = copy.TakeChildren();
+                for (var i = 0; i < inserted.Count; i++)
+                {
+                    inserted[i].Parent = null;
+                    bookPage.InsertBlock(element, i, inserted[i]);
+                }
+
+                break;
+            case IntoPosition.AfterDetail:
+                bookPage.InsertBlock(element.Parent, IndexOf(bookPage, element) + 1, copy);
+                inserted = [copy];
+                break;
+            default:
+                bookPage.InsertBlock(element, 0, copy);
+                inserted = [copy];
+                break;
+        }
+
+        var textBlockId = textBlock.EnsureId();
+        var sourceAdded = AddSource(textBlock, noteId);
+        try
+        {
+            SaveBook(bookPage, () =>
+            {
+                inserted.ForEach(bookPage.RemoveBlock);
+                RestoreSubtree(linesBefore, markDirty: false);
+            });
+        }
+        catch
+        {
+            // The book does not reference the note, so a new id:: must not reach the note file later.
+            note.RestoreLines(noteLines, noteWasDirty);
+            throw;
+        }
+
+        var adopted = new AdoptedInto(inserted, linesBefore, CaptureSubtree(textBlock));
+        var noteUpdatePending = UpdateNote(notePage, note, book.LinkName, textBlockId, remove: false).Pending;
+
+        var bookPath = bookPage.FilePath;
+        var linkName = book.LinkName;
+        undo.Push(new UndoAction(
+            "Übernehmen", () => UndoAdoptInto(bookPath, linkName, textBlockId, sourceAdded ? noteId : null, adopted)));
+        if (!noteUpdatePending)
+        {
+            RetryPending();
+        }
+
+        return new AdoptResult(textBlock.Key, textBlockId, noteUpdatePending);
+    }
+
     public void Link(Book book, Guid textBlockKey, Guid noteBlockKey)
     {
         var bookPage = book.Page;
@@ -65,12 +146,7 @@ public sealed class LinkService(IVault vault, IPageWriter writer, UndoManager un
         var noteWasDirty = note.IsDirty;
         var textBlockId = textBlock.EnsureId();
         var noteId = note.EnsureId();
-        var sources = SourceValue.Parse(textBlock.GetProperty(SourceKey) ?? "").ToList();
-        if (!sources.Contains(noteId))
-        {
-            sources.Add(noteId);
-            textBlock.SetProperty(SourceKey, SourceValue.Format(sources));
-        }
+        AddSource(textBlock, noteId);
 
         if (!textBlock.Lines.SequenceEqual(textLines))
         {
@@ -127,9 +203,31 @@ public sealed class LinkService(IVault vault, IPageWriter writer, UndoManager un
 
     public void DeleteTextBlock(Book book, Guid textBlockKey)
     {
+        EnsureWritable(book.Page);
+        DeleteBlock(book, FindTextBlock(book, textBlockKey));
+    }
+
+    public void DeleteDetail(Book book, Guid detailKey)
+    {
+        EnsureWritable(book.Page);
+        DeleteBlock(book, FindElement(book, detailKey, detailOnly: true).Element);
+    }
+
+    public void DeleteSection(Book book, Guid headingKey)
+    {
+        EnsureWritable(book.Page);
+        DeleteBlock(
+            book,
+            book.FindNode(headingKey)?.Block ?? throw new ArgumentException("No heading has this key.", nameof(headingKey)));
+    }
+
+    /// <summary>
+    /// Removes the book block with its subtree, saves the book, then removes the usages of all linked blocks in the
+    /// subtree from their notes and records the undo action „Löschen“.
+    /// </summary>
+    private void DeleteBlock(Book book, Block block)
+    {
         var page = book.Page;
-        EnsureWritable(page);
-        var block = FindTextBlock(book, textBlockKey);
         var parent = block.Parent;
         var index = IndexOf(page, block);
         page.RemoveBlock(block);
@@ -307,6 +405,40 @@ public sealed class LinkService(IVault vault, IPageWriter writer, UndoManager un
         }
 
         var noteUpdatePending = RemoveUsageOfFound(noteId, linkName, textBlockId) is { Pending: true };
+        if (!noteUpdatePending)
+        {
+            RetryPending();
+        }
+    }
+
+    /// <summary>
+    /// Puts the text block with its details back as it was before <see cref="AdoptInto"/> (lines, without the inserted
+    /// blocks), then removes the note's usage if <see cref="AdoptInto"/> added the note as a source
+    /// (<paramref name="addedNoteId"/>). Refused before anything changes if the text block's subtree is no longer
+    /// exactly as <see cref="AdoptInto"/> left it.
+    /// </summary>
+    private void UndoAdoptInto(string bookPath, string linkName, Guid textBlockId, Guid? addedNoteId, AdoptedInto adopted)
+    {
+        var page = CurrentPage(bookPath);
+        if (page.AllBlocks().FirstOrDefault(b => b.Id == textBlockId) is not { } textBlock || !SubtreeIs(textBlock, adopted.After))
+        {
+            throw new InvalidOperationException("Der Textblock wurde seit dem Übernehmen geändert.");
+        }
+
+        var places = adopted.Inserted.Select(block => (Block: block, block.Parent, Index: IndexOf(page, block))).ToList();
+        adopted.Inserted.ForEach(page.RemoveBlock);
+        RestoreSubtree(adopted.Before, markDirty: true);
+        SaveBook(page, () =>
+        {
+            foreach (var (block, parent, index) in places)
+            {
+                page.RestoreBlock(parent, index, block);
+            }
+
+            RestoreSubtree(adopted.After, markDirty: true);
+        });
+
+        var noteUpdatePending = addedNoteId is { } noteId && RemoveUsageOfFound(noteId, linkName, textBlockId) is { Pending: true };
         if (!noteUpdatePending)
         {
             RetryPending();
@@ -570,6 +702,103 @@ public sealed class LinkService(IVault vault, IPageWriter writer, UndoManager un
         book.FindTextBlock(textBlockKey)?.Block
         ?? throw new ArgumentException("No text block has this key.", nameof(textBlockKey));
 
+    /// <summary>
+    /// The text block block and the element block with <paramref name="key"/>: the text block itself or one of its
+    /// details (with <paramref name="detailOnly"/> only a detail).
+    /// </summary>
+    private static (Block TextBlock, Block Element) FindElement(Book book, Guid key, bool detailOnly)
+    {
+        if (BookElements.Find(book, key) is { Kind: ElementKind.TextBlock or ElementKind.Detail } element
+            && (!detailOnly || element.Kind == ElementKind.Detail))
+        {
+            var textBlock = BookElements.TextBlockOf(book, element)!;
+            var block = element.Kind == ElementKind.TextBlock
+                ? textBlock.Block
+                : textBlock.Paragraphs.First(p => p.Block.Key == key).Block;
+            return (textBlock.Block, block);
+        }
+
+        throw new ArgumentException(
+            detailOnly ? "No detail has this key." : "No text block or detail has this key.", "position");
+    }
+
+    /// <summary>
+    /// <paramref name="content"/> with <paramref name="insert"/> (block content) put in at <paramref name="offset"/> of the
+    /// text as the editor shows it (<see cref="IntoPosition.AtCursor.Offset"/>); joined as editor text and escaped once, so
+    /// that only real line starts get escaped. A detail's editor text has no <c>#notiz</c> tag
+    /// (<see cref="BookSnapshot.ParagraphText"/>): there the offset counts the text between the tags, and every tag stays
+    /// as it is where it is. At a tag the insertion goes on the side where the tag keeps the space
+    /// <see cref="NoteTag.Remove"/> takes away (a tag without one gets it), so the editor then shows exactly its text
+    /// with the insertion.
+    /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="offset"/> is outside the shown text.</exception>
+    private static string InsertText(string content, bool isDetail, int offset, string insert)
+    {
+        var text = BlockTextEscape.Unescape(content);
+        var note = BlockTextEscape.Unescape(insert);
+        IReadOnlyList<(int Index, int Length)> tags = isDetail ? NoteTag.RemovedSpans(text) : [];
+        var shown = 0;
+        var start = 0;
+        foreach (var (index, length) in tags)
+        {
+            var segment = text[start..index];
+            var segmentLength = InlineMarkdown.TextLength(segment);
+            var tag = text.Substring(index, length);
+            // At the tag: before it if the tag's space is on its left (or it has none), else after it (next segment).
+            if (offset < shown + segmentLength || (offset == shown + segmentLength && !tag.EndsWith(' ')))
+            {
+                var (before, after) = InlineMarkdown.SplitText(segment, offset - shown);
+                var space = after.Length == 0 && !tag.StartsWith(' ') ? " " : "";
+                return BlockTextEscape.Escape(text[..start] + before + note + space + after + text[index..]);
+            }
+
+            shown += segmentLength;
+            start = index + length;
+        }
+
+        var (head, rest) = InlineMarkdown.SplitText(text[start..], offset - shown);
+        return BlockTextEscape.Escape(text[..start] + head + note + rest);
+    }
+
+    /// <summary>Adds <paramref name="noteId"/> to the block's <c>source::</c> unless it is there; returns whether it was added.</summary>
+    private static bool AddSource(Block textBlock, Guid noteId)
+    {
+        var sources = SourceValue.Parse(textBlock.GetProperty(SourceKey) ?? "").ToList();
+        if (sources.Contains(noteId))
+        {
+            return false;
+        }
+
+        sources.Add(noteId);
+        textBlock.SetProperty(SourceKey, SourceValue.Format(sources));
+        return true;
+    }
+
+    private static List<SubtreeBlock> CaptureSubtree(Block root) =>
+        [.. Subtree(root).Select(block => new SubtreeBlock(block, block.Parent, [.. block.Lines], block.IsDirty))];
+
+    /// <summary>The subtree of <paramref name="root"/> consists of exactly the captured blocks, with their parents and lines.</summary>
+    private static bool SubtreeIs(Block root, IReadOnlyList<SubtreeBlock> captured)
+    {
+        var current = Subtree(root).ToList();
+        return current.Count == captured.Count
+               && current.Zip(captured).All(pair =>
+                   pair.First == pair.Second.Block && pair.First.Parent == pair.Second.Parent
+                   && pair.First.Lines.SequenceEqual(pair.Second.Lines));
+    }
+
+    /// <summary>Gives every captured block its captured lines back, marked dirty or with its captured dirty flag.</summary>
+    private static void RestoreSubtree(IEnumerable<SubtreeBlock> captured, bool markDirty)
+    {
+        foreach (var entry in captured)
+        {
+            if (!entry.Block.Lines.SequenceEqual(entry.Lines) || entry.Block.IsDirty != entry.IsDirty)
+            {
+                entry.Block.RestoreLines(entry.Lines, markDirty || entry.IsDirty);
+            }
+        }
+    }
+
     /// <summary>Parent block and child index for <paramref name="position"/>; the items of a section are its block's children.</summary>
     private static (Block? Parent, int Index) Resolve(Book book, InsertPosition position)
     {
@@ -626,6 +855,15 @@ public sealed class LinkService(IVault vault, IPageWriter writer, UndoManager un
 
     /// <summary>A removed book block and where it was (parent key, <c>null</c> = root level; index among the siblings).</summary>
     private sealed record DeletedBlock(Block Block, Guid? ParentKey, int Index);
+
+    /// <summary>A block of a text block's subtree with its parent, lines and dirty flag at one moment.</summary>
+    private sealed record SubtreeBlock(Block Block, Block? Parent, IReadOnlyList<RawLine> Lines, bool IsDirty);
+
+    /// <summary>
+    /// What <see cref="AdoptInto"/> did: the blocks it inserted into the text block's subtree, and the subtree before
+    /// and after (as saved).
+    /// </summary>
+    private sealed record AdoptedInto(List<Block> Inserted, IReadOnlyList<SubtreeBlock> Before, IReadOnlyList<SubtreeBlock> After);
 
     private static IEnumerable<Block> Subtree(Block block) => block.Children.SelectMany(Subtree).Prepend(block);
 

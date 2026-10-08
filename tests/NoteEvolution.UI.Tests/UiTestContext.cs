@@ -6,6 +6,7 @@ using Microsoft.Extensions.Time.Testing;
 using NoteEvolution.AI.Embeddings;
 using NoteEvolution.AI.Model;
 using NoteEvolution.AI.Tests;
+using NoteEvolution.Core.Books;
 using NoteEvolution.Core.Storage;
 using NoteEvolution.TestSupport;
 using NoteEvolution.UI.Editor;
@@ -94,6 +95,10 @@ public abstract class UiTestContext : BunitContext
         Services.AddSingleton(Ai);
         return Ai;
     }
+
+    /// <summary>Puts the editor cursor (as the editor would report it) into the text block with <paramref name="textBlockKey"/>.</summary>
+    protected void SetCursorInTextBlock(Guid textBlockKey) =>
+        State.Cursor = new CursorInfo(ElementKind.TextBlock, textBlockKey, textBlockKey, 0);
 
     /// <summary>Opens <paramref name="vault"/> as the app's session (dispatching inline) and selects its first book.</summary>
     protected async Task<VaultSession> OpenSessionAsync(TestVault vault, AiRuntime? ai = null)
