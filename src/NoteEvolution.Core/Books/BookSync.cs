@@ -356,8 +356,9 @@ public static class BookSync
 
         /// <summary>
         /// Rule 4: the block stays if it is shown in the view and comes after its snapshot predecessor there, with no
-        /// heading of the snapshot in between. The view is the section's items (section view) or the scope's subtree
-        /// in file order (manuscript view), so text the user did not move stays even after a sub-section.
+        /// heading of the snapshot in between. The view is the scope's subtree in file order (the manuscript) or, for
+        /// a snapshot of one section's text blocks, the section's items, so text the user did not move stays even after
+        /// a sub-section.
         /// </summary>
         private bool StaysInView(Block block, OutlineNode section, Block? predecessor)
         {
@@ -411,8 +412,8 @@ public static class BookSync
         }
 
         /// <summary>
-        /// Where the first block of a segment goes: in the manuscript directly after the heading; in the section view
-        /// before the first text block, else before the first sub-heading, else at the end.
+        /// Where the first block of a segment goes: in the manuscript directly after the heading; in a snapshot of one
+        /// section's text blocks before the first text block, else before the first sub-heading, else at the end.
         /// </summary>
         private int FirstIndex(Block? section, Block block)
         {

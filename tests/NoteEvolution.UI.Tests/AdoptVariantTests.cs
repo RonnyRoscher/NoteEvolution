@@ -91,6 +91,14 @@ public class AdoptVariantTests : UiTestContext
         Assert.Equal(added, addedIndices.Select(i => after.Split('\n')[i]));
     }
 
+    /// <summary>The element adopted into (its block now has <paramref name="content"/>) is revealed: the cursor is at its start.</summary>
+    private void AssertRevealed(string content, ElementKind kind)
+    {
+        var key = KeyOf(content);
+        Assert.Equal(key, State.PendingReveal);
+        Assert.Equal((kind, key, 0), (State.Cursor!.Kind, State.Cursor.Key, State.Cursor.Offset));
+    }
+
     /// <summary>The new text block with <paramref name="text"/> is revealed: the cursor is at its start.</summary>
     private Guid AssertRevealedNewTextBlock(string text)
     {
@@ -121,7 +129,7 @@ public class AdoptVariantTests : UiTestContext
             ["\t- Erster Text"],
             ["\t- Erster Eine NotizText", $"\t  source:: (({NoteId}))", "\t\t- Unterpunkt"]);
         Assert.Equal(NoteUsedIn(Guid.Parse(ErsterId)), _vault.Read(NotePath));
-        Assert.Null(State.PendingReveal);
+        AssertRevealed("Erster Eine NotizText", ElementKind.TextBlock);
     }
 
     [Fact]
@@ -158,7 +166,7 @@ public class AdoptVariantTests : UiTestContext
             [],
             [$"\t  source:: (({NoteId}))", "\t\t- Eine Notiz", "\t\t\t- Unterpunkt"]);
         Assert.Equal(NoteUsedIn(Guid.Parse(ErsterId)), _vault.Read(NotePath));
-        Assert.Null(State.PendingReveal);
+        AssertRevealed("Erster Text", ElementKind.TextBlock);
     }
 
     [Fact]
@@ -176,6 +184,7 @@ public class AdoptVariantTests : UiTestContext
             [],
             [$"\t  source:: (({NoteId}))", "\t\t- Eine Notiz", "\t\t\t- Unterpunkt"]);
         Assert.Equal(NoteUsedIn(Guid.Parse(ErsterId)), _vault.Read(NotePath));
+        AssertRevealed("Ein Detail", ElementKind.Detail);
     }
 
     [Fact]
@@ -193,6 +202,7 @@ public class AdoptVariantTests : UiTestContext
             [],
             [$"\t  source:: (({NoteId}))", "\t\t\t- Eine Notiz", "\t\t\t\t- Unterpunkt"]);
         Assert.Equal(NoteUsedIn(Guid.Parse(ErsterId)), _vault.Read(NotePath));
+        AssertRevealed("Ein Detail", ElementKind.Detail);
     }
 
     [Fact]
@@ -209,6 +219,7 @@ public class AdoptVariantTests : UiTestContext
                 .Replace("\t\t- Ein Detail\n", "\t\t- Ein Eine NotizDetail\n\t\t\t- Unterpunkt\n"),
             ["\t\t- Ein Detail"],
             [$"\t  source:: (({NoteId}))", "\t\t- Ein Eine NotizDetail", "\t\t\t- Unterpunkt"]);
+        AssertRevealed("Ein Eine NotizDetail", ElementKind.Detail);
     }
 
     [Theory]

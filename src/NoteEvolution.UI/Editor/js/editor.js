@@ -47,7 +47,10 @@ const Doc = Node.create({
     content: '(textBlock | heading)+',
 });
 
-/** A heading of the manuscript view; only its title can be edited (the outline changes headings). */
+/**
+ * A heading of the manuscript; only its title can be edited here, the structure commands and the outline add, move
+ * and remove headings.
+ */
 const Heading = Node.create({
     name: 'heading',
     content: 'text*',
@@ -623,7 +626,9 @@ export function createEditor(host, dotnet, options = {}) {
 
     /**
      * Reports where the section bar goes: at the marking box's bottom (relative to .ne-editor-pane), but at least
-     * barHeight above the visible bottom of the scrolling pane; and whether the box is visible at all.
+     * barHeight above the visible bottom of the scrolling pane; and whether the box is visible at all (never before a
+     * cursor was reported for the shown book). The marked nodes follow each other, so the first one's top and the last
+     * one's bottom are the box.
      */
     const reportBox = () => {
         boxFrame = 0;
@@ -632,13 +637,10 @@ export function createEditor(host, dotnet, options = {}) {
         }
         const pane = host.closest('.ne-editor-pane') ?? host;
         const area = visibleArea(scrollParent(host));
-        let top = Infinity;
-        let bottom = -Infinity;
-        for (const node of root.querySelectorAll('.ne-current')) {
-            const rect = node.getBoundingClientRect();
-            top = Math.min(top, rect.top);
-            bottom = Math.max(bottom, rect.bottom);
-        }
+        const first = root.querySelector('.ne-current-first');
+        const last = root.querySelector('.ne-current-last');
+        const top = first && lastCursor !== undefined ? first.getBoundingClientRect().top : Infinity;
+        const bottom = last && lastCursor !== undefined ? last.getBoundingClientRect().bottom : -Infinity;
         const visible = bottom > top && bottom > area.top && top < area.bottom;
         const barTop = visible ? Math.min(bottom, area.bottom - barHeight) - pane.getBoundingClientRect().top : 0;
         if (lastBox && lastBox.visible === visible && Math.abs(lastBox.barTop - barTop) < 1) {
@@ -679,6 +681,9 @@ export function createEditor(host, dotnet, options = {}) {
         content: { type: 'doc', content: [{ type: 'textBlock', attrs: { key: newKey() }, content: [{ type: 'para' }] }] },
         editorProps: {
             attributes: { class: 'ne-doc', spellcheck: 'true' },
+            // The section bar covers the pane's bottom: the line being typed in or moved to stays above it.
+            scrollThreshold: { top: 0, right: 0, bottom: barHeight + 8, left: 0 },
+            scrollMargin: { top: 5, right: 5, bottom: barHeight + 8, left: 5 },
             handleDOMEvents: {
                 drop: (view, event) => {
                     if (view.dragging) {
@@ -693,6 +698,8 @@ export function createEditor(host, dotnet, options = {}) {
         },
         onUpdate: ({ editor: e }) => call('DocumentChanged', JSON.stringify(e.getJSON())),
         onSelectionUpdate: ({ editor: e }) => reportCursor(e.state),
+        // A click on the place the selection already has changes no selection; after a new book it places the cursor.
+        onFocus: ({ editor: e }) => reportCursor(e.state),
         onTransaction: scheduleBox,
     });
 
@@ -704,23 +711,24 @@ export function createEditor(host, dotnet, options = {}) {
 
     return {
         /**
-         * Shows a new document (no change event, fresh undo history); the cursor stays near where it was and is
-         * reported.
+         * Shows a new document (no change event, fresh undo history). With keepCursor (the same book again) the cursor
+         * stays near where it was and is reported. Otherwise (another book) the selection goes to the document's start
+         * and is not reported: the cursor is first reported when the user places it (a selection change, or focusing
+         * the editor) or an element is revealed.
          */
-        setDocument(json, showChips) {
+        setDocument(json, showChips, keepCursor) {
             const doc = editor.schema.nodeFromJSON(JSON.parse(json));
             doc.check();
-            const at = Math.min(editor.state.selection.from, doc.content.size);
-            const state = EditorState.create({
-                doc,
-                plugins: editor.state.plugins,
-                selection: TextSelection.near(doc.resolve(at)),
-            });
-            editor.view.updateState(state);
+            const selection = keepCursor
+                ? TextSelection.near(doc.resolve(Math.min(editor.state.selection.from, doc.content.size)))
+                : TextSelection.atStart(doc);
+            editor.view.updateState(EditorState.create({ doc, plugins: editor.state.plugins, selection }));
             root.classList.toggle('show-chips', showChips);
             // updateState raises no selection update, but the cursor may now be in another element.
             lastCursor = undefined;
-            reportCursor(editor.state);
+            if (keepCursor) {
+                reportCursor(editor.state);
+            }
             scheduleBox();
         },
         /**

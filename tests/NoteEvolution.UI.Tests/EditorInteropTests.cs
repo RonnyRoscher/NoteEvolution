@@ -92,14 +92,14 @@ public class EditorInteropTests
     {
         var interop = await InitAsync();
 
-        await interop.SetDocumentAsync("{}", true);
+        await interop.SetDocumentAsync("{}", true, keepCursor: false);
         await interop.RevealAsync(Guid.Parse(Key));
         await interop.RevealAsync(Guid.Empty);
 
         var options = _js.Calls.Single(c => c.Method == "createEditor").Args[2]!;
         Assert.Equal(40, options.GetType().GetProperty("barHeight")!.GetValue(options));
         Assert.Equal(
-            [("setDocument", ["{}", true]), ("reveal", [Key]), ("reveal", [null])],
+            [("setDocument", ["{}", true, false]), ("reveal", [Key]), ("reveal", [null])],
             _js.Calls.Where(c => c.Method is "setDocument" or "reveal").Select(c => (c.Method, c.Args)).ToArray(),
             new CallComparer());
     }

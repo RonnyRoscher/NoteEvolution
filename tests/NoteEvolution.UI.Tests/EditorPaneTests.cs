@@ -3,6 +3,7 @@ using System.Text.Json.Nodes;
 using Bunit;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Localization;
+using Microsoft.Extensions.Logging.Abstractions;
 using NoteEvolution.Core.Books;
 using NoteEvolution.TestSupport;
 using NoteEvolution.UI.Components;
@@ -515,5 +516,69 @@ public class EditorPaneTests : UiTestContext
         Assert.Null(State.FlushEditor);
         Assert.Null(State.WarnUnsavedText);
         Assert.True(Editor.Disposed);
+    }
+
+    /// <summary>A cursor at offset 3 in the first text block of the current book with one of <paramref name="texts"/>.</summary>
+    private CursorInfo CursorInText(params string[] texts)
+    {
+        var key = State.CurrentBook!.Page.AllBlocks().First(b => texts.Contains(b.Content)).Key;
+        return new CursorInfo(ElementKind.TextBlock, key, key, 3);
+    }
+
+    [Fact]
+    public async Task NewBook_CursorReportedOnLoad_NotTaken_AdoptGoesToEndOfBook()
+    {
+        const string betaPath = "pages/Buch - Beta.md";
+        const string beta = "title:: Beta\ntype:: book\n\n- # Anfang\n\t- Beta Text\n- # Ende\n\t- Letzter Text\n";
+        using var tv = TestVault.Create(
+            (BookPath, "title:: Alpha\ntype:: book\n\n- # Eins\n\t- Erster Text\n"),
+            (betaPath, beta),
+            (NotesPath, "- Eine Notiz\n"));
+        var session = await OpenSessionAsync(tv);
+        State.CurrentBook = session.Vault.FindBook("Buch - Alpha");
+
+        // The editor puts its selection somewhere in every new document and may report it.
+        Editor.CursorAfterLoad = () => CursorInText("Erster Text", "Beta Text");
+
+        // The first document (app start): the cursor is not invented.
+        var cut = Render<EditorPane>();
+        cut.WaitForAssertion(() => Assert.Single(Editor.Documents));
+        Assert.Null(State.Cursor);
+
+        // Another book.
+        await cut.InvokeAsync(() =>
+        {
+            State.CurrentBook = session.Vault.FindBook("Buch - Beta");
+            State.CurrentSectionKey = State.CurrentBook!.Root.Key;
+            State.Cursor = null;
+            State.Notify();
+        });
+        cut.WaitForAssertion(() => Assert.Equal(2, Editor.Documents.Count));
+        Assert.Null(State.Cursor);
+        Assert.Equal([false, false], Editor.KeepCursor);
+
+        // Adopting at the cursor takes the no-cursor path: a new text block at the end of the book.
+        var note = session.Notes.All().Single(n => n.Block.Content == "Eine Notiz").Key;
+        Assert.Null(await cut.InvokeAsync(() => NoteAdoption.AdoptAsync(State, note, AdoptVariant.AtCursor, NullLogger.Instance)));
+
+        var added = State.CurrentBook!.Page.AllBlocks().Single(b => b.Content == "Eine Notiz");
+        Assert.Equal(beta + $"\t- Eine Notiz\n\t  id:: {added.Id}\n\t  source:: (({session.Notes.All().Single().Block.Id}))\n", tv.Read(betaPath));
+    }
+
+    [Fact]
+    public async Task SameBookReload_CursorReportedOnLoad_Taken()
+    {
+        using var tv = Alpha();
+        var (_, cut) = await RenderAsync(tv);
+        var cursor = CursorInText("Zweiter Text");
+        Editor.CursorAfterLoad = () => cursor;
+
+        // Showing the chips loads the same book again: the editor keeps its cursor and reports it.
+        cut.Find(".ne-editor-chips input").Change(true);
+
+        cut.WaitForAssertion(() => Assert.Equal(2, Editor.Documents.Count));
+        Assert.Equal(cursor, State.Cursor);
+        Assert.Equal(Section("Eins").Key, State.CurrentSectionKey);
+        Assert.Equal([false, true], Editor.KeepCursor);
     }
 }

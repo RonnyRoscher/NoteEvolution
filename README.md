@@ -50,6 +50,7 @@ Am unteren Rand der Markierung stehen die Abschnittsknöpfe und die Quellen:
 
 Jeder Befehl lässt sich mit „Rückgängig“ in der Kopfzeile zurücknehmen, solange danach nichts an der Buchdatei
 geändert wurde. „N Quellen ▸“ klappt die Quellen des Abschnitts auf; ein Klick springt im Reiter Journal zur Notiz.
+Ist „Verwendete ausblenden“ eingeschaltet, erscheint die Notiz stattdessen als Karte oben im Notizbereich.
 
 „Übernehmen“ an einer Notiz oder einem Unteranstrich übernimmt mit einem Klick **am Cursor** (in den aktuellen Block);
 der Pfeil daneben bietet zusätzlich **Danach** (neues Element nach dem aktuellen) und **Darunter** (als erstes

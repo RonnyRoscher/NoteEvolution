@@ -59,8 +59,8 @@ public interface IEditorCallbacks
 
     /// <summary>
     /// A note card was dropped into the editor. <paramref name="afterTextBlockKey"/> is the key of the text block the
-    /// drop point follows, or of the heading it directly follows (manuscript view: the start of that section), or
-    /// <c>null</c> for the start of the shown section.
+    /// drop point follows, or of the heading it directly follows (the start of that section), or <c>null</c> for the
+    /// start of the document (before its first element).
     /// </summary>
     Task OnNoteDropped(Guid noteBlockKey, Guid? afterTextBlockKey);
 }
@@ -73,9 +73,12 @@ public interface IEditorInterop : IAsyncDisposable
 
     /// <summary>
     /// Replaces the shown document without raising <see cref="IEditorCallbacks.OnDocumentChanged"/> (the editor's
-    /// undo history starts anew). <paramref name="showChips"/> shows the source chips below the text blocks.
+    /// undo history starts anew). <paramref name="showChips"/> shows the source chips below the text blocks. With
+    /// <paramref name="keepCursor"/> (the same book again) the cursor stays near where it was and is reported;
+    /// otherwise (another book or session, the first document) the selection goes to the document's start without a
+    /// report, so no cursor is invented before the user places one.
     /// </summary>
-    Task SetDocumentAsync(string docJson, bool showChips);
+    Task SetDocumentAsync(string docJson, bool showChips, bool keepCursor);
 
     /// <summary>
     /// Puts the cursor at the start of the element's text, scrolls it into view and gives the editor the focus (unless

@@ -29,8 +29,8 @@ public sealed class TipTapInterop(IJSRuntime js, AppState state) : IEditorIntero
         _editor = await _module.InvokeAsync<IJSObjectReference>("createEditor", host, _self, new { barHeight = BarHeight });
     }
 
-    public async Task SetDocumentAsync(string docJson, bool showChips) =>
-        await Initialized.InvokeVoidAsync("setDocument", docJson, showChips);
+    public async Task SetDocumentAsync(string docJson, bool showChips, bool keepCursor) =>
+        await Initialized.InvokeVoidAsync("setDocument", docJson, showChips, keepCursor);
 
     public async Task RevealAsync(Guid elementKey) =>
         await Initialized.InvokeVoidAsync("reveal", elementKey == Guid.Empty ? null : elementKey.ToString("D"));

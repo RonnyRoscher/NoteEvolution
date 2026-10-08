@@ -35,7 +35,7 @@ public static class NoteAdoption
     /// <returns>The message to show, or <c>null</c> if the note was adopted without remark.</returns>
     public static Task<AdoptMessage?> AdoptAsync(
         AppState state, Guid noteBlockKey, Func<Book, InsertPosition> position, ILogger logger) =>
-        RunAsync(state, noteBlockKey, (links, book) => (links.Adopt(book, noteBlockKey, position(book)), false), logger);
+        RunAsync(state, noteBlockKey, (links, book) => NewTextBlock(links.Adopt(book, noteBlockKey, position(book))), logger);
 
     /// <summary>
     /// Adopts the note block <paramref name="noteBlockKey"/> into the current book the way <paramref name="variant"/>
@@ -44,17 +44,18 @@ public static class NoteAdoption
     /// <see cref="InsertPosition"/>. The offset is only used for the cursor's own element: when the book does not have
     /// it (the current element is a fallback), the note goes after the fallback element instead. Without a current
     /// element the note becomes a new text block at the end of the last current section, else at the end of the book.
-    /// A new text block is revealed in the editor; adopting into an existing element leaves the cursor where it is.
+    /// A new text block is revealed in the editor; after adopting into an existing element that element is revealed, so
+    /// the user sees where the text went (the cursor goes to its start).
     /// </summary>
     /// <returns>The message to show, or <c>null</c> if the note was adopted without remark.</returns>
     public static Task<AdoptMessage?> AdoptAsync(AppState state, Guid noteBlockKey, AdoptVariant variant, ILogger logger) =>
         RunAsync(state, noteBlockKey, (links, book) => Adopt(links, state, book, noteBlockKey, variant), logger);
 
     /// <summary>
-    /// Adopts the note into the element the variant and the cursor name (see the mapping in spec 4); also returns
-    /// whether that made a new text block.
+    /// Adopts the note into the element the variant and the cursor name (see the mapping in spec 4); also returns the
+    /// element to reveal: the new text block, or the existing element the note went into.
     /// </summary>
-    private static (AdoptResult Result, bool NewTextBlock) Adopt(
+    private static (AdoptResult Result, Guid? Reveal) Adopt(
         ILinkService links, AppState state, Book book, Guid noteBlockKey, AdoptVariant variant)
     {
         // The current element is checked against the book just read from the vault, not the state's (older) one.
@@ -66,7 +67,7 @@ public static class NoteAdoption
             var section = book.FindNode(state.CurrentSectionKey) is { Block: not null }
                 ? state.CurrentSectionKey
                 : BookElements.LastHeadingKey(book) ?? Guid.Empty;
-            return (links.Adopt(book, noteBlockKey, new InsertPosition.SectionEnd(section)), true);
+            return NewTextBlock(links.Adopt(book, noteBlockKey, new InsertPosition.SectionEnd(section)));
         }
 
         // The cursor's offset belongs to its own element; it is never applied to a fallback element.
@@ -78,20 +79,23 @@ public static class NoteAdoption
         var offset = state.Cursor?.Offset ?? 0;
         return (element.Kind, variant) switch
         {
-            (ElementKind.Heading, _) => (links.Adopt(book, noteBlockKey, new InsertPosition.SectionStart(element.Key)), true),
-            (ElementKind.TextBlock, AdoptVariant.After) => (links.Adopt(book, noteBlockKey, new InsertPosition.After(element.Key)), true),
-            (_, AdoptVariant.AtCursor) => (links.AdoptInto(book, noteBlockKey, new IntoPosition.AtCursor(element.Key, offset)), false),
-            (_, AdoptVariant.After) => (links.AdoptInto(book, noteBlockKey, new IntoPosition.AfterDetail(element.Key)), false),
-            _ => (links.AdoptInto(book, noteBlockKey, new IntoPosition.FirstChild(element.Key)), false),
+            (ElementKind.Heading, _) => NewTextBlock(links.Adopt(book, noteBlockKey, new InsertPosition.SectionStart(element.Key))),
+            (ElementKind.TextBlock, AdoptVariant.After) => NewTextBlock(links.Adopt(book, noteBlockKey, new InsertPosition.After(element.Key))),
+            (_, AdoptVariant.AtCursor) => (links.AdoptInto(book, noteBlockKey, new IntoPosition.AtCursor(element.Key, offset)), element.Key),
+            (_, AdoptVariant.After) => (links.AdoptInto(book, noteBlockKey, new IntoPosition.AfterDetail(element.Key)), element.Key),
+            _ => (links.AdoptInto(book, noteBlockKey, new IntoPosition.FirstChild(element.Key)), element.Key),
         };
     }
 
+    /// <summary>The result of an adoption that made a new text block, which is revealed.</summary>
+    private static (AdoptResult Result, Guid? Reveal) NewTextBlock(AdoptResult result) => (result, result.TextBlockKey);
+
     /// <summary>
-    /// Runs an adoption (<paramref name="adopt"/>, which also says whether it made a new text block) with the checks
-    /// of <see cref="AdoptAsync(AppState, Guid, Func{Book, InsertPosition}, ILogger)"/>; a new text block is revealed.
+    /// Runs an adoption (<paramref name="adopt"/>, which also names the element to reveal) with the checks
+    /// of <see cref="AdoptAsync(AppState, Guid, Func{Book, InsertPosition}, ILogger)"/>, then reveals that element.
     /// </summary>
     private static async Task<AdoptMessage?> RunAsync(
-        AppState state, Guid noteBlockKey, Func<ILinkService, Book, (AdoptResult Result, bool NewTextBlock)> adopt, ILogger logger)
+        AppState state, Guid noteBlockKey, Func<ILinkService, Book, (AdoptResult Result, Guid? Reveal)> adopt, ILogger logger)
     {
         Guid? reveal = null;
         try
@@ -113,7 +117,7 @@ public static class NoteAdoption
     }
 
     private static async Task<(AdoptMessage? Message, Guid? Reveal)> TryAdoptAsync(
-        AppState state, Guid noteBlockKey, Func<ILinkService, Book, (AdoptResult Result, bool NewTextBlock)> adopt, ILogger logger)
+        AppState state, Guid noteBlockKey, Func<ILinkService, Book, (AdoptResult Result, Guid? Reveal)> adopt, ILogger logger)
     {
         try
         {
@@ -154,10 +158,10 @@ public static class NoteAdoption
         }
 
         AdoptResult result;
-        bool newTextBlock;
+        Guid? reveal;
         try
         {
-            (result, newTextBlock) = adopt(session.Links, book);
+            (result, reveal) = adopt(session.Links, book);
         }
         catch (FileChangedExternallyException)
         {
@@ -192,6 +196,6 @@ public static class NoteAdoption
             }
         }
 
-        return (result.NoteUpdatePending ? new AdoptMessage("NoteUpdatePending", false) : null, newTextBlock ? result.TextBlockKey : null);
+        return (result.NoteUpdatePending ? new AdoptMessage("NoteUpdatePending", false) : null, reveal);
     }
 }

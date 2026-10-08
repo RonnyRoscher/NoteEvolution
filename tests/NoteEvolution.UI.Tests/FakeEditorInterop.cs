@@ -13,6 +13,9 @@ public sealed class FakeEditorInterop : IEditorInterop
 
     public List<(string Json, bool ShowChips)> Documents { get; } = [];
 
+    /// <summary>The <c>keepCursor</c> argument of each <see cref="SetDocumentAsync"/>, in the order of <see cref="Documents"/>.</summary>
+    public List<bool> KeepCursor { get; } = [];
+
     /// <summary>The keys passed to <see cref="RevealAsync"/>, in order.</summary>
     public List<Guid> Reveals { get; } = [];
 
@@ -24,17 +27,27 @@ public sealed class FakeEditorInterop : IEditorInterop
 
     public bool Disposed { get; private set; }
 
+    /// <summary>
+    /// Simulates the editor's report after a new document: when set, the cursor it returns is reported to
+    /// <see cref="Callbacks"/> from within every <see cref="SetDocumentAsync"/> (whatever was asked of the selection).
+    /// </summary>
+    public Func<CursorInfo?>? CursorAfterLoad { get; set; }
+
     public Task InitAsync(ElementReference host, IEditorCallbacks callbacks)
     {
         Callbacks = callbacks;
         return Task.CompletedTask;
     }
 
-    public Task SetDocumentAsync(string docJson, bool showChips)
+    public async Task SetDocumentAsync(string docJson, bool showChips, bool keepCursor)
     {
         Documents.Add((docJson, showChips));
+        KeepCursor.Add(keepCursor);
         Calls.Add("doc");
-        return Task.CompletedTask;
+        if (CursorAfterLoad is { } cursor && Callbacks is { } callbacks)
+        {
+            await callbacks.OnCursorChanged(cursor());
+        }
     }
 
     public Task RevealAsync(Guid elementKey)

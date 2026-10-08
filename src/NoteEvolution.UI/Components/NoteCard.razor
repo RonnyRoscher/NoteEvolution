@@ -1,3 +1,4 @@
+@using Microsoft.JSInterop
 @using NoteEvolution.AI.Embeddings
 @using NoteEvolution.AI.Relevance
 @using NoteEvolution.Core.Books
@@ -203,7 +204,15 @@
         if (FocusRequest > 0 && FocusRequest != _focused)
         {
             _focused = FocusRequest;
-            await _root.FocusAsync();
+            try
+            {
+                await _root.FocusAsync();
+            }
+            catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException or InvalidOperationException)
+            {
+                // The focus is only a help for the keyboard (the card may be gone or the window closing).
+                Logger.LogDebug(ex, "Focusing the note card failed");
+            }
         }
     }
 

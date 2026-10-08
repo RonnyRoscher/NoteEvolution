@@ -53,6 +53,10 @@
     private CancellationTokenSource? _debounce;
     private bool _ready;
     private bool _loading;
+
+    /// <summary>True while the document of another book or session (or the first one) is being loaded (see <see cref="OnCursorChanged"/>).</summary>
+    private bool _newTarget;
+
     private bool _showChips;
     private bool _shownChips;
     private bool _disposed;
@@ -219,12 +223,14 @@
     /// <summary>
     /// Takes the cursor element and its section into <see cref="AppState"/> (without a cursor the section stays).
     /// Components are only notified when the element or the section changed, not for every keystroke. The editor is
-    /// never reloaded for it (it reports the cursor after every new document), and typed text waits for its debounce.
+    /// never reloaded for it (it reports the cursor after a reload of the same book), and typed text waits for its
+    /// debounce. A report while the document of another book or session is loaded is not taken: the editor's selection
+    /// there is no place the user chose.
     /// </summary>
     public Task OnCursorChanged(CursorInfo? cursor)
     {
         var before = State.Cursor;
-        if (cursor == before)
+        if (_newTarget || cursor == before)
         {
             return Task.CompletedTask;
         }
@@ -480,14 +486,17 @@
             return;
         }
 
+        // Another book or session (or the first document): the editor puts no cursor into it before the user does.
         _loading = true;
+        _newTarget = !sameTarget;
         try
         {
-            await Editor.SetDocumentAsync(EditorDocMapper.ToJson(fresh), _showChips);
+            await Editor.SetDocumentAsync(EditorDocMapper.ToJson(fresh), _showChips, keepCursor: sameTarget);
         }
         finally
         {
             _loading = false;
+            _newTarget = false;
         }
 
         _saver.Shown = new ShownText(session, book.LinkName, fresh);
