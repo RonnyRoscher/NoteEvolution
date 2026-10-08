@@ -703,7 +703,10 @@ export function createEditor(host, dotnet, options = {}) {
     resizes.observe(root);
 
     return {
-        /** Shows a new document (no change event, fresh undo history); the cursor stays near where it was. */
+        /**
+         * Shows a new document (no change event, fresh undo history); the cursor stays near where it was and is
+         * reported.
+         */
         setDocument(json, showChips) {
             const doc = editor.schema.nodeFromJSON(JSON.parse(json));
             doc.check();
@@ -715,7 +718,9 @@ export function createEditor(host, dotnet, options = {}) {
             });
             editor.view.updateState(state);
             root.classList.toggle('show-chips', showChips);
+            // updateState raises no selection update, but the cursor may now be in another element.
             lastCursor = undefined;
+            reportCursor(editor.state);
             scheduleBox();
         },
         /**
