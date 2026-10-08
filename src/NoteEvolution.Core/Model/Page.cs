@@ -245,6 +245,30 @@ public sealed class Page
         RepairEndings();
     }
 
+    /// <summary>
+    /// Rebuilds the whole block tree from <paramref name="blocks"/> (each block with its parent, depth-first in file
+    /// order), so that undo of structure changes restores the file exactly: blocks not listed are dropped, the listed
+    /// ones (also removed ones) get their former places and keep their lines as they are.
+    /// </summary>
+    internal void RestoreTree(IReadOnlyList<(Block Block, Block? Parent)> blocks)
+    {
+        foreach (var block in AllBlocks().ToList().Concat(blocks.Select(b => b.Block)))
+        {
+            block.TakeChildren();
+            block.Parent = null;
+            block.SetPage(null);
+        }
+
+        _roots.Clear();
+        foreach (var (block, parent) in blocks)
+        {
+            InsertAt(parent, ChildrenOf(parent).Count, block);
+        }
+
+        _structureChanged = true;
+        RepairEndings();
+    }
+
     private SavedState CaptureSaved()
     {
         var blocks = new List<SavedBlock>();
