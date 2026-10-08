@@ -36,8 +36,9 @@ public sealed class RemovedHeading
 
     /// <summary>
     /// Whether <see cref="RestoreInto"/> can undo the command on <paramref name="page"/>: the heading is not on it again,
-    /// its former parent still is, and every moved child (by key) still has that parent. Other edits of the page,
-    /// also of the moved blocks' text, do not matter.
+    /// its former parent still is, every moved child (by key) still has that parent, and every other moved block still
+    /// on the page still has the parent the command left it with (so all of them are still inside the moved subtrees).
+    /// Other edits of the page, also of the moved blocks' text, do not matter.
     /// </summary>
     public bool CanRestore(Page page)
     {
@@ -52,7 +53,8 @@ public sealed class RemovedHeading
             return false;
         }
 
-        return _childKeys.All(childKey => Find(page, childKey) is { } child && child.Parent == parent);
+        return _childKeys.All(childKey => Find(page, childKey) is { } child && child.Parent == parent)
+               && _moved.All(moved => Find(page, moved.Key) is not { } block || block.Parent?.Key == moved.ParentKey);
     }
 
     /// <summary>
@@ -93,9 +95,11 @@ public sealed class RemovedHeading
             page.MoveBlock(children[i], _heading, i);
         }
 
+        // Lines and levels are restored only inside the restored subtree.
+        var restored = Subtree(_heading).ToDictionary(block => block.Key);
         foreach (var moved in _moved)
         {
-            if (Find(page, moved.Key) is not { } block)
+            if (!restored.TryGetValue(moved.Key, out var block))
             {
                 continue;
             }
@@ -117,6 +121,9 @@ public sealed class RemovedHeading
     }
 
     private static Block? Find(Page page, Guid key) => page.AllBlocks().FirstOrDefault(block => block.Key == key);
+
+    /// <summary>The block and all blocks below it, in file order.</summary>
+    private static IEnumerable<Block> Subtree(Block block) => block.Children.SelectMany(Subtree).Prepend(block);
 
     private static int IndexOf(IReadOnlyList<Block> siblings, Block block)
     {
@@ -144,5 +151,7 @@ public sealed class RemovedHeading
     /// <param name="Before">Its lines before the command.</param>
     /// <param name="After">Its lines right after the command.</param>
     /// <param name="Levels">For a heading its level before and after the command; <c>null</c> for any other block.</param>
-    internal sealed record MovedBlock(Guid Key, IReadOnlyList<RawLine> Before, IReadOnlyList<RawLine> After, (int Before, int After)? Levels);
+    /// <param name="ParentKey">The key of its parent right after the command; <c>null</c> for a root block.</param>
+    internal sealed record MovedBlock(
+        Guid Key, IReadOnlyList<RawLine> Before, IReadOnlyList<RawLine> After, (int Before, int After)? Levels, Guid? ParentKey);
 }

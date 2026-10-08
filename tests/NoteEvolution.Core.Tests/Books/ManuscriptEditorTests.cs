@@ -396,6 +396,19 @@ public class ManuscriptEditorTests
         parentGone.Page.RemoveBlock(BlockOf(parentGone, "## Eins-A"));
         AssertRefused(parentGone, removed);
 
+        // A deeper moved block (below a moved child) was moved into another section at the same depth, so that its
+        // lines are still those the command left: putting it back would make it a detail of "Text B".
+        var deep = Load(Text);
+        removed = ManuscriptEditor.RemoveHeading(deep, KeyOf(deep, "## Eins-A"));
+        deep.Page.MoveBlock(BlockOf(deep, "tief"), BlockOf(deep, "## Eins-B"), 1);
+        AssertRefused(deep, removed);
+
+        // A moved sub-heading below a moved child was moved into another section.
+        var deepHeading = Load(Text);
+        removed = ManuscriptEditor.RemoveHeading(deepHeading, KeyOf(deepHeading, "# Eins"));
+        deepHeading.Page.MoveBlock(BlockOf(deepHeading, "## Eins-A-i"), BlockOf(deepHeading, "# Eins-B"), 1);
+        AssertRefused(deepHeading, removed);
+
         static void AssertRefused(Book book, RemovedHeading removed)
         {
             var before = Serialize(book);
@@ -403,6 +416,19 @@ public class ManuscriptEditorTests
             Assert.Throws<InvalidOperationException>(() => removed.RestoreInto(book.Page));
             Assert.Equal(before, Serialize(book));
         }
+    }
+
+    [Fact]
+    public void RemoveHeading_RestoreInto_TextOfDeeperMovedBlockEdited_StillRestored()
+    {
+        var book = Load(Text);
+        var removed = ManuscriptEditor.RemoveHeading(book, KeyOf(book, "## Eins-A"));
+        BlockOf(book, "tief").SetContent("tief neu");
+
+        Assert.True(removed.CanRestore(book.Page));
+        removed.RestoreInto(book.Page);
+
+        AssertResult(Text, book, Text.Replace("\t\t\t- tief\n", "\t\t\t- tief neu\n"), ["\t\t\t- tief"], ["\t\t\t- tief neu"]);
     }
 
     [Fact]

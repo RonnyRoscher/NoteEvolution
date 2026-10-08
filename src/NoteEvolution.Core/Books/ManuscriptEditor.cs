@@ -159,7 +159,11 @@ public static class ManuscriptEditor
             index,
             [.. children.Select(child => child.Key)],
             [.. moved.Select(m => new RemovedHeading.MovedBlock(
-                m.Block.Key, m.Before, [.. m.Block.Lines], levels.TryGetValue(m.Block.Key, out var level) ? level : null))]);
+                m.Block.Key,
+                m.Before,
+                [.. m.Block.Lines],
+                levels.TryGetValue(m.Block.Key, out var level) ? level : null,
+                m.Block.Parent?.Key))]);
     }
 
     /// <summary>Deletes a detail with its deeper details.</summary>
