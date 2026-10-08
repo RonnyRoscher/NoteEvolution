@@ -51,7 +51,10 @@
     private bool _shownChips;
     private bool _disposed;
 
-    /// <summary>True while <see cref="OnCursorChanged"/> notifies the other components (see <see cref="OnStateChanged"/>).</summary>
+    /// <summary>
+    /// True while <see cref="OnCursorChanged"/> or <see cref="FollowCursorSection"/> notifies the other components (see
+    /// <see cref="OnStateChanged"/>).
+    /// </summary>
     private bool _notifyingCursor;
 
     /// <summary>Why the book page cannot be edited now: it is read-only, or a conflict for its file is open (R26).</summary>
@@ -239,7 +242,12 @@
         return Task.CompletedTask;
     }
 
-    public Task OnSectionCommand(SectionCommand command) => Task.CompletedTask;
+    /// <summary>Runs the structure command on the cursor element (<see cref="ManuscriptCommands"/>) and shows its message.</summary>
+    public async Task OnSectionCommand(SectionCommand command)
+    {
+        _saver.Message = await ManuscriptCommands.RunAsync(State, command, L["UndoStructure"], Logger);
+        StateHasChanged();
+    }
 
     public Task OnSectionBoxMoved(double barTop, bool visible) => Task.CompletedTask;
 
@@ -464,8 +472,43 @@
         _saver.Shown = new ShownText(session, book.LinkName, fresh);
         _shownChips = _showChips;
         _saver.ReloadNeeded = false;
+        if (sameTarget)
+        {
+            FollowCursorSection();
+        }
+
         StateHasChanged();
         await RevealPendingAsync();
+    }
+
+    /// <summary>
+    /// After the book changed under an unmoved cursor (a structure command, an undo, an outline change) the cursor
+    /// element may belong to another section now: the current section follows it, as in <see cref="OnCursorChanged"/>.
+    /// Components are notified only if the section changed.
+    /// </summary>
+    private void FollowCursorSection()
+    {
+        if (State.Cursor is null || State.CurrentBook is not { } book)
+        {
+            return;
+        }
+
+        var section = State.CurrentElement is { } element ? BookElements.SectionOf(book, element) : Guid.Empty;
+        if (section == State.CurrentSectionKey)
+        {
+            return;
+        }
+
+        State.CurrentSectionKey = section;
+        _notifyingCursor = true;
+        try
+        {
+            State.Notify();
+        }
+        finally
+        {
+            _notifyingCursor = false;
+        }
     }
 
     /// <summary>Scrolls to the element <see cref="AppState.RevealElement"/> asked for, now that the book is shown.</summary>

@@ -166,6 +166,16 @@
   <data name="EditorChipFailed" xml:space="preserve">
     <value>Die Quelle konnte nicht entfernt werden.</value>
   </data>
+  <data name="SectionCommandUnsaved" xml:space="preserve">
+    <value>Der Text im Editor konnte nicht gespeichert werden; die Änderung wurde nicht ausgeführt.</value>
+  </data>
+  <data name="SectionCommandFailed" xml:space="preserve">
+    <value>Die Änderung konnte nicht gespeichert werden.</value>
+  </data>
+  <data name="UndoStructure" xml:space="preserve">
+    <value>Gliederung ändern</value>
+    <comment>Name der Aktion für „Rückgängig“ nach einem Gliederungsbefehl im Manuskript</comment>
+  </data>
   <data name="NotesPlaceholder" xml:space="preserve">
     <value>Hier erscheinen Suche und Journal.</value>
   </data>
