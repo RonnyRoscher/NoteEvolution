@@ -330,6 +330,18 @@
   <data name="NoteAdoptChildTitle" xml:space="preserve">
     <value>Diesen Unterpunkt ins Buch übernehmen</value>
   </data>
+  <data name="NoteAdoptMore" xml:space="preserve">
+    <value>Weitere Arten zu übernehmen</value>
+  </data>
+  <data name="AdoptAtCursor" xml:space="preserve">
+    <value>Am Cursor</value>
+  </data>
+  <data name="AdoptAfter" xml:space="preserve">
+    <value>Danach</value>
+  </data>
+  <data name="AdoptBelow" xml:space="preserve">
+    <value>Darunter</value>
+  </data>
   <data name="NoteWhereTo" xml:space="preserve">
     <value>Wohin damit?</value>
   </data>

@@ -111,7 +111,9 @@ public class NoteCardTests : UiTestContext
         SetCursorInTextBlock(first.Key);
         var cut = RenderCard(Note(session, "Gedächtnis braucht"));
 
-        cut.Find(".ne-note-adopt").Click();
+        // "Danach" in the menu of variants (a click on the button itself adopts at the cursor, see AdoptVariantTests).
+        cut.Find(".ne-note-adopt-more").Click();
+        cut.Find(".ne-adopt-after").Click();
 
         var texts = State.CurrentBook!.Root.Children.First().TextBlocks.Select(t => t.Text).ToList();
         Assert.Equal(["Erster Text", "Gedächtnis braucht Schlaf", "Zweiter Text"], texts);

@@ -1,7 +1,6 @@
 @using NoteEvolution.AI.Embeddings
 @using NoteEvolution.AI.Relevance
 @using NoteEvolution.Core.Books
-@using NoteEvolution.Core.Links
 @using NoteEvolution.Core.Model
 @using NoteEvolution.Core.Vaults
 @implements IDisposable
@@ -47,8 +46,17 @@
         {
             <div class="ne-note-child" style="margin-left: @(depth * 12)px">
                 <span class="ne-note-child-text">@child.Content</span>
-                <button type="button" class="ne-note-child-adopt" title="@L["NoteAdoptChildTitle"]"
-                        disabled="@(!CanAdopt)" @onclick="() => AdoptAsync(child)">@L["NoteAdopt"]</button>
+                <span class="ne-adopt-split">
+                    <button type="button" class="ne-note-child-adopt" title="@L["NoteAdoptChildTitle"]"
+                            disabled="@(!CanAdopt)" @onclick="() => AdoptAsync(child, AdoptVariant.AtCursor)">@L["NoteAdopt"]</button>
+                    <button type="button" class="ne-note-child-adopt-more" title="@L["NoteAdoptMore"]" aria-label="@L["NoteAdoptMore"]"
+                            aria-haspopup="menu" aria-expanded="@(_adoptMenu == child.Key)"
+                            disabled="@(!CanAdopt)" @onclick="() => ToggleAdoptMenu(child.Key)">▾</button>
+                    @if (_adoptMenu == child.Key)
+                    {
+                        @AdoptMenu(child)
+                    }
+                </span>
             </div>
         }
     </div>
@@ -57,8 +65,17 @@
         <div class="ne-note-hint">@L["NoteReadOnlyHint"]</div>
     }
     <footer class="ne-note-actions">
-        <button type="button" class="ne-note-adopt" title="@L["NoteAdoptTitle"]"
-                disabled="@(!CanAdopt)" @onclick="() => AdoptAsync(Note.Block)">@L["NoteAdopt"]</button>
+        <span class="ne-adopt-split">
+            <button type="button" class="ne-note-adopt" title="@L["NoteAdoptTitle"]"
+                    disabled="@(!CanAdopt)" @onclick="() => AdoptAsync(Note.Block, AdoptVariant.AtCursor)">@L["NoteAdopt"]</button>
+            <button type="button" class="ne-note-adopt-more" title="@L["NoteAdoptMore"]" aria-label="@L["NoteAdoptMore"]"
+                    aria-haspopup="menu" aria-expanded="@(_adoptMenu == Note.Block.Key)"
+                    disabled="@(!CanAdopt)" @onclick="() => ToggleAdoptMenu(Note.Block.Key)">▾</button>
+            @if (_adoptMenu == Note.Block.Key)
+            {
+                @AdoptMenu(Note.Block)
+            }
+        </span>
         @if (WhereToAvailable)
         {
             <button type="button" class="ne-note-whereto" title="@L["NoteWhereToTitle"]"
@@ -111,6 +128,9 @@
     private int _focused;
     private bool _expanded;
     private AdoptMessage? _message;
+
+    /// <summary>The key of the block (the note or a sub-bullet) whose menu of adopt variants is open; <c>null</c> if none.</summary>
+    private Guid? _adoptMenu;
 
     /// <summary>How many sections "Wohin damit?" lists.</summary>
     private const int WhereToLimit = 5;
@@ -405,18 +425,38 @@
     }
 
     /// <summary>
-    /// Adopts <paramref name="block"/> (the note itself or one of its sub-bullets) into the current book: after the
-    /// text block under the cursor, else at the end of the current section (see <see cref="NoteAdoption"/>).
+    /// Opens the menu of adopt variants of <paramref name="blockKey"/> (closing any other), or closes it. A sub-bullet's
+    /// menu expands the card, so a collapsed body does not cut it off.
     /// </summary>
-    private async Task AdoptAsync(Block block)
+    private void ToggleAdoptMenu(Guid blockKey)
     {
+        _adoptMenu = _adoptMenu == blockKey ? null : blockKey;
+        if (_adoptMenu is not null && blockKey != Note.Block.Key)
+        {
+            _expanded = true;
+        }
+    }
+
+    /// <summary>The menu of adopt variants (spec 4) for <paramref name="block"/>.</summary>
+    private RenderFragment AdoptMenu(Block block) =>
+        @<div class="ne-adopt-menu" role="menu">
+            <button type="button" role="menuitem" class="ne-adopt-at-cursor"
+                    @onclick="() => AdoptAsync(block, AdoptVariant.AtCursor)">@L["AdoptAtCursor"]</button>
+            <button type="button" role="menuitem" class="ne-adopt-after"
+                    @onclick="() => AdoptAsync(block, AdoptVariant.After)">@L["AdoptAfter"]</button>
+            <button type="button" role="menuitem" class="ne-adopt-below"
+                    @onclick="() => AdoptAsync(block, AdoptVariant.Below)">@L["AdoptBelow"]</button>
+        </div>;
+
+    /// <summary>
+    /// Adopts <paramref name="block"/> (the note itself or one of its sub-bullets) into the current book the way
+    /// <paramref name="variant"/> says, relative to the element at the cursor (see <see cref="NoteAdoption"/>); closes
+    /// the menu.
+    /// </summary>
+    private async Task AdoptAsync(Block block, AdoptVariant variant)
+    {
+        _adoptMenu = null;
         _message = null;
-        _message = await NoteAdoption.AdoptAsync(
-            State,
-            block.Key,
-            book => State.CursorTextBlockKey is { } cursor && book.FindTextBlock(cursor) is not null
-                ? new InsertPosition.After(cursor)
-                : new InsertPosition.SectionEnd(State.CurrentSectionKey),
-            Logger);
+        _message = await NoteAdoption.AdoptAsync(State, block.Key, variant, Logger);
     }
 }
