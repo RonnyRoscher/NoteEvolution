@@ -813,20 +813,23 @@ html, body {
     position: relative;
 }
 
+/*
+ * The drag handle of a text block: invisible, it lies over the marking's left bar (.ne-current::after, 3 px at
+ * -16 px) and only takes the mouse while the block, or a detail in it, is marked.
+ */
 .ne-block-handle {
     position: absolute;
     left: -20px;
-    top: 0.3em;
-    width: 4px;
-    height: 1em;
-    cursor: grab;
-    border-left: 3px dotted var(--fg-muted);
-    border-right: 3px dotted var(--fg-muted);
-    opacity: 0;
+    top: 0;
+    bottom: 0;
+    width: 10px;
+    pointer-events: none;
 }
 
-.ne-block:hover > .ne-block-handle {
-    opacity: 1;
+.ne-block.ne-current > .ne-block-handle,
+.ne-block:has(.ne-current) > .ne-block-handle {
+    pointer-events: auto;
+    cursor: grab;
 }
 
 .ne-para {
@@ -931,6 +934,11 @@ html, body {
 
 .ne-heading.ne-current-first::after {
     top: 0.3em;
+}
+
+/* The section bar (40 px, TipTapInterop.BarHeight) sits in the gap below the marking, so it covers no text. */
+.ne-current-last {
+    margin-bottom: 40px;
 }
 
 .ne-current-last::after {

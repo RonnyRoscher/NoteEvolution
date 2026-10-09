@@ -151,7 +151,7 @@ Editor
 - [ ] Einen verknüpften Block löschen, ca. 1 s warten, dann Strg+Z im Editor: der Block ist wieder verknüpft
       (Quellen-Chip, `source::` im Buch, `used-in::` an der Notiz). Danach „Rückgängig“ in der Kopfzeile:
       es lehnt ab („Die Aktion konnte nicht rückgängig gemacht werden.“), der Block steht nur einmal im Buch.
-- [ ] Einen Block (gepunkteter Griff links beim Überfahren) unter ein anderes Kapitel ziehen; danach ist er in der
+- [ ] Einen Block am farbigen Balken links seiner Markierung packen und unter ein anderes Kapitel ziehen; danach ist er in der
       Datei richtig eingerückt.
 - [ ] Schalter „Quellen anzeigen“ und die Randmarkierung bei Blöcken mit Quellen.
 - [ ] Markierung: Cursor in Überschrift, Textblock und Detail setzen; der Kasten umfasst jeweils das richtige Element,
