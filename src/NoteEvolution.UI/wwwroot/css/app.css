@@ -975,17 +975,30 @@ html, body {
     flex-shrink: 0;
 }
 
-/* The range head next to the range buttons; a long heading title is cut off, the commands after it stay reachable. */
+/*
+ * The range head next to the range buttons: a long heading title is cut off (only the head, never the suffix of
+ * level −1), the commands after it stay reachable; the title attribute shows the full label.
+ */
 .ne-range-label {
-    max-width: 24ch;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    display: inline-flex;
+    min-width: 0;
     white-space: nowrap;
     flex-shrink: 0;
     padding: 0 6px 0 2px;
     margin-right: 4px;
     border-right: 1px solid var(--border);
     color: var(--fg-muted);
+}
+
+.ne-range-head {
+    max-width: 24ch;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.ne-range-own {
+    flex-shrink: 0;
+    white-space: pre;
 }
 
 .ne-sec-no-sources {

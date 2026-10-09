@@ -20,8 +20,12 @@
                     @onclick="() => OnCommand.InvokeAsync(SectionCommand.RangeUp)">@L["RangeUp"]</button>
             <button type="button" class="ne-range-down" title="@L["RangeDownTitle"]" disabled="@(!State.CanRangeDown)"
                     @onclick="() => OnCommand.InvokeAsync(SectionCommand.RangeDown)">@L["RangeDown"]</button>
-            @* Without sub-elements (level −1) the label gets its own suffix (a text of its own, R6). *@
-            <span class="ne-range-label">@RangeLabel(book, range)@if (range.Level == -1) {<span>@L["RangeOwnOnly"]</span>}</span>
+            @* Only the head may be cut off; the suffix of level −1 always stays visible, the title shows the full label. *@
+            @{
+                var head = RangeHead(book, range);
+                var ownOnly = range.Level == -1;
+            }
+            <span class="ne-range-label" title="@(ownOnly ? head + L["RangeOwnOnly"] : head)"><span class="ne-range-head">@head</span>@if (ownOnly) {<span class="ne-range-own">@L["RangeOwnOnly"]</span>}</span>
             @foreach (var (css, command, key, headingOnly) in Commands)
             {
                 if (headingOnly && element.Kind != ElementKind.Heading)
@@ -105,15 +109,15 @@
         [.. range.TextBlockKeys.Select(book.FindTextBlock).OfType<TextBlock>().SelectMany(textBlock => textBlock.Sources).Distinct()];
 
     /// <summary>
-    /// The range head as the label names it: the heading's title (or that it has none), a text block, a detail, or the
-    /// whole book.
+    /// The range head as the label names it: a heading with its level marks and title (or that it has none), e.g.
+    /// "## Vertrauen" (spec 2), a text block, a detail, or the whole book.
     /// </summary>
-    private string RangeLabel(Book book, RangeInfo range) => range.Head switch
+    private string RangeHead(Book book, RangeInfo range) => range.Head switch
     {
         null => L["RangeBook"],
-        { Kind: ElementKind.Heading } head => L["RangeHeading", book.FindNode(head.Key) is { Title.Length: > 0 } node
-            ? node.Title
-            : L["OutlineUntitled"].Value],
+        { Kind: ElementKind.Heading } head => book.FindNode(head.Key) is { } node
+            ? L["RangeHeading", $"{new string('#', node.Level)} {(node.Title.Length > 0 ? node.Title : L["OutlineUntitled"].Value)}"]
+            : L["RangeHeading", L["OutlineUntitled"].Value],
         { Kind: ElementKind.TextBlock } => L["RangeTextBlock"],
         _ => L["RangeDetail"],
     };

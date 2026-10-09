@@ -308,7 +308,10 @@ public class SectionBarTests : UiTestContext
         new[] { "SectionInsertAfter", "SectionInsertChild", "SectionIndent", "SectionOutdent", "SectionRemoveHeading", "SectionDelete" }
             .ToDictionary(key => Text(key));
 
-    /// <summary>Every text, title and label in <paramref name="root"/> is a resource key; the sources' labels are data.</summary>
+    /// <summary>
+    /// Every text, title and label in <paramref name="root"/> is a resource key; the sources' labels are data. The range
+    /// label's title is its full text, made of the texts of its parts (each checked on its own).
+    /// </summary>
     private static void AssertKeys(IElement root, ResourceManager resources)
     {
         foreach (var element in root.QuerySelectorAll("*").Prepend(root))
@@ -318,7 +321,14 @@ public class SectionBarTests : UiTestContext
                 continue;
             }
 
-            var texts = new[] { "title", "aria-label", "placeholder" }
+            var rangeLabel = element.ClassList.Contains("ne-range-label");
+            if (rangeLabel)
+            {
+                Assert.Equal(element.TextContent, element.GetAttribute("title"));
+            }
+
+            var texts = new[] { rangeLabel ? null : "title", "aria-label", "placeholder" }
+                .OfType<string>()
                 .Select(element.GetAttribute)
                 .OfType<string>()
                 .Concat(element.ChildNodes.OfType<IText>().Select(t => t.Data.Trim()))

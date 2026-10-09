@@ -175,7 +175,7 @@ public class RangeCommandTests : UiTestContext
         [
             (Text("RangeDetail"), 0),
             (Text("RangeTextBlock"), 1),
-            (Text("RangeHeading", "Eins"), 2),
+            (Text("RangeHeading", "# Eins"), 2),
             (Text("RangeBook"), 3),
         ];
         foreach (var (label, level) in up)
@@ -198,6 +198,28 @@ public class RangeCommandTests : UiTestContext
     }
 
     [Fact]
+    public async Task RangeLabel_OnlyHeadTruncated_SuffixApart_TitleIsFullLabel()
+    {
+        var cut = await RenderAsync();
+        await MoveToAsync(cut, "## Eins-A");
+        cut.WaitForAssertion(() => Assert.Equal(Text("RangeHeading", "## Eins-A"), Label(cut)));
+
+        // Level 0: only the head, which is the part that may be cut off; the hover shows the full label.
+        var label = cut.Find(".ne-range-label");
+        Assert.Equal(Text("RangeHeading", "## Eins-A"), cut.Find(".ne-range-label > .ne-range-head").TextContent);
+        Assert.Empty(cut.FindAll(".ne-range-own"));
+        Assert.Equal(Label(cut), label.GetAttribute("title"));
+
+        // Level −1: the suffix stands beside the head, never inside the part that is cut off.
+        await ClickAsync(cut, ".ne-range-down");
+        cut.WaitForAssertion(() => Assert.Equal(Text("RangeHeading", "## Eins-A") + Text("RangeOwnOnly"), Label(cut)));
+        Assert.Equal(Text("RangeHeading", "## Eins-A"), cut.Find(".ne-range-label > .ne-range-head").TextContent);
+        Assert.Equal(Text("RangeOwnOnly"), cut.Find(".ne-range-label > .ne-range-own").TextContent);
+        Assert.Empty(cut.FindAll(".ne-range-head .ne-range-own"));
+        Assert.Equal(Text("RangeHeading", "## Eins-A") + Text("RangeOwnOnly"), cut.Find(".ne-range-label").GetAttribute("title"));
+    }
+
+    [Fact]
     public async Task RangeShortcut_AltArrow_ChangesLevel()
     {
         var cut = await RenderAsync();
@@ -206,7 +228,7 @@ public class RangeCommandTests : UiTestContext
 
         await cut.InvokeAsync(() => Editor.Callbacks!.OnSectionCommand(SectionCommand.RangeUp));
 
-        cut.WaitForAssertion(() => Assert.Equal(Text("RangeHeading", "Eins"), Label(cut)));
+        cut.WaitForAssertion(() => Assert.Equal(Text("RangeHeading", "# Eins"), Label(cut)));
         Assert.Equal(1, State.RangeLevel);
 
         await cut.InvokeAsync(() => Editor.Callbacks!.OnSectionCommand(SectionCommand.RangeDown));
@@ -224,7 +246,7 @@ public class RangeCommandTests : UiTestContext
         var erster = KeyOf("Erster Text");
         await MoveToAsync(cut, "Erster Text");
         await ClickAsync(cut, ".ne-range-up");
-        cut.WaitForAssertion(() => Assert.Equal(Text("RangeHeading", "Eins"), Label(cut)));
+        cut.WaitForAssertion(() => Assert.Equal(Text("RangeHeading", "# Eins"), Label(cut)));
         Assert.Equal(Text("SectionMerge"), cut.Find(".ne-sec-merge").TextContent.Trim());
         Assert.False(Disabled(cut, ".ne-sec-merge"));
 
@@ -258,7 +280,7 @@ public class RangeCommandTests : UiTestContext
         cut.WaitForAssertion(() => Assert.Equal(Text("RangeTextBlock"), Label(cut)));
         Assert.True(Disabled(cut, ".ne-sec-merge"));
         await MoveToAsync(cut, "# Zwei");
-        cut.WaitForAssertion(() => Assert.Equal(Text("RangeHeading", "Zwei"), Label(cut)));
+        cut.WaitForAssertion(() => Assert.Equal(Text("RangeHeading", "# Zwei"), Label(cut)));
         Assert.True(Disabled(cut, ".ne-sec-merge"));
         Assert.False(ManuscriptCommands.CanRun(State, SectionCommand.Merge));
 
@@ -271,7 +293,7 @@ public class RangeCommandTests : UiTestContext
         // A heading's own text blocks (level −1) can be merged.
         await MoveToAsync(cut, "# Eins");
         await ClickAsync(cut, ".ne-range-down");
-        cut.WaitForAssertion(() => Assert.Equal(Text("RangeHeading", "Eins") + Text("RangeOwnOnly"), Label(cut)));
+        cut.WaitForAssertion(() => Assert.Equal(Text("RangeHeading", "# Eins") + Text("RangeOwnOnly"), Label(cut)));
         Assert.False(Disabled(cut, ".ne-sec-merge"));
     }
 
@@ -321,7 +343,7 @@ public class RangeCommandTests : UiTestContext
         cut.WaitForAssertion(() => Assert.Equal(heading, Assert.Single(Editor.Reveals)));
         Assert.Equal((ElementKind.Heading, heading), (State.Cursor!.Kind, State.Cursor.Key));
         Assert.Equal(heading, State.CurrentSectionKey);
-        cut.WaitForAssertion(() => Assert.Equal(Text("RangeHeading", Text("OutlineUntitled")), Label(cut)));
+        cut.WaitForAssertion(() => Assert.Equal(Text("RangeHeading", "## " + Text("OutlineUntitled")), Label(cut)));
         Assert.Equal(Text("UndoWrap"), session.Undo.NextDescription);
         Assert.Empty(cut.FindAll(".ne-editor-error"));
     }
@@ -340,7 +362,7 @@ public class RangeCommandTests : UiTestContext
         cut.WaitForAssertion(() => Assert.Equal(Text("RangeTextBlock"), Label(cut)));
         Assert.False(Disabled(cut, ".ne-sec-wrap"));
         await ClickAsync(cut, ".ne-range-up");
-        cut.WaitForAssertion(() => Assert.Equal(Text("RangeHeading", "Eins"), Label(cut)));
+        cut.WaitForAssertion(() => Assert.Equal(Text("RangeHeading", "# Eins"), Label(cut)));
         Assert.False(Disabled(cut, ".ne-sec-wrap"));
         await ClickAsync(cut, ".ne-range-up");
         cut.WaitForAssertion(() => Assert.Equal(Text("RangeBook"), Label(cut)));
