@@ -396,33 +396,6 @@ public class ManuscriptCommandTests : UiTestContext
     }
 
     [Fact]
-    public async Task IrregularSection_SubtreeCommandsDisabled_NothingChanged()
-    {
-        // "## B2" is not deeper than "## B": the editor marks less of B than its section in the file holds.
-        const string text = "title:: Alpha\ntype:: book\n\n- # Eins\n\t- ## A\n\t- ## B\n\t\t- ## B2\n\t\t- Text B\n";
-        using var tv = TestVault.Create((BookPath, text));
-        var session = await OpenSessionAsync(tv);
-        Assert.NotEmpty(Book.Warnings);
-        CursorAt("## B");
-
-        foreach (var command in new[] { SectionCommand.Delete, SectionCommand.Indent, SectionCommand.Outdent, SectionCommand.RemoveHeading })
-        {
-            Assert.False(ManuscriptCommands.CanRun(State, command), $"{command}");
-            Assert.Null(await RunAsync(command));
-        }
-
-        Assert.True(ManuscriptCommands.CanRun(State, SectionCommand.InsertAfter));
-        Assert.Equal(text, tv.Read(BookPath));
-        Assert.False(session.Undo.CanUndo);
-
-        // A regular heading of the same book keeps them.
-        CursorAt("## A");
-        Assert.True(ManuscriptCommands.CanRun(State, SectionCommand.Delete));
-        Assert.True(ManuscriptCommands.CanRun(State, SectionCommand.Outdent));
-        Assert.True(ManuscriptCommands.CanRun(State, SectionCommand.RemoveHeading));
-    }
-
-    [Fact]
     public async Task Delete_LinkedDetail_RemovesUsage_UndoRestoresBoth()
     {
         const string detailId = "cccccccc-cccc-4ccc-8ccc-ccccccccccc1";

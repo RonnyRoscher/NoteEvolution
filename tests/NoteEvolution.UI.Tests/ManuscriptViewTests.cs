@@ -260,8 +260,8 @@ public class ManuscriptViewTests : UiTestContext
 
         var beta = session.Vault.FindBook(BetaBook)!;
         var target = TextBlocks(beta.Root).Single(t => t.Text == "Beta Text");
-        // The other book is loaded first, then the block is revealed in it.
-        editor.WaitForAssertion(() => Assert.Equal(["doc", "doc", $"reveal:{target.Key}"], Editor.Calls));
+        // The other book is loaded first, then the block is revealed and marked in it.
+        editor.WaitForAssertion(() => Assert.Equal(["doc", "doc", $"reveal:{target.Key}", "marked"], Editor.Calls));
         Assert.Equal(BetaBook, State.CurrentBook!.LinkName);
         Assert.Contains("Beta Text", Editor.Json);
         Assert.Equal(target.Section.Key, State.CurrentSectionKey);

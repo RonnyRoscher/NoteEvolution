@@ -7,7 +7,7 @@
 @inject IStringLocalizer<Strings> L
 @inject ILogger<RelevantTab> Logger
 
-@* The "Relevant" tab: the notes that fit the text at the cursor (on a heading: its section) the user is working on. *@
+@* The "Relevant" tab: the notes that fit the marked range (package B, spec 2) the user is working on. *@
 <div class="ne-relevant">
     @if (State.Session is { } session)
     {
@@ -79,7 +79,7 @@
     /// </summary>
     private int _indexVersion;
 
-    private (VaultSession?, Book?, Guid, Guid?, bool, NoteFilter, int, AiState, bool, int)? _last;
+    private (VaultSession?, Book?, Guid, Guid?, bool, int, NoteFilter, int, AiState, bool, int)? _last;
     private List<(Guid Key, int Percent)> _hits = [];
 
     /// <summary>True once a result was applied for the current topic (to tell "nothing found" from "not computed yet").</summary>
@@ -91,8 +91,8 @@
     [Parameter] public int Revision { get; set; }
 
     /// <remarks>
-    /// The pane renders again on every <see cref="AppState.Changed"/>, which calls this: book, section and cursor are
-    /// read from <see cref="AppState"/> here.
+    /// The pane renders again on every <see cref="AppState.Changed"/>, which calls this: book, section, cursor and range
+    /// level are read from <see cref="AppState"/> here.
     /// </remarks>
     protected override void OnParametersSet()
     {
@@ -155,7 +155,7 @@
         var status = session?.AiStatus;
         var available = session?.Relevance.IsAvailable == true;
         var current = (session, State.CurrentBook, State.CurrentSectionKey, State.CursorTextBlockKey, State.CursorTextBlockKey is not null,
-            Filter, Revision, status?.State ?? AiState.Off, available, _indexVersion);
+            State.RangeLevel, Filter, Revision, status?.State ?? AiState.Off, available, _indexVersion);
         if (_last == current)
         {
             return;
@@ -230,8 +230,7 @@
             return null;
         }
 
-        // In a text block or detail: that text block and its neighbours; on a heading: its section.
-        var topic = new TopicRequest(book, State.CurrentSectionKey, State.CursorTextBlockKey, Manuscript: State.CursorTextBlockKey is not null);
+        var topic = TopicOf(book);
         var filter = Filter;
         var allowed = session.Notes.All()
             .Where(note => session.Notes.Matches(note, filter))
@@ -239,4 +238,29 @@
             .ToHashSet();
         return (session, topic, allowed);
     }
+
+    /// <summary>
+    /// What the list is about (package B, spec 2): at level 0 in a text block or detail (and without a range) that text
+    /// block and its neighbours, at level −1 of a heading its own text blocks, at level −1 of a text block or detail only
+    /// its own text; otherwise (a heading at level 0, any range at level ≥ 1) all text blocks of the range.
+    /// </summary>
+    private TopicRequest TopicOf(Book book)
+    {
+        var cursorTopic = new TopicRequest(book, State.CurrentSectionKey, State.CursorTextBlockKey, Manuscript: State.CursorTextBlockKey is not null);
+        return State.CurrentRange switch
+        {
+            null or { Level: 0, Head.Kind: not ElementKind.Heading } => cursorTopic,
+            { Level: -1, Head: { Kind: ElementKind.Heading } head } => new TopicRequest(book, head.Key, null, Manuscript: false),
+            // The own text as the book holds it (a detail's without #notiz); the topic unescapes it (EmbeddingText.ForOwnText).
+            { Level: -1, Head: { Kind: ElementKind.TextBlock } head } range =>
+                new TopicRequest(book, range.SectionKey, null, Manuscript: false, OwnText: book.FindTextBlock(head.Key)!.Text),
+            { Level: -1, Head: { } head } range =>
+                new TopicRequest(book, range.SectionKey, null, Manuscript: false, OwnText: DetailOf(book, head).Text),
+            { } range => new TopicRequest(book, range.SectionKey, null, Manuscript: false, RangeTextBlockKeys: range.TextBlockKeys),
+        };
+    }
+
+    /// <summary>The paragraph of the detail <paramref name="detail"/>, which is in <paramref name="book"/>.</summary>
+    private static Paragraph DetailOf(Book book, BookElement detail) =>
+        BookElements.TextBlockOf(book, detail)!.Paragraphs.First(p => p.Block.Key == detail.Key);
 }

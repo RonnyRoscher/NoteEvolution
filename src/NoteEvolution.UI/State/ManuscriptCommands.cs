@@ -18,8 +18,8 @@ public static class ManuscriptCommands
     /// Whether <paramref name="command"/> is possible now: the book is writable, no conflict is open for it (R26), and
     /// the command fits the cursor element (e.g. no indent without a previous heading of the same level, no outdent
     /// on level 1, indent, outdent and remove only on headings). Delete only takes the element the cursor itself is in
-    /// (<see cref="TargetOf"/>). Delete, indent, outdent and remove are not possible on a heading whose section holds a
-    /// heading that is not deeper (<see cref="IsIrregular"/>).
+    /// (<see cref="TargetOf"/>). An irregular section (a heading in it that is not deeper) is no exception: the editor
+    /// marks what the book tree holds (package B), which is what the commands act on.
     /// </summary>
     public static bool CanRun(AppState state, SectionCommand command) =>
         state is { Session: { } session, CurrentBook: { Page.IsReadOnly: false } book }
@@ -137,8 +137,6 @@ public static class ManuscriptCommands
     /// <summary>Whether <paramref name="command"/> fits <paramref name="element"/>, which must be in <paramref name="book"/>.</summary>
     private static bool Fits(Book book, BookElement element, SectionCommand command) =>
         BookElements.Find(book, element.Key) == element
-        && !(command is SectionCommand.Delete or SectionCommand.Indent or SectionCommand.Outdent or SectionCommand.RemoveHeading
-             && element.Kind == ElementKind.Heading && IsIrregular(book.FindNode(element.Key)!))
         && command switch
         {
             SectionCommand.InsertAfter or SectionCommand.Delete => true,
@@ -148,17 +146,6 @@ public static class ManuscriptCommands
             SectionCommand.RemoveHeading => element.Kind == ElementKind.Heading,
             _ => false,
         };
-
-    /// <summary>
-    /// Whether the heading's section holds a heading of the same or a higher level (the outline warns about it). The
-    /// editor marks a heading's section up to the next heading that is not deeper, so it would show less than the
-    /// commands on the section's subtree act on.
-    /// </summary>
-    private static bool IsIrregular(OutlineNode heading)
-    {
-        static IEnumerable<OutlineNode> Below(OutlineNode node) => node.Children.SelectMany(child => Below(child).Prepend(child));
-        return Below(heading).Any(node => node.Level <= heading.Level);
-    }
 
     /// <summary>The block of <paramref name="element"/>, which must be in <paramref name="book"/>.</summary>
     private static Block BlockOf(Book book, BookElement element) => element.Kind switch

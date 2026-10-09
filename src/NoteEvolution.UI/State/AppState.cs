@@ -10,10 +10,42 @@ namespace NoteEvolution.UI.State;
 /// </summary>
 public sealed class AppState
 {
-    /// <summary>The open vault; <c>null</c> until one is opened.</summary>
-    public VaultSession? Session { get; set; }
+    private VaultSession? _session;
+    private Book? _currentBook;
+    private CursorInfo? _cursor;
 
-    public Book? CurrentBook { get; set; }
+    /// <summary>The open vault; <c>null</c> until one is opened. Another session puts the range back to level 0.</summary>
+    public VaultSession? Session
+    {
+        get => _session;
+        set
+        {
+            if (!ReferenceEquals(value, _session))
+            {
+                RangeLevel = 0;
+            }
+
+            _session = value;
+        }
+    }
+
+    /// <summary>
+    /// The book the editor shows. Another book (by link name; not the same book taken from the vault again, see
+    /// <see cref="RefreshBook"/>) puts the range back to level 0.
+    /// </summary>
+    public Book? CurrentBook
+    {
+        get => _currentBook;
+        set
+        {
+            if (!string.Equals(value?.LinkName, _currentBook?.LinkName, StringComparison.OrdinalIgnoreCase))
+            {
+                RangeLevel = 0;
+            }
+
+            _currentBook = value;
+        }
+    }
 
     /// <summary>
     /// The <see cref="OutlineNode.Key"/> of the current section (<see cref="Guid.Empty"/> = book root, the prologue): the
@@ -21,8 +53,41 @@ public sealed class AppState
     /// </summary>
     public Guid CurrentSectionKey { get; set; }
 
-    /// <summary>The element at the editor cursor as the editor reported it; <c>null</c> if the cursor is in none.</summary>
-    public CursorInfo? Cursor { get; set; }
+    /// <summary>
+    /// The element at the editor cursor as the editor reported it; <c>null</c> if the cursor is in none. Another element
+    /// (another key, or none) puts the range back to level 0; a change of the offset alone keeps it.
+    /// </summary>
+    public CursorInfo? Cursor
+    {
+        get => _cursor;
+        set
+        {
+            if (value?.Key != _cursor?.Key)
+            {
+                RangeLevel = 0;
+            }
+
+            _cursor = value;
+        }
+    }
+
+    /// <summary>
+    /// The level of the marked range around <see cref="CurrentElement"/> (package B, spec 2): 0 = the element with
+    /// everything below it, −1 = the element alone, k &gt; 0 = its k-th ancestor; see <see cref="BookRanges"/>.
+    /// </summary>
+    public int RangeLevel { get; set; }
+
+    /// <summary>The marked range of <see cref="RangeLevel"/> around <see cref="CurrentElement"/>; <c>null</c> without an element.</summary>
+    public RangeInfo? CurrentRange =>
+        CurrentBook is { } book && CurrentElement is { } element ? BookRanges.Of(book, element, RangeLevel) : null;
+
+    /// <summary>Whether the range can grow: there is one and it is not the whole book yet.</summary>
+    public bool CanRangeUp =>
+        CurrentBook is { } book && CurrentElement is { } element
+        && BookRanges.Of(book, element, RangeLevel).Level < BookRanges.MaxLevel(book, element);
+
+    /// <summary>Whether the range can shrink: there is one and it is not at level −1.</summary>
+    public bool CanRangeDown => CurrentRange is { Level: > -1 };
 
     /// <summary>The text block the editor cursor is in (also in one of its details); <c>null</c> on a heading or without a cursor.</summary>
     public Guid? CursorTextBlockKey => Cursor is { Kind: not ElementKind.Heading } c ? c.TextBlockKey ?? c.Key : null;
@@ -101,6 +166,21 @@ public sealed class AppState
 
     public void Notify() => Changed?.Invoke();
 
+    /// <summary>
+    /// Moves the range <paramref name="delta"/> levels up (positive) or down, clamped to −1 and the whole book, and
+    /// raises <see cref="Notify"/>; without an element (<see cref="CurrentRange"/> is <c>null</c>) nothing happens.
+    /// </summary>
+    public void ChangeRange(int delta)
+    {
+        if (CurrentBook is not { } book || CurrentElement is not { } element)
+        {
+            return;
+        }
+
+        RangeLevel = Math.Clamp(BookRanges.Of(book, element, RangeLevel).Level + delta, -1, BookRanges.MaxLevel(book, element));
+        Notify();
+    }
+
     /// <summary>Asks the shell to show the AI model dialog, which offers the download.</summary>
     public void RequestAiModelDialog() => AiModelDialogRequested?.Invoke();
 
@@ -114,11 +194,12 @@ public sealed class AppState
     /// Asks the editor to scroll to the element of <see cref="CurrentBook"/> with <paramref name="elementKey"/> (a
     /// heading, text block or detail; <see cref="Guid.Empty"/> = the start of the book) and to put the cursor at its
     /// start. Its section becomes the current section and the cursor is taken to be there; an element the book does not
-    /// have changes neither. The editor reveals it once it shows the book (<see cref="PendingReveal"/>). The caller
-    /// calls <see cref="Notify"/>.
+    /// have changes neither. The range goes back to level 0. The editor reveals it once it shows the book
+    /// (<see cref="PendingReveal"/>). The caller calls <see cref="Notify"/>.
     /// </summary>
     public void RevealElement(Guid elementKey)
     {
+        RangeLevel = 0;
         if (CurrentBook is { } book)
         {
             if (elementKey == Guid.Empty)
