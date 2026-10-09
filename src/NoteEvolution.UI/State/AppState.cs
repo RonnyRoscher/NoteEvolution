@@ -13,6 +13,7 @@ public sealed class AppState
     private VaultSession? _session;
     private Book? _currentBook;
     private CursorInfo? _cursor;
+    private readonly HashSet<Guid> _whereToOpenNotes = [];
 
     /// <summary>The open vault; <c>null</c> until one is opened. Another session puts the range back to level 0.</summary>
     public VaultSession? Session
@@ -82,12 +83,25 @@ public sealed class AppState
         CurrentBook is { } book && CurrentElement is { } element ? BookRanges.Of(book, element, RangeLevel) : null;
 
     /// <summary>Whether the range can grow: there is one and it is not the whole book yet.</summary>
-    public bool CanRangeUp =>
-        CurrentBook is { } book && CurrentElement is { } element
-        && BookRanges.Of(book, element, RangeLevel).Level < BookRanges.MaxLevel(book, element);
+    public bool CanRangeUp => RangeBounds() is { } bounds && bounds.Level < bounds.Max;
 
     /// <summary>Whether the range can shrink: there is one and it is not at level −1.</summary>
-    public bool CanRangeDown => CurrentRange is { Level: > -1 };
+    public bool CanRangeDown => RangeBounds() is { Level: > -1 };
+
+    /// <summary>
+    /// <see cref="RangeLevel"/> clamped as <see cref="BookRanges.Of"/> clamps it, and the level of the whole book, around
+    /// <see cref="CurrentElement"/> (without computing the range); <c>null</c> without an element.
+    /// </summary>
+    private (int Level, int Max)? RangeBounds()
+    {
+        if (CurrentBook is not { } book || CurrentElement is not { } element)
+        {
+            return null;
+        }
+
+        var max = BookRanges.MaxLevel(book, element);
+        return (Math.Clamp(RangeLevel, -1, max), max);
+    }
 
     /// <summary>The text block the editor cursor is in (also in one of its details); <c>null</c> on a heading or without a cursor.</summary>
     public Guid? CursorTextBlockKey => Cursor is { Kind: not ElementKind.Heading } c ? c.TextBlockKey ?? c.Key : null;
@@ -133,6 +147,23 @@ public sealed class AppState
     /// drop handler reads it (the card also carries the key in its <c>data-note-key</c> attribute).
     /// </summary>
     public Guid? DraggedNoteKey { get; set; }
+
+    /// <summary>
+    /// The note keys of the cards with an open "Wohin damit?" list (package B, spec 3: the list stays open). The tabs
+    /// of the notes pane keep such a card at its place while they compute their lists again, even when the new list
+    /// (its top N, or "Verwendete ausblenden" after adopting the note) would leave it out; see
+    /// <see cref="OpenWhereTo"/> and <see cref="CloseWhereTo"/>.
+    /// </summary>
+    public IReadOnlySet<Guid> WhereToOpenNotes => _whereToOpenNotes;
+
+    /// <summary>The card of <paramref name="noteKey"/> opened its first "Wohin damit?" list.</summary>
+    public void OpenWhereTo(Guid noteKey) => _whereToOpenNotes.Add(noteKey);
+
+    /// <summary>
+    /// The card of <paramref name="noteKey"/> closed its last "Wohin damit?" list (or is gone); <c>true</c> if it had
+    /// one open. Whoever closes it calls <see cref="Notify"/>, so the tabs can let the card go.
+    /// </summary>
+    public bool CloseWhereTo(Guid noteKey) => _whereToOpenNotes.Remove(noteKey);
 
     /// <summary>
     /// Saves the editor's pending text, <c>null</c> while no editor is shown. The editor registers it; whoever is

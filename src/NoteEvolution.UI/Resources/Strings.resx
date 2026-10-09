@@ -172,6 +172,9 @@
   <data name="SectionCommandFailed" xml:space="preserve">
     <value>Die Änderung konnte nicht gespeichert werden.</value>
   </data>
+  <data name="SectionMergeRefused" xml:space="preserve">
+    <value>Die Blöcke lassen sich nicht zusammenfügen: unterschiedliche Eigenschaften oder ein Verweis an anderer Stelle.</value>
+  </data>
   <data name="UndoStructure" xml:space="preserve">
     <value>Gliederung ändern</value>
     <comment>Name der Aktion für „Rückgängig“ nach einem Gliederungsbefehl im Manuskript</comment>

@@ -20,9 +20,11 @@ public static class ManuscriptCommands
     /// the command fits the cursor element (e.g. no indent without a previous heading of the same level, no outdent
     /// on level 1, indent, outdent and remove only on headings). Delete only takes the element the cursor itself is in
     /// (<see cref="TargetOf"/>). An irregular section (a heading in it that is not deeper) is no exception: the editor
-    /// marks what the book tree holds (package B), which is what the commands act on. Merge needs a group of at least
-    /// two text blocks in the marked range (<see cref="RangeInfo.MergeGroups"/>), Wrap a range head that
-    /// <see cref="ManuscriptEditor.CanWrap"/> takes (not the whole book, no detail).
+    /// marks what the book tree holds (package B), which is what the commands act on. At range level −1 Delete, Indent
+    /// and Outdent are not possible on an element with sub-elements (<see cref="HasSubElements"/>): the box marks the
+    /// element alone, but they would take its sub-elements along. Merge needs a group of at least two text blocks in the
+    /// marked range (<see cref="RangeInfo.MergeGroups"/>), Wrap a range head that <see cref="ManuscriptEditor.CanWrap"/>
+    /// takes (not the whole book, no detail).
     /// </summary>
     public static bool CanRun(AppState state, SectionCommand command) =>
         state is { Session: { } session, CurrentBook: { Page.IsReadOnly: false } book }
@@ -38,8 +40,11 @@ public static class ManuscriptCommands
     /// (<see cref="RemovedHeading"/>), which later edits elsewhere do not block. Deleting a text block, a heading or a
     /// detail with linked blocks goes through the link service, which also removes the usages from the notes; it is
     /// refused while a conflict is open for one of those notes' pages (R26). Merge goes through the link service as well
-    /// (with its own undo action), refused the same way for the note pages of the merged blocks' sources; it reveals the
-    /// first remaining block. Wrap gets a targeted undo (<see cref="WrapUndo"/>) and reveals the new heading. Whatever
+    /// (with its own undo action), refused the same way for the note pages of the merged blocks' sources, and refused
+    /// with <c>SectionMergeRefused</c> when the link service refuses it (<see cref="MergeRefusedException"/>); it reveals
+    /// the first remaining block. Wrap gets a targeted undo (<see cref="WrapUndo"/>) and reveals the new heading. Merge
+    /// and Wrap do nothing when saving the editor's text changed the marked range (another head or level, e.g. the
+    /// cursor's detail the book did not know before). Whatever
     /// happens, the book view is taken from the vault again, the new or moved element is revealed (the cursor goes
     /// there, the range back to level 0) and <see cref="AppState.Notify"/> is raised.
     /// </summary>
@@ -68,6 +73,9 @@ public static class ManuscriptCommands
     private static async Task<(AdoptMessage? Message, Guid? Reveal)> TryRunAsync(
         AppState state, SectionCommand command, string undoDescription, ILogger logger)
     {
+        // Merge and Wrap act on the range the user sees now; the save may change it (e.g. make the cursor's detail known).
+        var onRange = command is SectionCommand.Merge or SectionCommand.Wrap;
+        var range = onRange ? HeadOf(state.CurrentRange) : null;
         try
         {
             if (state.FlushEditor is { } flush)
@@ -109,6 +117,12 @@ public static class ManuscriptCommands
             return (null, null);
         }
 
+        if (onRange && !Nullable.Equals(range, HeadOf(RangeOf(state, book))))
+        {
+            // The same level now marks another range than the one the command was given for: nothing changes.
+            return (null, null);
+        }
+
         if (command == SectionCommand.Merge)
         {
             return Merge(session, book, RangeOf(state, book)!.MergeGroups, logger);
@@ -142,8 +156,22 @@ public static class ManuscriptCommands
     {
         SectionCommand.Merge => RangeOf(state, book) is { MergeGroups.Count: > 0 },
         SectionCommand.Wrap => RangeOf(state, book) is { Head: { } head } && ManuscriptEditor.CanWrap(book, head),
-        _ => TargetOf(state, book, command) is { } element && Fits(book, element, command),
+        _ => TargetOf(state, book, command) is { } element && Fits(book, element, command)
+             && !(command is SectionCommand.Delete or SectionCommand.Indent or SectionCommand.Outdent
+                  && state.RangeLevel < 0 && HasSubElements(book, element)),
     };
+
+    /// <summary>
+    /// Whether <paramref name="element"/> (in <paramref name="book"/>) has sub-elements the range of level −1 does not
+    /// mark, but Delete, Indent and Outdent would take along: sub-headings of a heading, details of a text block,
+    /// deeper details of a detail.
+    /// </summary>
+    private static bool HasSubElements(Book book, BookElement element) => element.Kind == ElementKind.Heading
+        ? book.FindNode(element.Key)!.Children.Any()
+        : BlockOf(book, element).Children.Count > 0;
+
+    /// <summary>The head and the level of <paramref name="range"/>, to tell whether it is still the same range; <c>null</c> without one.</summary>
+    private static (Guid? Head, int Level)? HeadOf(RangeInfo? range) => range is null ? null : (range.Head?.Key, range.Level);
 
     /// <summary>
     /// The marked range in <paramref name="book"/>, as <see cref="AppState.CurrentRange"/> has it: the range of
@@ -348,6 +376,12 @@ public static class ManuscriptCommands
         catch (ReadOnlyPageException)
         {
             return new AdoptMessage("EditorReadOnly", true);
+        }
+        catch (MergeRefusedException ex)
+        {
+            // Different properties or a reference elsewhere to a block that would go: nothing was changed.
+            logger.LogInformation(ex, "{What} was refused", what);
+            return new AdoptMessage("SectionMergeRefused", true);
         }
         catch (Exception ex) when (ex is ArgumentException or IOException or UnauthorizedAccessException or InvalidOperationException)
         {

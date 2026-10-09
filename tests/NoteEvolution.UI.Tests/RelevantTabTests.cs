@@ -242,6 +242,80 @@ public class RelevantTabTests : UiTestContext
         cut.WaitForAssertion(() => Assert.Contains(Soup, Texts(cut)[0]));
     }
 
+    /// <summary>The "Wohin damit?" items of the card at <paramref name="index"/> of the list.</summary>
+    private static List<AngleSharp.Dom.IElement> WhereToItems(IRenderedComponent<NotesPane> cut, int index) =>
+        [.. cut.FindAll(".ne-relevant-list .ne-note-card")[index].QuerySelectorAll(".ne-note-whereto-item")];
+
+    [Fact]
+    public async Task Relevant_CardWithOpenWhereToList_StaysAtItsPlace_AfterTheJump()
+    {
+        var tv = Vault();
+        await OpenReadyAsync(tv, new FakeEmbedder());
+        var cut = Render<NotesPane>();
+        cut.WaitForAssertion(() => Assert.Equal(30, Texts(cut).Count));
+        var text = Texts(cut)[0];
+        Assert.Contains(Sleep, text);
+        cut.FindAll(".ne-relevant-list .ne-note-card")[0].QuerySelector(".ne-note-whereto")!.Click();
+        cut.WaitForAssertion(() => Assert.Equal(3, WhereToItems(cut, 0).Count));
+        var music = State.CurrentBook!.Root.Children.ElementAt(1).TextBlocks.Single();
+
+        // The jump to the music text block makes the list about music; the sleep note's card keeps its list and its place.
+        WhereToItems(cut, 0).Single(item => item.TextContent.Contains("Musik", StringComparison.Ordinal)).Click();
+        cut.WaitForAssertion(() => Assert.Equal(music.Key, State.PendingReveal));
+        cut.WaitForState(
+            () =>
+            {
+                Time.Advance(Debounce);
+                return Texts(cut).Count > 1 && Texts(cut)[1].Contains(Music, StringComparison.Ordinal);
+            },
+            Wait);
+
+        Assert.Equal(text, Texts(cut)[0]);
+        Assert.Equal(3, WhereToItems(cut, 0).Count);
+        Assert.InRange(Texts(cut).Count, 30, 31);
+    }
+
+    [Fact]
+    public async Task Relevant_HideUsed_AdoptedNoteStaysWhileItsListIsOpen()
+    {
+        var tv = Vault();
+        var session = await OpenReadyAsync(tv, new FakeEmbedder());
+        var cut = Render<NotesPane>();
+        Act(cut, () => cut.Find(".ne-hide-used").Change(true));
+        Time.Advance(Debounce);
+        cut.WaitForAssertion(() => Assert.DoesNotContain(UsedSleep, Texts(cut)));
+        cut.WaitForAssertion(() => Assert.Equal(30, Texts(cut).Count));
+        const int index = 2;
+        var text = Texts(cut)[index];
+        var note = session.Notes.All().Single(n => n.Block.Content == text);
+        cut.FindAll(".ne-relevant-list .ne-note-card")[index].QuerySelector(".ne-note-whereto")!.Click();
+        cut.WaitForAssertion(() => Assert.Equal(3, WhereToItems(cut, index).Count));
+        WhereToItems(cut, index)[0].Click();
+        cut.WaitForAssertion(() => Assert.NotNull(State.PendingReveal));
+
+        cut.FindAll(".ne-relevant-list .ne-note-card")[index].QuerySelector(".ne-note-adopt")!.Click();
+
+        // The used note is no longer among the 30 found, but its card stays at its place while the list is open.
+        cut.WaitForAssertion(() => Assert.True(note.IsUsed));
+        cut.WaitForState(
+            () =>
+            {
+                Time.Advance(Debounce);
+                return Texts(cut).Count == 31;
+            },
+            Wait);
+        Assert.Equal(text, Texts(cut)[index]);
+        Assert.Equal(3, WhereToItems(cut, index).Count);
+        Assert.NotNull(cut.FindAll(".ne-relevant-list .ne-note-card")[index].QuerySelector(".ne-note-used"));
+
+        // Closing the list lets the card go.
+        cut.FindAll(".ne-relevant-list .ne-note-card")[index].QuerySelector(".ne-note-whereto")!.Click();
+
+        cut.WaitForAssertion(() => Assert.DoesNotContain(text, Texts(cut)));
+        Assert.Equal(30, Texts(cut).Count);
+        Assert.Empty(State.WhereToOpenNotes);
+    }
+
     [Fact]
     public async Task Relevant_AiUnavailable_ShowsHint()
     {

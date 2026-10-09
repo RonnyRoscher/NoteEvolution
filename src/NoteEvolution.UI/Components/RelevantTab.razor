@@ -82,6 +82,9 @@
     private (VaultSession?, Book?, Guid, Guid?, bool, int, NoteFilter, int, AiState, bool, int)? _last;
     private List<(Guid Key, int Percent)> _hits = [];
 
+    /// <summary>The notes in <see cref="_hits"/> only because their "Wohin damit?" list is open (see <see cref="WhereToPins"/>).</summary>
+    private HashSet<Guid> _keptOnly = [];
+
     /// <summary>True once a result was applied for the current topic (to tell "nothing found" from "not computed yet").</summary>
     private bool _computed;
 
@@ -92,11 +95,13 @@
 
     /// <remarks>
     /// The pane renders again on every <see cref="AppState.Changed"/>, which calls this: book, section, cursor and range
-    /// level are read from <see cref="AppState"/> here.
+    /// level are read from <see cref="AppState"/> here, and a note kept only for its open "Wohin damit?" list goes once
+    /// that list is closed.
     /// </remarks>
     protected override void OnParametersSet()
     {
         TrackSession();
+        WhereToPins.Release(_hits, _keptOnly, hit => hit.Key, State.WhereToOpenNotes);
         Refresh();
     }
 
@@ -171,6 +176,7 @@
         if (!available || State.CurrentBook is null)
         {
             _hits = [];
+            _keptOnly = [];
             return;
         }
 
@@ -198,7 +204,7 @@
             var (session, topic, allowed) = snapshot.Value;
             var found = await Task.Run(() => session.Relevance.Relevant(topic, allowed.Contains, Limit), cancel);
             var best = found.Count > 0 ? found.Max(hit => hit.Score) : 0;
-            var hits = found.Select(hit => (hit.NoteBlockKey, SearchTab.Percent(hit.Score, best))).ToList();
+            var hits = found.Select(hit => (Key: hit.NoteBlockKey, Percent: SearchTab.Percent(hit.Score, best))).ToList();
             await InvokeAsync(() =>
             {
                 if (_disposed || generation != _generation)
@@ -206,7 +212,8 @@
                     return;
                 }
 
-                _hits = hits;
+                // A card with an open "Wohin damit?" list stays where it is, also if the new list leaves its note out.
+                (_hits, _keptOnly) = WhereToPins.Merge(_hits, hits, hit => hit.Key, State.WhereToOpenNotes);
                 _computed = true;
                 StateHasChanged();
             });

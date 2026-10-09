@@ -66,7 +66,7 @@
             </div>
             @if (_whereTo.TryGetValue(child.Key, out var childList))
             {
-                @WhereToResults(childList, depth * 12)
+                @WhereToResults(childList, child, depth * 12)
             }
         }
     </div>
@@ -99,7 +99,7 @@
     </footer>
     @if (_whereTo.TryGetValue(Note.Block.Key, out var noteList))
     {
-        @WhereToResults(noteList, 0)
+        @WhereToResults(noteList, Note.Block, 0)
     }
     @if (_message is { } message)
     {
@@ -149,10 +149,11 @@
     }
 
     /// <summary>
-    /// A text block of the list: its heading path (empty in the prologue), the excerpt of its first line, the score in
-    /// percent of the best hit's, and whether its <c>source::</c> already names the searched block.
+    /// A text block of the list: its heading path (empty in the prologue), the excerpt of its first line and the score
+    /// in percent of the best hit's. Whether it already uses the searched block is read when the list renders
+    /// (<see cref="IsUsed"/>).
     /// </summary>
-    private sealed record WhereToHit(Guid Key, string Path, string Excerpt, int Percent, bool Used);
+    private sealed record WhereToHit(Guid Key, string Path, string Excerpt, int Percent);
 
     [Parameter, EditorRequired] public NoteBlock Note { get; set; } = default!;
 
@@ -198,7 +199,7 @@
             !string.Equals(State.CurrentBook?.LinkName, list.BookName, StringComparison.OrdinalIgnoreCase));
         if (sessionChanged || bookChanged || Note.Key != _whereNoteKey)
         {
-            _whereTo.Clear();
+            CloseAllWhereTo();
             _whereNoteKey = Note.Key;
         }
     }
@@ -223,8 +224,34 @@
     public void Dispose()
     {
         _disposed = true;
-        _whereTo.Clear();
+
+        // The card is gone with its lists; the tab that showed it no longer keeps a place for it.
+        if (_whereTo.Count > 0)
+        {
+            _whereTo.Clear();
+            State.CloseWhereTo(_whereNoteKey);
+        }
+
         Unsubscribe();
+    }
+
+    /// <summary>
+    /// Closes every "Wohin damit?" list of the card (see <see cref="OnParametersSet"/>). The tabs keep the card for an
+    /// open list (<see cref="AppState.WhereToOpenNotes"/>); they are told afterwards (outside this rendering), so a card
+    /// kept only for its list can go.
+    /// </summary>
+    private void CloseAllWhereTo()
+    {
+        if (_whereTo.Count == 0)
+        {
+            return;
+        }
+
+        _whereTo.Clear();
+        if (State.CloseWhereTo(_whereNoteKey))
+        {
+            _ = InvokeAsync(State.Notify);
+        }
     }
 
     /// <summary>Follows the AI status of the current session: the button appears when the AI becomes ready.</summary>
@@ -324,12 +351,18 @@
     /// note its text as indexed (<see cref="EmbeddingText.ForNote"/>), for a sub-bullet its own text with its
     /// descendants (<see cref="EmbeddingText.ForNoteBlock"/>). The text and the book snapshot are taken here on the UI
     /// thread; only the embedding and comparing run in the background (the vault model is not thread-safe), and the
-    /// paths and excerpts are read from that same snapshot.
+    /// paths and excerpts are read from that same snapshot. While the card has an open list, the tabs keep it at its
+    /// place (<see cref="AppState.WhereToOpenNotes"/>); after its last list is closed they are told, so it can go.
     /// </summary>
     private async Task ToggleWhereToAsync(Block block)
     {
         if (_whereTo.Remove(block.Key))
         {
+            if (_whereTo.Count == 0 && State.CloseWhereTo(Note.Key))
+            {
+                State.Notify();
+            }
+
             return;
         }
 
@@ -344,10 +377,10 @@
         // service embed exactly the sub-bullet's text instead.
         var noteKey = isNote ? Note.Key : Guid.Empty;
         var noteText = isNote ? EmbeddingText.ForNote(Note) : EmbeddingText.ForNoteBlock(block);
-        var sourceId = block.Id;
         var relevance = session.Relevance;
         var generation = ++_whereGeneration;
         _whereTo[block.Key] = new WhereToList(generation, book.LinkName);
+        State.OpenWhereTo(Note.Key);
         if (!isNote)
         {
             // The list of a sub-bullet stands in the body, which a collapsed card would cut off.
@@ -380,8 +413,7 @@
                     found.Hit.TextBlockKey,
                     HeadingPath(found.TextBlock!.Section),
                     Excerpt.FirstLine(found.TextBlock.Text, WhereToExcerptLength),
-                    SearchTab.Percent(found.Hit.Score, best),
-                    sourceId is { } id && found.TextBlock.Sources.Contains(id))),
+                    SearchTab.Percent(found.Hit.Score, best))),
         ];
     }
 
@@ -436,10 +468,21 @@
     }
 
     /// <summary>
-    /// A "Wohin damit?" list: the busy hint while it searches, then its hits or the hint that there are none.
-    /// <paramref name="indent"/> (pixels) aligns the list of a sub-bullet with it.
+    /// Whether the text block <paramref name="textBlockKey"/> of <paramref name="list"/> already names
+    /// <paramref name="block"/> in its <c>source::</c>: read from the block's current id (it gets one on its first
+    /// adoption) and the current book, while that is the list's book.
     /// </summary>
-    private RenderFragment WhereToResults(WhereToList list, int indent) =>
+    private bool IsUsed(WhereToList list, Block block, Guid textBlockKey) =>
+        block.Id is { } id
+        && State.CurrentBook is { } book
+        && string.Equals(book.LinkName, list.BookName, StringComparison.OrdinalIgnoreCase)
+        && book.FindTextBlock(textBlockKey)?.Sources.Contains(id) == true;
+
+    /// <summary>
+    /// The "Wohin damit?" list of <paramref name="block"/>: the busy hint while it searches, then its hits or the hint
+    /// that there are none. <paramref name="indent"/> (pixels) aligns the list of a sub-bullet with it.
+    /// </summary>
+    private RenderFragment WhereToResults(WhereToList list, Block block, int indent) =>
         @<div class="ne-note-whereto-results" style="@(indent > 0 ? $"margin-left: {indent}px" : null)">
             @if (list.Hits is not { } hits)
             {
@@ -462,7 +505,7 @@
                                     <span class="ne-note-whereto-path">@hit.Path</span>
                                 }
                                 <span class="ne-note-whereto-excerpt">@hit.Excerpt</span>
-                                @if (hit.Used)
+                                @if (IsUsed(list, block, hit.Key))
                                 {
                                     <span class="ne-note-whereto-used">✓</span>
                                 }

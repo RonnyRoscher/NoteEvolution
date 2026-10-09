@@ -227,6 +227,143 @@ public class WhereToTests : UiTestContext
     }
 
 
+    [Theory]
+    [InlineData(AdoptVariant.AtCursor)]
+    [InlineData(AdoptVariant.After)]
+    [InlineData(AdoptVariant.Below)]
+    public async Task WhereTo_AdoptAtHit_EveryVariant_CheckFollowsWithoutReopening(AdoptVariant variant)
+    {
+        var tv = Vault();
+        var session = await OpenWithAiAsync(tv);
+        var note = Note(session, NoteText);
+        Assert.Null(note.Block.Id);
+        var cut = RenderCard(session);
+        cut.Find(".ne-note-whereto").Click();
+        cut.WaitForAssertion(() => Assert.Equal(5, cut.FindAll(".ne-note-whereto-item").Count));
+        var hitExcerpt = Excerpt(cut.FindAll(".ne-note-whereto-item")[1]);
+        var hit = TextBlock(hitExcerpt);
+        cut.FindAll(".ne-note-whereto-item")[1].Click();
+        cut.WaitForAssertion(() => Assert.Equal(hit.Key, State.PendingReveal));
+
+        cut.Find(".ne-note-adopt-more").Click();
+        cut.Find(variant switch
+        {
+            AdoptVariant.AtCursor => ".ne-adopt-at-cursor",
+            AdoptVariant.After => ".ne-adopt-after",
+            _ => ".ne-adopt-below",
+        }).Click();
+
+        cut.WaitForAssertion(() => Assert.NotNull(note.Block.Id));
+        var noteId = note.Block.Id!.Value;
+        var target = State.CurrentBook!.FindTextBlock(hit.Key)!;
+        switch (variant)
+        {
+            case AdoptVariant.AtCursor:
+                Assert.Equal(NoteText + hit.Text, target.Text);
+                Assert.Contains(noteId, target.Sources);
+                break;
+            case AdoptVariant.After:
+                var blocks = target.Section.TextBlocks.ToList();
+                var added = blocks[blocks.FindIndex(tb => tb.Key == hit.Key) + 1];
+                Assert.Equal(NoteText, added.Text);
+                Assert.Contains(noteId, added.Sources);
+                Assert.DoesNotContain(noteId, target.Sources);
+                break;
+            default:
+                Assert.Equal(NoteText, target.Paragraphs[0].Text);
+                Assert.Contains(noteId, target.Sources);
+                break;
+        }
+
+        // The list stays open; the hit the note went into is marked at once (a new text block is not in the list).
+        var items = cut.FindAll(".ne-note-whereto-item");
+        Assert.Equal(5, items.Count);
+        Assert.Equal(
+            variant == AdoptVariant.After ? [] : [hitExcerpt],
+            items.Where(item => item.QuerySelector(".ne-note-whereto-used") is not null).Select(Excerpt).ToList());
+    }
+
+    [Fact]
+    public async Task WhereTo_SubBulletWithoutId_CheckFollowsAfterAdoptingAtHit()
+    {
+        var tv = Vault();
+        var session = await OpenWithAiAsync(tv);
+        var note = Note(session, OtherText);
+        var child = note.Block.Children.Single();
+        Assert.Null(child.Id);
+        var cut = Render<NoteCard>(p => p.Add(c => c.Note, note));
+        cut.Find(".ne-note-child-whereto").Click();
+        cut.WaitForAssertion(() => Assert.Equal(5, cut.FindAll(".ne-note-body .ne-note-whereto-item").Count));
+        var hit = TextBlock(ChildText);
+        Assert.Equal(ChildText, Excerpt(cut.FindAll(".ne-note-body .ne-note-whereto-item")[0]));
+        cut.FindAll(".ne-note-body .ne-note-whereto-item")[0].Click();
+        cut.WaitForAssertion(() => Assert.Equal(hit.Key, State.PendingReveal));
+
+        cut.Find(".ne-note-child-adopt").Click();
+
+        cut.WaitForAssertion(() => Assert.Single(cut.FindAll(".ne-note-body .ne-note-whereto-used")));
+        Assert.NotNull(child.Id);
+        Assert.Contains(child.Id!.Value, State.CurrentBook!.FindTextBlock(hit.Key)!.Sources);
+        var used = cut.FindAll(".ne-note-body .ne-note-whereto-item").Single(item => item.QuerySelector(".ne-note-whereto-used") is not null);
+        Assert.Equal(ChildText, Excerpt(used));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task WhereTo_HideUsed_AdoptedNoteStaysWhileItsListIsOpen(bool search)
+    {
+        const string journalPath = "journals/2026_10_01.md";
+        const string otherPath = "pages/Andere.md";
+        var tv = TestVault.Create(
+            (AlphaPath, "title:: Alpha\ntype:: book\n\n- # Schlafen\n\t- Schlaf und Träume im Alltag\n- # Musizieren\n\t- Musik Gitarre spielen\n"),
+            (journalPath, "- Erste Notiz über Schlaf\n- Schlaf und Träume im Alltag\n- Dritte Notiz über Schlaf\n"),
+            (otherPath, "- Etwas anderes\n"));
+        _vaults.Add(tv);
+        var session = await OpenWithAiAsync(tv);
+        var cut = Render<NotesPane>();
+        cut.Find(".ne-hide-used").Change(true);
+        if (search)
+        {
+            cut.Find(".ne-tab-search").Click();
+            cut.WaitForElement(".ne-search-input").Input("Schlaf");
+            Time.Advance(TimeSpan.FromMilliseconds(300));
+        }
+        else
+        {
+            cut.Find(".ne-tab-journal").Click();
+        }
+
+        List<string> Texts() => [.. cut.FindAll(".ne-note-card > .ne-note-body > .ne-note-text").Select(e => e.TextContent.Trim())];
+        cut.WaitForAssertion(() => Assert.Equal(3, Texts().Count(text => text.Contains("Schlaf", StringComparison.Ordinal))));
+        var index = Texts().IndexOf(NoteText);
+        Assert.True(index >= 0);
+        var card = cut.FindAll(".ne-note-card")[index];
+        card.QuerySelector(".ne-note-whereto")!.Click();
+        cut.WaitForAssertion(() => Assert.NotEmpty(cut.FindAll(".ne-note-whereto-item")));
+        cut.FindAll(".ne-note-whereto-item")[0].Click();
+        cut.WaitForAssertion(() => Assert.NotNull(State.PendingReveal));
+        cut.FindAll(".ne-note-card")[index].QuerySelector(".ne-note-adopt")!.Click();
+        cut.WaitForAssertion(() => Assert.True(Note(session, NoteText).IsUsed));
+
+        // Another page changes: the tab reads its notes again, which leaves out the used note, but not while its list is open.
+        var rendered = cut.RenderCount;
+        File.WriteAllText(Path.Combine(tv.Root, otherPath), "- Etwas ganz anderes\n");
+        await cut.InvokeAsync(() => session.HandleExternalChange(Path.Combine(tv.Root, otherPath)));
+        cut.WaitForState(() => cut.RenderCount > rendered);
+        Assert.Equal(index, Texts().IndexOf(NoteText));
+        Assert.NotEmpty(cut.FindAll(".ne-note-card")[index].QuerySelectorAll(".ne-note-whereto-item"));
+        Assert.NotNull(cut.FindAll(".ne-note-card")[index].QuerySelector(".ne-note-used"));
+        Assert.Equal([Note(session, NoteText).Key], State.WhereToOpenNotes);
+
+        // Closing the list lets it go.
+        cut.FindAll(".ne-note-card")[index].QuerySelector(".ne-note-whereto")!.Click();
+
+        cut.WaitForAssertion(() => Assert.DoesNotContain(NoteText, Texts()));
+        Assert.Equal(2, Texts().Count(text => text.Contains("Schlaf", StringComparison.Ordinal)));
+        Assert.Empty(State.WhereToOpenNotes);
+    }
+
     [Fact]
     public async Task WhereTo_CardReusedForAnotherNote_ClosesTheListAndDropsALateResult()
     {

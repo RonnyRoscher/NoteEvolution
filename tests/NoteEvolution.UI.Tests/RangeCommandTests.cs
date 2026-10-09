@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json.Nodes;
 using Bunit;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Localization;
@@ -57,14 +58,27 @@ public class RangeCommandTests : UiTestContext
 
     private readonly TestVault _vault = TestVault.Create((BookPath, BookText), (NotesPath, NotesText));
 
+    /// <summary>Vaults a test opens instead of <see cref="_vault"/>.</summary>
+    private readonly List<TestVault> _otherVaults = [];
+
     protected override void Dispose(bool disposing)
     {
-        // The session is closed first, then the vault folder is deleted.
+        // The session is closed first, then the vault folders are deleted.
         base.Dispose(disposing);
         if (disposing)
         {
             _vault.Dispose();
+            _otherVaults.ForEach(v => v.Dispose());
         }
+    }
+
+    /// <summary>Opens a vault with only the book <paramref name="bookText"/> (at <see cref="BookPath"/>) instead of <see cref="_vault"/>.</summary>
+    private async Task<TestVault> OpenOtherAsync(string bookText)
+    {
+        var vault = TestVault.Create((BookPath, bookText));
+        _otherVaults.Add(vault);
+        await OpenSessionAsync(vault);
+        return vault;
     }
 
     private Book Book => State.CurrentBook!;
@@ -417,5 +431,152 @@ public class RangeCommandTests : UiTestContext
         Assert.Equal(NotesText, _vault.Read(NotesPath));
         header.WaitForAssertion(() => Assert.Empty(header.FindAll(".ne-undo-error")));
         Assert.False(session.Undo.CanUndo);
+    }
+
+    [Fact]
+    public async Task DeleteIndentOutdent_OwnOnlyRange_RefusedWhenTheElementHasSubElements()
+    {
+        const string book =
+            "title:: Alpha\ntype:: book\n\n" +
+            "- # Eins\n" +
+            "\t- ## Eins-0\n" +
+            "\t- ## Eins-A\n" +
+            "\t\t- Text\n" +
+            "\t\t\t- Detail\n" +
+            "\t\t\t\t- Tiefer\n" +
+            "\t\t- Ohne\n" +
+            "\t\t- ### Tief\n";
+        var vault = await OpenOtherAsync(book);
+        var session = State.Session!;
+
+        void At(string content, int level)
+        {
+            var element = BookElements.Find(Book, KeyOf(content))!;
+            State.Cursor = new CursorInfo(element.Kind, element.Key, BookElements.TextBlockOf(Book, element)?.Key, 0);
+            State.RangeLevel = level;
+        }
+
+        bool CanRun(SectionCommand command) => ManuscriptCommands.CanRun(State, command);
+
+        // Level 0 marks the element with everything below it, which is what the commands act on.
+        At("## Eins-A", 0);
+        Assert.Equal([true, true, true], new[] { CanRun(SectionCommand.Delete), CanRun(SectionCommand.Indent), CanRun(SectionCommand.Outdent) });
+        At("Text", 0);
+        Assert.True(CanRun(SectionCommand.Delete));
+        At("Detail", 0);
+        Assert.True(CanRun(SectionCommand.Delete));
+
+        // Level −1 marks less than a heading with sub-headings, a text block with details or a detail with deeper ones.
+        At("## Eins-A", -1);
+        Assert.Equal([false, false, false], new[] { CanRun(SectionCommand.Delete), CanRun(SectionCommand.Indent), CanRun(SectionCommand.Outdent) });
+        Assert.Null(await Run(SectionCommand.Delete));
+        Assert.Null(await Run(SectionCommand.Outdent));
+        At("Text", -1);
+        Assert.False(CanRun(SectionCommand.Delete));
+        Assert.Null(await Run(SectionCommand.Delete));
+        At("Detail", -1);
+        Assert.False(CanRun(SectionCommand.Delete));
+        Assert.Null(await Run(SectionCommand.Delete));
+        Assert.Equal(book, vault.Read(BookPath));
+        Assert.False(session.Undo.CanUndo);
+
+        // Without sub-elements level −1 marks all the commands act on.
+        At("### Tief", -1);
+        Assert.True(CanRun(SectionCommand.Delete));
+        Assert.True(CanRun(SectionCommand.Outdent));
+        At("Ohne", -1);
+        Assert.True(CanRun(SectionCommand.Delete));
+        At("Tiefer", -1);
+        Assert.True(CanRun(SectionCommand.Delete));
+        At("## Eins-0", -1);
+        Assert.True(CanRun(SectionCommand.Delete));
+        Assert.True(CanRun(SectionCommand.Outdent));
+
+        Task<AdoptMessage?> Run(SectionCommand command) =>
+            ManuscriptCommands.RunAsync(State, command, "x", NullLogger.Instance);
+    }
+
+    [Fact]
+    public async Task Merge_ConflictingProperties_RefusedWithMessage()
+    {
+        const string book =
+            "title:: Alpha\ntype:: book\n\n" +
+            "- # Eins\n" +
+            "\t- Erster Text\n" +
+            "\t  status:: offen\n" +
+            "\t- Zweiter Text\n" +
+            "\t  status:: fertig\n";
+        var vault = await OpenOtherAsync(book);
+        State.Cursor = CursorOf("# Eins");
+        Assert.True(ManuscriptCommands.CanRun(State, SectionCommand.Merge));
+
+        var message = await ManuscriptCommands.RunAsync(State, SectionCommand.Merge, "x", NullLogger.Instance);
+
+        Assert.Equal(new AdoptMessage("SectionMergeRefused", true), message);
+        Assert.Equal(
+            "Die Blöcke lassen sich nicht zusammenfügen: unterschiedliche Eigenschaften oder ein Verweis an anderer Stelle.",
+            Text("SectionMergeRefused"));
+        Assert.Equal(book, vault.Read(BookPath));
+        Assert.False(State.Session!.Undo.CanUndo);
+    }
+
+    [Theory]
+    [InlineData(SectionCommand.Merge)]
+    [InlineData(SectionCommand.Wrap)]
+    public async Task MergeWrap_UnsavedEditorText_Refused(SectionCommand command)
+    {
+        var cut = await RenderAsync();
+        var session = State.Session!;
+        await MoveToAsync(cut, "# Eins");
+        cut.WaitForAssertion(() => Assert.True(ManuscriptCommands.CanRun(State, command)));
+        State.HasUnsavedEditorText = () => true;
+
+        var message = await cut.InvokeAsync(() => ManuscriptCommands.RunAsync(State, command, "x", NullLogger.Instance));
+
+        Assert.Equal(new AdoptMessage("SectionCommandUnsaved", true), message);
+        Assert.Equal(BookText, _vault.Read(BookPath));
+        Assert.Equal(NotesText, _vault.Read(NotesPath));
+        Assert.False(session.Undo.CanUndo);
+    }
+
+    [Theory]
+    [InlineData(SectionCommand.Merge, 2)]
+    [InlineData(SectionCommand.Wrap, 1)]
+    public async Task MergeWrap_RangeChangedBySave_Refused(SectionCommand command, int level)
+    {
+        var cut = await RenderAsync();
+        var session = State.Session!;
+        var erster = KeyOf("Erster Text");
+
+        // The editor has a new detail in "Erster Text" that the book only knows after the save.
+        var detail = Guid.NewGuid();
+        var doc = JsonNode.Parse(Editor.Json)!;
+        var textBlock = doc["content"]!.AsArray().Single(n => (string?)n!["attrs"]?["key"] == erster.ToString("D"))!;
+        textBlock["content"]!.AsArray().Add(new JsonObject
+        {
+            ["type"] = "para",
+            ["attrs"] = new JsonObject { ["key"] = detail.ToString("D"), ["depth"] = 1, ["isNote"] = false },
+            ["content"] = new JsonArray(new JsonObject { ["type"] = "text", ["text"] = "Neues Detail" }),
+        });
+        await cut.InvokeAsync(() => Editor.Callbacks!.OnDocumentChanged(doc.ToJsonString()));
+        await cut.InvokeAsync(() => Editor.Callbacks!.OnCursorChanged(new CursorInfo(ElementKind.Detail, detail, erster, 0)));
+        Assert.Equal(new BookElement(ElementKind.TextBlock, erster), State.CurrentElement);
+        for (var i = 0; i < level; i++)
+        {
+            await ClickAsync(cut, ".ne-range-up");
+        }
+
+        // Before the save the range is that of "# Eins" (Wrap) or of the whole book (Merge).
+        cut.WaitForAssertion(() => Assert.Equal(level == 1 ? Text("RangeHeading", "# Eins") : Text("RangeBook"), Label(cut)));
+        Assert.True(ManuscriptCommands.CanRun(State, command));
+
+        var message = await cut.InvokeAsync(() => ManuscriptCommands.RunAsync(State, command, "x", NullLogger.Instance));
+
+        // The save makes the detail the cursor element, so the same level is another range: nothing is merged or wrapped.
+        Assert.Null(message);
+        Assert.Equal(BookText.Replace("\t\t- Ein Detail\n", "\t\t- Ein Detail\n\t\t- Neues Detail\n"), _vault.Read(BookPath));
+        Assert.Equal(NotesText, _vault.Read(NotesPath));
+        Assert.NotEqual("Zusammenfügen", session.Undo.NextDescription);
+        Assert.NotEqual(Text("UndoWrap"), session.Undo.NextDescription);
     }
 }

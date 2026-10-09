@@ -31,7 +31,10 @@ public enum SectionCommand
     /// <summary>Backspace at the start of a heading's title: the heading goes, its content stays.</summary>
     RemoveHeading,
 
-    /// <summary>Button only: the element with everything it marks.</summary>
+    /// <summary>
+    /// Button only: the element with everything below it (sub-sections, details). At range level −1, which marks the
+    /// element alone, it is only possible on an element without sub-elements.
+    /// </summary>
     Delete,
 
     /// <summary>Alt+Up: the range one level higher.</summary>
