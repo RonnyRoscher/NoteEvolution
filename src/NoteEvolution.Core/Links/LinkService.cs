@@ -13,6 +13,7 @@ public sealed class LinkService(IVault vault, IPageWriter writer, UndoManager un
 {
     private const string SourceKey = "source";
     private const string UsedInKey = "used-in";
+    private const string IdKey = "id";
 
     public AdoptResult Adopt(Book book, Guid noteBlockKey, InsertPosition position)
     {
@@ -236,40 +237,61 @@ public sealed class LinkService(IVault vault, IPageWriter writer, UndoManager un
             throw new ArgumentException("A text block is given twice.", nameof(groups));
         }
 
-        var contents = merges.Select(blocks => string.Join("\n\n", blocks.Select(block => block.Content))).ToList();
+        var contents = merges.Select(MergedContent).ToList();
         contents.ForEach(Block.ValidateContent);
+        var plans = merges.Select(PlanMerge).ToList();
+        EnsureUnreferenced(book, [.. plans.SelectMany(plan => plan.RemovedIds).Distinct()]);
 
         var before = PageStructureSnapshot.Capture(page);
         var moves = new List<(Guid FirstId, Guid RemovedId, IReadOnlyList<Guid> Sources)>();
-        foreach (var (blocks, content) in merges.Zip(contents))
+        try
         {
-            var first = blocks[0];
-            var later = blocks.Skip(1).ToList();
-            foreach (var block in later)
+            foreach (var ((blocks, content), plan) in merges.Zip(contents).Zip(plans))
             {
-                var sources = SourceValue.Parse(block.GetProperty(SourceKey) ?? "");
-                if (block.Id is { } removedId && sources.Count > 0)
+                var first = blocks[0];
+                var later = blocks.Skip(1).ToList();
+                if (plan.TakenId is { } takenId)
                 {
-                    // A linked block: the notes' usages of it move to the first block, which needs an id for that.
-                    moves.Add((first.EnsureId(), removedId, [.. sources.Distinct()]));
+                    first.SetProperty(IdKey, takenId);
                 }
 
-                foreach (var noteId in sources)
+                foreach (var property in plan.Carried)
                 {
-                    AddSource(first, noteId);
+                    first.SetProperty(property.Key, property.Value);
+                }
+
+                foreach (var block in later)
+                {
+                    var sources = SourceValue.Parse(block.GetProperty(SourceKey) ?? "");
+                    if (block.Id is { } removedId && removedId != first.Id && sources.Count > 0)
+                    {
+                        // A linked block: the notes' usages of it move to the first block, which needs an id for that.
+                        moves.Add((first.EnsureId(), removedId, [.. sources.Distinct()]));
+                    }
+
+                    foreach (var noteId in sources)
+                    {
+                        AddSource(first, noteId);
+                    }
+                }
+
+                first.SetContent(content);
+                foreach (var block in later)
+                {
+                    foreach (var detail in block.Children.ToList())
+                    {
+                        page.MoveBlock(detail, first, first.Children.Count);
+                    }
+
+                    page.RemoveBlock(block);
                 }
             }
-
-            first.SetContent(content);
-            foreach (var block in later)
-            {
-                foreach (var detail in block.Children.ToList())
-                {
-                    page.MoveBlock(detail, first, first.Children.Count);
-                }
-
-                page.RemoveBlock(block);
-            }
+        }
+        catch
+        {
+            // Whatever failed half-way, the page is left as it was.
+            before.RestoreInto(page);
+            throw;
         }
 
         SaveBook(page, () => before.RestoreInto(page));
@@ -314,6 +336,100 @@ public sealed class LinkService(IVault vault, IPageWriter writer, UndoManager un
         }
 
         return blocks;
+    }
+
+    /// <summary>
+    /// The content of a merged group: the blocks' contents joined by a blank line, blank ones left out (an empty first
+    /// block takes the next text); the first block's own content if all are blank.
+    /// </summary>
+    private static string MergedContent(List<Block> blocks)
+    {
+        var texts = blocks.Select(block => block.Content).Where(content => !string.IsNullOrWhiteSpace(content)).ToList();
+        return texts.Count > 0 ? string.Join("\n\n", texts) : blocks[0].Content;
+    }
+
+    /// <summary>
+    /// What merging <paramref name="blocks"/> does to the first block's properties besides <c>source::</c>: the
+    /// <c>id::</c> it takes over (raw value), the properties it gets from the later blocks, and the ids that go.
+    /// </summary>
+    /// <param name="TakenId">The first later block's <c>id::</c> with a valid id when the first block has none; else <c>null</c>.</param>
+    /// <param name="Carried">The later blocks' properties (other than <c>id::</c> and <c>source::</c>) the first block lacks.</param>
+    /// <param name="RemovedIds">The ids of the later blocks that vanish (not the one taken over).</param>
+    private sealed record MergePlan(string? TakenId, IReadOnlyList<BlockProperty> Carried, IReadOnlyList<Guid> RemovedIds);
+
+    /// <summary>
+    /// Plans the properties of one group (see <see cref="MergePlan"/>): a later block's property is carried over when
+    /// the first block (or an earlier later block) does not have its key yet (ignoring case).
+    /// </summary>
+    /// <exception cref="MergeRefusedException">Two of the blocks have different values for the same key.</exception>
+    private static MergePlan PlanMerge(List<Block> blocks)
+    {
+        var first = blocks[0];
+        var later = blocks.Skip(1).ToList();
+        var taken = first.Id is null ? later.FirstOrDefault(block => block.Id is not null) : null;
+        var keptId = first.Id ?? taken?.Id;
+
+        bool MergedSeparately(BlockProperty property) =>
+            string.Equals(property.Key, IdKey, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(property.Key, SourceKey, StringComparison.OrdinalIgnoreCase);
+
+        var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var property in first.Properties.Where(p => !MergedSeparately(p)))
+        {
+            values.TryAdd(property.Key, property.Value);
+        }
+
+        var carried = new List<BlockProperty>();
+        foreach (var property in later.SelectMany(block => block.Properties).Where(p => !MergedSeparately(p)))
+        {
+            if (values.TryGetValue(property.Key, out var value))
+            {
+                if (!string.Equals(value, property.Value, StringComparison.Ordinal))
+                {
+                    throw new MergeRefusedException($"The text blocks have different values for the property '{property.Key}'.");
+                }
+            }
+            else
+            {
+                values.Add(property.Key, property.Value);
+                carried.Add(property);
+            }
+        }
+
+        var removedIds = later.Select(block => block.Id).OfType<Guid>().Where(id => id != keptId).Distinct().ToList();
+        return new MergePlan(taken?.GetProperty(IdKey), carried, removedIds);
+    }
+
+    /// <summary>
+    /// Refuses a merge when a block reference <c>((id))</c> to one of <paramref name="removedIds"/> stands anywhere in
+    /// the vault (page lines before the first block, block texts, property values) other than in a <c>used-in::</c>
+    /// value (which the merge rewrites) or a <c>source::</c> value of the book itself.
+    /// </summary>
+    /// <exception cref="MergeRefusedException">Such a reference exists.</exception>
+    private void EnsureUnreferenced(Book book, IReadOnlyList<Guid> removedIds)
+    {
+        if (removedIds.Count == 0)
+        {
+            return;
+        }
+
+        var references = removedIds.Select(id => $"(({id:D}))").ToList();
+        bool Mentions(string text) => references.Any(reference => text.Contains(reference, StringComparison.OrdinalIgnoreCase));
+
+        foreach (var page in vault.Pages)
+        {
+            var isBook = ReferenceEquals(page, book.Page);
+            bool Rewritten(BlockProperty property) =>
+                string.Equals(property.Key, UsedInKey, StringComparison.OrdinalIgnoreCase)
+                || (isBook && string.Equals(property.Key, SourceKey, StringComparison.OrdinalIgnoreCase));
+
+            if (page.PrefixLines.Any(line => Mentions(line.Text))
+                || page.AllBlocks().Any(block =>
+                    Mentions(block.Content) || block.Properties.Any(property => !Rewritten(property) && Mentions(property.Value))))
+            {
+                throw new MergeRefusedException($"The id of a text block that would go is referenced in '{page.FilePath}'.");
+            }
+        }
     }
 
     /// <summary>

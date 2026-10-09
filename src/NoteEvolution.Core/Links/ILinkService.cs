@@ -76,18 +76,25 @@ public interface ILinkService
 
     /// <summary>
     /// Merges each group of text blocks (keys of sibling text blocks, the first one stays) into its first block: the
-    /// first block's content becomes the contents of all blocks joined by a blank line (<c>"\n\n"</c>), the details of
-    /// the later blocks are moved, in order, behind its details, and the later blocks are removed. The first block gets
-    /// the union of all <c>source::</c> values (first-seen order) and, if a later block was linked, an <c>id::</c>.
-    /// Then every note whose <c>used-in::</c> referenced a removed block references the first block instead, in place;
-    /// an entry that would duplicate one already there is dropped. Can be undone („Zusammenfügen“) as long as the book
-    /// is still exactly as this left it: the book and the notes still as this left them get their former bytes back,
-    /// other notes get their former usages added again.
+    /// first block's content becomes the contents of all blocks joined by a blank line (<c>"\n\n"</c>; blank contents
+    /// are left out, so an empty first block takes the next text), the details of the later blocks are moved, in order,
+    /// behind its details, and the later blocks are removed. The first block gets the union of all <c>source::</c>
+    /// values (first-seen order); without an <c>id::</c> of its own it takes over the <c>id::</c> of the first later
+    /// block that has one, else it gets a new one if a later block was linked. The later blocks' other properties are
+    /// carried over where the first block lacks the key. Then every note whose <c>used-in::</c> referenced a removed
+    /// block references the first block instead, in place; an entry that would duplicate one already there is dropped.
+    /// Can be undone („Zusammenfügen“) as long as the book is still exactly as this left it: the book and the notes
+    /// still as this left them get their former bytes back, other notes get their former usages added again.
     /// </summary>
     /// <returns>The key of the first block of the first group.</returns>
     /// <exception cref="ArgumentException">
     /// No group, an unknown text block key or one given twice, a group with fewer than two blocks or with blocks that
     /// are not siblings, or merged content that would not stay one block; nothing was changed.
+    /// </exception>
+    /// <exception cref="MergeRefusedException">
+    /// Blocks of a group have different values for the same property, or the <c>id::</c> of a block that would go is
+    /// referenced (<c>((id))</c>) elsewhere in the vault than in the notes' <c>used-in::</c> and the book's
+    /// <c>source::</c> values; nothing was changed.
     /// </exception>
     /// <exception cref="ReadOnlyPageException">The book page is read-only.</exception>
     Guid MergeTextBlocks(Book book, IReadOnlyList<IReadOnlyList<Guid>> groups);

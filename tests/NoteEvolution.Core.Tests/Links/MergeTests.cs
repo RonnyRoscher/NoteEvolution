@@ -157,7 +157,7 @@ public class MergeTests
     public void Merge_SeveralGroups()
     {
         // Group 1: a linked first block, an unlinked second one. Group 2: the linked block is the second one, so the
-        // first gets an id.
+        // first takes over its id (the notes' usages stay as they are).
         var book =
             "title:: Buch: Test\n" +
             "type:: book\n" +
@@ -188,17 +188,16 @@ public class MergeTests
             s.Book, [[a, s.Text("Text B").Key], [s.Text("Text C").Key, s.Text("Text D").Key, s.Text("Text E").Key]]);
 
         Assert.Equal(a, key);
-        var newId = s.Text("Text C\n\nText D\n\nText E").Block.Id;
-        Assert.NotNull(newId);
+        Assert.Equal(Guid.Parse(B2), s.Text("Text C\n\nText D\n\nText E").Block.Id);
         Assert.Equal(
             "title:: Buch: Test\ntype:: book\n\n- # Kapitel\n" +
             $"\t- Text A\n\t  id:: {B1}\n\t  source:: (({N1}))\n\n\t  Text B\n" +
             "\t- ## Abschnitt\n" +
-            $"\t\t- Text C\n\t\t  id:: {newId}\n\t\t  source:: (({N2}))\n\n\t\t  Text D\n\n\t\t  Text E\n" +
+            $"\t\t- Text C\n\t\t  id:: {B2}\n\t\t  source:: (({N2}))\n\n\t\t  Text D\n\n\t\t  Text E\n" +
             "\t\t\t- Absatz D\n",
             s.ReadBook());
-        AssertChangedLines(book, s.ReadBook(), removed: [7, 10, 11, 14], added: [7, 8, 11, 13, 14, 15, 16]);
-        Assert.Equal(journal.Replace($"(({B2}))", $"(({newId}))"), s.ReadJournal());
+        AssertChangedLines(book, s.ReadBook(), removed: [7, 10, 14], added: [7, 8, 13, 14, 15, 16]);
+        Assert.Equal(journal, s.ReadJournal());
         Assert.Equal("Zusammenfügen", s.Undo.NextDescription);
 
         s.Undo.Undo();
@@ -206,6 +205,152 @@ public class MergeTests
         Assert.Equal(book, s.ReadBook());
         Assert.Equal(journal, s.ReadJournal());
         Assert.False(s.Undo.CanUndo);
+    }
+
+    [Fact]
+    public void Merge_FirstWithoutId_TakesOverTheIdOfTheFirstLaterBlockWithOne()
+    {
+        var book =
+            "title:: Buch: Test\n" +
+            "type:: book\n" +
+            "\n" +
+            "- # Kapitel\n" +
+            "\t- Text A\n" +
+            "\t- Text B\n" +
+            $"\t  id:: {B2}\n" +
+            $"\t  source:: (({N2}))\n" +
+            "\t- Text C\n" +
+            $"\t  id:: {B3}\n" +
+            $"\t  source:: (({N1}))\n";
+        var journal =
+            "- Erste Quelle\n" +
+            $"  id:: {N1}\n" +
+            $"  used-in:: [[Buch - Test]] (({B3}))\n" +
+            "- Zweite Quelle\n" +
+            $"  id:: {N2}\n" +
+            $"  used-in:: [[Buch - Test]] (({B2}))\n";
+        using var s = new LinkSetup(book, journal);
+
+        s.Links.MergeTextBlocks(s.Book, [[s.Text("Text A").Key, s.Text("Text B").Key, s.Text("Text C").Key]]);
+
+        // No new id is minted: the first block goes on as Text B's block, so only Text C's usage moves.
+        Assert.Equal(
+            "title:: Buch: Test\ntype:: book\n\n- # Kapitel\n" +
+            $"\t- Text A\n\t  id:: {B2}\n\t  source:: (({N2})), (({N1}))\n\n\t  Text B\n\n\t  Text C\n",
+            s.ReadBook());
+        AssertChangedLines(book, s.ReadBook(), removed: [5, 7, 8, 9, 10], added: [6, 7, 8, 9, 10]);
+        var merged = journal.Replace($"(({B3}))", $"(({B2}))");
+        Assert.Equal(merged, s.ReadJournal());
+        AssertChangedLines(journal, s.ReadJournal(), removed: [2], added: [2]);
+        Assert.Empty(s.Pending.Load());
+
+        s.Undo.Undo();
+
+        Assert.Equal(book, s.ReadBook());
+        Assert.Equal(journal, s.ReadJournal());
+    }
+
+    [Fact]
+    public void Merge_PropertiesOfLaterBlocks_CarriedOver_WhereTheFirstLacksThem()
+    {
+        var book =
+            "title:: Buch: Test\n" +
+            "type:: book\n" +
+            "\n" +
+            "- # Kapitel\n" +
+            "\t- Text A\n" +
+            "\t  status:: offen\n" +
+            "\t- Text B\n" +
+            "\t  farbe:: rot\n" +
+            "\t  Status:: offen\n" +
+            "\t- Text C\n" +
+            "\t  collapsed:: true\n" +
+            "\t\t- Detail C\n";
+        using var s = new LinkSetup(book);
+
+        s.Links.MergeTextBlocks(s.Book, [[s.Text("Text A").Key, s.Text("Text B").Key, s.Text("Text C").Key]]);
+
+        // The same value under the same key (ignoring case) is no conflict; the first block's line stays as it is.
+        var expected =
+            "title:: Buch: Test\ntype:: book\n\n- # Kapitel\n" +
+            "\t- Text A\n\t  status:: offen\n\t  farbe:: rot\n\t  collapsed:: true\n\n\t  Text B\n\n\t  Text C\n" +
+            "\t\t- Detail C\n";
+        Assert.Equal(expected, s.ReadBook());
+        AssertChangedLines(book, s.ReadBook(), removed: [6, 8, 9], added: [8, 9, 10, 11]);
+        Assert.Equal(LinkSetup.DefaultJournal, s.ReadJournal());
+
+        s.Undo.Undo();
+
+        Assert.Equal(book, s.ReadBook());
+    }
+
+    [Theory]
+    [InlineData("\t  farbe:: rot\n", "\t  farbe:: blau\n", "")]
+    [InlineData("", "\t  farbe:: rot\n", "\t  farbe:: blau\n")]
+    public void Merge_ConflictingProperty_Refused_NothingChanged(string a, string b, string c)
+    {
+        // The first block's value differs from a later one's, or two later blocks bring different values.
+        var book =
+            "title:: Buch: Test\ntype:: book\n\n- # Kapitel\n" +
+            "\t- Text A\n" + a +
+            "\t- Text B\n" + b +
+            "\t- Text C\n" + c;
+        using var s = new LinkSetup(book);
+
+        Assert.Throws<MergeRefusedException>(
+            () => s.Links.MergeTextBlocks(s.Book, [[s.Text("Text A").Key, s.Text("Text B").Key, s.Text("Text C").Key]]));
+
+        Assert.Equal(book, s.ReadBook());
+        Assert.Equal(LinkSetup.DefaultJournal, s.ReadJournal());
+        Assert.False(s.Book.Page.IsDirty);
+        Assert.Equal(3, s.Book.Root.Children.Single().TextBlocks.Count());
+        Assert.False(s.Undo.CanUndo);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void Merge_IdOfARemovedBlockReferencedElsewhere_Refused_NothingChanged(bool inNotes)
+    {
+        // Text B's id would go: a block reference to it in another page, or in another block of the book, refuses.
+        var reference = $"Siehe (({B2.ToUpperInvariant()}))";
+        var book = inNotes ? LinkedBook : LinkedBook.Replace("\t- Anderer Text\n", $"\t- Anderer Text, {reference}\n");
+        var journal = inNotes ? LinkedJournal + $"- {reference}\r\n" : LinkedJournal;
+        using var s = new LinkSetup(book, journal);
+
+        Assert.Throws<MergeRefusedException>(
+            () => s.Links.MergeTextBlocks(s.Book, [[s.Text("Text A").Key, s.Text("Text B").Key]]));
+
+        Assert.Equal(book, s.ReadBook());
+        Assert.Equal(journal, s.ReadJournal());
+        Assert.False(s.Book.Page.IsDirty);
+        Assert.False(s.Journal.IsDirty);
+        Assert.False(s.Undo.CanUndo);
+    }
+
+    [Fact]
+    public void Merge_BlankBlocks_AddNothing()
+    {
+        var book =
+            "title:: Buch: Test\ntype:: book\n\n- # Kapitel\n" +
+            "\t-\n" +
+            "\t- Zweiter Text\n" +
+            "\t-\n" +
+            "\t\t- Detail\n" +
+            "\t- Vierter Text\n";
+        using var s = new LinkSetup(book);
+        var keys = s.Book.Root.Children.Single().TextBlocks.Select(t => t.Key).ToList();
+
+        var key = s.Links.MergeTextBlocks(s.Book, [keys]);
+
+        // The empty first block takes the next text; the empty third adds no blank lines, only its detail.
+        Assert.Equal(keys[0], key);
+        var expected =
+            "title:: Buch: Test\ntype:: book\n\n- # Kapitel\n" +
+            "\t- Zweiter Text\n\n\t  Vierter Text\n" +
+            "\t\t- Detail\n";
+        Assert.Equal(expected, s.ReadBook());
+        AssertChangedLines(book, s.ReadBook(), removed: [4, 6, 8], added: [5, 6]);
     }
 
     [Fact]
