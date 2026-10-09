@@ -219,6 +219,89 @@ public sealed class RelevanceServiceTests : IDisposable
     }
 
     [Fact]
+    public void Topic_RangeKeys_MeanOfBlocksPlusPath()
+    {
+        var f = Create("- # Liebe\n\t- Eins\n\t- Zwei\n\t- Drei\n",
+            notePages: [("journals/2026_03_01.md", "- Nur Pfad\n- Nur Text\n- Beides\n")]);
+        f.Index.Queries[EmbeddingText.ForHeadingPath(f.Book, f.Section("Liebe"))] = [1, 0, 0];
+        f.Index.Queries[EmbeddingText.ForTextBlock(f.Text("Eins"))] = [0, 1, 0];
+        f.Index.Queries[EmbeddingText.ForTextBlock(f.Text("Zwei"))] = [0, 3, 0];
+        f.Index.Queries[EmbeddingText.ForTextBlock(f.Text("Drei"))] = [0, 0, 9];
+        f.SetNote("Nur Pfad", 1, 0, 0);
+        f.SetNote("Nur Text", 0, 1, 0);
+        f.SetNote("Beides", 1, 1, 0);
+        var range = new TopicRequest(f.Book, f.Section("Liebe").Key, null, false,
+            [f.Text("Eins").Key, Guid.NewGuid(), f.Text("Zwei").Key]); // an unknown key is skipped
+
+        var hits = f.Service.Relevant(range, f.Allow(NoFilter));
+
+        // topic = normalize((1,0,0) + mean((0,1,0),(0,3,0))) = normalize((1,2,0)); "Drei" is outside the range
+        Assert.Equal(["Beides", "Nur Text", "Nur Pfad"], hits.Select(h => f.ContentOf(h.NoteBlockKey)));
+        Assert.Equal(VectorMath.Cosine([1, 2, 0], [1, 1, 0]), hits[0].Score, 1e-6);
+        Assert.DoesNotContain(EmbeddingText.ForTextBlock(f.Text("Drei")), f.Index.Embedded);
+    }
+
+    [Fact]
+    public void Topic_RangeKeys_Empty_PathOnly()
+    {
+        var f = Create("- # Liebe\n\t- Eins\n",
+            notePages: [("journals/2026_03_01.md", "- Frage\n")]);
+        var path = EmbeddingText.ForHeadingPath(f.Book, f.Section("Liebe"));
+        f.Index.Queries[path] = [1, 0, 0];
+        f.SetNote("Frage", 1, 0, 0);
+
+        var empty = f.Service.Relevant(new TopicRequest(f.Book, f.Section("Liebe").Key, null, false, []), f.Allow(NoFilter));
+        var unknown = f.Service.Relevant(
+            new TopicRequest(f.Book, f.Section("Liebe").Key, null, false, [Guid.NewGuid()]), f.Allow(NoFilter));
+
+        Assert.Equal(1.0, Assert.Single(empty).Score, 1e-6);
+        Assert.Equal(1.0, Assert.Single(unknown).Score, 1e-6);
+        Assert.Equal([path], f.Index.Embedded.Distinct()); // the section's own block "Eins" is not part of a range topic
+    }
+
+    [Fact]
+    public void Topic_OwnText_UsesOnlyGivenText()
+    {
+        var f = Create("- # Liebe\n\t- Eins\n",
+            notePages: [("journals/2026_03_01.md", "- Nur Pfad\n- Nur Text\n- Beides\n")]);
+        var path = EmbeddingText.ForHeadingPath(f.Book, f.Section("Liebe"));
+        f.Index.Queries[path] = [1, 0, 0];
+        f.Index.Queries[EmbeddingText.ForOwnText("Mein Satz")] = [0, 3, 0];
+        f.SetNote("Nur Pfad", 1, 0, 0);
+        f.SetNote("Nur Text", 0, 1, 0);
+        f.SetNote("Beides", 1, 1, 0);
+        // OwnText wins over a range and over the cursor
+        var own = new TopicRequest(f.Book, f.Section("Liebe").Key, f.Text("Eins").Key, true, [f.Text("Eins").Key], "  Mein Satz ");
+
+        var hits = f.Service.Relevant(own, f.Allow(NoFilter));
+
+        Assert.Equal(["Nur Text", "Beides", "Nur Pfad"], hits.Select(h => f.ContentOf(h.NoteBlockKey)));
+        Assert.Equal(VectorMath.Cosine([1, 3, 0], [0, 1, 0]), hits[0].Score, 1e-6); // topic = normalize(path + own text)
+        Assert.Equal([path, "query: Mein Satz"], f.Index.Embedded);
+    }
+
+    [Fact]
+    public void Topic_Default_Unchanged()
+    {
+        var f = Create("- # Liebe\n\t- Eins\n\t- Zwei\n",
+            notePages: [("journals/2026_03_01.md", "- Nur Pfad\n- Nur Text\n- Beides\n")]);
+        f.Index.Queries[EmbeddingText.ForHeadingPath(f.Book, f.Section("Liebe"))] = [1, 0, 0];
+        f.Index.Queries[EmbeddingText.ForTextBlock(f.Text("Eins"))] = [0, 1, 0];
+        f.Index.Queries[EmbeddingText.ForTextBlock(f.Text("Zwei"))] = [0, 3, 0];
+        f.SetNote("Nur Pfad", 1, 0, 0);
+        f.SetNote("Nur Text", 0, 1, 0);
+        f.SetNote("Beides", 1, 1, 0);
+
+        var four = f.Service.Relevant(new TopicRequest(f.Book, f.Section("Liebe").Key, null, false), f.Allow(NoFilter));
+        var explicitNulls = f.Service.Relevant(
+            new TopicRequest(f.Book, f.Section("Liebe").Key, null, false, null, null), f.Allow(NoFilter));
+
+        Assert.Equal(["Beides", "Nur Text", "Nur Pfad"], four.Select(h => f.ContentOf(h.NoteBlockKey)));
+        Assert.Equal(VectorMath.Cosine([1, 2, 0], [1, 1, 0]), four[0].Score, 1e-6); // section path + own blocks, as before
+        Assert.Equal(four, explicitNulls);
+    }
+
+    [Fact]
     public void Relevant_OnlyConsultsTheIncludeDelegate()
     {
         var f = Create("- # Liebe\n\t- Liebe Text\n",

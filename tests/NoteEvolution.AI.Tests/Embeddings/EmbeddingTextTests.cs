@@ -111,6 +111,25 @@ public class EmbeddingTextTests
     }
 
     [Fact]
+    public void ForNoteBlock_ContentAndDescendants_NoProperties()
+    {
+        using var tv = TestVault.Create(("journals/2026_03_01.md",
+            "- Eltern\n\t- Reise planen\n\t  id:: 6650a1c2-1b7e-4c1d-9a0f-2b3c4d5e6f70\n\t  mehr zum Thema\n" +
+            "\t\t- Zug nehmen\n\t\t  used-in:: [[Buch]]\n\t\t\t- Tickets\n\t\t- Hotel\n\t- Geschwister\n"));
+        var block = FirstWhere(tv, n => n.Block.Content.StartsWith("Reise planen", StringComparison.Ordinal)).Block;
+
+        // no date, no parent line (unlike ForNote), no property lines
+        Assert.Equal("passage: Reise planen\nmehr zum Thema\nZug nehmen\nTickets\nHotel", EmbeddingText.ForNoteBlock(block));
+    }
+
+    [Fact]
+    public void ForOwnText_PrefixAndTrim()
+    {
+        Assert.Equal("query: Mein Satz", EmbeddingText.ForOwnText("  Mein Satz \n"));
+        Assert.Equal("query: - kein Punkt\nfazit:: gut", EmbeddingText.ForOwnText("\\- kein Punkt\nfazit:\\: gut"));
+    }
+
+    [Fact]
     public void ForSearch_TrimsText() =>
         Assert.Equal("query: Vertrauen", EmbeddingText.ForSearch("  Vertrauen \n"));
 
