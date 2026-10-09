@@ -879,8 +879,9 @@ html, body {
 }
 
 /*
- * The current element (spec 2): a frame with a bar on its left. Each marked node (a heading and its section, a text
- * block, or a detail's paragraphs) draws its part; the nodes touch, so the parts form one box.
+ * The marked range (package B, spec 2): a frame with a bar on its left. Each marked node (a heading, a text block, a
+ * text block's own paragraph, or a detail's paragraphs) draws its part; nodes that touch form one box, so a range in
+ * several pieces draws one box per piece (ne-current-first / -last on each piece's ends).
  */
 .ne-current {
     position: relative;
@@ -911,7 +912,7 @@ html, body {
     border-bottom: 1px solid var(--border);
 }
 
-/* A detail's box starts at its own indentation. */
+/* A detail's box starts at its own indentation (a text block's own paragraph at depth 0). */
 .ne-para.ne-current::after {
     left: calc(var(--current-depth, 0) * 1.5em - 16px);
 }

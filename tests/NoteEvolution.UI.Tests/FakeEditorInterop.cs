@@ -1,10 +1,11 @@
 using Microsoft.AspNetCore.Components;
+using NoteEvolution.Core.Books;
 using NoteEvolution.UI.Editor;
 
 namespace NoteEvolution.UI.Tests;
 
 /// <summary>
-/// The editor without JavaScript: records the shown documents and revealed elements; tests raise the editor's events
+/// The editor without JavaScript: records the shown documents, revealed elements and marked nodes; tests raise the editor's events
 /// via <see cref="Callbacks"/>.
 /// </summary>
 public sealed class FakeEditorInterop : IEditorInterop
@@ -19,7 +20,13 @@ public sealed class FakeEditorInterop : IEditorInterop
     /// <summary>The keys passed to <see cref="RevealAsync"/>, in order.</summary>
     public List<Guid> Reveals { get; } = [];
 
-    /// <summary>All calls in order: <c>doc</c> for <see cref="SetDocumentAsync"/>, <c>reveal:{key}</c> for <see cref="RevealAsync"/>.</summary>
+    /// <summary>The lists passed to <see cref="SetMarkedAsync"/>, in order.</summary>
+    public List<IReadOnlyList<MarkedNode>> Marked { get; } = [];
+
+    /// <summary>
+    /// All calls in order: <c>doc</c> for <see cref="SetDocumentAsync"/>, <c>reveal:{key}</c> for
+    /// <see cref="RevealAsync"/>, <c>marked</c> for <see cref="SetMarkedAsync"/>.
+    /// </summary>
     public List<string> Calls { get; } = [];
 
     /// <summary>The document shown last.</summary>
@@ -65,6 +72,13 @@ public sealed class FakeEditorInterop : IEditorInterop
     {
         Reveals.Add(elementKey);
         Calls.Add($"reveal:{elementKey}");
+        return Task.CompletedTask;
+    }
+
+    public Task SetMarkedAsync(IReadOnlyList<MarkedNode> nodes)
+    {
+        Marked.Add([.. nodes]);
+        Calls.Add("marked");
         return Task.CompletedTask;
     }
 
