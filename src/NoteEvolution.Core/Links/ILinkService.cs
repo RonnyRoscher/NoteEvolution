@@ -100,6 +100,30 @@ public interface ILinkService
     Guid MergeTextBlocks(Book book, IReadOnlyList<IReadOnlyList<Guid>> groups);
 
     /// <summary>
+    /// Merges the details of a text block or a detail (<paramref name="elementKey"/>, the head) into its own text: the
+    /// contents of all descendant details without the <c>#notiz</c> tag (depth-first, in file order) are appended to
+    /// the head's content, joined as in <see cref="MergeTextBlocks"/> (a blank line; blank contents left out), and
+    /// these details are removed. The <c>#notiz</c> details stay, with their own sub-details, as the head's children
+    /// in file order (one below a merged detail comes up to the head). The merged details' <c>source::</c> values go
+    /// to the enclosing text block's <c>source::</c> (union), and every note whose <c>used-in::</c> referenced a merged
+    /// detail references the text block instead (which gets an <c>id::</c> if needed). Other properties of the merged
+    /// details are carried over where the head lacks the key. Can be undone („Zusammenfügen“) as
+    /// <see cref="MergeTextBlocks"/>.
+    /// </summary>
+    /// <returns>The key of the head.</returns>
+    /// <exception cref="ArgumentException">
+    /// No text block or detail has this key, it has no detail to merge, or the merged content would not stay one
+    /// block; nothing was changed.
+    /// </exception>
+    /// <exception cref="MergeRefusedException">
+    /// A merged detail has a different value for a property of the head (or of an earlier merged detail), or the
+    /// <c>id::</c> of a merged detail is referenced (<c>((id))</c>) elsewhere in the vault than in the notes'
+    /// <c>used-in::</c> and the book's <c>source::</c> values; nothing was changed.
+    /// </exception>
+    /// <exception cref="ReadOnlyPageException">The book page is read-only.</exception>
+    Guid MergeDetails(Book book, Guid elementKey);
+
+    /// <summary>
     /// Updates the notes after <see cref="BookSync.Apply"/> changed the book and the book was saved:
     /// <see cref="BlockSplit"/> adds the new block's usage to each source note; <see cref="BlockDeleted"/> removes
     /// the block's usage from each source note and records an undo action („Löschen“) that puts the block back.

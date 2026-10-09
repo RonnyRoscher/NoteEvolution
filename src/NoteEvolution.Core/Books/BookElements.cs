@@ -1,3 +1,6 @@
+using NoteEvolution.Core.Model;
+using NoteEvolution.Core.Text;
+
 namespace NoteEvolution.Core.Books;
 
 /// <summary>What an element of the manuscript is: a heading, a text block or a detail (a descendant block of a text block).</summary>
@@ -88,6 +91,45 @@ public static class BookElements
     {
         var textBlock = element.Kind == ElementKind.TextBlock ? book.FindTextBlock(element.Key) : FindDetailOwner(book, element.Key);
         return textBlock ?? throw new ArgumentException($"There is no such {element.Kind} in the book.", nameof(element));
+    }
+
+    /// <summary>
+    /// The details „Zusammenfügen“ merges into the text of <paramref name="element"/> (a text block's or a detail's
+    /// block): all its descendants without the <c>#notiz</c> tag, depth-first in file order, except those below a
+    /// <c>#notiz</c> detail (it stays with its own sub-details).
+    /// </summary>
+    internal static List<Block> DetailsToMerge(Block element)
+    {
+        var merged = new List<Block>();
+        SplitDetails(element, merged, []);
+        return merged;
+    }
+
+    /// <summary>
+    /// The topmost <c>#notiz</c> details in the subtree below <paramref name="detail"/>, in file order: those that stay
+    /// as details when <paramref name="detail"/> is merged away.
+    /// </summary>
+    internal static List<Block> NoteDetailsBelow(Block detail)
+    {
+        var notes = new List<Block>();
+        SplitDetails(detail, [], notes);
+        return notes;
+    }
+
+    private static void SplitDetails(Block parent, List<Block> merged, List<Block> notes)
+    {
+        foreach (var child in parent.Children)
+        {
+            if (NoteTag.Has(child.Content))
+            {
+                notes.Add(child);
+            }
+            else
+            {
+                merged.Add(child);
+                SplitDetails(child, merged, notes);
+            }
+        }
     }
 
     /// <summary>The text block with a paragraph (detail) whose block has <paramref name="key"/>, or <c>null</c>.</summary>
