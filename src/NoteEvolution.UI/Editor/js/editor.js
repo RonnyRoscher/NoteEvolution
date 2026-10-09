@@ -333,8 +333,8 @@ function toggleNote({ tr, dispatch }) {
 const inHeading = state => state.selection.$from.parent.type.name === 'heading';
 
 /**
- * The editing shortcuts. The structure commands (spec 3) run in C#: their shortcuts call options.onSectionCommand
- * with the SectionCommand member name.
+ * The editing shortcuts. The structure commands (spec 3) and the range steps (Alt+Up / Alt+Down) run in C#: their
+ * shortcuts call options.onSectionCommand with the SectionCommand member name.
  */
 const Keys = Extension.create({
     name: 'noteEvolutionKeys',
@@ -364,6 +364,8 @@ const Keys = Extension.create({
             },
             'Mod-Shift-n': run(toggleNote),
             'Mod-Shift-N': run(toggleNote),
+            'Alt-ArrowUp': section('RangeUp'),
+            'Alt-ArrowDown': section('RangeDown'),
         };
     },
 });
@@ -472,88 +474,121 @@ const FixedHeadings = Extension.create({
 });
 
 /**
- * The element at the selection (spec 2): { kind, key, textBlockKey, offset, nodes }, or null outside every element.
- * kind is 'heading', 'textBlock' (the block's own text, depth 0) or 'detail' (a paragraph of depth >= 1); nodes are
- * the [position, node] pairs the element marks: a heading with its section (up to the next heading of the same or a
- * higher level), a text block, or a detail with the deeper paragraphs that follow it.
+ * The element at the selection (spec 2): { kind, key, textBlockKey, offset }, or null outside every element. kind is
+ * 'heading', 'textBlock' (the block's own text, depth 0) or 'detail' (a paragraph of depth >= 1).
  */
 function currentElement(state) {
-    const { selection, doc } = state;
+    const { selection } = state;
     const { $from } = selection;
     let top;
-    let topPos;
     if ($from.depth >= 1) {
         top = $from.node(1);
-        topPos = $from.before(1);
     } else if (selection.node) {
         // A dragged block (a node selection of a top-level node).
         top = selection.node;
-        topPos = selection.from;
     } else {
         return null;
     }
     const offset = $from.parent.isTextblock ? $from.parentOffset : 0;
     if (top.type.name === 'heading') {
-        const nodes = [[topPos, top]];
-        for (let i = doc.resolve(topPos).index(0) + 1, pos = topPos + top.nodeSize; i < doc.childCount; i++) {
-            const node = doc.child(i);
-            if (node.type.name === 'heading' && node.attrs.level <= top.attrs.level) {
-                break;
-            }
-            nodes.push([pos, node]);
-            pos += node.nodeSize;
-        }
-        return { kind: 'heading', key: top.attrs.key, textBlockKey: null, offset, nodes };
+        return { kind: 'heading', key: top.attrs.key, textBlockKey: null, offset };
     }
     const para = $from.depth >= 2 ? $from.node(2) : null;
     if (!para || para.attrs.depth < 1) {
-        return { kind: 'textBlock', key: top.attrs.key, textBlockKey: top.attrs.key, offset, nodes: [[topPos, top]] };
+        return { kind: 'textBlock', key: top.attrs.key, textBlockKey: top.attrs.key, offset };
     }
-    const nodes = [];
-    for (let i = $from.index(1), pos = $from.before(2); i < top.childCount; i++) {
-        const node = top.child(i);
-        if (nodes.length > 0 && node.attrs.depth <= para.attrs.depth) {
-            break;
-        }
-        nodes.push([pos, node]);
-        pos += node.nodeSize;
-    }
-    return { kind: 'detail', key: para.attrs.key, textBlockKey: top.attrs.key, offset, nodes };
+    return { kind: 'detail', key: para.attrs.key, textBlockKey: top.attrs.key, offset };
 }
 
 /**
- * Marks the current element with the class ne-current on each of its nodes (ne-current-first / -last on the ends, so
- * the nodes draw one box); a detail's paragraphs get its depth as --current-depth, where its box starts.
+ * The nodes to decorate for the marked list (a Map key → ownTextOnly), as [position, node, depth] in document order:
+ * a heading or a whole text block (depth null); for ownTextOnly on a text block only its first paragraph (depth 0); a
+ * detail with the deeper paragraphs that follow it, or with ownTextOnly only its own paragraph (depth: the detail's,
+ * where its box starts). Keys the document does not hold are ignored.
  */
-const CurrentElement = Extension.create({
-    name: 'currentElement',
+function markedNodes(doc, marked) {
+    const result = [];
+    if (marked.size === 0) {
+        return result;
+    }
+    doc.forEach((node, offset) => {
+        const ownTextOnly = marked.get(node.attrs.key);
+        if (node.type.name !== 'textBlock' || ownTextOnly === false) {
+            if (ownTextOnly !== undefined) {
+                result.push([offset, node, null]);
+            }
+            return;
+        }
+        // The depth of the marked detail whose deeper paragraphs follow, while they do.
+        let detailDepth = null;
+        node.forEach((para, paraOffset, index) => {
+            const pos = offset + 1 + paraOffset;
+            if (index === 0) {
+                if (ownTextOnly === true) {
+                    result.push([pos, para, 0]);
+                }
+                return;
+            }
+            if (detailDepth !== null && para.attrs.depth > detailDepth) {
+                result.push([pos, para, detailDepth]);
+                return;
+            }
+            detailDepth = null;
+            const paraOwnTextOnly = marked.get(para.attrs.key);
+            if (paraOwnTextOnly !== undefined) {
+                result.push([pos, para, para.attrs.depth]);
+                detailDepth = paraOwnTextOnly ? null : para.attrs.depth;
+            }
+        });
+    });
+    return result;
+}
+
+/**
+ * The decorations of the marked nodes: ne-current on each; nodes that follow each other directly form one segment,
+ * drawn as one box by ne-current-first / -last on its ends. A paragraph gets its box's depth as --current-depth.
+ */
+function markedDecorations(doc, marked) {
+    const nodes = markedNodes(doc, marked);
+    return DecorationSet.create(doc, nodes.map(([pos, node, depth], i) => {
+        const classes = ['ne-current'];
+        if (i === 0 || nodes[i - 1][0] + nodes[i - 1][1].nodeSize !== pos) {
+            classes.push('ne-current-first');
+        }
+        if (i === nodes.length - 1 || pos + node.nodeSize !== nodes[i + 1][0]) {
+            classes.push('ne-current-last');
+        }
+        const attrs = { class: classes.join(' ') };
+        if (depth !== null) {
+            attrs.style = `--current-depth: ${depth}`;
+        }
+        return Decoration.node(pos, pos + node.nodeSize, attrs);
+    }));
+}
+
+const markedKey = new PluginKey('markedNodes');
+
+/**
+ * Marks the nodes of the range the app gives (spec 2, "Inhalt des Bereichs"): options.marked() returns the current
+ * list (a Map key → ownTextOnly). The decorations are computed anew when the document changes, when a transaction
+ * carries the markedKey meta (a new list) and for every new state (setDocument).
+ */
+const MarkedNodes = Extension.create({
+    name: 'markedNodes',
+    addOptions() {
+        return { marked: () => new Map() };
+    },
     addProseMirrorPlugins() {
+        const decorate = doc => markedDecorations(doc, this.options.marked());
         return [
             new Plugin({
-                key: new PluginKey('currentElement'),
+                key: markedKey,
+                state: {
+                    init: (_, state) => decorate(state.doc),
+                    apply: (tr, decorations, _old, state) => (tr.docChanged || tr.getMeta(markedKey) ? decorate(state.doc) : decorations),
+                },
                 props: {
-                    decorations: state => {
-                        const element = currentElement(state);
-                        if (!element) {
-                            return DecorationSet.empty;
-                        }
-                        const last = element.nodes.length - 1;
-                        const depth = element.kind === 'detail' ? element.nodes[0][1].attrs.depth : null;
-                        return DecorationSet.create(state.doc, element.nodes.map(([pos, node], i) => {
-                            const classes = ['ne-current'];
-                            if (i === 0) {
-                                classes.push('ne-current-first');
-                            }
-                            if (i === last) {
-                                classes.push('ne-current-last');
-                            }
-                            const attrs = { class: classes.join(' ') };
-                            if (depth !== null) {
-                                attrs.style = `--current-depth: ${depth}`;
-                            }
-                            return Decoration.node(pos, pos + node.nodeSize, attrs);
-                        }));
-                    },
+                    decorations: state => markedKey.getState(state),
                 },
             }),
         ];
@@ -612,6 +647,8 @@ export function createEditor(host, dotnet, options = {}) {
     let lastCursor;
     let lastBox;
     let boxFrame = 0;
+    // The marked nodes set by setMarked (key → ownTextOnly); kept for every later document.
+    let marked = new Map();
 
     /** Reports the element at the cursor when it, or the offset in it, changed. */
     const reportCursor = state => {
@@ -627,8 +664,8 @@ export function createEditor(host, dotnet, options = {}) {
     /**
      * Reports where the section bar goes: at the marking box's bottom (relative to .ne-editor-pane), but at least
      * barHeight above the visible bottom of the scrolling pane; and whether the box is visible at all (never before a
-     * cursor was reported for the shown book). The marked nodes follow each other, so the first one's top and the last
-     * one's bottom are the box.
+     * cursor was reported for the shown book). The marking runs from the first segment's top to the last segment's
+     * bottom; the bar hangs at the last one.
      */
     const reportBox = () => {
         boxFrame = 0;
@@ -638,7 +675,8 @@ export function createEditor(host, dotnet, options = {}) {
         const pane = host.closest('.ne-editor-pane') ?? host;
         const area = visibleArea(scrollParent(host));
         const first = root.querySelector('.ne-current-first');
-        const last = root.querySelector('.ne-current-last');
+        const ends = root.querySelectorAll('.ne-current-last');
+        const last = ends.length > 0 ? ends[ends.length - 1] : null;
         const top = first && lastCursor !== undefined ? first.getBoundingClientRect().top : Infinity;
         const bottom = last && lastCursor !== undefined ? last.getBoundingClientRect().bottom : -Infinity;
         const visible = bottom > top && bottom > area.top && top < area.bottom;
@@ -676,7 +714,7 @@ export function createEditor(host, dotnet, options = {}) {
             Keys.configure({ onSectionCommand: name => call('SectionCommand', name) }),
             UniqueKeys,
             FixedHeadings,
-            CurrentElement,
+            MarkedNodes.configure({ marked: () => marked }),
         ],
         content: { type: 'doc', content: [{ type: 'textBlock', attrs: { key: newKey() }, content: [{ type: 'para' }] }] },
         editorProps: {
@@ -774,6 +812,14 @@ export function createEditor(host, dotnet, options = {}) {
                     dom.scrollIntoView({ block: 'start' });
                 }
             }
+        },
+        /**
+         * Marks the nodes of the range: nodes is an array of { key, ownTextOnly } (empty: no marking). The list stays
+         * for later documents (setDocument); keys a document does not hold are ignored.
+         */
+        setMarked(nodes) {
+            marked = new Map(nodes.map(node => [node.key, node.ownTextOnly === true]));
+            editor.view.dispatch(editor.state.tr.setMeta(markedKey, true).setMeta('addToHistory', false));
         },
         destroy() {
             cancelAnimationFrame(boxFrame);

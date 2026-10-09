@@ -4,15 +4,28 @@
 @inject AppState State
 @inject IStringLocalizer<Strings> L
 
-@* The bar at the bottom of the marking (spec 2, 3): the structure commands of the cursor element and the notes the
-   current section is based on. EditorPane places it where the editor reports the marking's bottom; the bar renders
-   with every render of EditorPane (its element is an object parameter), which follows the state and the conflicts. *@
+@* The bar at the bottom of the marking (spec 2, 3): the range buttons with the range head, the structure commands of
+   the cursor element, the commands on the marked range and the notes the range is based on (package B, spec 2, 4, 5).
+   EditorPane places it where the editor reports the marking's bottom; the bar renders with every render of EditorPane
+   (its element is an object parameter), which follows the state and the conflicts. *@
 <div class="ne-section-bar" hidden="@(!Visible)" style="top: @(Top.ToString(CultureInfo.InvariantCulture))px">
     @* The bar may render on its own (the list toggled) before EditorPane passes the element of a changed book. *@
-    @if (State.CurrentBook is { } book && Element is { } element && BookElements.Find(book, element.Key) == element)
+    @if (State.CurrentBook is { } book && Element is { } element && BookElements.Find(book, element.Key) == element
+         && State.CurrentRange is { } range)
     {
-        var sources = BookElements.SourcesOf(book, element);
+        var sources = SourcesOf(book, range);
         <div class="ne-sec-buttons">
+            @* Moving the range changes no file, so it stays possible while the book is locked. *@
+            <button type="button" class="ne-range-up" title="@L["RangeUpTitle"]" disabled="@(!State.CanRangeUp)"
+                    @onclick="() => OnCommand.InvokeAsync(SectionCommand.RangeUp)">@L["RangeUp"]</button>
+            <button type="button" class="ne-range-down" title="@L["RangeDownTitle"]" disabled="@(!State.CanRangeDown)"
+                    @onclick="() => OnCommand.InvokeAsync(SectionCommand.RangeDown)">@L["RangeDown"]</button>
+            @* Only the head may be cut off; the suffix of level −1 always stays visible, the title shows the full label. *@
+            @{
+                var head = RangeHead(book, range);
+                var ownOnly = range.Level == -1;
+            }
+            <span class="ne-range-label" title="@(ownOnly ? head + L["RangeOwnOnly"] : head)"><span class="ne-range-head">@head</span>@if (ownOnly) {<span class="ne-range-own">@L["RangeOwnOnly"]</span>}</span>
             @foreach (var (css, command, key, headingOnly) in Commands)
             {
                 if (headingOnly && element.Kind != ElementKind.Heading)
@@ -64,9 +77,11 @@
         ("ne-sec-outdent", SectionCommand.Outdent, "SectionOutdent", true),
         ("ne-sec-remove-heading", SectionCommand.RemoveHeading, "SectionRemoveHeading", true),
         ("ne-sec-delete", SectionCommand.Delete, "SectionDelete", false),
+        ("ne-sec-merge", SectionCommand.Merge, "SectionMerge", false),
+        ("ne-sec-wrap", SectionCommand.Wrap, "SectionWrap", false),
     ];
 
-    /// <summary>Whether the list of sources is open; it stays so while the current section changes.</summary>
+    /// <summary>Whether the list of sources is open; it stays so while the range changes.</summary>
     private bool _expanded;
 
     /// <summary>Where the bar's top is, in pixels from the top of <c>.ne-editor-pane</c>.</summary>
@@ -85,9 +100,27 @@
     [Parameter]
     public bool Locked { get; set; }
 
-    /// <summary>Runs a structure command on the cursor element, the same way as its shortcut.</summary>
+    /// <summary>Runs a structure command on the cursor element or the range, or moves the range, the same way as its shortcut.</summary>
     [Parameter]
     public EventCallback<SectionCommand> OnCommand { get; set; }
+
+    /// <summary>The distinct notes (their <c>id::</c>) the text blocks of <paramref name="range"/> refer to, in order.</summary>
+    private static IReadOnlyList<Guid> SourcesOf(Book book, RangeInfo range) =>
+        [.. range.TextBlockKeys.Select(book.FindTextBlock).OfType<TextBlock>().SelectMany(textBlock => textBlock.Sources).Distinct()];
+
+    /// <summary>
+    /// The range head as the label names it: a heading with its level marks and title (or that it has none), e.g.
+    /// "## Vertrauen" (spec 2), a text block, a detail, or the whole book.
+    /// </summary>
+    private string RangeHead(Book book, RangeInfo range) => range.Head switch
+    {
+        null => L["RangeBook"],
+        { Kind: ElementKind.Heading } head => book.FindNode(head.Key) is { } node
+            ? L["RangeHeading", $"{new string('#', node.Level)} {(node.Title.Length > 0 ? node.Title : L["OutlineUntitled"].Value)}"]
+            : L["RangeHeading", L["OutlineUntitled"].Value],
+        { Kind: ElementKind.TextBlock } => L["RangeTextBlock"],
+        _ => L["RangeDetail"],
+    };
 
     private string SourcesText(int count) => (count, _expanded) switch
     {

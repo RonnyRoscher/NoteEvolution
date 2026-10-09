@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.AspNetCore.Components;
 using Microsoft.JSInterop;
 using NoteEvolution.Core.Books;
@@ -74,6 +75,33 @@ public class EditorInteropTests
                 SectionCommand.RemoveHeading, SectionCommand.Delete,
             ],
             _callbacks.Commands);
+    }
+
+    [Fact]
+    public async Task SectionCommand_ParsesRangeNames()
+    {
+        var interop = await InitAsync();
+
+        foreach (var name in new[] { "RangeUp", "RangeDown", "Merge", "Wrap", "rangeup", "Range" })
+        {
+            await interop.SectionCommand(name);
+        }
+
+        Assert.Equal([SectionCommand.RangeUp, SectionCommand.RangeDown, SectionCommand.Merge, SectionCommand.Wrap], _callbacks.Commands);
+    }
+
+    [Fact]
+    public async Task SetMarked_Serializes_KeysAndOwnTextOnly()
+    {
+        var interop = await InitAsync();
+
+        await interop.SetMarkedAsync([new MarkedNode(Guid.Parse(Key), false), new MarkedNode(Guid.Parse(BlockKey), true)]);
+        await interop.SetMarkedAsync([]);
+
+        var payloads = _js.Calls.Where(c => c.Method == "setMarked").Select(c => JsonSerializer.Serialize(c.Args.Single())).ToArray();
+        Assert.Equal(
+            [$$"""[{"key":"{{Key}}","ownTextOnly":false},{"key":"{{BlockKey}}","ownTextOnly":true}]""", "[]"],
+            payloads);
     }
 
     [Fact]

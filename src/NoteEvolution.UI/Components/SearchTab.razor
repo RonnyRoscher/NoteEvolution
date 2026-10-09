@@ -38,6 +38,9 @@
     private (string Query, NoteFilter Filter, int Revision)? _last;
     private List<(Guid Key, int Percent)> _hits = [];
 
+    /// <summary>The notes in <see cref="_hits"/> only because their "Wohin damit?" list is open (see <see cref="WhereToPins"/>).</summary>
+    private HashSet<Guid> _keptOnly = [];
+
     /// <summary>The committed query (kept by the pane, so it survives a switch to the journal and back).</summary>
     [Parameter] public string Query { get; set; } = "";
 
@@ -50,8 +53,13 @@
 
     protected override void OnInitialized() => _text = Query;
 
+    /// <remarks>
+    /// The pane renders again on every <see cref="AppState.Changed"/>, which calls this: a note kept only for its open
+    /// "Wohin damit?" list goes once that list is closed.
+    /// </remarks>
     protected override void OnParametersSet()
     {
+        WhereToPins.Release(_hits, _keptOnly, hit => hit.Key, State.WhereToOpenNotes);
         if (_last == (Query, Filter, Revision))
         {
             return;
@@ -90,17 +98,18 @@
         await InvokeAsync(() => QueryChanged.InvokeAsync(text));
     }
 
+    /// <summary>Searches again; a card with an open "Wohin damit?" list stays where it is (see <see cref="WhereToPins"/>).</summary>
     private void Run()
     {
-        _hits = [];
-        if (State.Session is not { } session || string.IsNullOrWhiteSpace(Query))
+        List<(Guid Key, int Percent)> hits = [];
+        if (State.Session is { } session && !string.IsNullOrWhiteSpace(Query))
         {
-            return;
+            var found = session.Search.Search(new SearchQuery(Query, Filter));
+            var best = found.Count > 0 ? found.Max(hit => hit.Score) : 0;
+            hits = [.. found.Select(hit => (hit.NoteBlockKey, Percent(hit.Score, best)))];
         }
 
-        var found = session.Search.Search(new SearchQuery(Query, Filter));
-        var best = found.Count > 0 ? found.Max(hit => hit.Score) : 0;
-        _hits = [.. found.Select(hit => (hit.NoteBlockKey, Percent(hit.Score, best)))];
+        (_hits, _keptOnly) = WhereToPins.Merge(_hits, hits, hit => hit.Key, State.WhereToOpenNotes);
     }
 
     /// <summary>The score in percent of the best hit's (the best is 100 %); all 100 if no score is positive.</summary>

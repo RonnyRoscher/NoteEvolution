@@ -35,6 +35,11 @@ public sealed class TipTapInterop(IJSRuntime js, AppState state) : IEditorIntero
     public async Task RevealAsync(Guid elementKey) =>
         await Initialized.InvokeVoidAsync("reveal", elementKey == Guid.Empty ? null : elementKey.ToString("D"));
 
+    /// <summary>Passes the nodes to the script as an array of <c>{ key, ownTextOnly }</c>.</summary>
+    public async Task SetMarkedAsync(IReadOnlyList<MarkedNode> nodes) =>
+        await Initialized.InvokeVoidAsync(
+            "setMarked", [nodes.Select(node => new { key = node.Key.ToString("D"), ownTextOnly = node.OwnTextOnly }).ToArray()]);
+
     [JSInvokable]
     public Task DocumentChanged(string docJson) => _callbacks?.OnDocumentChanged(docJson) ?? Task.CompletedTask;
 

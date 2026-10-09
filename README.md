@@ -56,6 +56,22 @@ Ist „Verwendete ausblenden“ eingeschaltet, erscheint die Notiz stattdessen a
 der Pfeil daneben bietet zusätzlich **Danach** (neues Element nach dem aktuellen) und **Darunter** (als erstes
 Unterelement). Die Quelle hängt immer am umgebenden Textblock.
 
+**Bereich:** Mit „Bereich ▲“ / „Bereich ▼“ (oder Alt+Pfeil hoch/runter) wird der markierte Bereich stufenweise
+erweitert (übergeordnetes Element samt allem darunter, bis zum ganzen Buch) bzw. verkleinert (bis zum Element allein,
+„ohne Unterelemente“). Kasten, Quellenanzahl und „Relevant“ folgen dem Bereich; wechselt der Cursor das Element, gilt
+wieder der Standard. Auf den Bereich wirken zwei weitere Knöpfe:
+
+- **Zusammenfügen:** die Textblöcke im Bereich werden je Überschrift zu einem Block (Texte durch eine Leerzeile
+  getrennt, Details wandern mit); Quellen werden vereinigt, die `used-in::`-Verweise der Notizen zeigen danach auf
+  den verbleibenden Block.
+- **Unter neue Überschrift:** der Bereich kommt unter eine neue, leere Überschrift eine Ebene unter seiner Überschrift
+  (bei einem Textblock samt der direkt folgenden Textblöcke bis zur nächsten Unterüberschrift); der Cursor steht im
+  neuen Titel.
+
+**Wohin damit?** an einer Notiz oder einem Unteranstrich zeigt die fünf passendsten Textblöcke des Buchs mit
+Überschriftenpfad, Textauszug und Prozent (✓, wenn die Notiz dort schon Quelle ist). Ein Klick springt zum Block,
+die Liste bleibt offen; übernommen wird dort mit dem geteilten „Übernehmen“-Knopf.
+
 ## Wo was liegt
 
 | Was | Ort |
@@ -79,8 +95,8 @@ neu aufgebaut. Dasselbe Buch sollte nicht gleichzeitig in Logseq bearbeitet werd
 ## Lokale KI
 
 Die KI-Funktionen sind ein Zusatz: „Relevant“ (die Notizen, die zum Abschnitt oder zur Textstelle passen), die Suche
-nach Bedeutung (ergänzt die Volltextsuche), „Wohin damit?“ an jeder Notizkarte (die fünf passendsten Abschnitte des
-Buchs) und Fundstellen-Vorschläge im `[handled]`-Assistenten. Sie schreiben und formulieren keinen Buchtext. Einzige
+nach Bedeutung (ergänzt die Volltextsuche), „Wohin damit?“ an jeder Notiz und jedem Unteranstrich (die fünf
+passendsten Textblöcke des Buchs) und Fundstellen-Vorschläge im `[handled]`-Assistenten. Sie schreiben und formulieren keinen Buchtext. Einzige
 Schreibaktion sind die Verknüpfungszeilen (`id::`, `source::`, `used-in::`) für Fundstellen, die du im Assistenten
 selbst gewählt und bestätigt hast. Ohne Modell arbeitet die App unverändert mit der Volltextsuche.
 
@@ -146,6 +162,9 @@ Editor
       „Rückgängig“ bringt Buch und Notizen zurück.
 - [ ] Quellen der Markierung aufklappen, eine Quelle anklicken: der Reiter Journal springt zur Notiz und hebt sie hervor.
 - [ ] Großes Buch (mehrere hundert Blöcke): Tippen und Scrollen bleiben flüssig.
+- [ ] Bereich mit ▲/▼ und Alt+Pfeil erweitern und verkleinern; Kasten, Bereichsanzeige und Quellenanzahl folgen; ein
+      Bereich mit Text nach Unterabschnitten zeigt zwei Kästen.
+- [ ] „Zusammenfügen“ und „Unter neue Überschrift“ ausführen, in Logseq prüfen, danach „Rückgängig“.
 - [ ] Eine nicht sicher lesbare Buchdatei (z. B. offener Codeblock) zeigt den Hinweis, dass sie schreibgeschützt ist;
       der Editor ist gesperrt.
 - [ ] Fenster schließen, während der Text nicht gespeichert werden kann (z. B. Buchdatei schreibgeschützt): das
@@ -182,8 +201,8 @@ Lokale KI (Modell installiert, Test-Vault mit einigen Dutzend Notizen und einem 
 - [ ] „Verwendete ausblenden“ und der Zeitraum wirken auch in „Relevant“.
 - [ ] Die Suche findet sinnverwandte Notizen ohne gleiche Wörter (z. B. nach „Müdigkeit“ suchen und eine Notiz über
       „Schlaf“ finden), Treffer mit dem gesuchten Wort stehen weiter oben.
-- [ ] „Wohin damit?“ an einer Notizkarte zeigt höchstens fünf Abschnitte mit Prozentwert; ein Klick springt zum
-      Abschnitt (der Editor speichert vorher).
+- [ ] „Wohin damit?“ an einer Notiz und an einem Unteranstrich zeigt höchstens fünf Textblöcke mit Pfad, Auszug und
+      Prozentwert; ein Klick springt zum Block, die Liste bleibt offen; dort mit „Danach“ übernehmen.
 - [ ] `[handled]`-Assistent: neben jeder Notiz steht „Stelle unbekannt“ (Standard) und bis zu drei Fundstellen mit
       Textauszug und Prozent; nach dem Buchwechsel werden sie neu berechnet. Eine Fundstelle wählen, umwandeln: der
       Buchblock hat `id::` und `source::`, die Notiz `used-in:: [[Buch]] ((id))`, `[handled]` ist entfernt. Eine

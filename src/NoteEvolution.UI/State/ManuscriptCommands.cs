@@ -9,8 +9,9 @@ namespace NoteEvolution.UI.State;
 
 /// <summary>
 /// The structure commands of the manuscript (spec 3) on the element at the editor cursor
-/// (<see cref="AppState.CurrentElement"/>), shared by the editor's shortcuts and the buttons of the marking. Every
-/// command is one entry of the session's undo stack.
+/// (<see cref="AppState.CurrentElement"/>), and Merge and Wrap on the marked range (<see cref="AppState.CurrentRange"/>,
+/// package B, spec 4, 5), shared by the editor's shortcuts and the buttons of the marking. Every command is one entry
+/// of the session's undo stack.
 /// </summary>
 public static class ManuscriptCommands
 {
@@ -18,14 +19,17 @@ public static class ManuscriptCommands
     /// Whether <paramref name="command"/> is possible now: the book is writable, no conflict is open for it (R26), and
     /// the command fits the cursor element (e.g. no indent without a previous heading of the same level, no outdent
     /// on level 1, indent, outdent and remove only on headings). Delete only takes the element the cursor itself is in
-    /// (<see cref="TargetOf"/>). Delete, indent, outdent and remove are not possible on a heading whose section holds a
-    /// heading that is not deeper (<see cref="IsIrregular"/>).
+    /// (<see cref="TargetOf"/>). An irregular section (a heading in it that is not deeper) is no exception: the editor
+    /// marks what the book tree holds (package B), which is what the commands act on. At range level −1 Delete, Indent
+    /// and Outdent are not possible on an element with sub-elements (<see cref="HasSubElements"/>): the box marks the
+    /// element alone, but they would take its sub-elements along. Merge needs a group of at least two text blocks in the
+    /// marked range (<see cref="RangeInfo.MergeGroups"/>), Wrap a range head that <see cref="ManuscriptEditor.CanWrap"/>
+    /// takes (not the whole book, no detail).
     /// </summary>
     public static bool CanRun(AppState state, SectionCommand command) =>
         state is { Session: { } session, CurrentBook: { Page.IsReadOnly: false } book }
         && !session.HasOpenConflict(book.Page.FilePath)
-        && TargetOf(state, book, command) is { } element
-        && Fits(book, element, command);
+        && Applies(state, book, command);
 
     /// <summary>
     /// Runs <paramref name="command"/> on the cursor element. The editor saves its text first; text it could not save
@@ -35,9 +39,14 @@ public static class ManuscriptCommands
     /// once the page changed after the command; removing a heading gets a targeted undo instead
     /// (<see cref="RemovedHeading"/>), which later edits elsewhere do not block. Deleting a text block, a heading or a
     /// detail with linked blocks goes through the link service, which also removes the usages from the notes; it is
-    /// refused while a conflict is open for one of those notes' pages (R26). Whatever happens, the book view is taken
-    /// from the vault again, the new or moved element is revealed (the cursor goes there) and
-    /// <see cref="AppState.Notify"/> is raised.
+    /// refused while a conflict is open for one of those notes' pages (R26). Merge goes through the link service as well
+    /// (with its own undo action), refused the same way for the note pages of the merged blocks' sources, and refused
+    /// with <c>SectionMergeRefused</c> when the link service refuses it (<see cref="MergeRefusedException"/>); it reveals
+    /// the first remaining block. Wrap gets a targeted undo (<see cref="WrapUndo"/>) and reveals the new heading. Merge
+    /// and Wrap do nothing when saving the editor's text changed the marked range (another head or level, e.g. the
+    /// cursor's detail the book did not know before). Whatever
+    /// happens, the book view is taken from the vault again, the new or moved element is revealed (the cursor goes
+    /// there, the range back to level 0) and <see cref="AppState.Notify"/> is raised.
     /// </summary>
     /// <returns>The message to show, or <c>null</c> if the command ran (or did nothing) without remark.</returns>
     public static async Task<AdoptMessage?> RunAsync(AppState state, SectionCommand command, string undoDescription, ILogger logger)
@@ -64,6 +73,9 @@ public static class ManuscriptCommands
     private static async Task<(AdoptMessage? Message, Guid? Reveal)> TryRunAsync(
         AppState state, SectionCommand command, string undoDescription, ILogger logger)
     {
+        // Merge and Wrap act on the range the user sees now; the save may change it (e.g. make the cursor's detail known).
+        var onRange = command is SectionCommand.Merge or SectionCommand.Wrap;
+        var range = onRange ? HeadOf(state.CurrentRange) : null;
         try
         {
             if (state.FlushEditor is { } flush)
@@ -100,11 +112,24 @@ public static class ManuscriptCommands
             return (new AdoptMessage("EditorConflict", true), null);
         }
 
-        if (TargetOf(state, book, command) is not { } element || !Fits(book, element, command))
+        if (!Applies(state, book, command))
         {
             return (null, null);
         }
 
+        if (onRange && !Nullable.Equals(range, HeadOf(RangeOf(state, book))))
+        {
+            // The same level now marks another range than the one the command was given for: nothing changes.
+            return (null, null);
+        }
+
+        if (command == SectionCommand.Merge)
+        {
+            return Merge(session, book, RangeOf(state, book)!.MergeGroups, logger);
+        }
+
+        // Wrap acts on the head of the range, every other command on its target element.
+        var element = command == SectionCommand.Wrap ? RangeOf(state, book)!.Head! : TargetOf(state, book, command)!;
         if (command != SectionCommand.Delete)
         {
             return RunStructure(session, book, element, command, undoDescription, logger);
@@ -112,8 +137,7 @@ public static class ManuscriptCommands
 
         // The notes whose usages a delete removes are written directly by the link service (R26).
         var linked = SourceValue.LinkedBlocksIn(BlockOf(book, element)).ToList();
-        var notePages = linked.SelectMany(block => block.Sources).Distinct()
-            .Select(id => session.Vault.FindBlockById(id)?.Page.FilePath).OfType<string>().Distinct().ToList();
+        var notePages = NotePagesOf(session, linked.SelectMany(block => block.Sources));
         if (notePages.Any(session.HasOpenConflict))
         {
             return (new AdoptMessage("EditorConflict", true), null);
@@ -123,6 +147,45 @@ public static class ManuscriptCommands
             ? (Delete(session, book, element, notePages, logger), null)
             : RunStructure(session, book, element, command, undoDescription, logger);
     }
+
+    /// <summary>
+    /// Whether <paramref name="command"/> applies in <paramref name="book"/> now: Merge and Wrap to the marked range
+    /// (<see cref="RangeOf"/>), every other command to its target element (<see cref="TargetOf"/>, <see cref="Fits"/>).
+    /// </summary>
+    private static bool Applies(AppState state, Book book, SectionCommand command) => command switch
+    {
+        SectionCommand.Merge => RangeOf(state, book) is { MergeGroups.Count: > 0 },
+        SectionCommand.Wrap => RangeOf(state, book) is { Head: { } head } && ManuscriptEditor.CanWrap(book, head),
+        _ => TargetOf(state, book, command) is { } element && Fits(book, element, command)
+             && !(command is SectionCommand.Delete or SectionCommand.Indent or SectionCommand.Outdent
+                  && state.RangeLevel < 0 && HasSubElements(book, element)),
+    };
+
+    /// <summary>
+    /// Whether <paramref name="element"/> (in <paramref name="book"/>) has sub-elements the range of level −1 does not
+    /// mark, but Delete, Indent and Outdent would take along: sub-headings of a heading, details of a text block,
+    /// deeper details of a detail.
+    /// </summary>
+    private static bool HasSubElements(Book book, BookElement element) => element.Kind == ElementKind.Heading
+        ? book.FindNode(element.Key)!.Children.Any()
+        : BlockOf(book, element).Children.Count > 0;
+
+    /// <summary>The head and the level of <paramref name="range"/>, to tell whether it is still the same range; <c>null</c> without one.</summary>
+    private static (Guid? Head, int Level)? HeadOf(RangeInfo? range) => range is null ? null : (range.Head?.Key, range.Level);
+
+    /// <summary>
+    /// The marked range in <paramref name="book"/>, as <see cref="AppState.CurrentRange"/> has it: the range of
+    /// <see cref="AppState.RangeLevel"/> around <see cref="AppState.CurrentElement"/>; <c>null</c> if the book does not
+    /// have that element.
+    /// </summary>
+    private static RangeInfo? RangeOf(AppState state, Book book) =>
+        state.CurrentElement is { } element && BookElements.Find(book, element.Key) == element
+            ? BookRanges.Of(book, element, state.RangeLevel)
+            : null;
+
+    /// <summary>The distinct files of the pages holding the notes with the block ids <paramref name="noteIds"/>.</summary>
+    private static List<string> NotePagesOf(VaultSession session, IEnumerable<Guid> noteIds) =>
+        [.. noteIds.Distinct().Select(id => session.Vault.FindBlockById(id)?.Page.FilePath).OfType<string>().Distinct()];
 
     /// <summary>
     /// The element <paramref name="command"/> acts on: <see cref="AppState.CurrentElement"/>, but for Delete only the
@@ -137,8 +200,6 @@ public static class ManuscriptCommands
     /// <summary>Whether <paramref name="command"/> fits <paramref name="element"/>, which must be in <paramref name="book"/>.</summary>
     private static bool Fits(Book book, BookElement element, SectionCommand command) =>
         BookElements.Find(book, element.Key) == element
-        && !(command is SectionCommand.Delete or SectionCommand.Indent or SectionCommand.Outdent or SectionCommand.RemoveHeading
-             && element.Kind == ElementKind.Heading && IsIrregular(book.FindNode(element.Key)!))
         && command switch
         {
             SectionCommand.InsertAfter or SectionCommand.Delete => true,
@@ -148,17 +209,6 @@ public static class ManuscriptCommands
             SectionCommand.RemoveHeading => element.Kind == ElementKind.Heading,
             _ => false,
         };
-
-    /// <summary>
-    /// Whether the heading's section holds a heading of the same or a higher level (the outline warns about it). The
-    /// editor marks a heading's section up to the next heading that is not deeper, so it would show less than the
-    /// commands on the section's subtree act on.
-    /// </summary>
-    private static bool IsIrregular(OutlineNode heading)
-    {
-        static IEnumerable<OutlineNode> Below(OutlineNode node) => node.Children.SelectMany(child => Below(child).Prepend(child));
-        return Below(heading).Any(node => node.Level <= heading.Level);
-    }
 
     /// <summary>The block of <paramref name="element"/>, which must be in <paramref name="book"/>.</summary>
     private static Block BlockOf(Book book, BookElement element) => element.Kind switch
@@ -170,7 +220,8 @@ public static class ManuscriptCommands
 
     /// <summary>
     /// Runs a <see cref="ManuscriptEditor"/> command on the page, saves it and pushes its undo action (for removing a
-    /// heading the targeted <see cref="RemoveHeadingUndo"/>, otherwise <see cref="StructureUndo"/>). If saving fails
+    /// heading the targeted <see cref="RemoveHeadingUndo"/>, for Wrap on the range head <paramref name="element"/> the
+    /// targeted <see cref="WrapUndo"/>, otherwise <see cref="StructureUndo"/>). If saving fails
     /// for another reason than a change by another program or a conflict (both handled by the session), the page is
     /// read from the file again.
     /// </summary>
@@ -181,6 +232,7 @@ public static class ManuscriptCommands
         var page = book.Page;
         var before = PageStructureSnapshot.Capture(page);
         RemovedHeading? removed = null;
+        WrappedSection? wrapped = null;
         Guid? reveal = null;
         try
         {
@@ -204,6 +256,10 @@ public static class ManuscriptCommands
                     removed = ManuscriptEditor.RemoveHeading(book, element.Key);
                     reveal = removed.Reveal;
                     break;
+                case SectionCommand.Wrap:
+                    wrapped = ManuscriptEditor.Wrap(book, element);
+                    reveal = wrapped.NewHeadingKey;
+                    break;
                 default:
                     ManuscriptEditor.DeleteDetail(book, element.Key);
                     break;
@@ -221,8 +277,9 @@ public static class ManuscriptCommands
             return (SaveFailed(session, page, error), null);
         }
 
-        session.Undo.Push(removed is not null
-            ? new RemoveHeadingUndo(undoDescription, session, page.FilePath, removed)
+        session.Undo.Push(
+            removed is not null ? new RemoveHeadingUndo(undoDescription, session, page.FilePath, removed)
+            : wrapped is not null ? new WrapUndo(undoDescription, session, book.LinkName, wrapped)
             : new StructureUndo(undoDescription, session, page.FilePath, before, PageStructureSnapshot.Capture(page)));
         return (null, reveal);
     }
@@ -255,10 +312,8 @@ public static class ManuscriptCommands
     /// from the notes (on <paramref name="notePages"/>) and pushes its own undo action („Löschen“).
     /// </summary>
     private static AdoptMessage? Delete(
-        VaultSession session, Book book, BookElement element, IReadOnlyList<string> notePages, ILogger logger)
-    {
-        var bookPath = book.Page.FilePath;
-        try
+        VaultSession session, Book book, BookElement element, IReadOnlyList<string> notePages, ILogger logger) =>
+        RunLinked(session, book, notePages, logger, $"Deleting a {element.Kind}", () =>
         {
             switch (element.Kind)
             {
@@ -272,6 +327,44 @@ public static class ManuscriptCommands
                     session.Links.DeleteDetail(book, element.Key);
                     break;
             }
+        });
+
+    /// <summary>
+    /// Merges the text blocks of each of <paramref name="groups"/> (the range's <see cref="RangeInfo.MergeGroups"/>)
+    /// through the link service, which moves the notes' usages of the removed blocks to the remaining one and pushes its
+    /// own undo action („Zusammenfügen“). Refused while a conflict is open for the page of a note that is a source of a
+    /// merged block (R26).
+    /// </summary>
+    /// <returns>The message, and the first remaining block to reveal (none if the merge failed).</returns>
+    private static (AdoptMessage? Message, Guid? Reveal) Merge(
+        VaultSession session, Book book, IReadOnlyList<IReadOnlyList<Guid>> groups, ILogger logger)
+    {
+        var notePages = NotePagesOf(session, groups.SelectMany(group => group)
+            .Select(book.FindTextBlock).OfType<TextBlock>().SelectMany(textBlock => textBlock.Sources));
+        if (notePages.Any(session.HasOpenConflict))
+        {
+            return (new AdoptMessage("EditorConflict", true), null);
+        }
+
+        Guid? first = null;
+        var message = RunLinked(session, book, notePages, logger, "Merging text blocks",
+            () => first = session.Links.MergeTextBlocks(book, groups));
+        return (message, first);
+    }
+
+    /// <summary>
+    /// Changes <paramref name="book"/> and the notes on <paramref name="notePages"/> through the link service
+    /// (<paramref name="change"/>, which writes the files and pushes its own undo action), then updates the search index
+    /// for those notes. A change of the book by another program is handled by the session.
+    /// </summary>
+    /// <param name="what">What <paramref name="change"/> does, for the log.</param>
+    private static AdoptMessage? RunLinked(
+        VaultSession session, Book book, IReadOnlyList<string> notePages, ILogger logger, string what, Action change)
+    {
+        var bookPath = book.Page.FilePath;
+        try
+        {
+            change();
         }
         catch (FileChangedExternallyException)
         {
@@ -284,10 +377,16 @@ public static class ManuscriptCommands
         {
             return new AdoptMessage("EditorReadOnly", true);
         }
+        catch (MergeRefusedException ex)
+        {
+            // Different properties or a reference elsewhere to a block that would go: nothing was changed.
+            logger.LogInformation(ex, "{What} was refused", what);
+            return new AdoptMessage("SectionMergeRefused", true);
+        }
         catch (Exception ex) when (ex is ArgumentException or IOException or UnauthorizedAccessException or InvalidOperationException)
         {
             // Includes the page writer refusing a result that would not parse safely (nothing was written).
-            logger.LogWarning(ex, "Deleting a {Kind} failed", element.Kind);
+            logger.LogWarning(ex, "{What} failed", what);
             return new AdoptMessage("SectionCommandFailed", true);
         }
 
@@ -300,7 +399,7 @@ public static class ManuscriptCommands
             }
             catch (Exception ex)
             {
-                // The section is deleted; a stale search index (an aid, rebuilt on opening) must not hide that.
+                // The change is done; a stale search index (an aid, rebuilt on opening) must not hide that.
                 logger.LogWarning(ex, "Updating the search index for {Path} failed", path);
             }
         }
@@ -352,6 +451,30 @@ public static class ManuscriptCommands
 
             removed.RestoreInto(page);
             SaveUndone(session, page, path);
+        }
+    }
+
+    /// <summary>
+    /// Undoes putting a range under a new heading (<see cref="WrappedSection.RestoreInto"/>) in the book
+    /// <paramref name="linkName"/> and saves its page: the new heading goes and the moved blocks come back, also after
+    /// later edits of the heading's title or of those blocks' text. Refused (no change) when the new heading is gone or
+    /// holds other blocks, or a moved block was moved elsewhere.
+    /// </summary>
+    private sealed class WrapUndo(string description, VaultSession session, string linkName, WrappedSection wrapped) : IUndoAction
+    {
+        public string Description => description;
+
+        /// <exception cref="InvalidOperationException">The structure cannot be put back, or saving the page failed.</exception>
+        public void Undo()
+        {
+            var book = session.Vault.FindBook(linkName);
+            if (book is null || !wrapped.CanRestore(book))
+            {
+                throw new InvalidOperationException($"The range put under a new heading in '{linkName}' cannot be put back; it is not undone.");
+            }
+
+            wrapped.RestoreInto(book);
+            SaveUndone(session, book.Page, book.Page.FilePath);
         }
     }
 

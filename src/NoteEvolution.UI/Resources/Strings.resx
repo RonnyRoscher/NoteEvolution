@@ -172,6 +172,9 @@
   <data name="SectionCommandFailed" xml:space="preserve">
     <value>Die Änderung konnte nicht gespeichert werden.</value>
   </data>
+  <data name="SectionMergeRefused" xml:space="preserve">
+    <value>Die Blöcke lassen sich nicht zusammenfügen: unterschiedliche Eigenschaften oder ein Verweis an anderer Stelle.</value>
+  </data>
   <data name="UndoStructure" xml:space="preserve">
     <value>Gliederung ändern</value>
     <comment>Name der Aktion für „Rückgängig“ nach einem Gliederungsbefehl im Manuskript</comment>
@@ -213,6 +216,45 @@
   </data>
   <data name="SectionSourceMissing" xml:space="preserve">
     <value>Quelle fehlt</value>
+  </data>
+  <data name="SectionMerge" xml:space="preserve">
+    <value>Zusammenfügen</value>
+  </data>
+  <data name="SectionWrap" xml:space="preserve">
+    <value>Unter neue Überschrift</value>
+  </data>
+  <data name="UndoWrap" xml:space="preserve">
+    <value>Unter neue Überschrift</value>
+    <comment>Name der Aktion für „Rückgängig“ nach „Unter neue Überschrift“ (Zusammenfügen benennt der Verknüpfungsdienst selbst)</comment>
+  </data>
+  <data name="RangeUp" xml:space="preserve">
+    <value>Bereich ▲</value>
+  </data>
+  <data name="RangeUpTitle" xml:space="preserve">
+    <value>Bereich erweitern</value>
+  </data>
+  <data name="RangeDown" xml:space="preserve">
+    <value>Bereich ▼</value>
+  </data>
+  <data name="RangeDownTitle" xml:space="preserve">
+    <value>Bereich verkleinern</value>
+  </data>
+  <data name="RangeHeading" xml:space="preserve">
+    <value>Bereich: {0}</value>
+    <comment>Bereichskopf ist eine Überschrift; {0} = ihr Titel</comment>
+  </data>
+  <data name="RangeTextBlock" xml:space="preserve">
+    <value>Bereich: Textblock</value>
+  </data>
+  <data name="RangeDetail" xml:space="preserve">
+    <value>Bereich: Detail</value>
+  </data>
+  <data name="RangeBook" xml:space="preserve">
+    <value>Bereich: ganzes Buch</value>
+  </data>
+  <data name="RangeOwnOnly" xml:space="preserve">
+    <value> (ohne Unterelemente)</value>
+    <comment>Angehängt an die Bereichsanzeige auf Ebene −1; beginnt mit einem Leerzeichen</comment>
   </data>
   <data name="NotesPlaceholder" xml:space="preserve">
     <value>Hier erscheinen Suche und Journal.</value>
@@ -346,16 +388,16 @@
     <value>Wohin damit?</value>
   </data>
   <data name="NoteWhereToTitle" xml:space="preserve">
-    <value>Die Abschnitte des Buchs anzeigen, die zu dieser Notiz passen</value>
+    <value>Die Stellen im Buch anzeigen, die hierzu passen</value>
   </data>
   <data name="NoteWhereToBusy" xml:space="preserve">
-    <value>Passende Abschnitte werden gesucht …</value>
+    <value>Passende Stellen werden gesucht …</value>
   </data>
   <data name="NoteWhereToNone" xml:space="preserve">
-    <value>Kein passender Abschnitt gefunden.</value>
+    <value>Keine passenden Stellen gefunden.</value>
   </data>
   <data name="NoteWhereToItemTitle" xml:space="preserve">
-    <value>Zu diesem Abschnitt springen</value>
+    <value>Zu dieser Stelle springen</value>
   </data>
   <data name="NoteOpenLogseq" xml:space="preserve">
     <value>In Logseq öffnen</value>

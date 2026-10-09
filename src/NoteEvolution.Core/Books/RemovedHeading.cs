@@ -99,21 +99,9 @@ public sealed class RemovedHeading
         var restored = Subtree(_heading).ToDictionary(block => block.Key);
         foreach (var moved in _moved)
         {
-            if (!restored.TryGetValue(moved.Key, out var block))
+            if (restored.TryGetValue(moved.Key, out var block))
             {
-                continue;
-            }
-
-            if (unchanged.Contains(moved.Key))
-            {
-                if (!block.Lines.SequenceEqual(moved.Before))
-                {
-                    block.RestoreLines(moved.Before, isDirty: true);
-                }
-            }
-            else if (moved.Levels is (int before, int after) && before != after && LevelOf(block) == after)
-            {
-                block.SetContent(HeadingText.WithLevel(block.Content, after, before));
+                moved.Restore(block, unchanged.Contains(moved.Key));
             }
         }
 
@@ -153,5 +141,26 @@ public sealed class RemovedHeading
     /// <param name="Levels">For a heading its level before and after the command; <c>null</c> for any other block.</param>
     /// <param name="ParentKey">The key of its parent right after the command; <c>null</c> for a root block.</param>
     internal sealed record MovedBlock(
-        Guid Key, IReadOnlyList<RawLine> Before, IReadOnlyList<RawLine> After, (int Before, int After)? Levels, Guid? ParentKey);
+        Guid Key, IReadOnlyList<RawLine> Before, IReadOnlyList<RawLine> After, (int Before, int After)? Levels, Guid? ParentKey)
+    {
+        /// <summary>
+        /// Gives <paramref name="block"/>, this block back in its former place, its original lines if it was still exactly
+        /// as the command left it (<paramref name="unchanged"/>, checked before the restore moved it); otherwise its text
+        /// stays and only a heading level the command changed goes back. A changed block is marked dirty.
+        /// </summary>
+        internal void Restore(Block block, bool unchanged)
+        {
+            if (unchanged)
+            {
+                if (!block.Lines.SequenceEqual(Before))
+                {
+                    block.RestoreLines(Before, isDirty: true);
+                }
+            }
+            else if (Levels is (int before, int after) && before != after && LevelOf(block) == after)
+            {
+                block.SetContent(HeadingText.WithLevel(block.Content, after, before));
+            }
+        }
+    }
 }

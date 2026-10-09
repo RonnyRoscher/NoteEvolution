@@ -1,12 +1,13 @@
+using NoteEvolution.Core.Format;
 using NoteEvolution.Core.Model;
 
 namespace NoteEvolution.Core.Books;
 
 /// <summary>
 /// Structure commands of the manuscript (new section after / below, indent, outdent, remove a heading, delete a
-/// detail). Like <see cref="OutlineEditor"/>, they change <c>book.Page</c> in memory and find their blocks through
-/// the <see cref="Book"/> view; the caller saves the page and reloads the <see cref="Book"/>. Every command validates
-/// first; if it throws (<see cref="ArgumentException"/>, also for an unknown key), the page is unchanged.
+/// detail, put a range under a new heading). Like <see cref="OutlineEditor"/>, they change <c>book.Page</c> in memory
+/// and find their blocks through the <see cref="Book"/> view; the caller saves the page and reloads the
+/// <see cref="Book"/>. Every command validates first; if it throws (<see cref="ArgumentException"/>, also for an unknown key), the page is unchanged.
 /// New headings are empty (<c>"#" * level + " "</c>), new text blocks and details are empty blocks.
 /// </summary>
 public static class ManuscriptEditor
@@ -126,18 +127,9 @@ public static class ManuscriptEditor
         // Every moved block with its lines before, and each moved heading with its level before and after (as Relevel sets it).
         var moved = children.SelectMany(Subtree).Select(block => (Block: block, Before: block.Lines.ToList())).ToList();
         var levels = new Dictionary<Guid, (int Before, int After)>();
-        void NewLevels(OutlineNode sub, int level)
-        {
-            levels[sub.Key] = (sub.Level, level);
-            foreach (var child in sub.Children)
-            {
-                NewLevels(child, level + 1);
-            }
-        }
-
         foreach (var child in node.Children)
         {
-            NewLevels(child, node.Parent!.Level + 1);
+            NewLevels(child, node.Parent!.Level + 1, levels);
         }
 
         var index = IndexOf(page, heading);
@@ -152,18 +144,70 @@ public static class ManuscriptEditor
             OutlineEditor.Relevel(child, node.Parent!.Level + 1);
         }
 
-        return new RemovedHeading(
-            reveal,
-            heading,
-            parent?.Key,
-            index,
-            [.. children.Select(child => child.Key)],
-            [.. moved.Select(m => new RemovedHeading.MovedBlock(
-                m.Block.Key,
-                m.Before,
-                [.. m.Block.Lines],
-                levels.TryGetValue(m.Block.Key, out var level) ? level : null,
-                m.Block.Parent?.Key))]);
+        return new RemovedHeading(reveal, heading, parent?.Key, index, [.. children.Select(child => child.Key)], MovedBlocks(moved, levels));
+    }
+
+    /// <summary>
+    /// Whether <see cref="Wrap"/> is possible: <c>false</c> for a detail, for no head (the whole book), for an unknown
+    /// element and when a heading would get deeper than level 6.
+    /// </summary>
+    public static bool CanWrap(Book book, BookElement? head) =>
+        head is not null && BookElements.Find(book, head.Key) == head && head.Kind switch
+        {
+            ElementKind.Heading => book.FindNode(head.Key) is { } node
+                                   && node.Parent!.Level + 1 + OutlineEditor.Height(node) <= OutlineEditor.MaxLevel,
+            ElementKind.TextBlock => book.FindTextBlock(head.Key)!.Section.Level + 1 <= OutlineEditor.MaxLevel,
+            _ => false,
+        };
+
+    /// <summary>
+    /// Puts the range of <paramref name="head"/> under a new empty heading N of the level of the head's section S + 1,
+    /// placed at the head's index in S. A heading head becomes N's only child with its whole section, and every heading
+    /// of its subtree gets the level below N (<see cref="OutlineEditor.Relevel"/>). A text block head and the own text
+    /// blocks of S directly following it, up to S's next sub-section (or S's end), become N's children, in order; S's
+    /// sub-sections and own text blocks after one of them stay where they are.
+    /// </summary>
+    /// <returns>What was done, for a targeted undo (<see cref="WrappedSection.RestoreInto"/>), with N's key.</returns>
+    /// <exception cref="ArgumentException"><see cref="CanWrap"/> is <c>false</c>.</exception>
+    public static WrappedSection Wrap(Book book, BookElement head)
+    {
+        if (!CanWrap(book, head))
+        {
+            throw new ArgumentException("The element cannot be put under a new heading.", nameof(head));
+        }
+
+        var page = book.Page;
+        var node = head.Kind == ElementKind.Heading ? book.FindNode(head.Key)! : null;
+        var section = node?.Parent ?? book.FindTextBlock(head.Key)!.Section;
+        List<Block> tops = node is not null
+            ? [node.Block!]
+            : [.. section.Items
+                .SkipWhile(item => !(item is TextBlock textBlock && textBlock.Key == head.Key))
+                .TakeWhile(item => item is TextBlock)
+                .Select(item => ((TextBlock)item).Block)];
+        var indices = tops.Select(top => IndexOf(page, top)).ToList();
+
+        // Every moved block with its lines before, and each moved heading with its level before and after (as Relevel sets it).
+        var moved = tops.SelectMany(Subtree).Select(block => (Block: block, Before: block.Lines.ToList())).ToList();
+        var levels = new Dictionary<Guid, (int Before, int After)>();
+        if (node is not null)
+        {
+            NewLevels(node, section.Level + 2, levels);
+        }
+
+        var heading = Block.CreateDetached(EmptyHeading(section.Level + 1));
+        page.InsertBlock(section.Block, indices[0], heading);
+        for (var i = 0; i < tops.Count; i++)
+        {
+            page.MoveBlock(tops[i], heading, i);
+        }
+
+        if (node is not null)
+        {
+            OutlineEditor.Relevel(node, section.Level + 2);
+        }
+
+        return new WrappedSection(heading.Key, section.Block?.Key, indices, [.. tops.Select(top => top.Key)], MovedBlocks(moved, levels));
     }
 
     /// <summary>Deletes a detail with its deeper details.</summary>
@@ -221,4 +265,24 @@ public static class ManuscriptEditor
 
     /// <summary>The block and all blocks below it, depth-first in file order.</summary>
     private static IEnumerable<Block> Subtree(Block block) => block.Children.SelectMany(Subtree).Prepend(block);
+
+    /// <summary>Records the level of <paramref name="node"/> and its sub-headings before and after <c>Relevel(node, level)</c>.</summary>
+    private static void NewLevels(OutlineNode node, int level, Dictionary<Guid, (int Before, int After)> levels)
+    {
+        levels[node.Key] = (node.Level, level);
+        foreach (var child in node.Children)
+        {
+            NewLevels(child, level + 1, levels);
+        }
+    }
+
+    /// <summary>The moved blocks for an undo, each with its lines before and now, its levels and its parent now.</summary>
+    private static List<RemovedHeading.MovedBlock> MovedBlocks(
+        IEnumerable<(Block Block, List<RawLine> Before)> moved, Dictionary<Guid, (int Before, int After)> levels) =>
+        [.. moved.Select(m => new RemovedHeading.MovedBlock(
+            m.Block.Key,
+            m.Before,
+            [.. m.Block.Lines],
+            levels.TryGetValue(m.Block.Key, out var level) ? level : null,
+            m.Block.Parent?.Key))];
 }

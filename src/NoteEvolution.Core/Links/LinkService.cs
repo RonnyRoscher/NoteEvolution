@@ -13,6 +13,7 @@ public sealed class LinkService(IVault vault, IPageWriter writer, UndoManager un
 {
     private const string SourceKey = "source";
     private const string UsedInKey = "used-in";
+    private const string IdKey = "id";
 
     public AdoptResult Adopt(Book book, Guid noteBlockKey, InsertPosition position)
     {
@@ -221,6 +222,216 @@ public sealed class LinkService(IVault vault, IPageWriter writer, UndoManager un
             book.FindNode(headingKey)?.Block ?? throw new ArgumentException("No heading has this key.", nameof(headingKey)));
     }
 
+    public Guid MergeTextBlocks(Book book, IReadOnlyList<IReadOnlyList<Guid>> groups)
+    {
+        var page = book.Page;
+        EnsureWritable(page);
+        var merges = groups.Select(group => MergeGroup(book, group)).ToList();
+        if (merges.Count == 0)
+        {
+            throw new ArgumentException("No group to merge.", nameof(groups));
+        }
+
+        if (merges.SelectMany(blocks => blocks).GroupBy(block => block).Any(same => same.Count() > 1))
+        {
+            throw new ArgumentException("A text block is given twice.", nameof(groups));
+        }
+
+        var contents = merges.Select(MergedContent).ToList();
+        contents.ForEach(Block.ValidateContent);
+        var plans = merges.Select(PlanMerge).ToList();
+        EnsureUnreferenced(book, [.. plans.SelectMany(plan => plan.RemovedIds).Distinct()]);
+
+        var before = PageStructureSnapshot.Capture(page);
+        var moves = new List<(Guid FirstId, Guid RemovedId, IReadOnlyList<Guid> Sources)>();
+        try
+        {
+            foreach (var ((blocks, content), plan) in merges.Zip(contents).Zip(plans))
+            {
+                var first = blocks[0];
+                var later = blocks.Skip(1).ToList();
+                if (plan.TakenId is { } takenId)
+                {
+                    first.SetProperty(IdKey, takenId);
+                }
+
+                foreach (var property in plan.Carried)
+                {
+                    first.SetProperty(property.Key, property.Value);
+                }
+
+                foreach (var block in later)
+                {
+                    var sources = SourceValue.Parse(block.GetProperty(SourceKey) ?? "");
+                    if (block.Id is { } removedId && removedId != first.Id && sources.Count > 0)
+                    {
+                        // A linked block: the notes' usages of it move to the first block, which needs an id for that.
+                        moves.Add((first.EnsureId(), removedId, [.. sources.Distinct()]));
+                    }
+
+                    foreach (var noteId in sources)
+                    {
+                        AddSource(first, noteId);
+                    }
+                }
+
+                first.SetContent(content);
+                foreach (var block in later)
+                {
+                    foreach (var detail in block.Children.ToList())
+                    {
+                        page.MoveBlock(detail, first, first.Children.Count);
+                    }
+
+                    page.RemoveBlock(block);
+                }
+            }
+        }
+        catch
+        {
+            // Whatever failed half-way, the page is left as it was.
+            before.RestoreInto(page);
+            throw;
+        }
+
+        SaveBook(page, () => before.RestoreInto(page));
+        var after = PageStructureSnapshot.Capture(page);
+
+        var changes = new List<(NoteChange Change, Guid FirstId)>();
+        foreach (var (firstId, removedId, sources) in moves)
+        {
+            foreach (var noteId in sources)
+            {
+                if (RemoveUsageOfFound(noteId, book.LinkName, removedId, replacement: firstId) is { } change)
+                {
+                    // Undo puts back the usage of the removed block.
+                    changes.Add((change with { BookBlockId = removedId }, firstId));
+                }
+            }
+        }
+
+        var bookPath = page.FilePath;
+        var linkName = book.LinkName;
+        undo.Push(new UndoAction("Zusammenfügen", () => UndoMerge(bookPath, linkName, before, after, changes)));
+        if (changes.All(c => !c.Change.Pending))
+        {
+            RetryPending();
+        }
+
+        return merges[0][0].Key;
+    }
+
+    /// <summary>The blocks of one group for <see cref="MergeTextBlocks"/>: at least two text blocks with the same parent.</summary>
+    private static List<Block> MergeGroup(Book book, IReadOnlyList<Guid> group)
+    {
+        var blocks = group.Select(key => FindTextBlock(book, key)).ToList();
+        if (blocks.Count < 2)
+        {
+            throw new ArgumentException("A group needs at least two text blocks.", nameof(group));
+        }
+
+        if (blocks.Any(block => block.Parent != blocks[0].Parent))
+        {
+            throw new ArgumentException("The text blocks of a group must have the same parent block.", nameof(group));
+        }
+
+        return blocks;
+    }
+
+    /// <summary>
+    /// The content of a merged group: the blocks' contents joined by a blank line, blank ones left out (an empty first
+    /// block takes the next text); the first block's own content if all are blank.
+    /// </summary>
+    private static string MergedContent(List<Block> blocks)
+    {
+        var texts = blocks.Select(block => block.Content).Where(content => !string.IsNullOrWhiteSpace(content)).ToList();
+        return texts.Count > 0 ? string.Join("\n\n", texts) : blocks[0].Content;
+    }
+
+    /// <summary>
+    /// What merging <paramref name="blocks"/> does to the first block's properties besides <c>source::</c>: the
+    /// <c>id::</c> it takes over (raw value), the properties it gets from the later blocks, and the ids that go.
+    /// </summary>
+    /// <param name="TakenId">The first later block's <c>id::</c> with a valid id when the first block has none; else <c>null</c>.</param>
+    /// <param name="Carried">The later blocks' properties (other than <c>id::</c> and <c>source::</c>) the first block lacks.</param>
+    /// <param name="RemovedIds">The ids of the later blocks that vanish (not the one taken over).</param>
+    private sealed record MergePlan(string? TakenId, IReadOnlyList<BlockProperty> Carried, IReadOnlyList<Guid> RemovedIds);
+
+    /// <summary>
+    /// Plans the properties of one group (see <see cref="MergePlan"/>): a later block's property is carried over when
+    /// the first block (or an earlier later block) does not have its key yet (ignoring case).
+    /// </summary>
+    /// <exception cref="MergeRefusedException">Two of the blocks have different values for the same key.</exception>
+    private static MergePlan PlanMerge(List<Block> blocks)
+    {
+        var first = blocks[0];
+        var later = blocks.Skip(1).ToList();
+        var taken = first.Id is null ? later.FirstOrDefault(block => block.Id is not null) : null;
+        var keptId = first.Id ?? taken?.Id;
+
+        bool MergedSeparately(BlockProperty property) =>
+            string.Equals(property.Key, IdKey, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(property.Key, SourceKey, StringComparison.OrdinalIgnoreCase);
+
+        var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var property in first.Properties.Where(p => !MergedSeparately(p)))
+        {
+            values.TryAdd(property.Key, property.Value);
+        }
+
+        var carried = new List<BlockProperty>();
+        foreach (var property in later.SelectMany(block => block.Properties).Where(p => !MergedSeparately(p)))
+        {
+            if (values.TryGetValue(property.Key, out var value))
+            {
+                if (!string.Equals(value, property.Value, StringComparison.Ordinal))
+                {
+                    throw new MergeRefusedException($"The text blocks have different values for the property '{property.Key}'.");
+                }
+            }
+            else
+            {
+                values.Add(property.Key, property.Value);
+                carried.Add(property);
+            }
+        }
+
+        var removedIds = later.Select(block => block.Id).OfType<Guid>().Where(id => id != keptId).Distinct().ToList();
+        return new MergePlan(taken?.GetProperty(IdKey), carried, removedIds);
+    }
+
+    /// <summary>
+    /// Refuses a merge when a block reference <c>((id))</c> to one of <paramref name="removedIds"/> stands anywhere in
+    /// the vault (page lines before the first block, block texts, property values) other than in a <c>used-in::</c>
+    /// value (which the merge rewrites) or a <c>source::</c> value of the book itself.
+    /// </summary>
+    /// <exception cref="MergeRefusedException">Such a reference exists.</exception>
+    private void EnsureUnreferenced(Book book, IReadOnlyList<Guid> removedIds)
+    {
+        if (removedIds.Count == 0)
+        {
+            return;
+        }
+
+        var references = removedIds.Select(id => $"(({id:D}))").ToList();
+        bool Mentions(string text) => references.Any(reference => text.Contains(reference, StringComparison.OrdinalIgnoreCase));
+
+        foreach (var page in vault.Pages)
+        {
+            var isBook = ReferenceEquals(page, book.Page);
+            bool Rewritten(BlockProperty property) =>
+                string.Equals(property.Key, UsedInKey, StringComparison.OrdinalIgnoreCase)
+                || (isBook && string.Equals(property.Key, SourceKey, StringComparison.OrdinalIgnoreCase));
+
+            if (page.PrefixLines.Any(line => Mentions(line.Text))
+                || page.AllBlocks().Any(block =>
+                    Mentions(block.Content) || block.Properties.Any(property => !Rewritten(property) && Mentions(property.Value))))
+            {
+                throw new MergeRefusedException($"The id of a text block that would go is referenced in '{page.FilePath}'.");
+            }
+        }
+    }
+
     /// <summary>
     /// Removes the book block with its subtree, saves the book, then removes the usages of all linked blocks in the
     /// subtree from their notes and records the undo action „Löschen“.
@@ -346,14 +557,17 @@ public sealed class LinkService(IVault vault, IPageWriter writer, UndoManager un
     }
 
     /// <summary>
-    /// Removes the usage from the note found by id. If no note has that id (e.g. its <c>id::</c> was never
+    /// Removes the usage from the note found by id; with <paramref name="replacement"/>, the entry is rewritten to that
+    /// book block in place instead (see <see cref="UpdateNote"/>). If no note has that id (e.g. its <c>id::</c> was never
     /// written), an open add for this usage is dropped instead, so a later retry cannot bring it back.
     /// </summary>
-    private NoteChange? RemoveUsageOfFound(Guid noteId, string linkName, Guid bookBlockId)
+    private NoteChange? RemoveUsageOfFound(Guid noteId, string linkName, Guid bookBlockId, Guid? replacement = null)
     {
         if (FindNote(noteId) is { } note)
         {
-            return UpdateNote(note.Page, note.Block, linkName, bookBlockId, remove: true);
+            return replacement is { } newId
+                ? UpdateNote(note.Page, note.Block, linkName, newId, remove: false, replacing: bookBlockId)
+                : UpdateNote(note.Page, note.Block, linkName, bookBlockId, remove: true);
         }
 
         ClearPending(noteId, linkName, bookBlockId);
@@ -472,6 +686,49 @@ public sealed class LinkService(IVault vault, IPageWriter writer, UndoManager un
         page.RestoreBlock(parent, index, block);
         SaveBook(page, () => page.RemoveBlock(block));
 
+        if (RestoreNotes(linkName, changes))
+        {
+            RetryPending();
+        }
+    }
+
+    /// <summary>
+    /// Puts the book back as it was before <see cref="MergeTextBlocks"/>, then the notes as in <see cref="RestoreNotes"/>
+    /// (a rewrite that only waited in <c>pending.json</c> loses its open add of the first block's usage). Refused before
+    /// anything changes if the book is no longer exactly as the merge left it.
+    /// </summary>
+    private void UndoMerge(
+        string bookPath, string linkName, PageStructureSnapshot before, PageStructureSnapshot after,
+        IReadOnlyList<(NoteChange Change, Guid FirstId)> changes)
+    {
+        var page = CurrentPage(bookPath);
+        if (!after.Matches(page))
+        {
+            throw new InvalidOperationException("Das Buch wurde seit dem Zusammenfügen geändert.");
+        }
+
+        before.RestoreInto(page);
+        SaveBook(page, () => after.RestoreInto(page));
+
+        foreach (var (change, firstId) in changes.Where(c => c.Change.Pending))
+        {
+            ClearPending(change.NoteId, linkName, firstId);
+        }
+
+        if (RestoreNotes(linkName, [.. changes.Select(c => c.Change)]))
+        {
+            RetryPending();
+        }
+    }
+
+    /// <summary>
+    /// Undoes usage changes of notes: a note still exactly as the change left it gets its original lines back; any other
+    /// note gets the usage (<see cref="NoteChange.BookBlockId"/>) added again. Changes are undone newest first, so that
+    /// several changes of the same note are each checked against the state they left. Returns whether every note write
+    /// succeeded.
+    /// </summary>
+    private bool RestoreNotes(string linkName, IReadOnlyList<NoteChange> changes)
+    {
         var allWritten = true;
         foreach (var change in changes.Reverse())
         {
@@ -491,21 +748,21 @@ public sealed class LinkService(IVault vault, IPageWriter writer, UndoManager un
             }
         }
 
-        if (allWritten)
-        {
-            RetryPending();
-        }
+        return allWritten;
     }
 
     /// <summary>
-    /// Adds or removes one <c>used-in::</c> entry of a note and writes the note page. A read-only page is left
-    /// unchanged; for it, and when the write fails, the change goes to <c>pending.json</c> (the in-memory note
-    /// keeps a change that failed to write). Without a book block id there is no pending entry: the exception is passed on.
+    /// Adds or removes one <c>used-in::</c> entry of a note and writes the note page. An add with
+    /// <paramref name="replacing"/> rewrites the entry for that book block in place instead, or drops it if the added
+    /// entry is there already (see <see cref="ApplyEntry"/>). A read-only page is left unchanged; for it, and when the
+    /// write fails, the change goes to <c>pending.json</c>, a rewrite as an add and a remove (the in-memory note keeps a
+    /// change that failed to write). Without a book block id there is no pending entry: the exception is passed on.
     /// </summary>
-    private NoteChange UpdateNote(Page page, Block note, string linkName, Guid? bookBlockId, bool remove)
+    private NoteChange UpdateNote(Page page, Block note, string linkName, Guid? bookBlockId, bool remove, Guid? replacing = null)
     {
         var noteId = note.Id ?? throw new InvalidOperationException("The note block has no id.");
         var before = note.Lines.ToList();
+        bool pendingNow;
         if (page.IsReadOnly)
         {
             if (bookBlockId is not { } id)
@@ -514,11 +771,26 @@ public sealed class LinkService(IVault vault, IPageWriter writer, UndoManager un
             }
 
             Queue(new PendingNoteUpdate(noteId, Locate(page, note), linkName, id, remove));
-            return new NoteChange(noteId, bookBlockId, before, before, Pending: true);
+            pendingNow = true;
+        }
+        else
+        {
+            ApplyEntry(note, linkName, bookBlockId, remove, replacing);
+            pendingNow = SaveNote(page, note, noteId, linkName, bookBlockId, remove);
         }
 
-        ApplyEntry(note, linkName, bookBlockId, remove);
-        var pendingNow = SaveNote(page, note, noteId, linkName, bookBlockId, remove);
+        if (replacing is { } replaced)
+        {
+            if (pendingNow)
+            {
+                Queue(new PendingNoteUpdate(noteId, Locate(page, note), linkName, replaced, Remove: true));
+            }
+            else
+            {
+                ClearPending(noteId, linkName, replaced);
+            }
+        }
+
         return new NoteChange(noteId, bookBlockId, before, note.Lines.ToList(), pendingNow);
     }
 
@@ -591,18 +863,33 @@ public sealed class LinkService(IVault vault, IPageWriter writer, UndoManager un
         }
     }
 
-    private static void ApplyEntry(Block note, string linkName, Guid? bookBlockId, bool remove)
+    /// <summary>
+    /// Adds or removes the <c>used-in::</c> entry for this book block. An add with <paramref name="replacing"/> puts the
+    /// entry in place of the first entry for that book block and drops the others, or only drops them if the entry is
+    /// there already; without such an entry it is a plain add.
+    /// </summary>
+    private static void ApplyEntry(Block note, string linkName, Guid? bookBlockId, bool remove, Guid? replacing = null)
     {
         var entries = UsedInValue.Parse(note.GetProperty(UsedInKey) ?? "").ToList();
-        bool Matches(UsedInEntry e) =>
-            e.BookBlockId == bookBlockId && string.Equals(e.PageName, linkName, StringComparison.OrdinalIgnoreCase);
+        bool Matches(UsedInEntry e) => IsEntry(e, bookBlockId);
+        bool IsEntry(UsedInEntry e, Guid? id) =>
+            e.BookBlockId == id && string.Equals(e.PageName, linkName, StringComparison.OrdinalIgnoreCase);
 
-        if (remove ? entries.RemoveAll(Matches) == 0 : entries.Any(Matches))
+        var replaced = !remove && replacing is { } old ? entries.FindIndex(e => IsEntry(e, old)) : -1;
+        if (replaced >= 0)
+        {
+            if (!entries.Any(Matches))
+            {
+                entries[replaced] = new UsedInEntry(linkName, bookBlockId);
+            }
+
+            entries.RemoveAll(e => IsEntry(e, replacing));
+        }
+        else if (remove ? entries.RemoveAll(Matches) == 0 : entries.Any(Matches))
         {
             return;
         }
-
-        if (!remove)
+        else if (!remove)
         {
             entries.Add(new UsedInEntry(linkName, bookBlockId));
         }

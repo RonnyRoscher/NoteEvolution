@@ -85,6 +85,20 @@ public sealed class RelevanceService : IRelevanceService
     /// <summary>The topic's vector; null if it cannot be determined (unknown section, embedder failure).</summary>
     private float[]? TopicVector(TopicRequest topic)
     {
+        if (topic.OwnText is { } ownText)
+        {
+            return topic.Book.FindNode(topic.SectionKey) is { } ownSection
+                ? PathPlus(topic.Book, ownSection, [EmbeddingText.ForOwnText(ownText)])
+                : null;
+        }
+
+        if (topic.RangeTextBlockKeys is { } keys)
+        {
+            return topic.Book.FindNode(topic.SectionKey) is { } rangeSection
+                ? PathPlus(topic.Book, rangeSection, [.. keys.Select(topic.Book.FindTextBlock).OfType<TextBlock>().Select(EmbeddingText.ForTextBlock)])
+                : null;
+        }
+
         if (topic.Manuscript && topic.CursorTextBlockKey is { } key && topic.Book.FindTextBlock(key) is { } cursor)
         {
             return Embed(EmbeddingText.ForCursor(topic.Book, cursor));
@@ -97,14 +111,20 @@ public sealed class RelevanceService : IRelevanceService
     /// Heading path plus the mean of the text blocks directly in the section (without sub-sections), normalized;
     /// null if the embedder failed.
     /// </summary>
-    private float[]? SectionVector(Book book, OutlineNode section)
+    private float[]? SectionVector(Book book, OutlineNode section) =>
+        PathPlus(book, section, [.. section.TextBlocks.Select(EmbeddingText.ForTextBlock)]);
+
+    /// <summary>
+    /// Heading path plus the mean of the given (prefixed) texts, normalized; blank texts are skipped, with none left the
+    /// path alone. Null if the embedder failed.
+    /// </summary>
+    private float[]? PathPlus(Book book, OutlineNode section, IReadOnlyList<string> texts)
     {
         if (Embed(EmbeddingText.ForHeadingPath(book, section)) is not { } path) return null;
 
         var blocks = new List<float[]>();
-        foreach (var textBlock in section.TextBlocks)
+        foreach (var text in texts)
         {
-            var text = EmbeddingText.ForTextBlock(textBlock);
             if (IsBlank(text)) continue;
             if (Embed(text) is not { } vector) return null;
             blocks.Add(vector);

@@ -11,8 +11,8 @@
 
 @* The book text (spec 7): the whole book as manuscript in the TipTap editor. Every change is saved 1000 ms after the
    last one by reconciling the editor's document into the book page (BookTextSaver). The cursor element sets the
-   current section, and the section bar sits at the bottom of its marking; revealed elements (outline, jumps) are
-   scrolled to once the editor shows the book. *@
+   current section; the editor marks the nodes of the range (AppState.CurrentRange) and the section bar sits at the
+   bottom of that marking; revealed elements (outline, jumps) are scrolled to once the editor shows the book. *@
 <div class="ne-editor-pane">
     @if (State.CurrentBook is null)
     {
@@ -67,10 +67,13 @@
     private bool _barVisible;
 
     /// <summary>
-    /// True while <see cref="OnCursorChanged"/> or <see cref="FollowCursorSection"/> notifies the other components (see
-    /// <see cref="OnStateChanged"/>).
+    /// True while <see cref="OnCursorChanged"/>, <see cref="FollowCursorSection"/> or a range command notifies the other
+    /// components (see <see cref="OnStateChanged"/>).
     /// </summary>
     private bool _notifyingCursor;
+
+    /// <summary>The nodes last given to the editor to mark (<see cref="PushMarkedAsync"/>); <c>null</c> after that failed.</summary>
+    private IReadOnlyList<MarkedNode>? _marked = [];
 
     /// <summary>Why the book page cannot be edited now: it is read-only, or a conflict for its file is open (R26).</summary>
     private string? ReadOnlyReason => State switch
@@ -179,6 +182,7 @@
         try
         {
             await SyncCoreAsync();
+            await PushMarkedAsync();
         }
         finally
         {
@@ -260,12 +264,31 @@
     }
 
     /// <summary>
-    /// Runs the structure command on the cursor element (<see cref="ManuscriptCommands"/>) and shows its message; the
-    /// editor's shortcuts and the buttons of the section bar both come here.
+    /// Runs the structure command on the cursor element, or Merge and Wrap on the range (<see cref="ManuscriptCommands"/>),
+    /// and shows its message; the editor's shortcuts and the buttons of the section bar both come here. The range
+    /// buttons and shortcuts (RangeUp, RangeDown) only move the range
+    /// (<see cref="AppState.ChangeRange"/>): the document stays as it is, the editor just marks the new range.
     /// </summary>
     public async Task OnSectionCommand(SectionCommand command)
     {
-        _saver.Message = await ManuscriptCommands.RunAsync(State, command, L["UndoStructure"], Logger);
+        if (command is SectionCommand.RangeUp or SectionCommand.RangeDown)
+        {
+            _notifyingCursor = true;
+            try
+            {
+                State.ChangeRange(command == SectionCommand.RangeUp ? 1 : -1);
+            }
+            finally
+            {
+                _notifyingCursor = false;
+            }
+
+            return;
+        }
+
+        // Merge goes through the link service, which names its undo action itself.
+        var undo = command == SectionCommand.Wrap ? L["UndoWrap"] : L["UndoStructure"];
+        _saver.Message = await ManuscriptCommands.RunAsync(State, command, undo, Logger);
         StateHasChanged();
     }
 
@@ -339,9 +362,13 @@
     {
         if (_notifyingCursor)
         {
-            // The pane's own cursor notification: nothing the document depends on changed, the text waits for its
-            // debounce.
-            _ = InvokeAsync(StateHasChanged);
+            // The pane's own cursor or range notification: nothing the document depends on changed, the text waits
+            // for its debounce; only the marking may have changed.
+            _ = InvokeAsync(async () =>
+            {
+                StateHasChanged();
+                await PushMarkedAsync();
+            });
             return;
         }
 
@@ -538,6 +565,37 @@
         finally
         {
             _notifyingCursor = false;
+        }
+    }
+
+    /// <summary>
+    /// Gives the editor the nodes of the current range to mark (none without a cursor), if they differ from the ones it
+    /// was given last. Marking changes no document, so nothing is saved or loaded for it; the editor keeps the nodes for
+    /// the documents it loads later.
+    /// </summary>
+    private async Task PushMarkedAsync()
+    {
+        if (!_ready || _disposed)
+        {
+            return;
+        }
+
+        IReadOnlyList<MarkedNode> nodes = State.CurrentRange?.Nodes ?? [];
+        if (_marked is not null && _marked.SequenceEqual(nodes))
+        {
+            return;
+        }
+
+        _marked = nodes;
+        try
+        {
+            await Editor.SetMarkedAsync(nodes);
+        }
+        catch (Exception ex)
+        {
+            // The next change of the range tries again.
+            _marked = null;
+            Logger.LogWarning(ex, "Marking the range in the editor failed");
         }
     }
 

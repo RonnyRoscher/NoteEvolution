@@ -42,6 +42,17 @@ public static class EmbeddingText
     /// <summary>The block's text and its paragraphs that are not notes, as the user wrote it.</summary>
     public static string ForTextBlock(TextBlock tb) => QueryPrefix + TextOf(tb);
 
+    /// <summary>The content of a sub-bullet and of all its descendants (depth first), without property lines; as a note to place.</summary>
+    public static string ForNoteBlock(Block block)
+    {
+        var lines = new List<string>();
+        AddContent(lines, block);
+        return PassagePrefix + Join(lines);
+    }
+
+    /// <summary>The text of one element as the user wrote it (unescaped, trimmed), as a topic.</summary>
+    public static string ForOwnText(string text) => QueryPrefix + BlockTextEscape.Unescape(text).Trim();
+
     /// <summary>Heading path of the cursor's section plus the previous, the cursor's and the next text block of that section.</summary>
     public static string ForCursor(Book book, TextBlock cursor)
     {

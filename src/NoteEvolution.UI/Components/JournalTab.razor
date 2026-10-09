@@ -7,6 +7,9 @@
 @* The "Journal" tab: the root blocks of the journal pages, newest day first, from a chosen day on. *@
 @{
     var visible = _entries.Where(note => _jump is not { } jump || note.Date <= jump).ToList();
+
+    // A card with an open "Wohin damit?" list stays, also beyond the entries shown so far.
+    var shown = visible.Where((note, index) => index < _shown || State.WhereToOpenNotes.Contains(note.Key));
 }
 
 <div class="ne-journal">
@@ -20,7 +23,7 @@
         <div class="ne-search-empty">@L["NotesJournalEmpty"]</div>
     }
     <div class="ne-journal-list">
-        @foreach (var note in visible.Take(_shown))
+        @foreach (var note in shown)
         {
             <NoteCard @key="note.Key" Note="note" Highlighted="note.Key == _highlightKey"
                       FocusRequest="note.Key == _highlightKey ? _focusRequest : 0" />
@@ -37,7 +40,10 @@
     private const int PageSize = 50;
 
     private (NoteFilter Filter, int Revision)? _last;
-    private IReadOnlyList<NoteBlock> _entries = [];
+    private List<NoteBlock> _entries = [];
+
+    /// <summary>The notes in <see cref="_entries"/> only because their "Wohin damit?" list is open (see <see cref="WhereToPins"/>).</summary>
+    private HashSet<Guid> _keptOnly = [];
     private DateOnly? _jump;
     private int _shown = PageSize;
     private (Guid? Key, int Sequence) _lastReveal;
@@ -63,13 +69,21 @@
     /// <summary>How long a card stays marked after a jump (R4: measured with the injected <see cref="TimeProvider"/>).</summary>
     public static readonly TimeSpan HighlightDuration = TimeSpan.FromSeconds(2);
 
+    /// <remarks>
+    /// The pane renders again on every <see cref="AppState.Changed"/>, which calls this: a note kept only for its open
+    /// "Wohin damit?" list goes once that list is closed. Reading the entries again keeps a card with an open list where
+    /// it is, with its note as the notes have it now (gone if they no longer have it).
+    /// </remarks>
     protected override void OnParametersSet()
     {
+        WhereToPins.Release(_entries, _keptOnly, note => note.Key, State.WhereToOpenNotes);
         if (_last != (Filter, Revision))
         {
             _last = (Filter, Revision);
             _shown = PageSize;
-            _entries = State.Session?.Notes.Journal(Filter) ?? [];
+            var notes = State.Session?.Notes;
+            (_entries, _keptOnly) = WhereToPins.Merge(_entries, notes?.Journal(Filter) ?? [], note => note.Key, State.WhereToOpenNotes);
+            _entries = [.. _entries.Select(note => _keptOnly.Contains(note.Key) ? notes?.Get(note.Key) : note).OfType<NoteBlock>()];
         }
 
         if (RevealKey is { } key && (key, RevealSequence) != _lastReveal)

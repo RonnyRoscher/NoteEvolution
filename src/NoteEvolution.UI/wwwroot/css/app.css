@@ -607,6 +607,10 @@ html, body {
     min-width: 0;
 }
 
+.ne-note-child-whereto {
+    flex-shrink: 0;
+}
+
 .ne-note-actions {
     display: flex;
     flex-wrap: wrap;
@@ -668,21 +672,42 @@ html, body {
     list-style: none;
 }
 
+/* A sub-bullet's list stands in the note body, which keeps line breaks and uses the text font. */
+.ne-note-whereto-results {
+    font-family: var(--font-ui);
+    white-space: normal;
+}
+
+/* A hit: the heading path on its own line, below it the excerpt, the ✓ and the percentage. */
 .ne-shell .ne-note-whereto-item {
     display: flex;
+    flex-wrap: wrap;
     justify-content: space-between;
     align-items: baseline;
-    gap: 8px;
+    column-gap: 8px;
     width: 100%;
     text-align: left;
 }
 
-.ne-note-whereto-title {
+.ne-note-whereto-path {
+    flex: 0 0 100%;
+    overflow: hidden;
+    font-size: 11px;
+    color: var(--fg-muted);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ne-note-whereto-excerpt {
     flex: 1;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+.ne-note-whereto-used {
+    color: var(--accent);
 }
 
 .ne-note-whereto-percent {
@@ -879,8 +904,9 @@ html, body {
 }
 
 /*
- * The current element (spec 2): a frame with a bar on its left. Each marked node (a heading and its section, a text
- * block, or a detail's paragraphs) draws its part; the nodes touch, so the parts form one box.
+ * The marked range (package B, spec 2): a frame with a bar on its left. Each marked node (a heading, a text block, a
+ * text block's own paragraph, or a detail's paragraphs) draws its part; nodes that touch form one box, so a range in
+ * several pieces draws one box per piece (ne-current-first / -last on each piece's ends).
  */
 .ne-current {
     position: relative;
@@ -911,7 +937,7 @@ html, body {
     border-bottom: 1px solid var(--border);
 }
 
-/* A detail's box starts at its own indentation. */
+/* A detail's box starts at its own indentation (a text block's own paragraph at depth 0). */
 .ne-para.ne-current::after {
     left: calc(var(--current-depth, 0) * 1.5em - 16px);
 }
@@ -972,6 +998,32 @@ html, body {
 .ne-sec-sources-area {
     position: relative;
     flex-shrink: 0;
+}
+
+/*
+ * The range head next to the range buttons: a long heading title is cut off (only the head, never the suffix of
+ * level −1), the commands after it stay reachable; the title attribute shows the full label.
+ */
+.ne-range-label {
+    display: inline-flex;
+    min-width: 0;
+    white-space: nowrap;
+    flex-shrink: 0;
+    padding: 0 6px 0 2px;
+    margin-right: 4px;
+    border-right: 1px solid var(--border);
+    color: var(--fg-muted);
+}
+
+.ne-range-head {
+    max-width: 24ch;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.ne-range-own {
+    flex-shrink: 0;
+    white-space: pre;
 }
 
 .ne-sec-no-sources {

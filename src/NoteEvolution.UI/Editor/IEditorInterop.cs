@@ -10,7 +10,10 @@ namespace NoteEvolution.UI.Editor;
 /// <param name="Offset">The cursor's character offset in the title or paragraph.</param>
 public sealed record CursorInfo(ElementKind Kind, Guid Key, Guid? TextBlockKey, int Offset);
 
-/// <summary>The structure commands of the current element (spec 3); the editor sends all but <see cref="Delete"/> as shortcuts.</summary>
+/// <summary>
+/// The structure commands of the current element (spec 3) and the commands of the range (package B, spec 2); the
+/// editor sends all but <see cref="Delete"/>, <see cref="Merge"/> and <see cref="Wrap"/> as shortcuts.
+/// </summary>
 public enum SectionCommand
 {
     /// <summary>Alt+Enter: a new empty element after the current one.</summary>
@@ -28,8 +31,23 @@ public enum SectionCommand
     /// <summary>Backspace at the start of a heading's title: the heading goes, its content stays.</summary>
     RemoveHeading,
 
-    /// <summary>Button only: the element with everything it marks.</summary>
+    /// <summary>
+    /// Button only: the element with everything below it (sub-sections, details). At range level −1, which marks the
+    /// element alone, it is only possible on an element without sub-elements.
+    /// </summary>
     Delete,
+
+    /// <summary>Alt+Up: the range one level higher.</summary>
+    RangeUp,
+
+    /// <summary>Alt+Down: the range one level lower.</summary>
+    RangeDown,
+
+    /// <summary>Button only: merges the text blocks of the range per heading.</summary>
+    Merge,
+
+    /// <summary>Button only: puts the range under a new, empty heading.</summary>
+    Wrap,
 }
 
 /// <summary>What the editor reports; implemented by the component that shows it (<c>EditorPane</c>).</summary>
@@ -86,4 +104,10 @@ public interface IEditorInterop : IAsyncDisposable
     /// ignored.
     /// </summary>
     Task RevealAsync(Guid elementKey);
+
+    /// <summary>
+    /// Marks the nodes of the range (<see cref="RangeInfo.Nodes"/>); the editor draws a box per contiguous piece and
+    /// keeps the list for later documents, ignoring keys it does not show. An empty list removes the marking.
+    /// </summary>
+    Task SetMarkedAsync(IReadOnlyList<MarkedNode> nodes);
 }
