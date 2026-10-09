@@ -607,6 +607,10 @@ html, body {
     min-width: 0;
 }
 
+.ne-note-child-whereto {
+    flex-shrink: 0;
+}
+
 .ne-note-actions {
     display: flex;
     flex-wrap: wrap;
@@ -668,21 +672,42 @@ html, body {
     list-style: none;
 }
 
+/* A sub-bullet's list stands in the note body, which keeps line breaks and uses the text font. */
+.ne-note-whereto-results {
+    font-family: var(--font-ui);
+    white-space: normal;
+}
+
+/* A hit: the heading path on its own line, below it the excerpt, the ✓ and the percentage. */
 .ne-shell .ne-note-whereto-item {
     display: flex;
+    flex-wrap: wrap;
     justify-content: space-between;
     align-items: baseline;
-    gap: 8px;
+    column-gap: 8px;
     width: 100%;
     text-align: left;
 }
 
-.ne-note-whereto-title {
+.ne-note-whereto-path {
+    flex: 0 0 100%;
+    overflow: hidden;
+    font-size: 11px;
+    color: var(--fg-muted);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ne-note-whereto-excerpt {
     flex: 1;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+.ne-note-whereto-used {
+    color: var(--accent);
 }
 
 .ne-note-whereto-percent {

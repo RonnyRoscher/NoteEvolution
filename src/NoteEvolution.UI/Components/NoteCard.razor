@@ -58,7 +58,16 @@
                         @AdoptMenu(child)
                     }
                 </span>
+                @if (WhereToAvailable)
+                {
+                    <button type="button" class="ne-note-child-whereto" title="@L["NoteWhereToTitle"]"
+                            aria-expanded="@_whereTo.ContainsKey(child.Key)" @onclick="() => ToggleWhereToAsync(child)">@L["NoteWhereTo"]</button>
+                }
             </div>
+            @if (_whereTo.TryGetValue(child.Key, out var childList))
+            {
+                @WhereToResults(childList, depth * 12)
+            }
         }
     </div>
     @if (Note.Page.IsReadOnly)
@@ -80,7 +89,7 @@
         @if (WhereToAvailable)
         {
             <button type="button" class="ne-note-whereto" title="@L["NoteWhereToTitle"]"
-                    aria-expanded="@(_whereTo is not null || _whereBusy)" @onclick="ToggleWhereToAsync">@L["NoteWhereTo"]</button>
+                    aria-expanded="@_whereTo.ContainsKey(Note.Block.Key)" @onclick="() => ToggleWhereToAsync(Note.Block)">@L["NoteWhereTo"]</button>
         }
         <button type="button" class="ne-note-logseq" @onclick="OpenInLogseq">@L["NoteOpenLogseq"]</button>
         @if (collapsible)
@@ -88,32 +97,9 @@
             <button type="button" class="ne-note-more" @onclick="() => _expanded = !_expanded">@(_expanded ? L["NoteLess"] : L["NoteMore"])</button>
         }
     </footer>
-    @if (_whereBusy)
+    @if (_whereTo.TryGetValue(Note.Block.Key, out var noteList))
     {
-        <div class="ne-note-hint ne-note-whereto-busy" role="status">@L["NoteWhereToBusy"]</div>
-    }
-    else if (_whereTo is { } whereTo)
-    {
-        if (whereTo.Sections.Count == 0)
-        {
-            <div class="ne-note-hint ne-note-whereto-none" role="status">@L["NoteWhereToNone"]</div>
-        }
-        else
-        {
-            <ul class="ne-note-whereto-list">
-                @foreach (var target in whereTo.Sections)
-                {
-                    var key = target.Key;
-                    <li>
-                        <button type="button" class="ne-note-whereto-item" title="@L["NoteWhereToItemTitle"]"
-                                @onclick="() => GoToSectionAsync(key)">
-                            <span class="ne-note-whereto-title">@target.Title</span>
-                            <span class="ne-note-whereto-percent">@target.Percent %</span>
-                        </button>
-                    </li>
-                }
-            </ul>
-        }
+        @WhereToResults(noteList, 0)
     }
     @if (_message is { } message)
     {
@@ -133,21 +119,40 @@
     /// <summary>The key of the block (the note or a sub-bullet) whose menu of adopt variants is open; <c>null</c> if none.</summary>
     private Guid? _adoptMenu;
 
-    /// <summary>How many sections "Wohin damit?" lists.</summary>
+    /// <summary>How many text blocks "Wohin damit?" lists.</summary>
     private const int WhereToLimit = 5;
+
+    /// <summary>How many characters of a hit's first line the list shows.</summary>
+    private const int WhereToExcerptLength = 60;
 
     private VaultSession? _session;
     private bool _disposed;
-    private bool _whereBusy;
-    private WhereToResult? _whereTo;
     private Guid _whereNoteKey;
-    private string? _whereBookName;
 
-    /// <summary>Counts the requests and closings; a result is only applied while its request is still the newest.</summary>
+    /// <summary>The open "Wohin damit?" lists by the key of their block: the note itself or one of its sub-bullets.</summary>
+    private readonly Dictionary<Guid, WhereToList> _whereTo = [];
+
+    /// <summary>Counts the requests; a result is only applied while the list of its request is still open.</summary>
     private int _whereGeneration;
 
-    /// <summary>The sections found for the note; <see cref="Book"/> is the snapshot they were found in.</summary>
-    private sealed record WhereToResult(Book Book, IReadOnlyList<(Guid Key, string Title, int Percent)> Sections);
+    /// <summary>
+    /// An open "Wohin damit?" list: the request that opened it, the link name of the book it searched and, once found,
+    /// the hits (<c>null</c> while the search runs).
+    /// </summary>
+    private sealed class WhereToList(int generation, string bookName)
+    {
+        public int Generation { get; } = generation;
+
+        public string BookName { get; } = bookName;
+
+        public IReadOnlyList<WhereToHit>? Hits { get; set; }
+    }
+
+    /// <summary>
+    /// A text block of the list: its heading path (empty in the prologue), the excerpt of its first line, the score in
+    /// percent of the best hit's, and whether its <c>source::</c> already names the searched block.
+    /// </summary>
+    private sealed record WhereToHit(Guid Key, string Path, string Excerpt, int Percent, bool Used);
 
     [Parameter, EditorRequired] public NoteBlock Note { get; set; } = default!;
 
@@ -182,19 +187,18 @@
         State is { Session: not null, CurrentBook.Page.IsReadOnly: false } && !Note.Page.IsReadOnly;
 
     /// <summary>
-    /// The list belongs to one note, session and book: when any of them changes (the card is reused for another note, a
-    /// book switch) it is closed and a request still running is dropped.
+    /// The lists belong to one note, session and book: when any of them changes (the card is reused for another note,
+    /// another book is selected; compared by link name, so a new view of the same book keeps them) they are closed and
+    /// a request still running is dropped.
     /// </summary>
     protected override void OnParametersSet()
     {
         var sessionChanged = TrackSession();
-        var bookChanged = (_whereTo is not null || _whereBusy)
-            && !string.Equals(State.CurrentBook?.LinkName, _whereBookName, StringComparison.OrdinalIgnoreCase);
+        var bookChanged = _whereTo.Values.Any(list =>
+            !string.Equals(State.CurrentBook?.LinkName, list.BookName, StringComparison.OrdinalIgnoreCase));
         if (sessionChanged || bookChanged || Note.Key != _whereNoteKey)
         {
-            _whereGeneration++;
-            _whereTo = null;
-            _whereBusy = false;
+            _whereTo.Clear();
             _whereNoteKey = Note.Key;
         }
     }
@@ -219,7 +223,7 @@
     public void Dispose()
     {
         _disposed = true;
-        _whereGeneration++;
+        _whereTo.Clear();
         Unsubscribe();
     }
 
@@ -316,17 +320,16 @@
     }
 
     /// <summary>
-    /// Lists the sections of the current book that fit the note best (or closes the list). The note's text and the book
-    /// snapshot are taken here on the UI thread; only the embedding and comparing run in the background (the vault model
-    /// is not thread-safe), and the section titles are read from that same snapshot.
+    /// Lists the text blocks of the current book that fit <paramref name="block"/> best (or closes its list): for the
+    /// note its text as indexed (<see cref="EmbeddingText.ForNote"/>), for a sub-bullet its own text with its
+    /// descendants (<see cref="EmbeddingText.ForNoteBlock"/>). The text and the book snapshot are taken here on the UI
+    /// thread; only the embedding and comparing run in the background (the vault model is not thread-safe), and the
+    /// paths and excerpts are read from that same snapshot.
     /// </summary>
-    private async Task ToggleWhereToAsync()
+    private async Task ToggleWhereToAsync(Block block)
     {
-        var generation = ++_whereGeneration;
-        if (_whereTo is not null || _whereBusy)
+        if (_whereTo.Remove(block.Key))
         {
-            _whereTo = null;
-            _whereBusy = false;
             return;
         }
 
@@ -335,43 +338,73 @@
             return;
         }
 
-        _whereBookName = book.LinkName;
-        var noteKey = Note.Key;
-        var noteText = EmbeddingText.ForNote(Note);
+        var isNote = block.Key == Note.Block.Key;
+
+        // A sub-bullet is indexed as a note of its own, with its parent's first line; an unknown key makes the
+        // service embed exactly the sub-bullet's text instead.
+        var noteKey = isNote ? Note.Key : Guid.Empty;
+        var noteText = isNote ? EmbeddingText.ForNote(Note) : EmbeddingText.ForNoteBlock(block);
+        var sourceId = block.Id;
         var relevance = session.Relevance;
-        _whereBusy = true;
-        IReadOnlyList<SectionHit> hits;
+        var generation = ++_whereGeneration;
+        _whereTo[block.Key] = new WhereToList(generation, book.LinkName);
+        if (!isNote)
+        {
+            // The list of a sub-bullet stands in the body, which a collapsed card would cut off.
+            _expanded = true;
+        }
+
+        IReadOnlyList<PlacementHit> hits;
         try
         {
-            hits = await Task.Run(() => relevance.WhereTo(noteKey, noteText, book, WhereToLimit));
+            hits = await Task.Run(() => relevance.Placements(noteKey, noteText, book, WhereToLimit));
         }
         catch (Exception ex)
         {
-            Logger.LogWarning(ex, "Finding the sections for a note failed");
+            Logger.LogWarning(ex, "Finding the text blocks for a note failed");
             hits = [];
         }
 
-        if (_disposed || generation != _whereGeneration)
+        if (_disposed || !_whereTo.TryGetValue(block.Key, out var list) || list.Generation != generation)
         {
             return;
         }
 
         var best = hits.Count > 0 ? hits.Max(hit => hit.Score) : 0;
-        _whereTo = new WhereToResult(book, [.. hits
-            .Where(hit => book.FindNode(hit.SectionKey) is not null)
-            .Select(hit => (hit.SectionKey, SectionTitle(book, book.FindNode(hit.SectionKey)!), SearchTab.Percent(hit.Score, best)))]);
-        _whereBusy = false;
+        list.Hits =
+        [
+            .. hits
+                .Select(hit => (Hit: hit, TextBlock: book.FindTextBlock(hit.TextBlockKey)))
+                .Where(found => found.TextBlock is not null)
+                .Select(found => new WhereToHit(
+                    found.Hit.TextBlockKey,
+                    HeadingPath(found.TextBlock!.Section),
+                    Excerpt.FirstLine(found.TextBlock.Text, WhereToExcerptLength),
+                    SearchTab.Percent(found.Hit.Score, best),
+                    sourceId is { } id && found.TextBlock.Sources.Contains(id))),
+        ];
     }
 
-    private static string SectionTitle(Book book, OutlineNode section) => section.Level == 0 ? book.Title : section.Title;
+    /// <summary>The titles from the book's top level down to <paramref name="section"/>, joined; empty for the root (prologue).</summary>
+    private static string HeadingPath(OutlineNode section)
+    {
+        var titles = new List<string>();
+        for (var node = section; node is { Level: > 0 }; node = node.Parent)
+        {
+            titles.Add(node.Title);
+        }
+
+        titles.Reverse();
+        return string.Join(" / ", titles);
+    }
 
     /// <summary>
-    /// Goes to a section of the list: the editor saves first, then the book (if the current one changed since) is
-    /// selected and the editor reveals the section's heading (the book root: the start of the book).
+    /// Goes to a text block of a list: the editor saves first, then, while the list's book is still the current one,
+    /// the editor reveals the block (the cursor goes to its start). The list stays open.
     /// </summary>
-    private async Task GoToSectionAsync(Guid sectionKey)
+    private async Task GoToHitAsync(WhereToList list, Guid textBlockKey)
     {
-        if (_whereTo is not { } result || State.Session is not { } session)
+        if (State.Session is not { } session)
         {
             return;
         }
@@ -386,33 +419,60 @@
         catch (Exception ex)
         {
             // The text may not be saved, so the view stays where it is.
-            Logger.LogError(ex, "Saving the editor before going to a section failed");
+            Logger.LogError(ex, "Saving the editor before going to a text block failed");
             return;
         }
 
-        if (_disposed || !ReferenceEquals(session, State.Session))
+        if (_disposed || !ReferenceEquals(session, State.Session)
+            || State.CurrentBook is not { } book
+            || !string.Equals(book.LinkName, list.BookName, StringComparison.OrdinalIgnoreCase)
+            || book.FindTextBlock(textBlockKey) is null)
         {
             return;
         }
 
-        if (!string.Equals(State.CurrentBook?.LinkName, result.Book.LinkName, StringComparison.OrdinalIgnoreCase))
-        {
-            if (session.Vault.FindBook(result.Book.LinkName) is not { } book)
-            {
-                return;
-            }
-
-            State.CurrentBook = book;
-        }
-
-        if (State.CurrentBook?.FindNode(sectionKey) is null)
-        {
-            return;
-        }
-
-        State.RevealElement(sectionKey);
+        State.RevealElement(textBlockKey);
         State.Notify();
     }
+
+    /// <summary>
+    /// A "Wohin damit?" list: the busy hint while it searches, then its hits or the hint that there are none.
+    /// <paramref name="indent"/> (pixels) aligns the list of a sub-bullet with it.
+    /// </summary>
+    private RenderFragment WhereToResults(WhereToList list, int indent) =>
+        @<div class="ne-note-whereto-results" style="@(indent > 0 ? $"margin-left: {indent}px" : null)">
+            @if (list.Hits is not { } hits)
+            {
+                <div class="ne-note-hint ne-note-whereto-busy" role="status">@L["NoteWhereToBusy"]</div>
+            }
+            else if (hits.Count == 0)
+            {
+                <div class="ne-note-hint ne-note-whereto-none" role="status">@L["NoteWhereToNone"]</div>
+            }
+            else
+            {
+                <ul class="ne-note-whereto-list">
+                    @foreach (var hit in hits)
+                    {
+                        <li>
+                            <button type="button" class="ne-note-whereto-item" title="@L["NoteWhereToItemTitle"]"
+                                    @onclick="() => GoToHitAsync(list, hit.Key)">
+                                @if (hit.Path.Length > 0)
+                                {
+                                    <span class="ne-note-whereto-path">@hit.Path</span>
+                                }
+                                <span class="ne-note-whereto-excerpt">@hit.Excerpt</span>
+                                @if (hit.Used)
+                                {
+                                    <span class="ne-note-whereto-used">✓</span>
+                                }
+                                <span class="ne-note-whereto-percent">@hit.Percent %</span>
+                            </button>
+                        </li>
+                    }
+                </ul>
+            }
+        </div>;
 
     /// <summary>
     /// The key of the heading or text block with the id <paramref name="blockId"/>; for a paragraph (detail) the key of

@@ -385,16 +385,16 @@
     <value>Wohin damit?</value>
   </data>
   <data name="NoteWhereToTitle" xml:space="preserve">
-    <value>Die Abschnitte des Buchs anzeigen, die zu dieser Notiz passen</value>
+    <value>Die Stellen im Buch anzeigen, die hierzu passen</value>
   </data>
   <data name="NoteWhereToBusy" xml:space="preserve">
-    <value>Passende Abschnitte werden gesucht …</value>
+    <value>Passende Stellen werden gesucht …</value>
   </data>
   <data name="NoteWhereToNone" xml:space="preserve">
-    <value>Kein passender Abschnitt gefunden.</value>
+    <value>Keine passenden Stellen gefunden.</value>
   </data>
   <data name="NoteWhereToItemTitle" xml:space="preserve">
-    <value>Zu diesem Abschnitt springen</value>
+    <value>Zu dieser Stelle springen</value>
   </data>
   <data name="NoteOpenLogseq" xml:space="preserve">
     <value>In Logseq öffnen</value>
