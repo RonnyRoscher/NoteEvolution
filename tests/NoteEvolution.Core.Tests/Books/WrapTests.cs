@@ -18,6 +18,8 @@ public class WrapTests
         "\t\t- Detail 1\n" +
         "\t\t\t- Detail 1a\n" +
         "\t\t- Detail 2\n" +
+        "\t- Text eins b\n" +
+        "\t- Text eins c\n" +
         "\t- ## Eins-A\n" +
         "\t  collapsed:: true\n" +
         "\t\t- Text A\n" +
@@ -87,7 +89,10 @@ public class WrapTests
         Assert.Equal([KeyOf(book, "### Eins-A")], heading.Items.Select(KeyOfItem));
         Assert.Equal(4, reloaded.FindNode(KeyOf(book, "#### Eins-A-i"))!.Level);
         Assert.Equal(
-            [KeyOf(book, "Text eins"), wrapped.NewHeadingKey, KeyOf(book, "Text nach A"), KeyOf(book, "## Eins-B"), KeyOf(book, "Text nach B")],
+            [
+                KeyOf(book, "Text eins"), KeyOf(book, "Text eins b"), KeyOf(book, "Text eins c"), wrapped.NewHeadingKey,
+                KeyOf(book, "Text nach A"), KeyOf(book, "## Eins-B"), KeyOf(book, "Text nach B"),
+            ],
             reloaded.FindNode(KeyOf(book, "# Eins"))!.Items.Select(KeyOfItem));
         Assert.Empty(reloaded.Warnings);
     }
@@ -97,25 +102,65 @@ public class WrapTests
     {
         var book = Load(Text);
 
-        var wrapped = ManuscriptEditor.Wrap(book, ElementOf(book, "Text nach A"));
+        var wrapped = ManuscriptEditor.Wrap(book, ElementOf(book, "Text eins b"));
 
-        // "Text eins" (before the head) and the sub-section "Eins-B" with "Text B" stay with "Eins".
+        // "Text eins" (before the head) stays with "Eins".
+        AssertResult(
+            Text,
+            book,
+            Text.Replace("\t- Text eins b\n\t- Text eins c\n", "\t- ## \n\t\t- Text eins b\n\t\t- Text eins c\n"),
+            ["\t- Text eins b", "\t- Text eins c"],
+            ["\t- ## ", "\t\t- Text eins b", "\t\t- Text eins c"]);
+        var reloaded = Book.Load(book.Page);
+        var heading = reloaded.FindNode(wrapped.NewHeadingKey)!;
+        Assert.Equal((2, ""), (heading.Level, heading.Title));
+        Assert.Equal([KeyOf(book, "Text eins b"), KeyOf(book, "Text eins c")], heading.Items.Select(KeyOfItem));
+        Assert.Equal(
+            [
+                KeyOf(book, "Text eins"), wrapped.NewHeadingKey, KeyOf(book, "## Eins-A"), KeyOf(book, "Text nach A"),
+                KeyOf(book, "## Eins-B"), KeyOf(book, "Text nach B"),
+            ],
+            reloaded.FindNode(KeyOf(book, "# Eins"))!.Items.Select(KeyOfItem));
+        Assert.Empty(reloaded.Warnings);
+    }
+
+    [Fact]
+    public void Wrap_TextBlock_StopsAtNextSubheading_TrailingOwnBlocksStay()
+    {
+        var book = Load(Text);
+
+        var wrapped = ManuscriptEditor.Wrap(book, ElementOf(book, "Text eins"));
+
+        // The run up to "Eins-A" moves; the own blocks "Text nach A" and "Text nach B" after sub-sections stay.
         AssertResult(
             Text,
             book,
             Text.Replace(
-                "\t- Text nach A\n\t- ## Eins-B\n\t\t- Text B\n\t- Text nach B\n",
-                "\t- ## \n\t\t- Text nach A\n\t\t- Text nach B\n\t- ## Eins-B\n\t\t- Text B\n"),
-            ["\t- Text nach A", "\t- Text nach B"],
-            ["\t- ## ", "\t\t- Text nach A", "\t\t- Text nach B"]);
+                "\t- Text eins\n\t\t- Detail 1\n\t\t\t- Detail 1a\n\t\t- Detail 2\n\t- Text eins b\n\t- Text eins c\n",
+                "\t- ## \n\t\t- Text eins\n\t\t\t- Detail 1\n\t\t\t\t- Detail 1a\n\t\t\t- Detail 2\n\t\t- Text eins b\n\t\t- Text eins c\n"),
+            ["\t- Text eins", "\t\t- Detail 1", "\t\t\t- Detail 1a", "\t\t- Detail 2", "\t- Text eins b", "\t- Text eins c"],
+            ["\t- ## ", "\t\t- Text eins", "\t\t\t- Detail 1", "\t\t\t\t- Detail 1a", "\t\t\t- Detail 2", "\t\t- Text eins b", "\t\t- Text eins c"]);
         var reloaded = Book.Load(book.Page);
-        var heading = reloaded.FindNode(wrapped.NewHeadingKey)!;
-        Assert.Equal((2, ""), (heading.Level, heading.Title));
-        Assert.Equal([KeyOf(book, "Text nach A"), KeyOf(book, "Text nach B")], heading.Items.Select(KeyOfItem));
         Assert.Equal(
-            [KeyOf(book, "Text eins"), KeyOf(book, "## Eins-A"), wrapped.NewHeadingKey, KeyOf(book, "## Eins-B")],
+            [KeyOf(book, "Text eins"), KeyOf(book, "Text eins b"), KeyOf(book, "Text eins c")],
+            reloaded.FindNode(wrapped.NewHeadingKey)!.Items.Select(KeyOfItem));
+        Assert.Equal(
+            [wrapped.NewHeadingKey, KeyOf(book, "## Eins-A"), KeyOf(book, "Text nach A"), KeyOf(book, "## Eins-B"), KeyOf(book, "Text nach B")],
             reloaded.FindNode(KeyOf(book, "# Eins"))!.Items.Select(KeyOfItem));
         Assert.Empty(reloaded.Warnings);
+
+        // Between two sub-sections the run is the head alone.
+        var between = Load(Text);
+        ManuscriptEditor.Wrap(between, ElementOf(between, "Text nach A"));
+        AssertResult(
+            Text,
+            between,
+            Text.Replace("\t- Text nach A\n", "\t- ## \n\t\t- Text nach A\n"),
+            ["\t- Text nach A"],
+            ["\t- ## ", "\t\t- Text nach A"]);
+
+        AssertUndoByteExact(Text, "Text eins");
+        AssertUndoByteExact(Text, "Text nach A");
     }
 
     [Fact]
@@ -139,6 +184,32 @@ public class WrapTests
             [wrapped.NewHeadingKey, KeyOf(book, "# Eins"), KeyOf(book, "# Zwei")],
             reloaded.Root.Items.Select(KeyOfItem));
         Assert.Empty(reloaded.Warnings);
+    }
+
+    [Fact]
+    public void Wrap_PrologueBlock_RootEpilogueStays()
+    {
+        // A root text block after the last heading is an own text block of the root, but not part of the prologue's run.
+        const string withEpilogue = Text + "- Nachwort\n";
+        var book = Load(withEpilogue);
+
+        var wrapped = ManuscriptEditor.Wrap(book, ElementOf(book, "Vorspann"));
+
+        AssertResult(
+            withEpilogue,
+            book,
+            withEpilogue.Replace("- Vorspann\n- Vorspann zwei\n", "- # \n\t- Vorspann\n\t- Vorspann zwei\n"),
+            ["- Vorspann", "- Vorspann zwei"],
+            ["- # ", "\t- Vorspann", "\t- Vorspann zwei"]);
+        var reloaded = Book.Load(book.Page);
+        Assert.Equal([KeyOf(book, "Vorspann"), KeyOf(book, "Vorspann zwei")], reloaded.FindNode(wrapped.NewHeadingKey)!.Items.Select(KeyOfItem));
+        Assert.Equal(
+            [wrapped.NewHeadingKey, KeyOf(book, "# Eins"), KeyOf(book, "# Zwei"), KeyOf(book, "Nachwort")],
+            reloaded.Root.Items.Select(KeyOfItem));
+        Assert.Empty(reloaded.Warnings);
+
+        AssertUndoByteExact(withEpilogue, "Vorspann");
+        AssertUndoByteExact(withEpilogue, "Nachwort");
     }
 
     [Fact]
@@ -191,13 +262,20 @@ public class WrapTests
     [InlineData("### Eins-A-i")]
     [InlineData("## Zwei-A")]
     [InlineData("Text eins")]
+    [InlineData("Text eins b")]
     [InlineData("Text nach A")]
+    [InlineData("Text nach B")]
     [InlineData("Vorspann zwei")]
     [InlineData("Text zwei")]
-    public void Wrap_Undo_ByteExact(string head)
+    public void Wrap_Undo_ByteExact(string head) => AssertUndoByteExact(Text, head);
+
+    /// <summary>
+    /// Wraps <paramref name="head"/> and undoes it: the bytes and the block order are the original ones again, also with
+    /// CRLF, spaces as indentation and no final line ending, so that every line ending is restored.
+    /// </summary>
+    private static void AssertUndoByteExact(string fixture, string head)
     {
-        // Also with CRLF, spaces as indentation and no final line ending, so that every line ending is restored.
-        foreach (var text in new[] { Text, Text.Replace("\n", "\r\n")[..^2], Text.Replace("\t", "  ")[..^1] })
+        foreach (var text in new[] { fixture, fixture.Replace("\n", "\r\n")[..^2], fixture.Replace("\t", "  ")[..^1] })
         {
             var book = Load(text);
             var original = PageSerializer.Serialize(book.Page);
@@ -251,16 +329,16 @@ public class WrapTests
         Assert.Null(reloaded.FindNode(wrapped.NewHeadingKey));
         Assert.Empty(reloaded.Warnings);
 
-        // A text block head: the moved blocks go back between the sub-sections they stood between.
+        // A text block head: N's title and a moved text were edited.
         var text = Load(Text);
-        wrapped = ManuscriptEditor.Wrap(text, ElementOf(text, "Text nach A"));
+        wrapped = ManuscriptEditor.Wrap(text, ElementOf(text, "Text eins b"));
         BlockOf(text, "## ").SetContent("## Titel");
-        BlockOf(text, "Text nach B").SetContent("Text nach B neu");
+        BlockOf(text, "Text eins c").SetContent("Text eins c neu");
 
         Assert.True(wrapped.CanRestore(Book.Load(text.Page)));
         wrapped.RestoreInto(Book.Load(text.Page));
 
-        AssertResult(Text, text, Text.Replace("\t- Text nach B\n", "\t- Text nach B neu\n"), ["\t- Text nach B"], ["\t- Text nach B neu"]);
+        AssertResult(Text, text, Text.Replace("\t- Text eins c\n", "\t- Text eins c neu\n"), ["\t- Text eins c"], ["\t- Text eins c neu"]);
     }
 
     [Fact]
@@ -280,8 +358,8 @@ public class WrapTests
 
         // A moved text block was moved into another section.
         var moved = Load(Text);
-        wrapped = ManuscriptEditor.Wrap(moved, ElementOf(moved, "Text nach A"));
-        moved.Page.MoveBlock(BlockOf(moved, "Text nach B"), BlockOf(moved, "# Zwei"), 0);
+        wrapped = ManuscriptEditor.Wrap(moved, ElementOf(moved, "Text eins b"));
+        moved.Page.MoveBlock(BlockOf(moved, "Text eins c"), BlockOf(moved, "# Zwei"), 0);
         AssertRefused(moved, wrapped);
 
         // A detail of a moved text block was moved to another text block.
@@ -303,7 +381,7 @@ public class WrapTests
         var added = Load(Text);
         wrapped = ManuscriptEditor.Wrap(added, ElementOf(added, "Text nach A"));
         var later = Book.Load(added.Page);
-        ManuscriptEditor.InsertAfter(later, BookElements.Find(later, KeyOf(added, "Text nach B"))!);
+        ManuscriptEditor.InsertAfter(later, BookElements.Find(later, KeyOf(added, "Text nach A"))!);
         AssertRefused(added, wrapped);
 
         static void AssertRefused(Book book, WrappedSection wrapped)

@@ -163,8 +163,9 @@ public static class ManuscriptEditor
     /// <summary>
     /// Puts the range of <paramref name="head"/> under a new empty heading N of the level of the head's section S + 1,
     /// placed at the head's index in S. A heading head becomes N's only child with its whole section, and every heading
-    /// of its subtree gets the level below N (<see cref="OutlineEditor.Relevel"/>). A text block head and every own text
-    /// block of S after it in the file become N's children, in order; S's sub-sections stay with S.
+    /// of its subtree gets the level below N (<see cref="OutlineEditor.Relevel"/>). A text block head and the own text
+    /// blocks of S directly following it, up to S's next sub-section (or S's end), become N's children, in order; S's
+    /// sub-sections and own text blocks after one of them stay where they are.
     /// </summary>
     /// <returns>What was done, for a targeted undo (<see cref="WrappedSection.RestoreInto"/>), with N's key.</returns>
     /// <exception cref="ArgumentException"><see cref="CanWrap"/> is <c>false</c>.</exception>
@@ -180,7 +181,10 @@ public static class ManuscriptEditor
         var section = node?.Parent ?? book.FindTextBlock(head.Key)!.Section;
         List<Block> tops = node is not null
             ? [node.Block!]
-            : [.. section.TextBlocks.SkipWhile(textBlock => textBlock.Key != head.Key).Select(textBlock => textBlock.Block)];
+            : [.. section.Items
+                .SkipWhile(item => !(item is TextBlock textBlock && textBlock.Key == head.Key))
+                .TakeWhile(item => item is TextBlock)
+                .Select(item => ((TextBlock)item).Block)];
         var indices = tops.Select(top => IndexOf(page, top)).ToList();
 
         // Every moved block with its lines before, and each moved heading with its level before and after (as Relevel sets it).
