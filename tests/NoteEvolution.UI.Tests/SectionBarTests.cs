@@ -285,6 +285,22 @@ public class SectionBarTests : UiTestContext
         await MoveToAsync(cut, "# Leer");
         cut.WaitForAssertion(() => Assert.Single(cut.FindAll(".ne-sec-no-sources")));
         AssertKeys(cut.Find(".ne-section-bar"), resources);
+
+        // The range buttons, the label of each kind of range head (also without sub-elements) and the range commands.
+        Assert.Single(cut.FindAll(".ne-sec-merge"));
+        Assert.Single(cut.FindAll(".ne-sec-wrap"));
+        await MoveToAsync(cut, "Ein Detail");
+        cut.WaitForAssertion(() => Assert.Equal("RangeDetail", cut.Find(".ne-range-label").TextContent));
+        AssertKeys(cut.Find(".ne-section-bar"), resources);
+        cut.Find(".ne-range-down").Click();
+        cut.WaitForAssertion(() => Assert.Equal("RangeDetailRangeOwnOnly", cut.Find(".ne-range-label").TextContent));
+        AssertKeys(cut.Find(".ne-section-bar"), resources);
+        foreach (var label in new[] { "RangeDetail", "RangeTextBlock", "RangeHeading", "RangeBook" })
+        {
+            cut.Find(".ne-range-up").Click();
+            cut.WaitForAssertion(() => Assert.Equal(label, cut.Find(".ne-range-label").TextContent));
+            AssertKeys(cut.Find(".ne-section-bar"), resources);
+        }
     }
 
     /// <summary>The resource key of each German button text.</summary>

@@ -975,6 +975,19 @@ html, body {
     flex-shrink: 0;
 }
 
+/* The range head next to the range buttons; a long heading title is cut off, the commands after it stay reachable. */
+.ne-range-label {
+    max-width: 24ch;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex-shrink: 0;
+    padding: 0 6px 0 2px;
+    margin-right: 4px;
+    border-right: 1px solid var(--border);
+    color: var(--fg-muted);
+}
+
 .ne-sec-no-sources {
     color: var(--fg-muted);
 }

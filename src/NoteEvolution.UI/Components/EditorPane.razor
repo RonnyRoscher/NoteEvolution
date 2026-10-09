@@ -264,8 +264,9 @@
     }
 
     /// <summary>
-    /// Runs the structure command on the cursor element (<see cref="ManuscriptCommands"/>) and shows its message; the
-    /// editor's shortcuts and the buttons of the section bar both come here. The range commands only move the range
+    /// Runs the structure command on the cursor element, or Merge and Wrap on the range (<see cref="ManuscriptCommands"/>),
+    /// and shows its message; the editor's shortcuts and the buttons of the section bar both come here. The range
+    /// buttons and shortcuts (RangeUp, RangeDown) only move the range
     /// (<see cref="AppState.ChangeRange"/>): the document stays as it is, the editor just marks the new range.
     /// </summary>
     public async Task OnSectionCommand(SectionCommand command)
@@ -285,7 +286,9 @@
             return;
         }
 
-        _saver.Message = await ManuscriptCommands.RunAsync(State, command, L["UndoStructure"], Logger);
+        // Merge goes through the link service, which names its undo action itself.
+        var undo = command == SectionCommand.Wrap ? L["UndoWrap"] : L["UndoStructure"];
+        _saver.Message = await ManuscriptCommands.RunAsync(State, command, undo, Logger);
         StateHasChanged();
     }
 
