@@ -1050,6 +1050,16 @@ html, body {
     white-space: nowrap;
 }
 
+/* The status selection stands among the buttons and is greyed out like them (on a heading, or when locked). */
+.ne-shell .ne-sec-status {
+    padding: 3px 6px;
+}
+
+.ne-shell .ne-sec-status:disabled {
+    opacity: 0.45;
+    cursor: default;
+}
+
 /* The sources stay at the right end, also alone in a second line. */
 .ne-sec-sources-area {
     position: relative;

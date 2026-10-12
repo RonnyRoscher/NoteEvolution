@@ -227,6 +227,36 @@
     <value>Unter neue Überschrift</value>
     <comment>Name der Aktion für „Rückgängig“ nach „Unter neue Überschrift“ (Zusammenfügen benennt der Verknüpfungsdienst selbst)</comment>
   </data>
+  <data name="SectionStatus" xml:space="preserve">
+    <value>Status des Blocks</value>
+    <comment>Titel der Statusauswahl in der Leiste am aktuellen Block</comment>
+  </data>
+  <data name="StatusDraft" xml:space="preserve">
+    <value>Entwurf</value>
+  </data>
+  <data name="StatusRelevant" xml:space="preserve">
+    <value>Relevant</value>
+  </data>
+  <data name="StatusRemark" xml:space="preserve">
+    <value>Bemerkung</value>
+  </data>
+  <data name="StatusWording" xml:space="preserve">
+    <value>Formulierung</value>
+  </data>
+  <data name="StatusDone" xml:space="preserve">
+    <value>Fertig</value>
+  </data>
+  <data name="SectionAddRemark" xml:space="preserve">
+    <value>Bemerkung anfügen</value>
+  </data>
+  <data name="UndoStatus" xml:space="preserve">
+    <value>Status ändern</value>
+    <comment>Name der Aktion für „Rückgängig“ nach einer Statusänderung (Auswahl oder Strg+Umschalt+N)</comment>
+  </data>
+  <data name="UndoAddRemark" xml:space="preserve">
+    <value>Bemerkung anfügen</value>
+    <comment>Name der Aktion für „Rückgängig“ nach „Bemerkung anfügen“</comment>
+  </data>
   <data name="RangeUp" xml:space="preserve">
     <value>Bereich ▲</value>
   </data>
