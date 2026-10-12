@@ -12,7 +12,7 @@
     --warning: #b4690e;
     --danger: #b3261e;
     --hint-bg: #fff4d6;
-    --remark-bg: #f3e9d2;
+    --remark-fg: #9a7440;
     --font-ui: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
     --font-text: "EB Garamond", Georgia, "Times New Roman", serif;
     color-scheme: light;
@@ -31,7 +31,7 @@
         --warning: #e5a446;
         --danger: #f2827a;
         --hint-bg: #3a3222;
-        --remark-bg: #4a3f2c;
+        --remark-fg: #d6c08f;
         color-scheme: dark;
     }
 }
@@ -48,7 +48,7 @@
     --warning: #e5a446;
     --danger: #f2827a;
     --hint-bg: #3a3222;
-    --remark-bg: #4a3f2c;
+    --remark-fg: #d6c08f;
     color-scheme: dark;
 }
 
@@ -807,7 +807,7 @@ html, body {
 
 /*
  * The status of a text block (data-status on .ne-block, drawn on its text, not its chips) or of a detail (on its own
- * paragraph only): relevant grey, a remark on a beige ground, wording and done as a mark in the right margin. The mark
+ * paragraph only): relevant grey, a remark in beige-brown text, wording and done as a mark in the right margin. The mark
  * is a ::before, since .ne-current::after draws the marking box on the same elements.
  */
 .ne-block[data-status] > .ne-block-content,
@@ -822,12 +822,7 @@ html, body {
 
 .ne-block[data-status="bemerkung"] > .ne-block-content,
 .ne-para[data-status="bemerkung"] {
-    background: var(--remark-bg);
-}
-
-/* A detail's ground starts at its indentation. */
-.ne-para[data-status="bemerkung"] {
-    background-clip: content-box;
+    color: var(--remark-fg);
 }
 
 .ne-block[data-status="formulierung"] > .ne-block-content::before,
