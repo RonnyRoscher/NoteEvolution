@@ -571,9 +571,9 @@ public class RangeCommandTests : UiTestContext
             "title:: Alpha\ntype:: book\n\n" +
             "- # Eins\n" +
             "\t- Erster Text\n" +
-            "\t  status:: offen\n" +
+            "\t  farbe:: rot\n" +
             "\t- Zweiter Text\n" +
-            "\t  status:: fertig\n";
+            "\t  farbe:: blau\n";
         var vault = await OpenOtherAsync(book);
         State.Cursor = CursorOf("# Eins");
         Assert.True(ManuscriptCommands.CanRun(State, SectionCommand.Merge));

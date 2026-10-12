@@ -252,6 +252,72 @@ public class MergeDetailsTests
     }
 
     [Theory]
+    [InlineData("")]
+    [InlineData("\t  status:: fertig\n")]
+    public void MergeDetails_StatusOfADetail_NeitherCarriedNorConflicting_HeadKeepsItsOwn(string head)
+    {
+        var book = Head + "\t- Text A\n" + head + "\t\t- Detail\n\t\t  status:: relevant\n\t- Text B\n";
+        using var s = new LinkSetup(book);
+
+        s.Links.MergeDetails(s.Book, s.Text("Text A").Key);
+
+        Assert.Equal(Head + "\t- Text A\n" + head + "\n\t  Detail\n\t- Text B\n", s.ReadBook());
+        var first = head.Length == 0 ? 5 : 6;
+        AssertChangedLines(book, s.ReadBook(), removed: [first, first + 1], added: [first, first + 1]);
+
+        s.Undo.Undo();
+
+        Assert.Equal(book, s.ReadBook());
+    }
+
+    [Fact]
+    public void MergeDetails_RemarkDetailByStatus_StaysAsDetail_LineUnchanged()
+    {
+        // A status:: bemerkung detail (as „Bemerkung anfügen“ makes it, no #notiz) stays like a #notiz detail.
+        var book =
+            Head +
+            "\t- Text A\n" +
+            "\t\t- Detail\n" +
+            "\t\t- Anmerkung\n" +
+            "\t\t  status:: bemerkung\n" +
+            "\t\t\t- Unter Anmerkung\n" +
+            "\t- Text B\n";
+        using var s = new LinkSetup(book);
+
+        s.Links.MergeDetails(s.Book, s.Text("Text A").Key);
+
+        var expected =
+            Head +
+            "\t- Text A\n\n\t  Detail\n" +
+            "\t\t- Anmerkung\n" +
+            "\t\t  status:: bemerkung\n" +
+            "\t\t\t- Unter Anmerkung\n" +
+            "\t- Text B\n";
+        Assert.Equal(expected, s.ReadBook());
+        AssertChangedLines(book, s.ReadBook(), removed: [5], added: [5, 6]);
+
+        s.Undo.Undo();
+
+        Assert.Equal(book, s.ReadBook());
+    }
+
+    [Fact]
+    public void Range_MergesDetails_NotWhenTheOnlyDetailIsARemarkByStatus()
+    {
+        var book =
+            Head +
+            "\t- Text A\n\t\t- Anmerkung\n\t\t  status:: bemerkung\n\t\t\t- Unter Anmerkung\n" +
+            "\t- Text B\n\t\t- Anmerkung 2\n\t\t  Status:: Bemerkung\n\t\t- Detail\n";
+        using var s = new LinkSetup(book);
+        BookElement Element(string content) => BookElements.Find(s.Book, KeyOf(s, content))!;
+
+        Assert.False(BookRanges.Of(s.Book, Element("Text A"), 0).MergesDetails);
+        Assert.True(BookRanges.Of(s.Book, Element("Text B"), 0).MergesDetails);
+        Assert.Throws<ArgumentException>(() => s.Links.MergeDetails(s.Book, s.Text("Text A").Key));
+        Assert.Equal(book, s.ReadBook());
+    }
+
+    [Theory]
     [InlineData("", "\t\t  collapsed:: true\n")]
     [InlineData("\t  collapsed:: true\n", "\t\t  collapsed:: false\n")]
     public void MergeDetails_CollapsedOfADetail_NeitherCarriedNorConflicting_HeadKeepsItsOwn(string head, string detail)

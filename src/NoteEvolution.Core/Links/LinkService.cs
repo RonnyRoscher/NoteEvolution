@@ -352,7 +352,8 @@ public sealed class LinkService(IVault vault, IPageWriter writer, UndoManager un
             head.SetContent(content);
             foreach (var detail in head.Children.Where(merged.Contains).ToList())
             {
-                // The #notiz details below a merged detail stay: they come up to the head, where the detail was.
+                // The Bemerkung (remark) details below a merged detail stay: they come up to the head, where the detail
+                // was.
                 var index = IndexOf(page, detail) + 1;
                 foreach (var note in BookElements.NoteDetailsBelow(detail))
                 {
@@ -440,14 +441,17 @@ public sealed class LinkService(IVault vault, IPageWriter writer, UndoManager un
     }
 
     /// <summary>
-    /// What merging <paramref name="blocks"/> does to the first block's properties besides <c>source::</c>: the
-    /// <c>id::</c> it takes over (raw value), the properties it gets from the later blocks, and the ids that go.
+    /// What merging <paramref name="blocks"/> does to the first block's properties besides <c>source::</c> and
+    /// <c>status::</c>: the <c>id::</c> it takes over (raw value), the properties it gets from the later blocks, and the
+    /// ids that go.
     /// </summary>
     /// <param name="TakenId">
     /// The first later block's <c>id::</c> with a valid id when the first block has none (and ids are taken over);
     /// else <c>null</c>.
     /// </param>
-    /// <param name="Carried">The later blocks' properties (other than <c>id::</c> and <c>source::</c>) the first block lacks.</param>
+    /// <param name="Carried">
+    /// The later blocks' properties (other than <c>id::</c>, <c>source::</c> and <c>status::</c>) the first block lacks.
+    /// </param>
     /// <param name="RemovedIds">The ids of the later blocks that vanish (not the one taken over).</param>
     private sealed record MergePlan(string? TakenId, IReadOnlyList<BlockProperty> Carried, IReadOnlyList<Guid> RemovedIds);
 
@@ -455,8 +459,9 @@ public sealed class LinkService(IVault vault, IPageWriter writer, UndoManager un
     /// Plans the properties of one group (see <see cref="MergePlan"/>): a later block's property is carried over when
     /// the first block (or an earlier later block) does not have its key yet (ignoring case). With
     /// <paramref name="takeOverId"/> the first block without an <c>id::</c> takes over the first later one's; without
-    /// it every later block's id goes (merged details: their usages move to the text block). Properties with a key in
-    /// <paramref name="ignoredKeys"/> are neither carried over nor compared (the first block keeps its own).
+    /// it every later block's id goes (merged details: their usages move to the text block). <c>status::</c> and the
+    /// properties with a key in <paramref name="ignoredKeys"/> are neither carried over nor compared: the first block
+    /// keeps its own line (or none), the later blocks' lines go with them.
     /// </summary>
     /// <exception cref="MergeRefusedException">Two of the blocks have different values for the same key.</exception>
     private static MergePlan PlanMerge(List<Block> blocks, bool takeOverId, IReadOnlyCollection<string>? ignoredKeys = null)
@@ -469,6 +474,7 @@ public sealed class LinkService(IVault vault, IPageWriter writer, UndoManager un
         bool MergedSeparately(BlockProperty property) =>
             string.Equals(property.Key, IdKey, StringComparison.OrdinalIgnoreCase)
             || string.Equals(property.Key, SourceKey, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(property.Key, BlockStatuses.Key, StringComparison.OrdinalIgnoreCase)
             || (ignoredKeys?.Contains(property.Key, StringComparer.OrdinalIgnoreCase) ?? false);
 
         var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
