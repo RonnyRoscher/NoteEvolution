@@ -11,8 +11,9 @@ namespace NoteEvolution.UI.Editor;
 public sealed record CursorInfo(ElementKind Kind, Guid Key, Guid? TextBlockKey, int Offset);
 
 /// <summary>
-/// The structure commands of the current element (spec 3) and the commands of the range (package B, spec 2); the
-/// editor sends all but <see cref="Delete"/>, <see cref="Merge"/> and <see cref="Wrap"/> as shortcuts.
+/// The structure commands of the current element (spec 3), the commands of the range (package B, spec 2) and the
+/// status commands; the editor sends all but <see cref="Delete"/>, <see cref="Merge"/>, <see cref="Wrap"/> and
+/// <see cref="AddRemark"/> as shortcuts.
 /// </summary>
 public enum SectionCommand
 {
@@ -48,6 +49,15 @@ public enum SectionCommand
 
     /// <summary>Button only: puts the range under a new, empty heading.</summary>
     Wrap,
+
+    /// <summary>
+    /// Ctrl+Shift+N: the text block or detail at the cursor becomes a remark, or a draft again if it is one (spec
+    /// "Ändern").
+    /// </summary>
+    ToggleRemark,
+
+    /// <summary>Button only: a new empty remark detail at the end of the details of the cursor's text block.</summary>
+    AddRemark,
 }
 
 /// <summary>What the editor reports; implemented by the component that shows it (<c>EditorPane</c>).</summary>

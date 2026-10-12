@@ -186,6 +186,78 @@ public class EditorPaneTests : UiTestContext
         cut.WaitForAssertion(() => Assert.Equal("Erster Text|Zweiter Text, extern|Dritter Text", TextsOf(Editor.Json)));
     }
 
+    private const string StatusBook =
+        "title:: Alpha\ntype:: book\n\n- # Eins\n" +
+        "\t- Text\n\t  status:: formulierung\n" +
+        "\t\t- Absatz eins\n\t\t  status:: bemerkung\n" +
+        "\t\t- Absatz zwei\n";
+
+    /// <summary>The <c>status</c> attributes of the first text block and its paragraphs (<c>-</c> for none).</summary>
+    private static string StatusesOf(string json)
+    {
+        var block = Blocks(Doc(json)).First(n => (string?)n!["type"] == "textBlock")!;
+        return string.Join("|", new[] { block }.Concat(block["content"]!.AsArray().Skip(1))
+            .Select(n => (string?)n!["attrs"]!["status"] ?? "-"));
+    }
+
+    [Fact]
+    public async Task Pane_ExternalStatusChange_ReloadsWithNewStatus()
+    {
+        using var tv = Alpha();
+        var (_, cut) = await RenderAsync(tv);
+        var path = Path.Combine(tv.Root, BookPath);
+
+        File.WriteAllText(path, tv.Read(BookPath).Replace("\t- Erster Text\n", "\t- Erster Text\n\t  status:: fertig\n"));
+        await cut.InvokeAsync(() => State.Session!.HandleExternalChange(path));
+
+        cut.WaitForAssertion(() => Assert.Equal("fertig", StatusesOf(Editor.Json)));
+    }
+
+    [Fact]
+    public async Task Pane_OwnSaveNormalized_WithStatuses_EditorNotReloaded()
+    {
+        using var tv = TestVault.Create((BookPath, StatusBook));
+        var (_, cut) = await RenderAsync(tv);
+        Assert.Equal("formulierung|bemerkung|-", StatusesOf(Editor.Json));
+        var doc = Doc(Editor.Json);
+        SetPara(doc, 0, 1, "Absatz eins, neu", ""); // a trailing hard break, which the file does not keep
+
+        await ChangeAsync(cut, doc);
+        await cut.InvokeAsync(() => State.FlushEditor!());
+        await cut.InvokeAsync(() => State.FlushEditor!());
+
+        Assert.Contains("\t\t- Absatz eins, neu\n\t\t  status:: bemerkung\n", tv.Read(BookPath));
+        Assert.Single(Editor.Documents);
+    }
+
+    [Fact]
+    public async Task Pane_StatusSetAfterOwnSave_ReloadsWithNewStatus()
+    {
+        using var tv = TestVault.Create((BookPath, StatusBook));
+        var (session, cut) = await RenderAsync(tv);
+        var doc = Doc(Editor.Json);
+        var blockKey = Guid.Parse((string)Blocks(doc)[At(doc, 0)]!["attrs"]!["key"]!);
+        var detailKey = Guid.Parse((string)Blocks(doc)[At(doc, 0)]!["content"]![2]!["attrs"]!["key"]!);
+        SetPara(doc, 0, 2, "Absatz zwei, neu");
+        await ChangeAsync(cut, doc);
+        await cut.InvokeAsync(() => State.FlushEditor!());
+        Assert.Single(Editor.Documents);
+
+        // What a status command does after saving the editor: change the page, save it, take the book again.
+        await cut.InvokeAsync(() =>
+        {
+            var book = session.Vault.FindBook("Buch - Alpha")!;
+            ManuscriptEditor.SetStatus(book, BookElements.Find(book, blockKey)!, BlockStatus.Done);
+            ManuscriptEditor.SetStatus(book, BookElements.Find(book, detailKey)!, BlockStatus.Relevant);
+            Assert.True(session.TrySave(book.Page, out _));
+            State.RefreshBook();
+            State.Notify();
+        });
+
+        cut.WaitForAssertion(() => Assert.Equal("fertig|bemerkung|relevant", StatusesOf(Editor.Json)));
+        Assert.Contains("Absatz zwei, neu", Editor.Json);
+    }
+
     [Fact]
     public async Task Pane_LinkedBlockBackAfterAutosavedDelete_NoteHasUsageAgain()
     {

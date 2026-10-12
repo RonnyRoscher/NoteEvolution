@@ -614,7 +614,9 @@
         await SyncAsync();
     }
 
-    /// <summary>Same nodes, texts, paragraphs and chips (<see cref="SnapshotTextBlock.SplitFrom"/> is left out).</summary>
+    /// <summary>
+    /// Same nodes, texts, paragraphs, statuses and chips (<see cref="SnapshotTextBlock.SplitFrom"/> is left out).
+    /// </summary>
     private static bool SameContent(SectionSnapshot a, SectionSnapshot b) =>
         a.ScopeKey == b.ScopeKey
         && a.IncludeSubsections == b.IncludeSubsections
@@ -623,11 +625,14 @@
         {
             (SnapshotHeading x, SnapshotHeading y) => x == y,
             (SnapshotTextBlock x, SnapshotTextBlock y) =>
-                x.Key == y.Key && x.Text == y.Text && x.Paragraphs.SequenceEqual(y.Paragraphs) && x.Sources.SequenceEqual(y.Sources),
+                x.Key == y.Key && x.Text == y.Text && x.Status == y.Status && x.Paragraphs.SequenceEqual(y.Paragraphs)
+                && x.Sources.SequenceEqual(y.Sources),
             _ => false,
         });
 
-    /// <summary>Same keys, heading levels, paragraph depths and note flags, and the same chips; texts may differ.</summary>
+    /// <summary>
+    /// Same keys, heading levels, paragraph depths, note flags and statuses, and the same chips; texts may differ.
+    /// </summary>
     private static bool SameShape(SectionSnapshot a, SectionSnapshot b) =>
         a.ScopeKey == b.ScopeKey
         && a.IncludeSubsections == b.IncludeSubsections
@@ -637,7 +642,9 @@
             (SnapshotHeading x, SnapshotHeading y) => x.Key == y.Key && x.Level == y.Level,
             (SnapshotTextBlock x, SnapshotTextBlock y) =>
                 x.Key == y.Key
-                && x.Paragraphs.Select(p => (p.Key, p.Depth, p.IsNote)).SequenceEqual(y.Paragraphs.Select(p => (p.Key, p.Depth, p.IsNote)))
+                && x.Status == y.Status
+                && x.Paragraphs.Select(p => (p.Key, p.Depth, p.IsNote, p.Status))
+                    .SequenceEqual(y.Paragraphs.Select(p => (p.Key, p.Depth, p.IsNote, p.Status)))
                 && x.Sources.SequenceEqual(y.Sources),
             _ => false,
         });
