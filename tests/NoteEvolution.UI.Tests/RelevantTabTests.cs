@@ -280,7 +280,8 @@ public class RelevantTabTests : UiTestContext
         // The jump to the music text block moves the cursor, adopting the note changes the notes: the list stays as it is.
         WhereToItems(cut, index).Single(item => item.TextContent.Contains("Musik", StringComparison.Ordinal)).Click();
         cut.WaitForAssertion(() => Assert.Equal(music.Key, State.PendingReveal));
-        cut.FindAll(".ne-relevant-list .ne-note-card")[index].QuerySelector(".ne-adopt-row .ne-adopt-after")!.Click();
+        cut.FindAll(".ne-relevant-list .ne-note-card")[index].QuerySelector(".ne-note-adopt-more")!.Click();
+        cut.Find(".ne-adopt-menu .ne-adopt-after").Click();
         cut.WaitForAssertion(() => Assert.True(note.IsUsed));
         await LetTimePass();
 

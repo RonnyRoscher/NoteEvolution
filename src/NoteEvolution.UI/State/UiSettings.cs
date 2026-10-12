@@ -51,6 +51,9 @@ public sealed class UiSettings
     /// <summary>The notes pane hides notes that are already used in a book.</summary>
     public bool HideUsed { get; set; }
 
+    /// <summary>The way a note was adopted last; the note cards' "Übernehmen" button adopts and is labelled this way.</summary>
+    public AdoptVariant LastAdoptVariant { get; set; } = AdoptVariant.AtCursor;
+
     /// <summary>The hint not to edit the same book in Logseq at the same time has been shown.</summary>
     public bool LogseqHintShown { get; set; }
 
@@ -84,6 +87,10 @@ public sealed class UiSettings
             var settings = File.Exists(path) ? JsonSerializer.Deserialize<UiSettings>(File.ReadAllBytes(path), Json) ?? new() : new();
             settings.FontSizePt = Math.Clamp(settings.FontSizePt, MinFontSizePt, MaxFontSizePt);
             settings.LineWidthCh = Math.Clamp(settings.LineWidthCh, MinLineWidthCh, MaxLineWidthCh);
+            if (!Enum.IsDefined(settings.LastAdoptVariant))
+            {
+                settings.LastAdoptVariant = AdoptVariant.AtCursor;
+            }
 
             // JSON gives a case-sensitive dictionary; vault paths compare without case, as Windows does.
             var books = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);

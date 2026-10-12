@@ -7,7 +7,7 @@ Stand: 2026-10-12 · Status: Entwurf · Baut auf Paket A (`2026-10-08-manuskript
 Jeder Block im Buch bekommt einen Arbeitsstand. Er steuert die Darstellung im Buch und welche Blöcke ins PDF kommen.
 
 Dazu kommen zwei Vereinfachungen beim Übernehmen:
-- Die drei Arten zu übernehmen werden eigene Knöpfe.
+- Die drei Arten zu übernehmen werden eigene Knöpfe (später zurückgenommen, siehe Hinweis in Abschnitt 3).
 - Die Relevant-Liste bleibt ruhig, solange man mit „Wohin damit?“ Zielorte prüft.
 
 ### Erfolgskriterien
@@ -84,6 +84,11 @@ Blöcke mit Status Relevant oder Bemerkung werden nicht exportiert. Das gilt auc
 
 ## 3. Übernehmen-Knöpfe (ersetzt Paket A, Abschnitt 4, geteilter Knopf)
 
+> **Geändert am 2026-10-12 (Wunsch nach der Umsetzung):** Statt der drei Knöpfe gibt es wieder den geteilten Knopf
+> aus Paket A. Der Knopf selbst übernimmt auf die zuletzt gewählte Art und trägt deren Namen (anfangs „Am Cursor“);
+> der Pfeil öffnet das Menü mit allen drei Arten, die Wahl wird für alle Karten gemerkt (`ui.json`,
+> `LastAdoptVariant`). „Wohin damit?“ bleibt ein eigener Knopf daneben. Der Text unten beschreibt den Stand davor.
+
 - **An der Notizkarte:** vier Knöpfe nebeneinander: „Am Cursor“, „Danach“, „Darunter“, „Wohin damit?“.
   - „Wohin damit?“ ist nur bei verfügbarer KI sichtbar, wie heute.
 - **An jedem Unteranstrich:** dieselben vier Knöpfe untereinander, rechts neben dem Unteranstrich.
@@ -120,7 +125,8 @@ Blöcke mit Status Relevant oder Bemerkung werden nicht exportiert. Das gilt auc
   - Auswahl in der Leiste: zeigt und ändert den Status, ist gesperrt auf Überschriften und bei einem Konflikt.
   - Strg+Umschalt+N über den Befehl.
   - „Bemerkung anfügen“.
-  - Die vier Knöpfe an Notiz und Unteranstrich (Reihenfolge, Anordnung über eine CSS-Klasse).
+  - Die vier Knöpfe an Notiz und Unteranstrich (Reihenfolge, Anordnung über eine CSS-Klasse); seit dem Hinweis in
+    Abschnitt 3 der geteilte Knopf mit der zuletzt gewählten Art.
   - Relevant-Liste eingefroren bei offener Trefferliste, auch nach Sprung und Übernehmen; Neuberechnung nach dem Schließen.
 - **Manuelle Abnahme (README):**
   - Farben und Randmarken im hellen und dunklen Design.
