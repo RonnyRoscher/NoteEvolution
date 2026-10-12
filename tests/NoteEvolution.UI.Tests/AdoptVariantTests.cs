@@ -1,10 +1,13 @@
 using System.Text;
 using Bunit;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Localization;
 using Microsoft.Extensions.Logging.Abstractions;
 using NoteEvolution.Core.Books;
 using NoteEvolution.TestSupport;
 using NoteEvolution.UI.Components;
 using NoteEvolution.UI.Editor;
+using NoteEvolution.UI.Resources;
 using NoteEvolution.UI.State;
 
 namespace NoteEvolution.UI.Tests;
@@ -61,6 +64,8 @@ public class AdoptVariantTests : UiTestContext
     }
 
     private Book Book => State.CurrentBook!;
+
+    private string Text(string key) => Services.GetRequiredService<IStringLocalizer<Strings>>()[key].Value;
 
     private Guid KeyOf(string content) => Book.Page.AllBlocks().Single(b => b.Content == content).Key;
 
@@ -306,16 +311,16 @@ public class AdoptVariantTests : UiTestContext
     [InlineData(true, AdoptVariant.AtCursor)]
     [InlineData(true, AdoptVariant.After)]
     [InlineData(true, AdoptVariant.Below)]
-    public async Task Buttons_AdoptEachVariant(bool subBullet, AdoptVariant variant)
+    public async Task Menu_AdoptsEachVariant(bool subBullet, AdoptVariant variant)
     {
         var session = await OpenSessionAsync(_vault);
         CursorAt("Erster Text", 7);
         var cut = Render<NoteCard>(p => p.Add(c => c.Note, session.Notes.All().Single(n => n.Block.Content == "Eine Notiz")));
-        var buttons = subBullet ? ".ne-adopt-column" : ".ne-adopt-row";
         var adopted = subBullet ? "Unterpunkt" : "Eine Notiz";
 
-        // Each button adopts its block (the note or the sub-bullet) directly, the way its variant says.
-        cut.Find(buttons + " " + variant switch
+        // Each entry of the menu adopts its block (the note or the sub-bullet) the way its variant says.
+        cut.Find(subBullet ? ".ne-note-child-adopt-more" : ".ne-note-adopt-more").Click();
+        cut.Find(".ne-adopt-menu " + variant switch
         {
             AdoptVariant.AtCursor => ".ne-adopt-at-cursor",
             AdoptVariant.After => ".ne-adopt-after",
@@ -337,6 +342,42 @@ public class AdoptVariantTests : UiTestContext
         }
 
         Assert.Contains($"source:: (({(subBullet ? ChildId : NoteId)}))", _vault.Read(BookPath));
+    }
+
+    [Fact]
+    public async Task SplitButton_ShowsAndRepeatsTheLastUsedVariant_Remembered()
+    {
+        var session = await OpenSessionAsync(_vault);
+        CursorAt("Erster Text", 7);
+        var note = session.Notes.All().Single(n => n.Block.Content == "Eine Notiz");
+        var cut = Render<NoteCard>(p => p.Add(c => c.Note, note));
+
+        // Before any use the button adopts at the cursor.
+        Assert.Equal(AdoptVariant.AtCursor, Settings.LastAdoptVariant);
+        Assert.Equal(Text("AdoptAtCursor"), cut.Find(".ne-note-adopt").TextContent);
+
+        // "Danach" from the menu adopts, closes the menu and becomes the button's way, for the note and its sub-bullets.
+        cut.Find(".ne-note-adopt-more").Click();
+        cut.Find(".ne-adopt-menu .ne-adopt-after").Click();
+
+        Assert.Empty(cut.FindAll(".ne-adopt-menu"));
+        Assert.Equal(["Erster Text", "Eine Notiz", "Zweiter Text"], Book.Root.Children.First().TextBlocks.Select(t => t.Text));
+        Assert.Equal(AdoptVariant.After, Settings.LastAdoptVariant);
+        Assert.Equal(AdoptVariant.After, UiSettings.Load(Platform.UserDataDirectory).LastAdoptVariant);
+        Assert.Equal(Text("AdoptAfter"), cut.Find(".ne-note-adopt").TextContent);
+        Assert.Equal(Text("AdoptAfterTitle"), cut.Find(".ne-note-adopt").GetAttribute("title"));
+        Assert.Equal(Text("AdoptAfter"), cut.Find(".ne-note-child-adopt").TextContent);
+
+        // Another card shows it as well, and its button adopts that way: the sub-bullet after the current element.
+        var other = Render<NoteCard>(p => p.Add(c => c.Note, note));
+        Assert.Equal(Text("AdoptAfter"), other.Find(".ne-note-adopt").TextContent);
+        CursorAt("Zweiter Text", 3);
+
+        other.Find(".ne-note-child-adopt").Click();
+
+        Assert.Equal(
+            ["Erster Text", "Eine Notiz", "Zweiter Text", "Unterpunkt"],
+            Book.Root.Children.First().TextBlocks.Select(t => t.Text));
     }
 
     [Theory]

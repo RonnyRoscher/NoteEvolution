@@ -411,6 +411,9 @@
   <data name="AdoptBelowTitle" xml:space="preserve">
     <value>Als erstes Unterelement des aktuellen einfügen</value>
   </data>
+  <data name="NoteAdoptMore" xml:space="preserve">
+    <value>Weitere Arten zu übernehmen</value>
+  </data>
   <data name="NoteWhereTo" xml:space="preserve">
     <value>Wohin damit?</value>
   </data>

@@ -6,6 +6,7 @@
 @using NoteEvolution.Core.Vaults
 @implements IDisposable
 @inject AppState State
+@inject UiSettings Settings
 @inject IPlatformServices Platform
 @inject IStringLocalizer<Strings> L
 @inject ILogger<NoteCard> Logger
@@ -47,14 +48,12 @@
         {
             <div class="ne-note-child" style="margin-left: @(depth * 12)px">
                 <span class="ne-note-child-text">@child.Content</span>
-                <div class="ne-adopt-column">
-                    @AdoptButtons(child)
-                    @if (WhereToAvailable)
-                    {
-                        <button type="button" class="ne-note-child-whereto" title="@L["NoteWhereToTitle"]"
-                                aria-expanded="@_whereTo.ContainsKey(child.Key)" @onclick="() => ToggleWhereToAsync(child)">@L["NoteWhereTo"]</button>
-                    }
-                </div>
+                @AdoptSplit(child, "ne-note-child-adopt")
+                @if (WhereToAvailable)
+                {
+                    <button type="button" class="ne-note-child-whereto" title="@L["NoteWhereToTitle"]"
+                            aria-expanded="@_whereTo.ContainsKey(child.Key)" @onclick="() => ToggleWhereToAsync(child)">@L["NoteWhereTo"]</button>
+                }
             </div>
             @if (_whereTo.TryGetValue(child.Key, out var childList))
             {
@@ -67,14 +66,12 @@
         <div class="ne-note-hint">@L["NoteReadOnlyHint"]</div>
     }
     <footer class="ne-note-actions">
-        <div class="ne-adopt-row">
-            @AdoptButtons(Note.Block)
-            @if (WhereToAvailable)
-            {
-                <button type="button" class="ne-note-whereto" title="@L["NoteWhereToTitle"]"
-                        aria-expanded="@_whereTo.ContainsKey(Note.Block.Key)" @onclick="() => ToggleWhereToAsync(Note.Block)">@L["NoteWhereTo"]</button>
-            }
-        </div>
+        @AdoptSplit(Note.Block, "ne-note-adopt")
+        @if (WhereToAvailable)
+        {
+            <button type="button" class="ne-note-whereto" title="@L["NoteWhereToTitle"]"
+                    aria-expanded="@_whereTo.ContainsKey(Note.Block.Key)" @onclick="() => ToggleWhereToAsync(Note.Block)">@L["NoteWhereTo"]</button>
+        }
         <button type="button" class="ne-note-logseq" @onclick="OpenInLogseq">@L["NoteOpenLogseq"]</button>
         @if (collapsible)
         {
@@ -99,6 +96,9 @@
     private int _focused;
     private bool _expanded;
     private AdoptMessage? _message;
+
+    /// <summary>The key of the block (the note or a sub-bullet) whose menu of adopt variants is open; <c>null</c> if none.</summary>
+    private Guid? _adoptMenu;
 
     /// <summary>How many text blocks "Wohin damit?" lists.</summary>
     private const int WhereToLimit = 5;
@@ -517,27 +517,96 @@
         return node.Children.Select(child => TargetOf(child, blockId)).FirstOrDefault(key => key is not null);
     }
 
+    /// <summary>The label and tooltip of an adopt variant.</summary>
+    private (string Label, string Title) Texts(AdoptVariant variant) => variant switch
+    {
+        AdoptVariant.After => (L["AdoptAfter"].Value, L["AdoptAfterTitle"].Value),
+        AdoptVariant.Below => (L["AdoptBelow"].Value, L["AdoptBelowTitle"].Value),
+        _ => (L["AdoptAtCursor"].Value, L["AdoptAtCursorTitle"].Value),
+    };
+
     /// <summary>
-    /// The three adopt buttons (status spec 3) for <paramref name="block"/>: at the cursor, after and below the current
-    /// element, each with a tooltip that explains its variant. The note's row and each sub-bullet's column add
-    /// "Wohin damit?" as the fourth.
+    /// "Übernehmen" for <paramref name="block"/> as a split button: the main part adopts the way used last (first "Am
+    /// Cursor", see <see cref="UiSettings.LastAdoptVariant"/>) and is labelled so; the arrow opens the menu of all three
+    /// ways. <paramref name="cssClass"/> names the main part, the arrow gets it with <c>-more</c>.
     /// </summary>
-    private RenderFragment AdoptButtons(Block block) =>
-        @<text>
-            <button type="button" class="ne-adopt-at-cursor" title="@L["AdoptAtCursorTitle"]"
-                    disabled="@(!CanAdopt)" @onclick="() => AdoptAsync(block, AdoptVariant.AtCursor)">@L["AdoptAtCursor"]</button>
-            <button type="button" class="ne-adopt-after" title="@L["AdoptAfterTitle"]"
-                    disabled="@(!CanAdopt)" @onclick="() => AdoptAsync(block, AdoptVariant.After)">@L["AdoptAfter"]</button>
-            <button type="button" class="ne-adopt-below" title="@L["AdoptBelowTitle"]"
-                    disabled="@(!CanAdopt)" @onclick="() => AdoptAsync(block, AdoptVariant.Below)">@L["AdoptBelow"]</button>
-        </text>;
+    private RenderFragment AdoptSplit(Block block, string cssClass)
+    {
+        var (label, title) = Texts(Settings.LastAdoptVariant);
+        return @<span class="ne-adopt-split">
+            <button type="button" class="@cssClass" title="@title"
+                    disabled="@(!CanAdopt)" @onclick="() => AdoptAsync(block, Settings.LastAdoptVariant)">@label</button>
+            <button type="button" class="@(cssClass)-more" title="@L["NoteAdoptMore"]" aria-label="@L["NoteAdoptMore"]"
+                    aria-haspopup="menu" aria-expanded="@(_adoptMenu == block.Key)"
+                    disabled="@(!CanAdopt)" @onclick="() => ToggleAdoptMenu(block.Key)">▾</button>
+            @if (_adoptMenu == block.Key)
+            {
+                @AdoptMenu(block)
+            }
+        </span>;
+    }
+
+    /// <summary>
+    /// Opens the menu of adopt variants of <paramref name="blockKey"/> (closing any other), or closes it. A sub-bullet's
+    /// menu expands the card, so a collapsed body does not cut it off.
+    /// </summary>
+    private void ToggleAdoptMenu(Guid blockKey)
+    {
+        _adoptMenu = _adoptMenu == blockKey ? null : blockKey;
+        if (_adoptMenu is not null && blockKey != Note.Block.Key)
+        {
+            _expanded = true;
+        }
+    }
+
+    /// <summary>The menu of adopt variants for <paramref name="block"/>, each with a tooltip that explains it.</summary>
+    private RenderFragment AdoptMenu(Block block) =>
+        @<div class="ne-adopt-menu" role="menu">
+            @foreach (var (variant, cssClass) in MenuVariants)
+            {
+                var (label, title) = Texts(variant);
+                <button type="button" role="menuitem" class="@cssClass" title="@title"
+                        @onclick="() => AdoptChosenAsync(block, variant)">@label</button>
+            }
+        </div>;
+
+    private static readonly (AdoptVariant Variant, string CssClass)[] MenuVariants =
+    [
+        (AdoptVariant.AtCursor, "ne-adopt-at-cursor"),
+        (AdoptVariant.After, "ne-adopt-after"),
+        (AdoptVariant.Below, "ne-adopt-below"),
+    ];
+
+    /// <summary>
+    /// A variant chosen in the menu becomes the button's way on every card (kept in <c>ui.json</c>; a failed save only
+    /// costs the memory after a restart), then adopts.
+    /// </summary>
+    private async Task AdoptChosenAsync(Block block, AdoptVariant variant)
+    {
+        if (Settings.LastAdoptVariant != variant)
+        {
+            Settings.LastAdoptVariant = variant;
+            try
+            {
+                Settings.Save(Platform.UserDataDirectory);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                Logger.LogWarning(ex, "Saving the UI settings failed");
+            }
+        }
+
+        await AdoptAsync(block, variant);
+    }
 
     /// <summary>
     /// Adopts <paramref name="block"/> (the note itself or one of its sub-bullets) into the current book the way
-    /// <paramref name="variant"/> says, relative to the element at the cursor (see <see cref="NoteAdoption"/>).
+    /// <paramref name="variant"/> says, relative to the element at the cursor (see <see cref="NoteAdoption"/>); closes
+    /// the menu.
     /// </summary>
     private async Task AdoptAsync(Block block, AdoptVariant variant)
     {
+        _adoptMenu = null;
         _message = null;
         _message = await NoteAdoption.AdoptAsync(State, block.Key, variant, Logger);
     }

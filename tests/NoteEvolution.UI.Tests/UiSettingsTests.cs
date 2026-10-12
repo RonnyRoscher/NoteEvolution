@@ -87,6 +87,17 @@ public class UiSettingsTests
         Assert.Equal("bge-m3-int8", UiSettings.Load(dir.Path).AiModelId);
     }
 
+    [Fact]
+    public void LastAdoptVariant_DefaultsToAtCursor_RoundTrips()
+    {
+        using var dir = new TempDir();
+        Assert.Equal(AdoptVariant.AtCursor, new UiSettings().LastAdoptVariant);
+
+        new UiSettings { LastAdoptVariant = AdoptVariant.Below }.Save(dir.Path);
+
+        Assert.Equal(AdoptVariant.Below, UiSettings.Load(dir.Path).LastAdoptVariant);
+    }
+
     [Theory]
     [InlineData(2, 10, 5, 50)]
     [InlineData(99, 20, 500, 100)]

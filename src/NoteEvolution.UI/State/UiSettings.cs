@@ -51,6 +51,9 @@ public sealed class UiSettings
     /// <summary>The notes pane hides notes that are already used in a book.</summary>
     public bool HideUsed { get; set; }
 
+    /// <summary>The way a note was adopted last; the note cards' "Übernehmen" button adopts and is labelled this way.</summary>
+    public AdoptVariant LastAdoptVariant { get; set; } = AdoptVariant.AtCursor;
+
     /// <summary>The hint not to edit the same book in Logseq at the same time has been shown.</summary>
     public bool LogseqHintShown { get; set; }
 
