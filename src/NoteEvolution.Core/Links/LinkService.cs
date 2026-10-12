@@ -14,6 +14,7 @@ public sealed class LinkService(IVault vault, IPageWriter writer, UndoManager un
     private const string SourceKey = "source";
     private const string UsedInKey = "used-in";
     private const string IdKey = "id";
+    private const string CollapsedKey = "collapsed";
 
     public AdoptResult Adopt(Book book, Guid noteBlockKey, InsertPosition position)
     {
@@ -308,7 +309,8 @@ public sealed class LinkService(IVault vault, IPageWriter writer, UndoManager un
         List<Block> blocks = [head, .. merged];
         var content = MergedContent(blocks);
         Block.ValidateContent(content);
-        var plan = PlanMerge(blocks, takeOverId: false);
+        // collapsed:: is the Logseq view state of a detail that goes: it must not collapse (or block) the head.
+        var plan = PlanMerge(blocks, takeOverId: false, ignoredKeys: [CollapsedKey]);
         EnsureUnreferenced(book, plan.RemovedIds);
 
         RunMerge(book, moves =>
@@ -440,10 +442,11 @@ public sealed class LinkService(IVault vault, IPageWriter writer, UndoManager un
     /// Plans the properties of one group (see <see cref="MergePlan"/>): a later block's property is carried over when
     /// the first block (or an earlier later block) does not have its key yet (ignoring case). With
     /// <paramref name="takeOverId"/> the first block without an <c>id::</c> takes over the first later one's; without
-    /// it every later block's id goes (merged details: their usages move to the text block).
+    /// it every later block's id goes (merged details: their usages move to the text block). Properties with a key in
+    /// <paramref name="ignoredKeys"/> are neither carried over nor compared (the first block keeps its own).
     /// </summary>
     /// <exception cref="MergeRefusedException">Two of the blocks have different values for the same key.</exception>
-    private static MergePlan PlanMerge(List<Block> blocks, bool takeOverId)
+    private static MergePlan PlanMerge(List<Block> blocks, bool takeOverId, IReadOnlyCollection<string>? ignoredKeys = null)
     {
         var first = blocks[0];
         var later = blocks.Skip(1).ToList();
@@ -452,7 +455,8 @@ public sealed class LinkService(IVault vault, IPageWriter writer, UndoManager un
 
         bool MergedSeparately(BlockProperty property) =>
             string.Equals(property.Key, IdKey, StringComparison.OrdinalIgnoreCase)
-            || string.Equals(property.Key, SourceKey, StringComparison.OrdinalIgnoreCase);
+            || string.Equals(property.Key, SourceKey, StringComparison.OrdinalIgnoreCase)
+            || (ignoredKeys?.Contains(property.Key, StringComparer.OrdinalIgnoreCase) ?? false);
 
         var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var property in first.Properties.Where(p => !MergedSeparately(p)))

@@ -107,7 +107,8 @@ public interface ILinkService
     /// in file order (one below a merged detail comes up to the head). The merged details' <c>source::</c> values go
     /// to the enclosing text block's <c>source::</c> (union), and every note whose <c>used-in::</c> referenced a merged
     /// detail references the text block instead (which gets an <c>id::</c> if needed). Other properties of the merged
-    /// details are carried over where the head lacks the key. Can be undone („Zusammenfügen“) as
+    /// details are carried over where the head lacks the key, except <c>collapsed::</c> (the view state of a detail
+    /// that goes; the head keeps its own). Can be undone („Zusammenfügen“) as
     /// <see cref="MergeTextBlocks"/>.
     /// </summary>
     /// <returns>The key of the head.</returns>

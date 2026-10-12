@@ -641,8 +641,8 @@ function dropTarget(view, event) {
  * actual height is followed (the gap below the marking, --bar-height, and the scroll distance from the bottom).
  */
 export function createEditor(host, dotnet, options = {}) {
-    const defaultBarHeight = options.barHeight ?? 0;
-    let barHeight = defaultBarHeight;
+    // The section bar's height: options.barHeight until the bar was first measured, then its last measured height.
+    let barHeight = options.barHeight ?? 0;
     // The bar element whose size is observed (Blazor may render a new one, e.g. for another book).
     let observedBar = null;
     const root = document.createElement('div');
@@ -672,7 +672,7 @@ export function createEditor(host, dotnet, options = {}) {
      * barHeight above the visible bottom of the scrolling pane; and whether the box is visible at all (never before a
      * cursor was reported for the shown book). The marking runs from the first segment's top to the last segment's
      * bottom; the bar hangs at the last one. barHeight is the bar's current height (it may wrap into two lines;
-     * options.barHeight while it is hidden or not there), also given to the marking's gap below as --bar-height.
+     * the last measured one while it is hidden, see measureBar), also given to the marking's gap below as --bar-height.
      */
     const reportBox = () => {
         boxFrame = 0;
@@ -700,7 +700,11 @@ export function createEditor(host, dotnet, options = {}) {
     };
     // Resizing the editor (e.g. the gap below the marking) or the bar (one line or two) moves the box too.
     const resizes = new ResizeObserver(scheduleBox);
-    /** Observes the bar's size and takes its current height (offsetHeight is 0 while it is hidden). */
+    /**
+     * Observes the bar's size and takes its current height. While it is hidden (offsetHeight 0) the last measured
+     * height stays, so hiding and showing a two-line bar does not move the text; options.barHeight only counts until
+     * the bar was first measured.
+     */
     const measureBar = bar => {
         if (bar !== observedBar) {
             if (observedBar) {
@@ -711,7 +715,7 @@ export function createEditor(host, dotnet, options = {}) {
             }
             observedBar = bar;
         }
-        const height = bar && bar.offsetHeight > 0 ? bar.offsetHeight : defaultBarHeight;
+        const height = bar && bar.offsetHeight > 0 ? bar.offsetHeight : barHeight;
         if (height !== barHeight) {
             barHeight = height;
             root.style.setProperty('--bar-height', `${height}px`);

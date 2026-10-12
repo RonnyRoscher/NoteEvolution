@@ -252,6 +252,23 @@ public class MergeDetailsTests
     }
 
     [Theory]
+    [InlineData("", "\t\t  collapsed:: true\n")]
+    [InlineData("\t  collapsed:: true\n", "\t\t  collapsed:: false\n")]
+    public void MergeDetails_CollapsedOfADetail_NeitherCarriedNorConflicting_HeadKeepsItsOwn(string head, string detail)
+    {
+        var book = Head + "\t- Text A\n" + head + "\t\t- Detail\n" + detail + "\t\t\t- Tiefer\n\t\t- Gedanke #notiz\n";
+        using var s = new LinkSetup(book);
+
+        s.Links.MergeDetails(s.Book, s.Text("Text A").Key);
+
+        Assert.Equal(Head + "\t- Text A\n" + head + "\n\t  Detail\n\n\t  Tiefer\n\t\t- Gedanke #notiz\n", s.ReadBook());
+
+        s.Undo.Undo();
+
+        Assert.Equal(book, s.ReadBook());
+    }
+
+    [Theory]
     [InlineData(true)]
     [InlineData(false)]
     public void MergeDetails_IdOfADetailReferencedElsewhere_Refused_NothingChanged(bool inNotes)
