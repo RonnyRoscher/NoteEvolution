@@ -187,6 +187,49 @@ public class BookSyncTests
     }
 
     [Fact]
+    public void Split_DoesNotInheritStatus()
+    {
+        var withStatus = TestBook
+            .Replace($"\t\t  source:: (({N1})), (({N2}))\n", $"\t\t  source:: (({N1})), (({N2}))\n\t\t  status:: fertig\n")
+            .Replace("\t\t\t- Absatz eins\n", "\t\t\t- Absatz eins\n\t\t\t  status:: relevant\n");
+        using var s = new LinkSetup(withStatus, TestJournal);
+        var snapshot = Section(s, "Abschnitt");
+        var original = TextNode(snapshot, "Erster Textblock");
+        var newKey = Guid.NewGuid();
+        var newParagraph = new SnapshotParagraph(Guid.NewGuid(), "neu", 1, false);
+        var first = original with { Text = "Erster", Paragraphs = [original.Paragraphs[0], newParagraph] };
+        var second = new SnapshotTextBlock(newKey, original.Key, "Textblock", [original.Paragraphs[1]], original.Sources);
+
+        BookSync.Apply(s.Book, Replace(snapshot, original, first, second));
+
+        var newId = Book.Load(s.Book.Page).FindTextBlock(newKey)!.Block.Id!.Value;
+        Assert.Equal(
+            withStatus.Replace(
+                "\t\t- Erster Textblock\n" +
+                $"\t\t  id:: {B1}\n" +
+                $"\t\t  source:: (({N1})), (({N2}))\n" +
+                "\t\t  status:: fertig\n" +
+                "\t\t\t- Absatz eins\n" +
+                "\t\t\t  status:: relevant\n" +
+                "\t\t\t- Absatz zwei #notiz\n",
+                "\t\t- Erster\n" +
+                $"\t\t  id:: {B1}\n" +
+                $"\t\t  source:: (({N1})), (({N2}))\n" +
+                "\t\t  status:: fertig\n" +
+                "\t\t\t- Absatz eins\n" +
+                "\t\t\t  status:: relevant\n" +
+                "\t\t\t- neu\n" +
+                "\t\t- Textblock\n" +
+                $"\t\t  id:: {newId}\n" +
+                $"\t\t  source:: (({N1})), (({N2}))\n" +
+                "\t\t\t- Absatz zwei #notiz\n"),
+            Serialize(s.Book));
+        var book = Book.Load(s.Book.Page);
+        Assert.Equal(BlockStatus.Draft, book.FindTextBlock(newKey)!.Status);
+        Assert.Equal(BlockStatus.Draft, book.FindTextBlock(original.Key)!.Paragraphs[1].Status);
+    }
+
+    [Fact]
     public void ApplySyncEffects_Split_AddsSecondUsageToNote()
     {
         using var s = new LinkSetup(TestBook, TestJournal);

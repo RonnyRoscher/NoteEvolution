@@ -19,8 +19,9 @@ public sealed record AdoptResult(Guid TextBlockKey, Guid TextBlockId, bool NoteU
 public interface ILinkService
 {
     /// <summary>
-    /// Copies the note block with its subtree (without property lines) into the book at <paramref name="position"/>,
-    /// gives the copy an <c>id::</c> and <c>source:: ((note id))</c>, then adds the usage to the note's <c>used-in::</c>.
+    /// Copies the note block with its subtree (without property lines, and without a <c>#notiz</c> tag in the note
+    /// block's own text) into the book at <paramref name="position"/>, gives the copy an <c>id::</c>,
+    /// <c>source:: ((note id))</c> and <c>status:: relevant</c>, then adds the usage to the note's <c>used-in::</c>.
     /// Can be undone („Übernehmen“).
     /// </summary>
     /// <exception cref="ArgumentException">Unknown note block or position.</exception>
@@ -29,8 +30,10 @@ public interface ILinkService
     AdoptResult Adopt(Book book, Guid noteBlockKey, InsertPosition position);
 
     /// <summary>
-    /// Copies the note block's text and sub-bullets (without property lines) into an existing text block or detail
-    /// (<paramref name="position"/>), adds the note's id to the enclosing text block's <c>source::</c> unless it is
+    /// Copies the note block's text and sub-bullets (without property lines, and without a <c>#notiz</c> tag in the
+    /// note block's own text) into an existing text block or detail (<paramref name="position"/>): each new top-level
+    /// detail (the copy, or at the cursor each of the note's sub-bullets) gets <c>status:: relevant</c>, the element at
+    /// the cursor keeps its status. It adds the note's id to the enclosing text block's <c>source::</c> unless it is
     /// there (the text block gets an <c>id::</c> if needed; a detail never gets a source of its own), then adds the
     /// usage to the note's <c>used-in::</c>. The result names the enclosing text block. Can be undone („Übernehmen“)
     /// as long as the text block with its details is still as this left it.

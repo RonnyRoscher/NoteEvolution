@@ -16,6 +16,9 @@ public sealed class LinkService(IVault vault, IPageWriter writer, UndoManager un
     private const string IdKey = "id";
     private const string CollapsedKey = "collapsed";
 
+    /// <summary>The status of every block an adopt creates (<c>status:: relevant</c>).</summary>
+    private static readonly string Relevant = BlockStatuses.FileValue(BlockStatus.Relevant)!;
+
     public AdoptResult Adopt(Book book, Guid noteBlockKey, InsertPosition position)
     {
         var bookPage = book.Page;
@@ -24,13 +27,14 @@ public sealed class LinkService(IVault vault, IPageWriter writer, UndoManager un
 
         var (parent, index) = Resolve(book, position);
 
+        var copy = CopyOf(note);
         var noteLines = note.Lines.ToList();
         var noteWasDirty = note.IsDirty;
         var noteId = note.EnsureId();
-        var copy = note.CloneDetached(withoutProperties: true);
         bookPage.InsertBlock(parent, index, copy);
         var textBlockId = copy.EnsureId();
         copy.SetProperty(SourceKey, SourceValue.Format([noteId]));
+        copy.SetProperty(BlockStatuses.Key, Relevant);
         try
         {
             SaveBook(bookPage, () => bookPage.RemoveBlock(copy));
@@ -68,7 +72,7 @@ public sealed class LinkService(IVault vault, IPageWriter writer, UndoManager un
             IntoPosition.FirstChild first => FindElement(book, first.ElementKey, detailOnly: false),
             _ => throw new ArgumentException("Unknown position.", nameof(position)),
         };
-        var copy = note.CloneDetached(withoutProperties: true);
+        var copy = CopyOf(note);
         string? content = null;
         if (position is IntoPosition.AtCursor cursor)
         {
@@ -102,6 +106,8 @@ public sealed class LinkService(IVault vault, IPageWriter writer, UndoManager un
                 inserted = [copy];
                 break;
         }
+
+        inserted.ForEach(block => block.SetProperty(BlockStatuses.Key, Relevant));
 
         var textBlockId = textBlock.EnsureId();
         var sourceAdded = AddSource(textBlock, noteId);
@@ -1073,6 +1079,21 @@ public sealed class LinkService(IVault vault, IPageWriter writer, UndoManager un
     private static Block FindTextBlock(Book book, Guid textBlockKey) =>
         book.FindTextBlock(textBlockKey)?.Block
         ?? throw new ArgumentException("No text block has this key.", nameof(textBlockKey));
+
+    /// <summary>
+    /// The note's copy for the book: the note block with its subtree, without property lines, and without a
+    /// <c>#notiz</c> tag in the note block's own text (<see cref="NoteTag.Remove"/>).
+    /// </summary>
+    private static Block CopyOf(Block note)
+    {
+        var copy = note.CloneDetached(withoutProperties: true);
+        if (NoteTag.Has(copy.Content))
+        {
+            copy.SetContent(NoteTag.Remove(copy.Content));
+        }
+
+        return copy;
+    }
 
     /// <summary>
     /// The text block block and the element block with <paramref name="key"/>: the text block itself or one of its

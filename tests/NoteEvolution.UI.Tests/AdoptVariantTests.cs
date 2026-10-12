@@ -125,9 +125,9 @@ public class AdoptVariantTests : UiTestContext
         AssertBook(
             BookText.Replace(
                 "\t- Erster Text\n" + $"\t  id:: {ErsterId}\n",
-                "\t- Erster Eine NotizText\n" + $"\t  id:: {ErsterId}\n" + $"\t  source:: (({NoteId}))\n" + "\t\t- Unterpunkt\n"),
+                "\t- Erster Eine NotizText\n" + $"\t  id:: {ErsterId}\n" + $"\t  source:: (({NoteId}))\n" + "\t\t- Unterpunkt\n" + "\t\t  status:: relevant\n"),
             ["\t- Erster Text"],
-            ["\t- Erster Eine NotizText", $"\t  source:: (({NoteId}))", "\t\t- Unterpunkt"]);
+            ["\t- Erster Eine NotizText", $"\t  source:: (({NoteId}))", "\t\t- Unterpunkt", "\t\t  status:: relevant"]);
         Assert.Equal(NoteUsedIn(Guid.Parse(ErsterId)), _vault.Read(NotePath));
         AssertRevealed("Erster Eine NotizText", ElementKind.TextBlock);
     }
@@ -145,9 +145,9 @@ public class AdoptVariantTests : UiTestContext
         AssertBook(
             BookText.Replace(
                 "\t- Zweiter Text\n",
-                "\t- Eine Notiz\n" + $"\t  id:: {id}\n" + $"\t  source:: (({NoteId}))\n" + "\t\t- Unterpunkt\n" + "\t- Zweiter Text\n"),
+                "\t- Eine Notiz\n" + $"\t  id:: {id}\n" + $"\t  source:: (({NoteId}))\n" + "\t  status:: relevant\n" + "\t\t- Unterpunkt\n" + "\t- Zweiter Text\n"),
             [],
-            ["\t- Eine Notiz", $"\t  id:: {id}", $"\t  source:: (({NoteId}))", "\t\t- Unterpunkt"]);
+            ["\t- Eine Notiz", $"\t  id:: {id}", $"\t  source:: (({NoteId}))", "\t  status:: relevant", "\t\t- Unterpunkt"]);
         Assert.Equal(NoteUsedIn(id), _vault.Read(NotePath));
     }
 
@@ -162,9 +162,9 @@ public class AdoptVariantTests : UiTestContext
         AssertBook(
             BookText.Replace(
                 $"\t  id:: {ErsterId}\n",
-                $"\t  id:: {ErsterId}\n" + $"\t  source:: (({NoteId}))\n" + "\t\t- Eine Notiz\n" + "\t\t\t- Unterpunkt\n"),
+                $"\t  id:: {ErsterId}\n" + $"\t  source:: (({NoteId}))\n" + "\t\t- Eine Notiz\n" + "\t\t  status:: relevant\n" + "\t\t\t- Unterpunkt\n"),
             [],
-            [$"\t  source:: (({NoteId}))", "\t\t- Eine Notiz", "\t\t\t- Unterpunkt"]);
+            [$"\t  source:: (({NoteId}))", "\t\t- Eine Notiz", "\t\t  status:: relevant", "\t\t\t- Unterpunkt"]);
         Assert.Equal(NoteUsedIn(Guid.Parse(ErsterId)), _vault.Read(NotePath));
         AssertRevealed("Erster Text", ElementKind.TextBlock);
     }
@@ -180,9 +180,9 @@ public class AdoptVariantTests : UiTestContext
         AssertBook(
             BookText
                 .Replace($"\t  id:: {ErsterId}\n", $"\t  id:: {ErsterId}\n" + $"\t  source:: (({NoteId}))\n")
-                .Replace("\t\t- Zweites Detail\n", "\t\t- Eine Notiz\n\t\t\t- Unterpunkt\n\t\t- Zweites Detail\n"),
+                .Replace("\t\t- Zweites Detail\n", "\t\t- Eine Notiz\n\t\t  status:: relevant\n\t\t\t- Unterpunkt\n\t\t- Zweites Detail\n"),
             [],
-            [$"\t  source:: (({NoteId}))", "\t\t- Eine Notiz", "\t\t\t- Unterpunkt"]);
+            [$"\t  source:: (({NoteId}))", "\t\t- Eine Notiz", "\t\t  status:: relevant", "\t\t\t- Unterpunkt"]);
         Assert.Equal(NoteUsedIn(Guid.Parse(ErsterId)), _vault.Read(NotePath));
         AssertRevealed("Ein Detail", ElementKind.Detail);
     }
@@ -198,9 +198,9 @@ public class AdoptVariantTests : UiTestContext
         AssertBook(
             BookText
                 .Replace($"\t  id:: {ErsterId}\n", $"\t  id:: {ErsterId}\n" + $"\t  source:: (({NoteId}))\n")
-                .Replace("\t\t\t- Tiefes Detail\n", "\t\t\t- Eine Notiz\n\t\t\t\t- Unterpunkt\n\t\t\t- Tiefes Detail\n"),
+                .Replace("\t\t\t- Tiefes Detail\n", "\t\t\t- Eine Notiz\n\t\t\t  status:: relevant\n\t\t\t\t- Unterpunkt\n\t\t\t- Tiefes Detail\n"),
             [],
-            [$"\t  source:: (({NoteId}))", "\t\t\t- Eine Notiz", "\t\t\t\t- Unterpunkt"]);
+            [$"\t  source:: (({NoteId}))", "\t\t\t- Eine Notiz", "\t\t\t  status:: relevant", "\t\t\t\t- Unterpunkt"]);
         Assert.Equal(NoteUsedIn(Guid.Parse(ErsterId)), _vault.Read(NotePath));
         AssertRevealed("Ein Detail", ElementKind.Detail);
     }
@@ -216,9 +216,9 @@ public class AdoptVariantTests : UiTestContext
         AssertBook(
             BookText
                 .Replace($"\t  id:: {ErsterId}\n", $"\t  id:: {ErsterId}\n" + $"\t  source:: (({NoteId}))\n")
-                .Replace("\t\t- Ein Detail\n", "\t\t- Ein Eine NotizDetail\n\t\t\t- Unterpunkt\n"),
+                .Replace("\t\t- Ein Detail\n", "\t\t- Ein Eine NotizDetail\n\t\t\t- Unterpunkt\n\t\t\t  status:: relevant\n"),
             ["\t\t- Ein Detail"],
-            [$"\t  source:: (({NoteId}))", "\t\t- Ein Eine NotizDetail", "\t\t\t- Unterpunkt"]);
+            [$"\t  source:: (({NoteId}))", "\t\t- Ein Eine NotizDetail", "\t\t\t- Unterpunkt", "\t\t\t  status:: relevant"]);
         AssertRevealed("Ein Eine NotizDetail", ElementKind.Detail);
     }
 
@@ -239,9 +239,9 @@ public class AdoptVariantTests : UiTestContext
         AssertBook(
             BookText.Replace(
                 "- # Zwei\n",
-                "- # Zwei\n" + "\t- Eine Notiz\n" + $"\t  id:: {id}\n" + $"\t  source:: (({NoteId}))\n" + "\t\t- Unterpunkt\n"),
+                "- # Zwei\n" + "\t- Eine Notiz\n" + $"\t  id:: {id}\n" + $"\t  source:: (({NoteId}))\n" + "\t  status:: relevant\n" + "\t\t- Unterpunkt\n"),
             [],
-            ["\t- Eine Notiz", $"\t  id:: {id}", $"\t  source:: (({NoteId}))", "\t\t- Unterpunkt"]);
+            ["\t- Eine Notiz", $"\t  id:: {id}", $"\t  source:: (({NoteId}))", "\t  status:: relevant", "\t\t- Unterpunkt"]);
     }
 
     [Theory]
@@ -259,9 +259,9 @@ public class AdoptVariantTests : UiTestContext
         var key = AssertRevealedNewTextBlock("Eine Notiz");
         var id = Book.FindTextBlock(key)!.Block.Id;
         AssertBook(
-            BookText + "\t- Eine Notiz\n" + $"\t  id:: {id}\n" + $"\t  source:: (({NoteId}))\n" + "\t\t- Unterpunkt\n",
+            BookText + "\t- Eine Notiz\n" + $"\t  id:: {id}\n" + $"\t  source:: (({NoteId}))\n" + "\t  status:: relevant\n" + "\t\t- Unterpunkt\n",
             [],
-            ["\t- Eine Notiz", $"\t  id:: {id}", $"\t  source:: (({NoteId}))", "\t\t- Unterpunkt"]);
+            ["\t- Eine Notiz", $"\t  id:: {id}", $"\t  source:: (({NoteId}))", "\t  status:: relevant", "\t\t- Unterpunkt"]);
     }
 
     [Fact]
@@ -280,9 +280,9 @@ public class AdoptVariantTests : UiTestContext
         AssertBook(
             BookText.Replace(
                 "\t- Zweiter Text\n",
-                "\t- Eine Notiz\n" + $"\t  id:: {id}\n" + $"\t  source:: (({NoteId}))\n" + "\t\t- Unterpunkt\n" + "\t- Zweiter Text\n"),
+                "\t- Eine Notiz\n" + $"\t  id:: {id}\n" + $"\t  source:: (({NoteId}))\n" + "\t  status:: relevant\n" + "\t\t- Unterpunkt\n" + "\t- Zweiter Text\n"),
             [],
-            ["\t- Eine Notiz", $"\t  id:: {id}", $"\t  source:: (({NoteId}))", "\t\t- Unterpunkt"]);
+            ["\t- Eine Notiz", $"\t  id:: {id}", $"\t  source:: (({NoteId}))", "\t  status:: relevant", "\t\t- Unterpunkt"]);
     }
 
     [Fact]
@@ -328,7 +328,7 @@ public class AdoptVariantTests : UiTestContext
         cut.Find(".ne-adopt-below").Click();
 
         Assert.Empty(cut.FindAll(".ne-adopt-menu"));
-        Assert.Contains("\t\t- Eine Notiz\n\t\t\t- Unterpunkt\n\t\t- Ein Detail\n", _vault.Read(BookPath));
+        Assert.Contains("\t\t- Eine Notiz\n\t\t  status:: relevant\n\t\t\t- Unterpunkt\n\t\t- Ein Detail\n", _vault.Read(BookPath));
 
         // The sub-bullet's arrow opens the menu for the sub-bullet.
         cut.Find(".ne-note-child-adopt-more").Click();
