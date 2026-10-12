@@ -323,6 +323,7 @@ public sealed class BookTextSaver(AppState state, ILogger logger)
     /// Applies the editor document to the page. Exceptions leave the page as it was before: an
     /// <see cref="ArgumentException"/> changes nothing; after any other exception the page is restored from its state
     /// before (from the file if it had unsaved changes), and if that fails it is never saved from here.
+    /// <paramref name="snapshot"/> is the editor's document with the statuses it shows (<see cref="WithShownStatuses"/>).
     /// </summary>
     private bool TryApply(ShownText shown, Book book, string json, out SectionSnapshot snapshot, out SyncResult result)
     {
@@ -332,6 +333,7 @@ public sealed class BookTextSaver(AppState state, ILogger logger)
         {
             snapshot = EditorDocMapper.FromJson(json, shown.Snapshot.ScopeKey, shown.Snapshot.IncludeSubsections);
             result = BookSync.Apply(book, snapshot, shown.Session.Vault);
+            snapshot = WithShownStatuses(snapshot, shown.Snapshot);
             return true;
         }
         catch (ArgumentException ex)
@@ -355,6 +357,39 @@ public sealed class BookTextSaver(AppState state, ILogger logger)
         snapshot = null!;
         result = null!;
         return false;
+    }
+
+    /// <summary>
+    /// <paramref name="saved"/> (read from the editor's document, which carries no status back) with the statuses the
+    /// editor shows: each text block and detail keeps the status it had in <paramref name="shown"/>, by key; one the
+    /// editor made (a new key) is a draft. The editor compares it with the book's version to see a changed status.
+    /// </summary>
+    private static SectionSnapshot WithShownStatuses(SectionSnapshot saved, SectionSnapshot shown)
+    {
+        var statuses = new Dictionary<Guid, BlockStatus>();
+        foreach (var text in shown.Nodes.OfType<SnapshotTextBlock>())
+        {
+            statuses[text.Key] = text.Status;
+            foreach (var paragraph in text.Paragraphs)
+            {
+                statuses[paragraph.Key] = paragraph.Status;
+            }
+        }
+
+        BlockStatus StatusOf(Guid key) => statuses.GetValueOrDefault(key, BlockStatus.Draft);
+        return saved with
+        {
+            Nodes =
+            [
+                .. saved.Nodes.Select(node => node is SnapshotTextBlock text
+                    ? text with
+                    {
+                        Status = StatusOf(text.Key),
+                        Paragraphs = [.. text.Paragraphs.Select(p => p with { Status = StatusOf(p.Key) })],
+                    }
+                    : node),
+            ],
+        };
     }
 
     /// <summary>Puts the file's version of <paramref name="page"/> into the vault, keeping the block keys the editor uses.</summary>

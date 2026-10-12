@@ -36,7 +36,7 @@
     @if (State.CurrentBook is not null)
     {
         <SectionBar Top="_barTop" Visible="_barVisible" Element="State.CurrentElement" Locked="ReadOnlyReason is not null"
-                    OnCommand="OnSectionCommand" />
+                    OnCommand="OnSectionCommand" OnStatus="OnStatusChosen" />
     }
 </div>
 
@@ -264,8 +264,8 @@
     }
 
     /// <summary>
-    /// Runs the structure command on the cursor element, or Merge and Wrap on the range (<see cref="ManuscriptCommands"/>),
-    /// and shows its message; the editor's shortcuts and the buttons of the section bar both come here. The range
+    /// Runs the structure command or the status command (ToggleRemark, AddRemark) on the cursor element, or Merge and
+    /// Wrap on the range (<see cref="ManuscriptCommands"/>), and shows its message; the editor's shortcuts and the buttons of the section bar both come here. The range
     /// buttons and shortcuts (RangeUp, RangeDown) only move the range
     /// (<see cref="AppState.ChangeRange"/>): the document stays as it is, the editor just marks the new range.
     /// </summary>
@@ -287,8 +287,24 @@
         }
 
         // Merge goes through the link service, which names its undo action itself.
-        var undo = command == SectionCommand.Wrap ? L["UndoWrap"] : L["UndoStructure"];
+        var undo = command switch
+        {
+            SectionCommand.Wrap => L["UndoWrap"],
+            SectionCommand.ToggleRemark => L["UndoStatus"],
+            SectionCommand.AddRemark => L["UndoAddRemark"],
+            _ => L["UndoStructure"],
+        };
         _saver.Message = await ManuscriptCommands.RunAsync(State, command, undo, Logger);
+        StateHasChanged();
+    }
+
+    /// <summary>
+    /// Sets the status chosen in the section bar on the text block or detail at the cursor
+    /// (<see cref="ManuscriptCommands.SetStatusAsync"/>) and shows its message; the cursor stays where it is.
+    /// </summary>
+    public async Task OnStatusChosen(BlockStatus status)
+    {
+        _saver.Message = await ManuscriptCommands.SetStatusAsync(State, status, L["UndoStatus"], Logger);
         StateHasChanged();
     }
 
@@ -614,7 +630,9 @@
         await SyncAsync();
     }
 
-    /// <summary>Same nodes, texts, paragraphs and chips (<see cref="SnapshotTextBlock.SplitFrom"/> is left out).</summary>
+    /// <summary>
+    /// Same nodes, texts, paragraphs, statuses and chips (<see cref="SnapshotTextBlock.SplitFrom"/> is left out).
+    /// </summary>
     private static bool SameContent(SectionSnapshot a, SectionSnapshot b) =>
         a.ScopeKey == b.ScopeKey
         && a.IncludeSubsections == b.IncludeSubsections
@@ -623,11 +641,14 @@
         {
             (SnapshotHeading x, SnapshotHeading y) => x == y,
             (SnapshotTextBlock x, SnapshotTextBlock y) =>
-                x.Key == y.Key && x.Text == y.Text && x.Paragraphs.SequenceEqual(y.Paragraphs) && x.Sources.SequenceEqual(y.Sources),
+                x.Key == y.Key && x.Text == y.Text && x.Status == y.Status && x.Paragraphs.SequenceEqual(y.Paragraphs)
+                && x.Sources.SequenceEqual(y.Sources),
             _ => false,
         });
 
-    /// <summary>Same keys, heading levels, paragraph depths and note flags, and the same chips; texts may differ.</summary>
+    /// <summary>
+    /// Same keys, heading levels, paragraph depths, note flags and statuses, and the same chips; texts may differ.
+    /// </summary>
     private static bool SameShape(SectionSnapshot a, SectionSnapshot b) =>
         a.ScopeKey == b.ScopeKey
         && a.IncludeSubsections == b.IncludeSubsections
@@ -637,7 +658,9 @@
             (SnapshotHeading x, SnapshotHeading y) => x.Key == y.Key && x.Level == y.Level,
             (SnapshotTextBlock x, SnapshotTextBlock y) =>
                 x.Key == y.Key
-                && x.Paragraphs.Select(p => (p.Key, p.Depth, p.IsNote)).SequenceEqual(y.Paragraphs.Select(p => (p.Key, p.Depth, p.IsNote)))
+                && x.Status == y.Status
+                && x.Paragraphs.Select(p => (p.Key, p.Depth, p.IsNote, p.Status))
+                    .SequenceEqual(y.Paragraphs.Select(p => (p.Key, p.Depth, p.IsNote, p.Status)))
                 && x.Sources.SequenceEqual(y.Sources),
             _ => false,
         });

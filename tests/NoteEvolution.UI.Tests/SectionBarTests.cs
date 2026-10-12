@@ -292,6 +292,13 @@ public class SectionBarTests : UiTestContext
         await MoveToAsync(cut, "Ein Detail");
         cut.WaitForAssertion(() => Assert.Equal("RangeDetail", cut.Find(".ne-range-label").TextContent));
         AssertKeys(cut.Find(".ne-section-bar"), resources);
+
+        // The status selection with its five options and „Bemerkung anfügen“.
+        Assert.Equal("SectionStatus", cut.Find("select.ne-sec-status").GetAttribute("title"));
+        Assert.Equal(
+            ["StatusDraft", "StatusRelevant", "StatusRemark", "StatusWording", "StatusDone"],
+            cut.FindAll("select.ne-sec-status option").Select(option => option.TextContent.Trim()));
+        Assert.Equal("SectionAddRemark", cut.Find(".ne-sec-remark").TextContent.Trim());
         cut.Find(".ne-range-down").Click();
         cut.WaitForAssertion(() => Assert.Equal("RangeDetailRangeOwnOnly", cut.Find(".ne-range-label").TextContent));
         AssertKeys(cut.Find(".ne-section-bar"), resources);

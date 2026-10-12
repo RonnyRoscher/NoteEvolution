@@ -12,6 +12,7 @@
     --warning: #b4690e;
     --danger: #b3261e;
     --hint-bg: #fff4d6;
+    --remark-bg: #f3e9d2;
     --font-ui: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
     --font-text: "EB Garamond", Georgia, "Times New Roman", serif;
     color-scheme: light;
@@ -30,6 +31,7 @@
         --warning: #e5a446;
         --danger: #f2827a;
         --hint-bg: #3a3222;
+        --remark-bg: #4a3f2c;
         color-scheme: dark;
     }
 }
@@ -46,6 +48,7 @@
     --warning: #e5a446;
     --danger: #f2827a;
     --hint-bg: #3a3222;
+    --remark-bg: #4a3f2c;
     color-scheme: dark;
 }
 
@@ -607,10 +610,6 @@ html, body {
     min-width: 0;
 }
 
-.ne-note-child-whereto {
-    flex-shrink: 0;
-}
-
 .ne-note-actions {
     display: flex;
     flex-wrap: wrap;
@@ -618,49 +617,18 @@ html, body {
     margin-top: 6px;
 }
 
-/* "Übernehmen" as a split button: the main part adopts at the cursor, the arrow opens the menu of variants. */
-.ne-adopt-split {
-    position: relative;
-    display: inline-flex;
-    flex-shrink: 0;
+/* The adopt buttons (status spec 3): side by side for the note, stacked to the right of a sub-bullet. */
+.ne-adopt-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
 }
 
-.ne-shell .ne-adopt-split > button:first-child {
-    border-top-right-radius: 0;
-    border-bottom-right-radius: 0;
-}
-
-.ne-shell .ne-adopt-split > button:nth-child(2) {
-    margin-left: -1px;
-    padding: 3px 6px;
-    border-top-left-radius: 0;
-    border-bottom-left-radius: 0;
-}
-
-.ne-adopt-menu {
-    position: absolute;
-    left: 0;
-    top: calc(100% + 2px);
-    z-index: 20;
+.ne-adopt-column {
     display: flex;
     flex-direction: column;
+    flex-shrink: 0;
     gap: 2px;
-    min-width: 140px;
-    padding: 4px;
-    font-family: var(--font-ui);
-    background: var(--bg-raised);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    box-shadow: 0 6px 20px rgb(0 0 0 / 0.18);
-}
-
-.ne-shell .ne-adopt-menu button {
-    text-align: left;
-    border-color: transparent;
-}
-
-.ne-shell .ne-adopt-menu button:hover {
-    border-color: var(--border);
 }
 
 .ne-note-whereto-list {
@@ -837,9 +805,47 @@ html, body {
     padding-left: calc(var(--depth, 0) * 1.5em);
 }
 
-.ne-para[data-note="true"] {
-    font-style: italic;
+/*
+ * The status of a text block (data-status on .ne-block, drawn on its text, not its chips) or of a detail (on its own
+ * paragraph only): relevant grey, a remark on a beige ground, wording and done as a mark in the right margin. The mark
+ * is a ::before, since .ne-current::after draws the marking box on the same elements.
+ */
+.ne-block[data-status] > .ne-block-content,
+.ne-para[data-status] {
+    position: relative;
+}
+
+.ne-block[data-status="relevant"] > .ne-block-content,
+.ne-para[data-status="relevant"] {
     color: var(--fg-muted);
+}
+
+.ne-block[data-status="bemerkung"] > .ne-block-content,
+.ne-para[data-status="bemerkung"] {
+    background: var(--remark-bg);
+}
+
+/* A detail's ground starts at its indentation. */
+.ne-para[data-status="bemerkung"] {
+    background-clip: content-box;
+}
+
+.ne-block[data-status="formulierung"] > .ne-block-content::before,
+.ne-para[data-status="formulierung"]::before,
+.ne-block[data-status="fertig"] > .ne-block-content::before,
+.ne-para[data-status="fertig"]::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    right: -10px;
+    border-right: 3px solid #d4a017;
+    pointer-events: none;
+}
+
+.ne-block[data-status="fertig"] > .ne-block-content::before,
+.ne-para[data-status="fertig"]::before {
+    border-right-color: #3a9b4f;
 }
 
 .ne-chips {
@@ -1007,6 +1013,16 @@ html, body {
 .ne-sec-buttons button,
 .ne-sec-sources {
     white-space: nowrap;
+}
+
+/* The status selection stands among the buttons and is greyed out like them (on a heading, or when locked). */
+.ne-shell .ne-sec-status {
+    padding: 3px 6px;
+}
+
+.ne-shell .ne-sec-status:disabled {
+    opacity: 0.45;
+    cursor: default;
 }
 
 /* The sources stay at the right end, also alone in a second line. */

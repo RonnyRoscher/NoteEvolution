@@ -145,6 +145,32 @@ public class BookModelTests
     }
 
     [Fact]
+    public void WordCount_IgnoresExcluded()
+    {
+        var b = Book.Load(Parse(
+            "type:: book\n\n" +
+            "- # Kapitel\n" +
+            "\t- eins zwei\n" +
+            "\t\t- drei\n" +
+            "\t\t- Relevant vier fünf\n" +
+            "\t\t  status:: relevant\n" +
+            "\t\t\t- Kind sechs sieben\n" +
+            "\t\t- Bemerkung acht\n" +
+            "\t\t  status:: bemerkung\n" +
+            "\t\t- Formuliert neun\n" +
+            "\t\t  status:: formulierung\n" +
+            "\t- Relevanter Block zehn elf\n" +
+            "\t  status:: relevant\n" +
+            "\t\t- Detail zwölf\n" +
+            "\t\t  status:: fertig\n" +
+            "\t- Bemerkter Block dreizehn #notiz\n"));
+        var chapter = b.Root.Children.Single();
+
+        // eins zwei + drei + "Formuliert neun"
+        Assert.Equal(5, chapter.WordCount);
+    }
+
+    [Fact]
     public void IsBook_DetectsTypeBook()
     {
         Assert.True(Book.IsBook(Parse("type:: book\n")));

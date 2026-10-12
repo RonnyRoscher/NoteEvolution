@@ -39,7 +39,7 @@ public static class EmbeddingText
     /// <summary>Titles from the book's top level down to <paramref name="node"/>; for the root the book title.</summary>
     public static string ForHeadingPath(Book book, OutlineNode node) => QueryPrefix + HeadingPath(book, node);
 
-    /// <summary>The block's text and its paragraphs that are not notes, as the user wrote it.</summary>
+    /// <summary>The block's text and its paragraphs that are not remarks, as the user wrote it.</summary>
     public static string ForTextBlock(TextBlock tb) => QueryPrefix + TextOf(tb);
 
     /// <summary>The content of a sub-bullet and of all its descendants (depth first), without property lines; as a note to place.</summary>
@@ -119,7 +119,7 @@ public static class EmbeddingText
     }
 
     private static string TextOf(TextBlock tb) =>
-        Join(tb.Paragraphs.Where(p => !p.IsNote).Select(p => p.Text).Prepend(tb.Text)
+        Join(tb.Paragraphs.Where(p => p.Status != BlockStatus.Remark).Select(p => p.Text).Prepend(tb.Text)
             .Select(BlockTextEscape.Unescape));
 
     private static string Join(IEnumerable<string> lines) =>

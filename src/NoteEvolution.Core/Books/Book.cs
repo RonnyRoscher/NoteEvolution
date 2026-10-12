@@ -97,7 +97,8 @@ public sealed partial class Book
                 _warnings.Add(new OutlineWarning(block.Key, $"Überschrift ‚{title}‘ innerhalb eines Textblocks"));
             }
 
-            paragraphs.Add(new Paragraph(block, NoteTag.Strip(block.Content), depth, NoteTag.Has(block.Content)));
+            paragraphs.Add(new Paragraph(
+                block, NoteTag.Strip(block.Content), depth, NoteTag.Has(block.Content), BlockStatuses.Of(block)));
             AddParagraphs(paragraphs, block.Children, depth + 1);
         }
     }

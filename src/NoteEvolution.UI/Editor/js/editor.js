@@ -40,6 +40,14 @@ const keyAttribute = {
     renderHTML: attrs => (attrs.key ? { 'data-key': attrs.key } : {}),
 };
 
+// The status of a text block or detail (the status:: file value: relevant, bemerkung, formulierung, fertig; null for
+// a draft). It comes from the book and is only shown: typing never changes it, and new or pasted content has none.
+const statusAttribute = {
+    default: null,
+    parseHTML: () => null,
+    renderHTML: attrs => (attrs.status ? { 'data-status': attrs.status } : {}),
+};
+
 // textBlock comes first: it is the default node where the document needs one.
 const Doc = Node.create({
     name: 'doc',
@@ -77,7 +85,10 @@ const Heading = Node.create({
     },
 });
 
-/** A paragraph of a text block: the first (depth 0) is the block's own text, the others its sub-bullets. */
+/**
+ * A paragraph of a text block: the first (depth 0) is the block's own text (its status is the text block's), the
+ * others its sub-bullets.
+ */
 const Para = Node.create({
     name: 'para',
     content: 'inline*',
@@ -89,11 +100,13 @@ const Para = Node.create({
                 parseHTML: el => Number(el.getAttribute('data-depth')) || 0,
                 renderHTML: attrs => ({ 'data-depth': attrs.depth, style: `--depth: ${attrs.depth}` }),
             },
+            // #notiz: kept for the book file only; the editor does not change it (the status shows a remark).
             isNote: {
                 default: false,
                 parseHTML: el => el.getAttribute('data-note') === 'true',
                 renderHTML: attrs => (attrs.isNote ? { 'data-note': 'true' } : {}),
             },
+            status: statusAttribute,
             // The Markdown the paragraph was loaded with; C# keeps it when the text is unchanged.
             md: { default: null, rendered: false, parseHTML: () => null },
         };
@@ -136,9 +149,14 @@ class TextBlockView {
     }
 
     render(sourcesChanged = true) {
-        const { key, sources } = this.node.attrs;
+        const { key, sources, status } = this.node.attrs;
         this.dom.setAttribute('data-key', key ?? '');
         this.dom.toggleAttribute('data-has-sources', (sources ?? []).length > 0);
+        if (status) {
+            this.dom.setAttribute('data-status', status);
+        } else {
+            this.dom.removeAttribute('data-status');
+        }
         if (!sourcesChanged) {
             return;
         }
@@ -188,6 +206,7 @@ const TextBlock = Node.create({
                 parseHTML: el => parseSources(el.getAttribute('data-sources')),
                 renderHTML: attrs => ({ 'data-sources': JSON.stringify(attrs.sources ?? []) }),
             },
+            status: statusAttribute,
         };
     },
     parseHTML() {
@@ -210,7 +229,7 @@ function insertBlockAfterHeading(tr, $from) {
     tr.scrollIntoView();
 }
 
-/** Enter: a new paragraph in the block (a sub-bullet, at least depth 1). */
+/** Enter: a new paragraph in the block (a sub-bullet, at least depth 1, without #notiz and status). */
 function newParagraph({ tr, dispatch }) {
     const { $from } = tr.selection;
     if ($from.parent.type.name === 'heading') {
@@ -231,7 +250,7 @@ function newParagraph({ tr, dispatch }) {
         if (para.type.name !== 'para') {
             return true;
         }
-        const attrs = { key: null, depth: Math.max(1, para.attrs.depth), isNote: false, md: null };
+        const attrs = { key: null, depth: Math.max(1, para.attrs.depth), isNote: false, status: null, md: null };
         tr.split($pos.pos, 1, [{ type: para.type, attrs }]);
         tr.scrollIntoView();
     }
@@ -239,8 +258,8 @@ function newParagraph({ tr, dispatch }) {
 }
 
 /**
- * Ctrl+Enter: splits the text block at the cursor; the new part gets a new key, splitFrom and the sources. At the
- * block's end an empty block without splitFrom follows (at its start one is put before it).
+ * Ctrl+Enter: splits the text block at the cursor; the new part gets a new key, splitFrom and the sources, but no
+ * status (a draft). At the block's end an empty block without splitFrom follows (at its start one is put before it).
  */
 function splitTextBlock({ tr, dispatch }) {
     const { $from } = tr.selection;
@@ -274,7 +293,7 @@ function splitTextBlock({ tr, dispatch }) {
         } else {
             tr.split($pos.pos, 2, [
                 { type: block.type, attrs: { key: newKey(), splitFrom: block.attrs.key, sources: block.attrs.sources } },
-                { type: $pos.parent.type, attrs: { key: null, depth: 0, isNote: false, md: null } },
+                { type: $pos.parent.type, attrs: { key: null, depth: 0, isNote: false, status: null, md: null } },
             ]);
         }
         tr.scrollIntoView();
@@ -318,23 +337,11 @@ const shiftDepth = delta => ({ tr, dispatch }) => {
     return true;
 };
 
-/** Ctrl+Shift+N: toggles #notiz on the selected sub-bullets (never on a block's own text). */
-function toggleNote({ tr, dispatch }) {
-    if (dispatch) {
-        let value;
-        changeSelectedParagraphs(tr, para => {
-            value ??= !para.attrs.isNote;
-            return { isNote: value };
-        });
-    }
-    return true;
-}
-
 const inHeading = state => state.selection.$from.parent.type.name === 'heading';
 
 /**
- * The editing shortcuts. The structure commands (spec 3) and the range steps (Alt+Up / Alt+Down) run in C#: their
- * shortcuts call options.onSectionCommand with the SectionCommand member name.
+ * The editing shortcuts. The structure commands (spec 3), the range steps (Alt+Up / Alt+Down) and toggling a remark
+ * (Ctrl+Shift+N) run in C#: their shortcuts call options.onSectionCommand with the SectionCommand member name.
  */
 const Keys = Extension.create({
     name: 'noteEvolutionKeys',
@@ -362,8 +369,8 @@ const Keys = Extension.create({
                     ? section('RemoveHeading')()
                     : false;
             },
-            'Mod-Shift-n': run(toggleNote),
-            'Mod-Shift-N': run(toggleNote),
+            'Mod-Shift-n': section('ToggleRemark'),
+            'Mod-Shift-N': section('ToggleRemark'),
             'Alt-ArrowUp': section('RangeUp'),
             'Alt-ArrowDown': section('RangeDown'),
         };
@@ -388,9 +395,10 @@ function keyedNodes(doc) {
 
 /**
  * Gives every heading, text block and sub-bullet a unique key: a missing or duplicate key is replaced by a new one
- * (a duplicate text block also gets splitFrom = the original key). Of duplicates, the node where the old document's
- * node went keeps the key. Also keeps the paragraph shape: the first paragraph is the block's text (no key, depth 0,
- * no #notiz), every other one has depth 1 … previous depth + 1.
+ * (a duplicate text block also gets splitFrom = the original key); a text block or sub-bullet with a new key is new
+ * content and has no status. Of duplicates, the node where the old document's node went keeps the key. Also keeps the
+ * paragraph shape: the first paragraph is the block's text (no key, depth 0, no #notiz, no status), every other one
+ * has depth 1 … previous depth + 1.
  */
 function normalize(transactions, oldState, newState) {
     const mapping = new Mapping();
@@ -414,7 +422,7 @@ function normalize(transactions, oldState, newState) {
         const key = take(node.attrs.key, offset);
         if (key !== node.attrs.key) {
             const splitFrom = node.type.name === 'textBlock' && node.attrs.key ? node.attrs.key : node.attrs.splitFrom;
-            tr.setNodeMarkup(offset, undefined, node.type.name === 'textBlock' ? { ...node.attrs, key, splitFrom } : { ...node.attrs, key });
+            tr.setNodeMarkup(offset, undefined, node.type.name === 'textBlock' ? { ...node.attrs, key, splitFrom, status: null } : { ...node.attrs, key });
         }
         if (node.type.name !== 'textBlock') {
             return;
@@ -422,11 +430,18 @@ function normalize(transactions, oldState, newState) {
         let previous = 0;
         node.forEach((para, paraOffset, index) => {
             const pos = offset + 1 + paraOffset;
+            const paraKey = index === 0 ? null : take(para.attrs.key, pos);
             const attrs = index === 0
-                ? { ...para.attrs, key: null, depth: 0, isNote: false }
-                : { ...para.attrs, key: take(para.attrs.key, pos), depth: Math.min(Math.max(para.attrs.depth, 1), previous + 1) };
+                ? { ...para.attrs, key: paraKey, depth: 0, isNote: false, status: null }
+                : {
+                    ...para.attrs,
+                    key: paraKey,
+                    depth: Math.min(Math.max(para.attrs.depth, 1), previous + 1),
+                    status: paraKey === para.attrs.key ? para.attrs.status : null,
+                };
             previous = attrs.depth;
-            if (attrs.key !== para.attrs.key || attrs.depth !== para.attrs.depth || attrs.isNote !== para.attrs.isNote) {
+            if (attrs.key !== para.attrs.key || attrs.depth !== para.attrs.depth || attrs.isNote !== para.attrs.isNote
+                || attrs.status !== para.attrs.status) {
                 tr.setNodeMarkup(pos, undefined, attrs);
             }
         });

@@ -259,10 +259,10 @@ public class MergeTests
             "\n" +
             "- # Kapitel\n" +
             "\t- Text A\n" +
-            "\t  status:: offen\n" +
+            "\t  thema:: offen\n" +
             "\t- Text B\n" +
             "\t  farbe:: rot\n" +
-            "\t  Status:: offen\n" +
+            "\t  Thema:: offen\n" +
             "\t- Text C\n" +
             "\t  collapsed:: true\n" +
             "\t\t- Detail C\n";
@@ -273,7 +273,7 @@ public class MergeTests
         // The same value under the same key (ignoring case) is no conflict; the first block's line stays as it is.
         var expected =
             "title:: Buch: Test\ntype:: book\n\n- # Kapitel\n" +
-            "\t- Text A\n\t  status:: offen\n\t  farbe:: rot\n\t  collapsed:: true\n\n\t  Text B\n\n\t  Text C\n" +
+            "\t- Text A\n\t  thema:: offen\n\t  farbe:: rot\n\t  collapsed:: true\n\n\t  Text B\n\n\t  Text C\n" +
             "\t\t- Detail C\n";
         Assert.Equal(expected, s.ReadBook());
         AssertChangedLines(book, s.ReadBook(), removed: [6, 8, 9], added: [8, 9, 10, 11]);
@@ -305,6 +305,31 @@ public class MergeTests
         Assert.False(s.Book.Page.IsDirty);
         Assert.Equal(3, s.Book.Root.Children.Single().TextBlocks.Count());
         Assert.False(s.Undo.CanUndo);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("\t  status:: fertig\n")]
+    public void Merge_StatusOfLaterBlocks_NeitherCarriedNorConflicting_HeadKeepsItsOwn(string a)
+    {
+        // The later blocks' status:: lines go with them (even different values); the head's own line (or none) stays.
+        var book =
+            "title:: Buch: Test\ntype:: book\n\n- # Kapitel\n" +
+            "\t- Text A\n" + a +
+            "\t- Text B\n\t  status:: relevant\n" +
+            "\t- Text C\n\t  Status:: Bemerkung\n";
+        using var s = new LinkSetup(book);
+
+        s.Links.MergeTextBlocks(s.Book, [[s.Text("Text A").Key, s.Text("Text B").Key, s.Text("Text C").Key]]);
+
+        var expected = "title:: Buch: Test\ntype:: book\n\n- # Kapitel\n" + "\t- Text A\n" + a + "\n\t  Text B\n\n\t  Text C\n";
+        Assert.Equal(expected, s.ReadBook());
+        var head = a.Length == 0 ? 4 : 5;
+        AssertChangedLines(book, s.ReadBook(), removed: [head + 1, head + 2, head + 3, head + 4], added: [head + 1, head + 2, head + 3, head + 4]);
+
+        s.Undo.Undo();
+
+        Assert.Equal(book, s.ReadBook());
     }
 
     [Theory]

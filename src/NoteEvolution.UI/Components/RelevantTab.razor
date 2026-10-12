@@ -88,6 +88,12 @@
     /// <summary>True once a result was applied for the current topic (to tell "nothing found" from "not computed yet").</summary>
     private bool _computed;
 
+    /// <summary>
+    /// True once the list stayed as it was because it was frozen (<see cref="Frozen"/>): the first refresh after the
+    /// last list closed computes it again, also if nothing it depends on changed.
+    /// </summary>
+    private bool _heldWhileFrozen;
+
     [Parameter, EditorRequired] public NoteFilter Filter { get; set; } = default!;
 
     /// <summary>Changes whenever the vault's pages or the session changed, so the notes are looked up again.</summary>
@@ -153,20 +159,38 @@
         StateHasChanged();
     });
 
-    /// <summary>Starts a new computation if something the list depends on has changed since the last one.</summary>
+    /// <summary>
+    /// The list is frozen (status spec 4) while a note it shows has its "Wohin damit?" list open: it is not computed
+    /// again, whatever changes (a jump to a hit, adopting), so the cards keep their order. A note that is gone (its page
+    /// was read again, another session) no longer holds it.
+    /// </summary>
+    private bool Frozen =>
+        _hits.Any(hit => State.WhereToOpenNotes.Contains(hit.Key) && State.Session?.Notes.Get(hit.Key) is not null);
+
+    /// <summary>
+    /// Starts a new computation if something the list depends on has changed since the last one; nothing while the list
+    /// is frozen (<see cref="Frozen"/>), and once after it was, at once with the current state.
+    /// </summary>
     private void Refresh()
     {
+        if (Frozen)
+        {
+            _heldWhileFrozen = true;
+            return;
+        }
+
         var session = State.Session;
         var status = session?.AiStatus;
         var available = session?.Relevance.IsAvailable == true;
         var current = (session, State.CurrentBook, State.CurrentSectionKey, State.CursorTextBlockKey, State.CursorTextBlockKey is not null,
             State.RangeLevel, Filter, Revision, status?.State ?? AiState.Off, available, _indexVersion);
-        if (_last == current)
+        if (_last == current && !_heldWhileFrozen)
         {
             return;
         }
 
-        var first = _last is null;
+        var first = _last is null || _heldWhileFrozen;
+        _heldWhileFrozen = false;
         _last = current;
         _computed = false;
         _generation++;
@@ -212,7 +236,15 @@
                     return;
                 }
 
-                // A card with an open "Wohin damit?" list stays where it is, also if the new list leaves its note out.
+                // A list opened while this ran froze the list: the result is dropped, the list is computed after it closed.
+                if (Frozen)
+                {
+                    _heldWhileFrozen = true;
+                    return;
+                }
+
+                // The pins of package B (a card with an open "Wohin damit?" list stays where it is) have nothing to keep
+                // here, as such a card freezes the list; they are kept as the common way of the tabs.
                 (_hits, _keptOnly) = WhereToPins.Merge(_hits, hits, hit => hit.Key, State.WhereToOpenNotes);
                 _computed = true;
                 StateHasChanged();

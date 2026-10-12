@@ -133,6 +133,63 @@ public class EditorDocMapperTests
     }
 
     [Fact]
+    public void ToJson_WritesStatus_TextBlockAndPara()
+    {
+        var keys = Enumerable.Range(3, 3).Select(i => Guid.Parse($"0199a000-0000-7000-8000-00000000000{i}")).ToArray();
+        var snapshot = new SectionSnapshot(Scope, false,
+        [
+            new SnapshotTextBlock(BlockKey, null, "Text",
+                [
+                    new SnapshotParagraph(keys[0], "Eins", 1, false, BlockStatus.Relevant),
+                    new SnapshotParagraph(keys[1], "Zwei", 1, true, BlockStatus.Remark),
+                    new SnapshotParagraph(keys[2], "Drei", 2, false, BlockStatus.Done),
+                ],
+                [], BlockStatus.Wording),
+        ]);
+
+        var block = JsonNode.Parse(EditorDocMapper.ToJson(snapshot))!["content"]![0]!;
+
+        Assert.Equal("formulierung", (string?)block["attrs"]!["status"]);
+        var paras = block["content"]!.AsArray();
+        // The block's own text carries no status of its own; the text block has it.
+        Assert.False(paras[0]!["attrs"]!.AsObject().ContainsKey("status"));
+        Assert.Equal(["relevant", "bemerkung", "fertig"], paras.Skip(1).Select(p => (string?)p!["attrs"]!["status"]));
+    }
+
+    [Fact]
+    public void ToJson_Draft_NoStatusAttr()
+    {
+        var child = Guid.Parse("0199a000-0000-7000-8000-000000000003");
+
+        var block = JsonNode.Parse(EditorDocMapper.ToJson(OneBlock("Text", [new SnapshotParagraph(child, "Absatz", 1, false)])))!
+            ["content"]![0]!;
+
+        Assert.False(block["attrs"]!.AsObject().ContainsKey("status"));
+        Assert.All(block["content"]!.AsArray(), para => Assert.False(para!["attrs"]!.AsObject().ContainsKey("status")));
+    }
+
+    [Fact]
+    public void FromJson_IgnoresStatus_IsNoteRoundTrips()
+    {
+        var child = Guid.Parse("0199a000-0000-7000-8000-000000000003");
+        var other = Guid.Parse("0199a000-0000-7000-8000-000000000004");
+        var snapshot = new SectionSnapshot(Scope, false,
+        [
+            new SnapshotTextBlock(BlockKey, null, "Text",
+                [new SnapshotParagraph(child, "Notiz", 1, true, BlockStatus.Remark), new SnapshotParagraph(other, "Fertig", 1, false, BlockStatus.Done)],
+                [], BlockStatus.Relevant),
+        ]);
+
+        var back = EditorDocMapper.FromJson(EditorDocMapper.ToJson(snapshot), Scope, false);
+
+        var block = (SnapshotTextBlock)back.Nodes.Single();
+        Assert.Equal(BlockStatus.Draft, block.Status);
+        Assert.Equal([BlockStatus.Draft, BlockStatus.Draft], block.Paragraphs.Select(p => p.Status));
+        Assert.Equal([true, false], block.Paragraphs.Select(p => p.IsNote));
+        Assert.Equal(Describe(snapshot), Describe(back));
+    }
+
+    [Fact]
     public void Mapper_EmptySection_GivesOneEmptyBlockToTypeIn()
     {
         var json = EditorDocMapper.ToJson(new SectionSnapshot(Scope, false, []));

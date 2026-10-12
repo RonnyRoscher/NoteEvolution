@@ -39,7 +39,7 @@ public class RemoveAndDeleteTests
 
         s.Links.RemoveSource(s.Book, first.TextBlockKey, noteId);
 
-        Assert.Contains($"\t\t- Kern\n\t\t  id:: {first.TextBlockId}\n\t\t\t- Detail\n", s.ReadBook());
+        Assert.Contains($"\t\t- Kern\n\t\t  id:: {first.TextBlockId}\n\t\t  status:: relevant\n\t\t\t- Detail\n", s.ReadBook());
         Assert.Contains($"\t\t- Kern\n\t\t  id:: {second.TextBlockId}\n\t\t  source:: (({noteId}))\n", s.ReadBook());
         Assert.Contains($"\n  used-in:: [[Buch - Test]] (({second.TextBlockId}))\n", s.ReadJournal());
         Assert.DoesNotContain(first.TextBlockId.ToString(), s.ReadJournal());

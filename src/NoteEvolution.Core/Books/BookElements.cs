@@ -1,5 +1,4 @@
 using NoteEvolution.Core.Model;
-using NoteEvolution.Core.Text;
 
 namespace NoteEvolution.Core.Books;
 
@@ -95,8 +94,9 @@ public static class BookElements
 
     /// <summary>
     /// The details „Zusammenfügen“ merges into the text of <paramref name="element"/> (a text block's or a detail's
-    /// block): all its descendants without the <c>#notiz</c> tag, depth-first in file order, except those below a
-    /// <c>#notiz</c> detail (it stays with its own sub-details).
+    /// block): all its descendants that are no Bemerkung (remark: <c>status:: bemerkung</c> or the <c>#notiz</c> tag,
+    /// see <see cref="BlockStatuses.Of"/>), depth-first in file order, except those below a Bemerkung (remark) detail
+    /// (it stays with its own sub-details).
     /// </summary>
     internal static List<Block> DetailsToMerge(Block element)
     {
@@ -106,8 +106,8 @@ public static class BookElements
     }
 
     /// <summary>
-    /// The topmost <c>#notiz</c> details in the subtree below <paramref name="detail"/>, in file order: those that stay
-    /// as details when <paramref name="detail"/> is merged away.
+    /// The topmost Bemerkung (remark) details in the subtree below <paramref name="detail"/>, in file order: those that
+    /// stay as details when <paramref name="detail"/> is merged away.
     /// </summary>
     internal static List<Block> NoteDetailsBelow(Block detail)
     {
@@ -120,7 +120,7 @@ public static class BookElements
     {
         foreach (var child in parent.Children)
         {
-            if (NoteTag.Has(child.Content))
+            if (BlockStatuses.Of(child) == BlockStatus.Remark)
             {
                 notes.Add(child);
             }

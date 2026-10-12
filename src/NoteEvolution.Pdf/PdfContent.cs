@@ -15,7 +15,7 @@ internal sealed record ImageElement(Image Image) : PdfElement;
 
 /// <summary>
 /// The exportable content of a book (or one outline node of it) as a flat list of headings, paragraphs and images,
-/// plus the warnings found while collecting it. Notes, properties and sources never get in.
+/// plus the warnings found while collecting it. Relevant and remark blocks, properties and sources never get in.
 /// </summary>
 internal sealed partial class PdfContent : IDisposable
 {
@@ -85,32 +85,16 @@ internal sealed partial class PdfContent : IDisposable
                     AddHeading(child);
                     AddItems(child);
                     break;
-                case TextBlock text:
+                case TextBlock { Status: var status } text when !BlockStatuses.IsExcluded(status):
+                    // A relevant or remark block stays out with all its details, whatever their status;
+                    // inside an exported block, an excluded detail takes its whole subtree with it.
                     AddBlockText(text.Text);
-                    AddParagraphs(text.Paragraphs);
+                    foreach (var paragraph in text.ExportedParagraphs)
+                    {
+                        AddBlockText(paragraph.Text);
+                    }
+
                     break;
-            }
-        }
-    }
-
-    /// <summary>
-    /// <paramref name="paragraphs"/> is a flat preorder list, so everything deeper than a note that follows it
-    /// (until a paragraph at the note's depth or above) is that note's subtree: working notes, not exported.
-    /// </summary>
-    private void AddParagraphs(IReadOnlyList<Paragraph> paragraphs)
-    {
-        var noteDepth = int.MaxValue;
-        foreach (var paragraph in paragraphs)
-        {
-            if (paragraph.Depth > noteDepth)
-            {
-                continue;
-            }
-
-            noteDepth = paragraph.IsNote ? paragraph.Depth : int.MaxValue;
-            if (!paragraph.IsNote)
-            {
-                AddBlockText(paragraph.Text);
             }
         }
     }

@@ -227,6 +227,36 @@
     <value>Unter neue Überschrift</value>
     <comment>Name der Aktion für „Rückgängig“ nach „Unter neue Überschrift“ (Zusammenfügen benennt der Verknüpfungsdienst selbst)</comment>
   </data>
+  <data name="SectionStatus" xml:space="preserve">
+    <value>Status des Blocks</value>
+    <comment>Titel der Statusauswahl in der Leiste am aktuellen Block</comment>
+  </data>
+  <data name="StatusDraft" xml:space="preserve">
+    <value>Entwurf</value>
+  </data>
+  <data name="StatusRelevant" xml:space="preserve">
+    <value>Relevant</value>
+  </data>
+  <data name="StatusRemark" xml:space="preserve">
+    <value>Bemerkung</value>
+  </data>
+  <data name="StatusWording" xml:space="preserve">
+    <value>Formulierung</value>
+  </data>
+  <data name="StatusDone" xml:space="preserve">
+    <value>Fertig</value>
+  </data>
+  <data name="SectionAddRemark" xml:space="preserve">
+    <value>Bemerkung anfügen</value>
+  </data>
+  <data name="UndoStatus" xml:space="preserve">
+    <value>Status ändern</value>
+    <comment>Name der Aktion für „Rückgängig“ nach einer Statusänderung (Auswahl oder Strg+Umschalt+N)</comment>
+  </data>
+  <data name="UndoAddRemark" xml:space="preserve">
+    <value>Bemerkung anfügen</value>
+    <comment>Name der Aktion für „Rückgängig“ nach „Bemerkung anfügen“</comment>
+  </data>
   <data name="RangeUp" xml:space="preserve">
     <value>Bereich ▲</value>
   </data>
@@ -363,18 +393,6 @@
     <value>Verwendet in {0} Stelle(n) – zur Stelle springen</value>
     <comment>{0} = Anzahl der Verwendungen</comment>
   </data>
-  <data name="NoteAdopt" xml:space="preserve">
-    <value>Übernehmen</value>
-  </data>
-  <data name="NoteAdoptTitle" xml:space="preserve">
-    <value>Diese Notiz ins Buch übernehmen</value>
-  </data>
-  <data name="NoteAdoptChildTitle" xml:space="preserve">
-    <value>Diesen Unterpunkt ins Buch übernehmen</value>
-  </data>
-  <data name="NoteAdoptMore" xml:space="preserve">
-    <value>Weitere Arten zu übernehmen</value>
-  </data>
   <data name="AdoptAtCursor" xml:space="preserve">
     <value>Am Cursor</value>
   </data>
@@ -383,6 +401,15 @@
   </data>
   <data name="AdoptBelow" xml:space="preserve">
     <value>Darunter</value>
+  </data>
+  <data name="AdoptAtCursorTitle" xml:space="preserve">
+    <value>In den aktuellen Block an der Cursorstelle einfügen</value>
+  </data>
+  <data name="AdoptAfterTitle" xml:space="preserve">
+    <value>Als neues Element nach dem aktuellen einfügen</value>
+  </data>
+  <data name="AdoptBelowTitle" xml:space="preserve">
+    <value>Als erstes Unterelement des aktuellen einfügen</value>
   </data>
   <data name="NoteWhereTo" xml:space="preserve">
     <value>Wohin damit?</value>

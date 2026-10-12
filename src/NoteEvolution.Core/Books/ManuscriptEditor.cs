@@ -1,12 +1,14 @@
 using NoteEvolution.Core.Format;
 using NoteEvolution.Core.Model;
+using NoteEvolution.Core.Text;
 
 namespace NoteEvolution.Core.Books;
 
 /// <summary>
 /// Structure commands of the manuscript (new section after / below, indent, outdent, remove a heading, delete a
-/// detail, put a range under a new heading). Like <see cref="OutlineEditor"/>, they change <c>book.Page</c> in memory
-/// and find their blocks through the <see cref="Book"/> view; the caller saves the page and reloads the
+/// detail, put a range under a new heading) and the status commands (set a status, add a remark). Like
+/// <see cref="OutlineEditor"/>, they change <c>book.Page</c> in memory and find their blocks through the
+/// <see cref="Book"/> view; the caller saves the page and reloads the
 /// <see cref="Book"/>. Every command validates first; if it throws (<see cref="ArgumentException"/>, also for an unknown key), the page is unchanged.
 /// New headings are empty (<c>"#" * level + " "</c>), new text blocks and details are empty blocks.
 /// </summary>
@@ -216,6 +218,73 @@ public static class ManuscriptEditor
     {
         var block = BlockOf(book, new BookElement(ElementKind.Detail, detailKey));
         book.Page.RemoveBlock(block);
+    }
+
+    /// <summary>
+    /// Sets the status of a text block or detail: sets the <c>status::</c> line, or removes it for
+    /// <see cref="BlockStatus.Draft"/>. Any status but <see cref="BlockStatus.Remark"/> also removes a <c>#notiz</c> tag
+    /// (<see cref="NoteTag.Remove"/>); a remark on a block that has <c>#notiz</c> and no <c>status::</c> line changes
+    /// nothing. Everything else of the block stays as it is.
+    /// </summary>
+    /// <exception cref="ArgumentException">
+    /// The element is a heading or not in the book, or the text without the tag would not stay one block.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">The block's code fence is not closed; it has no place for properties.</exception>
+    public static void SetStatus(Book book, BookElement element, BlockStatus status)
+    {
+        var block = StatusBlockOf(book, element);
+        var hasTag = NoteTag.Has(block.Content);
+        if (status == BlockStatus.Remark && hasTag && block.GetProperty(BlockStatuses.Key) is null)
+        {
+            return;
+        }
+
+        var content = hasTag && status != BlockStatus.Remark ? NoteTag.Remove(block.Content) : null;
+        if (content is not null)
+        {
+            Block.ValidateContent(content);
+        }
+
+        if (BlockStatuses.FileValue(status) is { } value)
+        {
+            block.SetProperty(BlockStatuses.Key, value);
+        }
+        else
+        {
+            block.RemoveProperty(BlockStatuses.Key);
+        }
+
+        if (content is not null)
+        {
+            block.SetContent(content);
+        }
+    }
+
+    /// <summary>
+    /// Adds a remark to the text block of <paramref name="element"/> (the text block itself, or the one a detail belongs
+    /// to): a new empty detail of depth 1 with <c>status:: bemerkung</c>, after its last detail.
+    /// </summary>
+    /// <returns>The <see cref="Block.Key"/> of the new detail.</returns>
+    /// <exception cref="ArgumentException">The element is a heading or not in the book.</exception>
+    public static Guid AddRemark(Book book, BookElement element)
+    {
+        StatusBlockOf(book, element);
+        var textBlock = BookElements.TextBlockOf(book, element)!.Block;
+        var remark = Block.CreateDetached("", [new BlockProperty(BlockStatuses.Key, BlockStatuses.FileValue(BlockStatus.Remark)!)]);
+        book.Page.InsertBlock(textBlock, textBlock.Children.Count, remark);
+        return remark.Key;
+    }
+
+    /// <summary>The block of a text block or detail; headings have no status.</summary>
+    /// <exception cref="ArgumentException">The element is a heading or not in the book.</exception>
+    private static Block StatusBlockOf(Book book, BookElement element)
+    {
+        if (element.Kind == ElementKind.Heading)
+        {
+            throw new ArgumentException("A heading has no status.", nameof(element));
+        }
+
+        return BlockOf(book, element);
     }
 
     /// <summary>The element's block.</summary>

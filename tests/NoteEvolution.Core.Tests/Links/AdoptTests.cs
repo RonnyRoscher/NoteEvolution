@@ -1,5 +1,6 @@
 using System.Text;
 using NoteEvolution.Core.Books;
+using NoteEvolution.Core.Format;
 using NoteEvolution.Core.Links;
 using NoteEvolution.Core.Model;
 using NoteEvolution.TestSupport;
@@ -18,13 +19,13 @@ public class AdoptTests
 
         var noteId = s.Note("Kern").Id;
         Assert.NotNull(noteId);
-        Assert.Contains($"\t\t- Kern\n\t\t  id:: {r.TextBlockId}\n\t\t  source:: (({noteId}))\n\t\t\t- Detail", s.ReadBook());
+        Assert.Contains($"\t\t- Kern\n\t\t  id:: {r.TextBlockId}\n\t\t  source:: (({noteId}))\n\t\t  status:: relevant\n\t\t\t- Detail", s.ReadBook());
         Assert.Contains($"used-in:: [[Buch - Test]] (({r.TextBlockId}))", s.ReadJournal());
         Assert.DoesNotContain("collapsed", BookBlockText(s, r));
         Assert.Equal(
             "title:: Buch: Test\ntype:: book\n\n- Vorspann\n- # Kapitel\n\t- ## Abschnitt\n" +
             "\t\t- Erster Textblock\n" +
-            $"\t\t- Kern\n\t\t  id:: {r.TextBlockId}\n\t\t  source:: (({noteId}))\n\t\t\t- Detail\n" +
+            $"\t\t- Kern\n\t\t  id:: {r.TextBlockId}\n\t\t  source:: (({noteId}))\n\t\t  status:: relevant\n\t\t\t- Detail\n" +
             "\t\t- Zweiter Textblock\n\t\t- ### Unterabschnitt\n\t\t\t- Text im Unterabschnitt\n",
             s.ReadBook());
         Assert.Equal(
@@ -46,7 +47,7 @@ public class AdoptTests
 
         var noteId = s.Note("Zweite Notiz").Id;
         Assert.Contains(
-            $"\t\t- Zweiter Textblock\n\t\t- Zweite Notiz\n\t\t  id:: {r.TextBlockId}\n\t\t  source:: (({noteId}))\n\t\t- ### Unterabschnitt\n",
+            $"\t\t- Zweiter Textblock\n\t\t- Zweite Notiz\n\t\t  id:: {r.TextBlockId}\n\t\t  source:: (({noteId}))\n\t\t  status:: relevant\n\t\t- ### Unterabschnitt\n",
             s.ReadBook());
     }
 
@@ -60,7 +61,7 @@ public class AdoptTests
         Assert.Contains(
             $"\t- ## Abschnitt\n\t\t- Zweite Notiz\n\t\t  id:: {r.TextBlockId}\n",
             s.ReadBook());
-        Assert.Contains($"  source:: (({s.Note("Zweite Notiz").Id}))\n\t\t- Erster Textblock\n", s.ReadBook());
+        Assert.Contains($"  source:: (({s.Note("Zweite Notiz").Id}))\n\t\t  status:: relevant\n\t\t- Erster Textblock\n", s.ReadBook());
     }
 
     [Fact]
@@ -71,7 +72,7 @@ public class AdoptTests
         var r = s.Links.Adopt(s.Book, s.Note("Zweite Notiz").Key, new InsertPosition.SectionEnd(Guid.Empty));
 
         Assert.Contains(
-            $"- Vorspann\n- Zweite Notiz\n  id:: {r.TextBlockId}\n  source:: (({s.Note("Zweite Notiz").Id}))\n- # Kapitel\n",
+            $"- Vorspann\n- Zweite Notiz\n  id:: {r.TextBlockId}\n  source:: (({s.Note("Zweite Notiz").Id}))\n  status:: relevant\n- # Kapitel\n",
             s.ReadBook());
     }
 
@@ -85,7 +86,7 @@ public class AdoptTests
         var childId = s.Note("Detail").Id;
         Assert.Null(s.Note("Kern").Id);
         Assert.Contains(
-            $"\t\t- Erster Textblock\n\t\t- Detail\n\t\t  id:: {r.TextBlockId}\n\t\t  source:: (({childId}))\n\t\t- Zweiter Textblock\n",
+            $"\t\t- Erster Textblock\n\t\t- Detail\n\t\t  id:: {r.TextBlockId}\n\t\t  source:: (({childId}))\n\t\t  status:: relevant\n\t\t- Zweiter Textblock\n",
             s.ReadBook());
         Assert.Equal(
             $"- Kern\n  collapsed:: true\n\t- Detail\n\t  id:: {childId}\n\t  used-in:: [[Buch - Test]] (({r.TextBlockId}))\n- Zweite Notiz\n",
@@ -208,9 +209,9 @@ public class AdoptTests
         Assert.Equal(
             "title:: Buch: Test\ntype:: book\n\n- # Kapitel\n" +
             $"\t- Hallo Welt\n\t  id:: {r.TextBlockId}\n\t  source:: (({noteId}))\n" +
-            "\t\t- **Ers**Kern**tes** Detail\n\t\t\t- Detail\n\t\t\t- Tieferes Detail\n\t\t- Zweites Detail\n\t- Nächster Textblock\n",
+            "\t\t- **Ers**Kern**tes** Detail\n\t\t\t- Detail\n\t\t\t  status:: relevant\n\t\t\t- Tieferes Detail\n\t\t- Zweites Detail\n\t- Nächster Textblock\n",
             s.ReadBook());
-        AssertChangedLines(DetailBook, s.ReadBook(), removed: [5], added: [5, 6, 7, 8]);
+        AssertChangedLines(DetailBook, s.ReadBook(), removed: [5], added: [5, 6, 7, 8, 9]);
         Assert.Equal(s.Text("Hallo Welt").Key, r.TextBlockKey);
         Assert.Equal(
             $"- Kern\n  collapsed:: true\n  id:: {noteId}\n  used-in:: [[Buch - Test]] (({r.TextBlockId}))\n\t- Detail\n- Zweite Notiz\n",
@@ -278,9 +279,9 @@ public class AdoptTests
         Assert.Equal(
             "title:: Buch: Test\ntype:: book\n\n- # Kapitel\n" +
             $"\t- Hallo Welt\n\t  id:: {r.TextBlockId}\n\t  source:: (({noteId}))\n" +
-            "\t\t- **Erstes** Detail\n\t\t\t- Tieferes Detail\n\t\t- Kern\n\t\t\t- Detail\n\t\t- Zweites Detail\n\t- Nächster Textblock\n",
+            "\t\t- **Erstes** Detail\n\t\t\t- Tieferes Detail\n\t\t- Kern\n\t\t  status:: relevant\n\t\t\t- Detail\n\t\t- Zweites Detail\n\t- Nächster Textblock\n",
             s.ReadBook());
-        AssertChangedLines(DetailBook, s.ReadBook(), removed: [], added: [5, 6, 9, 10]);
+        AssertChangedLines(DetailBook, s.ReadBook(), removed: [], added: [5, 6, 9, 10, 11]);
         Assert.Equal(s.Text("Hallo Welt").Key, r.TextBlockKey);
         Assert.Equal(
             $"- Kern\n  collapsed:: true\n  id:: {noteId}\n  used-in:: [[Buch - Test]] (({r.TextBlockId}))\n\t- Detail\n- Zweite Notiz\n",
@@ -299,9 +300,9 @@ public class AdoptTests
         Assert.Equal(
             "title:: Buch: Test\ntype:: book\n\n- # Kapitel\n" +
             $"\t- Hallo Welt\n\t  id:: {r.TextBlockId}\n\t  source:: (({noteId}))\n" +
-            "\t\t- Zweite Notiz\n\t\t- **Erstes** Detail\n\t\t\t- Tieferes Detail\n\t\t- Zweites Detail\n\t- Nächster Textblock\n",
+            "\t\t- Zweite Notiz\n\t\t  status:: relevant\n\t\t- **Erstes** Detail\n\t\t\t- Tieferes Detail\n\t\t- Zweites Detail\n\t- Nächster Textblock\n",
             s.ReadBook());
-        AssertChangedLines(DetailBook, s.ReadBook(), removed: [], added: [5, 6, 7]);
+        AssertChangedLines(DetailBook, s.ReadBook(), removed: [], added: [5, 6, 7, 8]);
         Assert.Equal(s.Text("Hallo Welt").Key, r.TextBlockKey);
         Assert.Equal(
             $"- Kern\n  collapsed:: true\n\t- Detail\n- Zweite Notiz\n  id:: {noteId}\n  used-in:: [[Buch - Test]] (({r.TextBlockId}))\n",
@@ -320,9 +321,9 @@ public class AdoptTests
         Assert.Equal(
             "title:: Buch: Test\ntype:: book\n\n- # Kapitel\n" +
             $"\t- Hallo Welt\n\t  id:: {r.TextBlockId}\n\t  source:: (({noteId}))\n" +
-            "\t\t- **Erstes** Detail\n\t\t\t- Zweite Notiz\n\t\t\t- Tieferes Detail\n\t\t- Zweites Detail\n\t- Nächster Textblock\n",
+            "\t\t- **Erstes** Detail\n\t\t\t- Zweite Notiz\n\t\t\t  status:: relevant\n\t\t\t- Tieferes Detail\n\t\t- Zweites Detail\n\t- Nächster Textblock\n",
             s.ReadBook());
-        AssertChangedLines(DetailBook, s.ReadBook(), removed: [], added: [5, 6, 8]);
+        AssertChangedLines(DetailBook, s.ReadBook(), removed: [], added: [5, 6, 8, 9]);
         Assert.Equal(s.Text("Hallo Welt").Key, r.TextBlockKey);
         Assert.Equal(
             $"- Kern\n  collapsed:: true\n\t- Detail\n- Zweite Notiz\n  id:: {noteId}\n  used-in:: [[Buch - Test]] (({r.TextBlockId}))\n",
@@ -348,9 +349,9 @@ public class AdoptTests
         Assert.Equal(
             "title:: Buch: Test\ntype:: book\n\n- # Kapitel\n" +
             $"\t- Hallo Welt\n\t  id:: {textId}\n\t  source:: (({noteId}))\n" +
-            "\t\t- Kern\n\t\t\t- Detail\n\t\t- Zweites Detail\n",
+            "\t\t- Kern\n\t\t  status:: relevant\n\t\t\t- Detail\n\t\t- Zweites Detail\n",
             s.ReadBook());
-        AssertChangedLines(book, s.ReadBook(), removed: [], added: [7, 8]);
+        AssertChangedLines(book, s.ReadBook(), removed: [], added: [7, 8, 9]);
         Assert.Equal(journal, s.ReadJournal());
         Assert.Equal([noteId], Book.Load(s.Book.Page).FindTextBlock(r.TextBlockKey)!.Sources);
 
@@ -419,6 +420,137 @@ public class AdoptTests
             $"- Kern\n  collapsed:: true\n\t- Detail\n\t  id:: {childId}\n\t  used-in:: [[Buch - Test]] (({r.TextBlockId}))\n- Zweite Notiz\n",
             s.ReadJournal());
         AssertChangedLines(LinkSetup.DefaultJournal, s.ReadJournal(), removed: [], added: [3, 4]);
+    }
+
+    [Fact]
+    public void Adopt_NewBlock_StatusRelevant()
+    {
+        using var s = new LinkSetup();
+
+        var r = s.Links.Adopt(s.Book, s.Note("Kern").Key, new InsertPosition.After(s.Text("Erster Textblock").Key));
+
+        var noteId = s.Note("Kern").Id;
+        Assert.Equal(
+            LinkSetup.DefaultBook.Replace(
+                "\t\t- Erster Textblock\n",
+                "\t\t- Erster Textblock\n" +
+                $"\t\t- Kern\n\t\t  id:: {r.TextBlockId}\n\t\t  source:: (({noteId}))\n\t\t  status:: relevant\n\t\t\t- Detail\n"),
+            s.ReadBook());
+        var text = Book.Load(s.Book.Page).FindTextBlock(r.TextBlockKey)!;
+        Assert.Equal(BlockStatus.Relevant, text.Status);
+        Assert.Equal(BlockStatus.Draft, text.Paragraphs.Single().Status);
+    }
+
+    [Fact]
+    public void AdoptInto_AfterDetail_And_FirstChild_TopStatusRelevant()
+    {
+        using var after = new LinkSetup(DetailBook);
+
+        var r = after.Links.AdoptInto(after.Book, after.Note("Kern").Key, new IntoPosition.AfterDetail(BookBlock(after, "**Erstes** Detail").Key));
+
+        Assert.Equal(
+            "title:: Buch: Test\ntype:: book\n\n- # Kapitel\n" +
+            $"\t- Hallo Welt\n\t  id:: {r.TextBlockId}\n\t  source:: (({after.Note("Kern").Id}))\n" +
+            "\t\t- **Erstes** Detail\n\t\t\t- Tieferes Detail\n" +
+            "\t\t- Kern\n\t\t  status:: relevant\n\t\t\t- Detail\n" +
+            "\t\t- Zweites Detail\n\t- Nächster Textblock\n",
+            after.ReadBook());
+        AssertChangedLines(DetailBook, after.ReadBook(), removed: [], added: [5, 6, 9, 10, 11]);
+
+        using var first = new LinkSetup(DetailBook);
+
+        r = first.Links.AdoptInto(first.Book, first.Note("Kern").Key, new IntoPosition.FirstChild(first.Text("Hallo Welt").Key));
+
+        Assert.Equal(
+            "title:: Buch: Test\ntype:: book\n\n- # Kapitel\n" +
+            $"\t- Hallo Welt\n\t  id:: {r.TextBlockId}\n\t  source:: (({first.Note("Kern").Id}))\n" +
+            "\t\t- Kern\n\t\t  status:: relevant\n\t\t\t- Detail\n" +
+            "\t\t- **Erstes** Detail\n\t\t\t- Tieferes Detail\n\t\t- Zweites Detail\n\t- Nächster Textblock\n",
+            first.ReadBook());
+        var paragraphs = Book.Load(first.Book.Page).FindTextBlock(r.TextBlockKey)!.Paragraphs;
+        Assert.Equal(
+            [BlockStatus.Relevant, BlockStatus.Draft, BlockStatus.Draft, BlockStatus.Draft, BlockStatus.Draft],
+            paragraphs.Select(p => p.Status));
+    }
+
+    [Fact]
+    public void AdoptInto_AtCursor_TopSubBulletsRelevant_TargetUnchanged()
+    {
+        var book =
+            "title:: Buch: Test\ntype:: book\n\n- # Kapitel\n" +
+            "\t- Hallo Welt\n\t  status:: formulierung\n" +
+            "\t\t- Erstes Detail\n";
+        var journal = "- Kern\n\t- Eins\n\t\t- Tief\n\t- Zwei\n- Zweite Notiz\n";
+        using var s = new LinkSetup(book, journal);
+
+        var r = s.Links.AdoptInto(s.Book, s.Note("Kern").Key, new IntoPosition.AtCursor(s.Text("Hallo Welt").Key, 6));
+
+        var noteId = s.Note("Kern").Id;
+        Assert.Equal(
+            "title:: Buch: Test\ntype:: book\n\n- # Kapitel\n" +
+            $"\t- Hallo KernWelt\n\t  status:: formulierung\n\t  id:: {r.TextBlockId}\n\t  source:: (({noteId}))\n" +
+            "\t\t- Eins\n\t\t  status:: relevant\n\t\t\t- Tief\n" +
+            "\t\t- Zwei\n\t\t  status:: relevant\n" +
+            "\t\t- Erstes Detail\n",
+            s.ReadBook());
+        AssertChangedLines(book, s.ReadBook(), removed: [4], added: [4, 6, 7, 8, 9, 10, 11, 12]);
+        var text = Book.Load(s.Book.Page).FindTextBlock(r.TextBlockKey)!;
+        Assert.Equal(BlockStatus.Wording, text.Status);
+        Assert.Equal(
+            [BlockStatus.Relevant, BlockStatus.Draft, BlockStatus.Relevant, BlockStatus.Draft],
+            text.Paragraphs.Select(p => p.Status));
+    }
+
+    [Fact]
+    public void Adopt_NoteWithNotizTag_CopyWithoutTag_StatusRelevant()
+    {
+        var journal = "- Kern #notiz\n\t- Detail #notiz\n- Zweite Notiz\n";
+        using var s = new LinkSetup(LinkSetup.DefaultBook, journal);
+
+        var r = s.Links.Adopt(s.Book, s.Note("Kern #notiz").Key, new InsertPosition.After(s.Text("Erster Textblock").Key));
+
+        var noteId = s.Note("Kern #notiz").Id;
+        Assert.Equal(
+            LinkSetup.DefaultBook.Replace(
+                "\t\t- Erster Textblock\n",
+                "\t\t- Erster Textblock\n" +
+                $"\t\t- Kern\n\t\t  id:: {r.TextBlockId}\n\t\t  source:: (({noteId}))\n\t\t  status:: relevant\n\t\t\t- Detail #notiz\n"),
+            s.ReadBook());
+        Assert.Equal(BlockStatus.Relevant, Book.Load(s.Book.Page).FindTextBlock(r.TextBlockKey)!.Status);
+        Assert.Equal($"- Kern #notiz\n  id:: {noteId}\n  used-in:: [[Buch - Test]] (({r.TextBlockId}))\n\t- Detail #notiz\n- Zweite Notiz\n", s.ReadJournal());
+
+        // At the cursor, the note's text goes into the block without the tag, so the block's status stays.
+        using var cursor = new LinkSetup(DetailBook, journal);
+
+        r = cursor.Links.AdoptInto(cursor.Book, cursor.Note("Kern #notiz").Key, new IntoPosition.AtCursor(cursor.Text("Hallo Welt").Key, 6));
+
+        Assert.Contains($"\t- Hallo KernWelt\n\t  id:: {r.TextBlockId}\n", cursor.ReadBook());
+        Assert.Contains("\t\t- Detail #notiz\n\t\t  status:: relevant\n", cursor.ReadBook());
+        Assert.Equal(BlockStatus.Draft, Book.Load(cursor.Book.Page).FindTextBlock(r.TextBlockKey)!.Status);
+    }
+
+    [Fact]
+    public void AdoptInto_AtCursor_SubBulletWithoutPlaceForStatus_Throws_BothPagesUnchanged()
+    {
+        using var s = new LinkSetup(DetailBook);
+        var kern = s.Note("Kern");
+
+        // A sub-bullet whose code fence is never closed has no place for status::. A file with one is read-only, so
+        // the note gets it in memory.
+        s.Journal.InsertBlock(kern, 1, Block.CreateDetached([new RawLine("- ```js", "\n"), new RawLine("  code", "\n")], Guid.NewGuid()));
+        var noteLines = s.Journal.AllBlocks().Select(b => b.Lines.ToList()).ToList();
+        var noteWasDirty = s.Journal.IsDirty;
+
+        Assert.Throws<InvalidOperationException>(() =>
+            s.Links.AdoptInto(s.Book, kern.Key, new IntoPosition.AtCursor(s.Text("Hallo Welt").Key, 6)));
+
+        Assert.Equal(DetailBook, Encoding.UTF8.GetString(PageSerializer.Serialize(s.Book.Page)));
+        Assert.False(s.Book.Page.IsDirty);
+        Assert.Equal(DetailBook, s.ReadBook());
+        Assert.Equal(noteLines, s.Journal.AllBlocks().Select(b => b.Lines.ToList()));
+        Assert.Equal(noteWasDirty, s.Journal.IsDirty);
+        Assert.Null(kern.Id);
+        Assert.False(s.Undo.CanUndo);
     }
 
     private static Block BookBlock(LinkSetup s, string content) => s.Book.Page.AllBlocks().Single(b => b.Content == content);

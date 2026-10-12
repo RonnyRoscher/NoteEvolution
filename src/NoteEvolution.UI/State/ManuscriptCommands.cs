@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Microsoft.Extensions.Logging;
 using NoteEvolution.Core.Books;
 using NoteEvolution.Core.Links;
@@ -18,10 +19,10 @@ public static class ManuscriptCommands
     /// <summary>
     /// Whether <paramref name="command"/> is possible now: the book is writable, no conflict is open for it (R26), and
     /// the command fits the cursor element (e.g. no indent without a previous heading of the same level, no outdent
-    /// on level 1, indent, outdent and remove only on headings). Delete only takes the element the cursor itself is in
-    /// (<see cref="TargetOf"/>). An irregular section (a heading in it that is not deeper) is no exception: the editor
-    /// marks what the book tree holds (package B), which is what the commands act on. At range level −1 Delete, Indent
-    /// and Outdent are not possible on an element with sub-elements (<see cref="HasSubElements"/>): the box marks the
+    /// on level 1, indent, outdent and remove only on headings, ToggleRemark and AddRemark only on a text block or
+    /// detail). Delete and ToggleRemark only take the element the cursor itself is in (<see cref="TargetOf"/>). An
+    /// irregular section (a heading in it that is not deeper) is no exception: the editor marks what the book tree holds
+    /// (package B), which is what the commands act on. At range level −1 Delete, Indent and Outdent are not possible on an element with sub-elements (<see cref="HasSubElements"/>): the box marks the
     /// element alone, but they would take its sub-elements along. Merge needs a group of at least two text blocks in the
     /// marked range (<see cref="RangeInfo.MergeGroups"/>) or a text block or detail with its details as the range that
     /// has a detail to merge into its text (<see cref="RangeInfo.MergesDetails"/>), Wrap a range head that
@@ -47,7 +48,11 @@ public static class ManuscriptCommands
     /// (<see cref="ILinkService.MergeDetails"/>, refused the same way for the note pages of the blocks in its subtree)
     /// and reveals the head. Wrap gets a targeted undo (<see cref="WrapUndo"/>) and reveals the new heading. Merge
     /// and Wrap do nothing when saving the editor's text changed the marked range (another head or level, e.g. the
-    /// cursor's detail the book did not know before). Whatever
+    /// cursor's detail the book did not know before). ToggleRemark makes the text block or detail at the cursor a
+    /// remark, or a draft again if it is one (<see cref="ManuscriptEditor.SetStatus"/>), and reveals nothing (the
+    /// cursor stays); AddRemark adds an empty remark detail to the cursor's text block
+    /// (<see cref="ManuscriptEditor.AddRemark"/>) and reveals it. Both save the page with a <see cref="StructureUndo"/>
+    /// and never go through the structure commands' switch, so neither can delete a detail. Whatever
     /// happens, the book view is taken from the vault again, the new or moved element is revealed (the cursor goes
     /// there, the range back to level 0) and <see cref="AppState.Notify"/> is raised.
     /// </summary>
@@ -73,46 +78,70 @@ public static class ManuscriptCommands
         }
     }
 
+    /// <summary>
+    /// The status of the text block or detail with the cursor's own key in the current book (as for Delete, never the
+    /// fallback element), which the status selection shows and <see cref="SetStatusAsync"/> changes; <c>null</c> on a
+    /// heading or without such an element.
+    /// </summary>
+    public static BlockStatus? StatusAt(AppState state) =>
+        state.CurrentBook is { } book && StatusTargetOf(state, book) is { } element
+            ? BlockStatuses.Of(BlockOf(book, element))
+            : null;
+
+    /// <summary>
+    /// Whether <see cref="SetStatusAsync"/> is possible now: the book is writable, no conflict is open for it (R26), and
+    /// the cursor is in a text block or detail (<see cref="StatusAt"/>).
+    /// </summary>
+    public static bool CanSetStatus(AppState state) =>
+        state is { Session: { } session, CurrentBook: { Page.IsReadOnly: false } book }
+        && !session.HasOpenConflict(book.Page.FilePath)
+        && StatusTargetOf(state, book) is not null;
+
+    /// <summary>
+    /// Sets the status of the text block or detail at the cursor (<see cref="StatusAt"/>) to <paramref name="status"/>
+    /// (<see cref="ManuscriptEditor.SetStatus"/>), in the same order as <see cref="RunAsync"/>: the editor saves its
+    /// text first, and text it could not save refuses the change; a read-only book or an open conflict refuses it too.
+    /// On a heading, without an element at the cursor or when the element already has the status nothing changes.
+    /// The page is saved with an undo action (<paramref name="undoDescription"/>) that is refused once the page changed
+    /// after the change. The cursor stays where it is; the book view is taken from the vault again and
+    /// <see cref="AppState.Notify"/> is raised.
+    /// </summary>
+    /// <returns>The message to show, or <c>null</c> if the status was set (or nothing changed) without remark.</returns>
+    public static async Task<AdoptMessage?> SetStatusAsync(AppState state, BlockStatus status, string undoDescription, ILogger logger)
+    {
+        try
+        {
+            var (message, session, book) = await PrepareAsync(state, logger);
+            if (session is null || book is null || StatusTargetOf(state, book) is not { } element
+                || BlockStatuses.Of(BlockOf(book, element)) == status)
+            {
+                return message;
+            }
+
+            return RunStatus(session, book, () =>
+            {
+                ManuscriptEditor.SetStatus(book, element, status);
+                return null;
+            }, undoDescription, logger).Message;
+        }
+        finally
+        {
+            // On success the book changed; after a failure the vault holds the page as it is on disk again.
+            state.RefreshBook();
+            state.Notify();
+        }
+    }
+
     private static async Task<(AdoptMessage? Message, Guid? Reveal)> TryRunAsync(
         AppState state, SectionCommand command, string undoDescription, ILogger logger)
     {
         // Merge and Wrap act on the range the user sees now; the save may change it (e.g. make the cursor's detail known).
         var onRange = command is SectionCommand.Merge or SectionCommand.Wrap;
         var range = onRange ? HeadOf(state.CurrentRange) : null;
-        try
+        var (message, session, book) = await PrepareAsync(state, logger);
+        if (session is null || book is null)
         {
-            if (state.FlushEditor is { } flush)
-            {
-                await flush();
-            }
-        }
-        catch (Exception ex)
-        {
-            // The editor's text may not be saved, so the page is not changed behind it.
-            logger.LogError(ex, "Saving the editor before a structure command failed");
-            return (new AdoptMessage("SectionCommandUnsaved", true), null);
-        }
-
-        if (state.HasUnsavedEditorText?.Invoke() == true)
-        {
-            return (new AdoptMessage("SectionCommandUnsaved", true), null);
-        }
-
-        // The flush may have saved the page or changed the state, so everything is read after it, the book from the vault.
-        if (state.Session is not { } session || state.CurrentBook is not { } current
-            || session.Vault.FindBook(current.LinkName) is not { } book)
-        {
-            return (null, null);
-        }
-
-        if (book.Page.IsReadOnly)
-        {
-            return (new AdoptMessage("EditorReadOnly", true), null);
-        }
-
-        if (session.HasOpenConflict(book.Page.FilePath))
-        {
-            return (new AdoptMessage("EditorConflict", true), null);
+            return (message, null);
         }
 
         if (!Applies(state, book, command))
@@ -136,6 +165,21 @@ public static class ManuscriptCommands
 
         // Wrap acts on the head of the range, every other command on its target element.
         var element = command == SectionCommand.Wrap ? RangeOf(state, book)!.Head! : TargetOf(state, book, command)!;
+        if (command == SectionCommand.ToggleRemark)
+        {
+            var toggled = BlockStatuses.Of(BlockOf(book, element)) == BlockStatus.Remark ? BlockStatus.Draft : BlockStatus.Remark;
+            return RunStatus(session, book, () =>
+            {
+                ManuscriptEditor.SetStatus(book, element, toggled);
+                return null;
+            }, undoDescription, logger);
+        }
+
+        if (command == SectionCommand.AddRemark)
+        {
+            return RunStatus(session, book, () => ManuscriptEditor.AddRemark(book, element), undoDescription, logger);
+        }
+
         if (command != SectionCommand.Delete)
         {
             return RunStructure(session, book, element, command, undoDescription, logger);
@@ -152,6 +196,53 @@ public static class ManuscriptCommands
         return element.Kind != ElementKind.Detail || linked.Count > 0
             ? (Delete(session, book, element, notePages, logger), null)
             : RunStructure(session, book, element, command, undoDescription, logger);
+    }
+
+    /// <summary>
+    /// What every command does before it changes anything: the editor saves its text (text it could not save refuses
+    /// the command), then the book is taken from the vault and checked for being writable and free of an open conflict
+    /// (R26).
+    /// </summary>
+    /// <returns>
+    /// The session and the book to change; or, when the command may not run, no book and the message to show
+    /// (<c>null</c> when there is simply no book).
+    /// </returns>
+    private static async Task<(AdoptMessage? Message, VaultSession? Session, Book? Book)> PrepareAsync(AppState state, ILogger logger)
+    {
+        try
+        {
+            if (state.FlushEditor is { } flush)
+            {
+                await flush();
+            }
+        }
+        catch (Exception ex)
+        {
+            // The editor's text may not be saved, so the page is not changed behind it.
+            logger.LogError(ex, "Saving the editor before a structure command failed");
+            return (new AdoptMessage("SectionCommandUnsaved", true), null, null);
+        }
+
+        if (state.HasUnsavedEditorText?.Invoke() == true)
+        {
+            return (new AdoptMessage("SectionCommandUnsaved", true), null, null);
+        }
+
+        // The flush may have saved the page or changed the state, so everything is read after it, the book from the vault.
+        if (state.Session is not { } session || state.CurrentBook is not { } current
+            || session.Vault.FindBook(current.LinkName) is not { } book)
+        {
+            return (null, null, null);
+        }
+
+        if (book.Page.IsReadOnly)
+        {
+            return (new AdoptMessage("EditorReadOnly", true), null, null);
+        }
+
+        return session.HasOpenConflict(book.Page.FilePath)
+            ? (new AdoptMessage("EditorConflict", true), null, null)
+            : (null, session, book);
     }
 
     /// <summary>
@@ -194,14 +285,22 @@ public static class ManuscriptCommands
         [.. noteIds.Distinct().Select(id => session.Vault.FindBlockById(id)?.Page.FilePath).OfType<string>().Distinct()];
 
     /// <summary>
-    /// The element <paramref name="command"/> acts on: <see cref="AppState.CurrentElement"/>, but for Delete only the
-    /// element with the cursor's own key in <paramref name="book"/>, never the fallback (a text block or a whole section
-    /// the user may not see as the cursor's place); <c>null</c> if there is none.
+    /// The element <paramref name="command"/> acts on: <see cref="AppState.CurrentElement"/>, but for Delete and
+    /// ToggleRemark only the element with the cursor's own key in <paramref name="book"/>, never the fallback (a text
+    /// block or a whole section the user may not see as the cursor's place); <c>null</c> if there is none.
     /// </summary>
     private static BookElement? TargetOf(AppState state, Book book, SectionCommand command) =>
-        command != SectionCommand.Delete ? state.CurrentElement
+        command is not (SectionCommand.Delete or SectionCommand.ToggleRemark) ? state.CurrentElement
         : state.Cursor is { } cursor ? BookElements.Find(book, cursor.Key)
         : null;
+
+    /// <summary>
+    /// The text block or detail whose status the status selection shows and <see cref="SetStatusAsync"/> changes: the
+    /// element with the cursor's own key in <paramref name="book"/> (as for Delete); <c>null</c> on a heading or
+    /// without one.
+    /// </summary>
+    private static BookElement? StatusTargetOf(AppState state, Book book) =>
+        TargetOf(state, book, SectionCommand.ToggleRemark) is { Kind: not ElementKind.Heading } element ? element : null;
 
     /// <summary>Whether <paramref name="command"/> fits <paramref name="element"/>, which must be in <paramref name="book"/>.</summary>
     private static bool Fits(Book book, BookElement element, SectionCommand command) =>
@@ -213,6 +312,7 @@ public static class ManuscriptCommands
             SectionCommand.Indent => element.Kind == ElementKind.Heading && ManuscriptEditor.CanIndent(book, element.Key),
             SectionCommand.Outdent => element.Kind == ElementKind.Heading && ManuscriptEditor.CanOutdent(book, element.Key),
             SectionCommand.RemoveHeading => element.Kind == ElementKind.Heading,
+            SectionCommand.ToggleRemark or SectionCommand.AddRemark => element.Kind != ElementKind.Heading,
             _ => false,
         };
 
@@ -266,9 +366,12 @@ public static class ManuscriptCommands
                     wrapped = ManuscriptEditor.Wrap(book, element);
                     reveal = wrapped.NewHeadingKey;
                     break;
-                default:
+                case SectionCommand.Delete:
                     ManuscriptEditor.DeleteDetail(book, element.Key);
                     break;
+                default:
+                    // Every other command has its own path; none may fall through to a change of the page.
+                    throw new UnreachableException($"{command} is not a structure command.");
             }
         }
         catch (ArgumentException ex)
@@ -287,6 +390,39 @@ public static class ManuscriptCommands
             removed is not null ? new RemoveHeadingUndo(undoDescription, session, page.FilePath, removed)
             : wrapped is not null ? new WrapUndo(undoDescription, session, book.LinkName, wrapped)
             : new StructureUndo(undoDescription, session, page.FilePath, before, PageStructureSnapshot.Capture(page)));
+        return (null, reveal);
+    }
+
+    /// <summary>
+    /// Runs a status change on the page (<paramref name="change"/>: <see cref="ManuscriptEditor.SetStatus"/> or
+    /// <see cref="ManuscriptEditor.AddRemark"/>), saves it and pushes a <see cref="StructureUndo"/>
+    /// (<paramref name="undoDescription"/>). A change refused before anything changed (a heading, a block without place
+    /// for properties) shows <c>SectionCommandFailed</c>; a failed save is handled like that of a structure command.
+    /// </summary>
+    /// <returns>The message, and the element to reveal (the new remark; none after a status change).</returns>
+    private static (AdoptMessage? Message, Guid? Reveal) RunStatus(
+        VaultSession session, Book book, Func<Guid?> change, string undoDescription, ILogger logger)
+    {
+        var page = book.Page;
+        var before = PageStructureSnapshot.Capture(page);
+        Guid? reveal;
+        try
+        {
+            reveal = change();
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            // Refused before anything changed.
+            logger.LogWarning(ex, "The status change was refused");
+            return (new AdoptMessage("SectionCommandFailed", true), null);
+        }
+
+        if (!session.TrySave(page, out var error))
+        {
+            return (SaveFailed(session, page, error), null);
+        }
+
+        session.Undo.Push(new StructureUndo(undoDescription, session, page.FilePath, before, PageStructureSnapshot.Capture(page)));
         return (null, reveal);
     }
 

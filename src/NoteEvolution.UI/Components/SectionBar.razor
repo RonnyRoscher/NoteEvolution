@@ -5,7 +5,8 @@
 @inject IStringLocalizer<Strings> L
 
 @* The bar at the bottom of the marking (spec 2, 3): the range buttons with the range head, the structure commands of
-   the cursor element, the commands on the marked range and the notes the range is based on (package B, spec 2, 4, 5).
+   the cursor element, the commands on the marked range, „Bemerkung anfügen“ and the status selection of the cursor
+   element (status spec 2) and the notes the range is based on (package B, spec 2, 4, 5).
    EditorPane places it where the editor reports the marking's bottom; the bar renders with every render of EditorPane
    (its element is an object parameter), which follows the state and the conflicts. *@
 <div class="ne-section-bar" hidden="@(!Visible)" style="top: @(Top.ToString(CultureInfo.InvariantCulture))px">
@@ -36,6 +37,18 @@
                 <button type="button" class="@css" disabled="@(Locked || !ManuscriptCommands.CanRun(State, command))"
                         @onclick="() => OnCommand.InvokeAsync(command)">@L[key]</button>
             }
+            @* A heading has no status; it shows as a draft there, greyed out. The key renders the selection anew after
+               each change, so a refused change does not leave the chosen status on display. *@
+            @{
+                var status = ManuscriptCommands.StatusAt(State) ?? BlockStatus.Draft;
+            }
+            <select @key="_statusChanges" class="ne-sec-status" title="@L["SectionStatus"]"
+                    disabled="@(Locked || !ManuscriptCommands.CanSetStatus(State))" @onchange="ChangeStatusAsync">
+                @foreach (var (value, statusKey) in Statuses)
+                {
+                    <option value="@value" selected="@(value == status)">@L[statusKey]</option>
+                }
+            </select>
         </div>
         <div class="ne-sec-sources-area">
             @if (sources.Count == 0)
@@ -79,10 +92,24 @@
         ("ne-sec-delete", SectionCommand.Delete, "SectionDelete", false),
         ("ne-sec-merge", SectionCommand.Merge, "SectionMerge", false),
         ("ne-sec-wrap", SectionCommand.Wrap, "SectionWrap", false),
+        ("ne-sec-remark", SectionCommand.AddRemark, "SectionAddRemark", false),
+    ];
+
+    /// <summary>The options of the status selection in their order: the status and its resource key.</summary>
+    private static readonly (BlockStatus Status, string Key)[] Statuses =
+    [
+        (BlockStatus.Draft, "StatusDraft"),
+        (BlockStatus.Relevant, "StatusRelevant"),
+        (BlockStatus.Remark, "StatusRemark"),
+        (BlockStatus.Wording, "StatusWording"),
+        (BlockStatus.Done, "StatusDone"),
     ];
 
     /// <summary>Whether the list of sources is open; it stays so while the range changes.</summary>
     private bool _expanded;
+
+    /// <summary>Counts the changes in the status selection; the selection is rendered anew after each one.</summary>
+    private int _statusChanges;
 
     /// <summary>Where the bar's top is, in pixels from the top of <c>.ne-editor-pane</c>.</summary>
     [Parameter]
@@ -103,6 +130,21 @@
     /// <summary>Runs a structure command on the cursor element or the range, or moves the range, the same way as its shortcut.</summary>
     [Parameter]
     public EventCallback<SectionCommand> OnCommand { get; set; }
+
+    /// <summary>Sets the status of the text block or detail at the cursor to the one chosen in the selection.</summary>
+    [Parameter]
+    public EventCallback<BlockStatus> OnStatus { get; set; }
+
+    /// <summary>Passes the chosen status on; afterwards the selection shows the status the element has then.</summary>
+    private async Task ChangeStatusAsync(ChangeEventArgs args)
+    {
+        if (Enum.TryParse<BlockStatus>(args.Value?.ToString(), out var status))
+        {
+            await OnStatus.InvokeAsync(status);
+        }
+
+        _statusChanges++;
+    }
 
     /// <summary>The distinct notes (their <c>id::</c>) the text blocks of <paramref name="range"/> refer to, in order.</summary>
     private static IReadOnlyList<Guid> SourcesOf(Book book, RangeInfo range) =>

@@ -37,8 +37,10 @@ public sealed record SnapshotHeading(Guid Key, int Level, string Text) : Snapsho
 /// The source chips. The sync never changes the sources of a known block; a new block without
 /// <paramref name="SplitFrom"/> is linked to those it finds in the vault (see <see cref="BookSync.Apply"/>).
 /// </param>
+/// <param name="Status">The block's status; the sync never changes it.</param>
 public sealed record SnapshotTextBlock(
-    Guid Key, Guid? SplitFrom, string Text, IReadOnlyList<SnapshotParagraph> Paragraphs, IReadOnlyList<SourceInfo> Sources)
+    Guid Key, Guid? SplitFrom, string Text, IReadOnlyList<SnapshotParagraph> Paragraphs, IReadOnlyList<SourceInfo> Sources,
+    BlockStatus Status = BlockStatus.Draft)
     : SnapshotNode(Key);
 
 /// <summary>A descendant block of a text block; <paramref name="Depth"/> 1 is a direct child.</summary>
@@ -46,7 +48,8 @@ public sealed record SnapshotTextBlock(
 /// <param name="Text">The text without the <c>#notiz</c> tag.</param>
 /// <param name="Depth">Nesting below the text block.</param>
 /// <param name="IsNote">The block carries the <c>#notiz</c> tag.</param>
-public sealed record SnapshotParagraph(Guid Key, string Text, int Depth, bool IsNote);
+/// <param name="Status">The block's status; the sync never changes it.</param>
+public sealed record SnapshotParagraph(Guid Key, string Text, int Depth, bool IsNote, BlockStatus Status = BlockStatus.Draft);
 
 /// <summary>Builds the editor's view of a book; <see cref="BookSync.Apply"/> writes an edited one back.</summary>
 public static class BookSnapshot
@@ -107,8 +110,10 @@ public static class BookSnapshot
             text.Key,
             null,
             BlockTextEscape.Unescape(text.Text),
-            [.. text.Paragraphs.Select(p => new SnapshotParagraph(p.Block.Key, ParagraphText(p.Block.Content), p.Depth, p.IsNote))],
-            [.. text.Sources.Distinct().Select(id => SourceOf(id, vault))]);
+            [.. text.Paragraphs.Select(p => new SnapshotParagraph(
+                p.Block.Key, ParagraphText(p.Block.Content), p.Depth, p.IsNote, p.Status))],
+            [.. text.Sources.Distinct().Select(id => SourceOf(id, vault))],
+            text.Status);
 
     /// <summary>
     /// The source chip of the note with the block id <paramref name="noteId"/>: its label (see <see cref="SourceInfo"/>),

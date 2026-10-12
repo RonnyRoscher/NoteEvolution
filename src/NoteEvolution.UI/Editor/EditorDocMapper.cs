@@ -82,10 +82,10 @@ public static class EditorDocMapper
 
     private static JsonObject TextBlock(SnapshotTextBlock text)
     {
-        var paragraphs = new JsonArray(Para(null, text.Text, 0, false));
+        var paragraphs = new JsonArray(Para(null, text.Text, 0, false, BlockStatus.Draft));
         foreach (var paragraph in text.Paragraphs)
         {
-            paragraphs.Add(Para(paragraph.Key, paragraph.Text, paragraph.Depth, paragraph.IsNote));
+            paragraphs.Add(Para(paragraph.Key, paragraph.Text, paragraph.Depth, paragraph.IsNote, paragraph.Status));
         }
 
         var sources = new JsonArray();
@@ -99,32 +99,27 @@ public static class EditorDocMapper
             });
         }
 
-        return new JsonObject
+        var attrs = new JsonObject
         {
-            ["type"] = "textBlock",
-            ["attrs"] = new JsonObject
-            {
-                ["key"] = text.Key.ToString("D"),
-                ["splitFrom"] = text.SplitFrom?.ToString("D"),
-                ["sources"] = sources,
-            },
-            ["content"] = paragraphs,
+            ["key"] = text.Key.ToString("D"),
+            ["splitFrom"] = text.SplitFrom?.ToString("D"),
+            ["sources"] = sources,
         };
+        AddStatus(attrs, text.Status);
+        return new JsonObject { ["type"] = "textBlock", ["attrs"] = attrs, ["content"] = paragraphs };
     }
 
-    private static JsonObject Para(Guid? key, string markdown, int depth, bool isNote)
+    private static JsonObject Para(Guid? key, string markdown, int depth, bool isNote, BlockStatus status)
     {
-        var result = new JsonObject
+        var attrs = new JsonObject
         {
-            ["type"] = "para",
-            ["attrs"] = new JsonObject
-            {
-                ["key"] = key?.ToString("D"),
-                ["depth"] = depth,
-                ["isNote"] = isNote,
-                ["md"] = markdown,
-            },
+            ["key"] = key?.ToString("D"),
+            ["depth"] = depth,
+            ["isNote"] = isNote,
+            ["md"] = markdown,
         };
+        AddStatus(attrs, status);
+        var result = new JsonObject { ["type"] = "para", ["attrs"] = attrs };
         var content = new JsonArray();
         foreach (var run in Display(markdown))
         {
@@ -160,6 +155,15 @@ public static class EditorDocMapper
         }
 
         return result;
+    }
+
+    /// <summary>Adds the <c>status</c> attribute with the file value; a draft has none.</summary>
+    private static void AddStatus(JsonObject attrs, BlockStatus status)
+    {
+        if (BlockStatuses.FileValue(status) is { } value)
+        {
+            attrs["status"] = value;
+        }
     }
 
     private static SnapshotTextBlock ReadTextBlock(JsonObject node)

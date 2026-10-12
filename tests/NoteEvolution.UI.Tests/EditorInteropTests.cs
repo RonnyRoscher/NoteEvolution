@@ -91,6 +91,19 @@ public class EditorInteropTests
     }
 
     [Fact]
+    public async Task SectionCommand_ParsesToggleRemark()
+    {
+        var interop = await InitAsync();
+
+        foreach (var name in new[] { "ToggleRemark", "AddRemark", "toggleremark", "ToggleNote" })
+        {
+            await interop.SectionCommand(name);
+        }
+
+        Assert.Equal([SectionCommand.ToggleRemark, SectionCommand.AddRemark], _callbacks.Commands);
+    }
+
+    [Fact]
     public async Task SetMarked_Serializes_KeysAndOwnTextOnly()
     {
         var interop = await InitAsync();
