@@ -532,10 +532,12 @@
     /// </summary>
     private RenderFragment AdoptSplit(Block block, string cssClass)
     {
-        var (label, title) = Texts(Settings.LastAdoptVariant);
+        // The button adopts the way it shows, even if another card changes the choice before this one renders again.
+        var variant = Settings.LastAdoptVariant;
+        var (label, title) = Texts(variant);
         return @<span class="ne-adopt-split">
             <button type="button" class="@cssClass" title="@title"
-                    disabled="@(!CanAdopt)" @onclick="() => AdoptAsync(block, Settings.LastAdoptVariant)">@label</button>
+                    disabled="@(!CanAdopt)" @onclick="() => AdoptAsync(block, variant)">@label</button>
             <button type="button" class="@(cssClass)-more" title="@L["NoteAdoptMore"]" aria-label="@L["NoteAdoptMore"]"
                     aria-haspopup="menu" aria-expanded="@(_adoptMenu == block.Key)"
                     disabled="@(!CanAdopt)" @onclick="() => ToggleAdoptMenu(block.Key)">▾</button>

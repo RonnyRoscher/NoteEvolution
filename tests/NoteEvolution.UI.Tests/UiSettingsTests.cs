@@ -113,6 +113,15 @@ public class UiSettingsTests
         Assert.Equal(expectedWidth, loaded.LineWidthCh);
     }
 
+    [Fact]
+    public void Load_UnknownAdoptVariant_GivesAtCursor()
+    {
+        using var dir = new TempDir();
+        dir.Write("ui.json", "{ \"LastAdoptVariant\": 7 }");
+
+        Assert.Equal(AdoptVariant.AtCursor, UiSettings.Load(dir.Path).LastAdoptVariant);
+    }
+
     private static void AssertDefaults(UiSettings settings)
     {
         Assert.Null(settings.LastVault);

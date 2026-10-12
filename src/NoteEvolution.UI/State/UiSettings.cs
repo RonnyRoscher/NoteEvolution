@@ -87,6 +87,10 @@ public sealed class UiSettings
             var settings = File.Exists(path) ? JsonSerializer.Deserialize<UiSettings>(File.ReadAllBytes(path), Json) ?? new() : new();
             settings.FontSizePt = Math.Clamp(settings.FontSizePt, MinFontSizePt, MaxFontSizePt);
             settings.LineWidthCh = Math.Clamp(settings.LineWidthCh, MinLineWidthCh, MaxLineWidthCh);
+            if (!Enum.IsDefined(settings.LastAdoptVariant))
+            {
+                settings.LastAdoptVariant = AdoptVariant.AtCursor;
+            }
 
             // JSON gives a case-sensitive dictionary; vault paths compare without case, as Windows does.
             var books = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);

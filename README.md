@@ -52,13 +52,13 @@ Jeder Befehl lässt sich mit „Rückgängig“ in der Kopfzeile zurücknehmen, 
 geändert wurde. „N Quellen ▸“ klappt die Quellen des Abschnitts auf; ein Klick springt im Reiter Journal zur Notiz.
 Ist „Verwendete ausblenden“ eingeschaltet, erscheint die Notiz stattdessen als Karte oben im Notizbereich.
 
-„Übernehmen“ an einer Notiz oder einem Unteranstrich ist ein geteilter Knopf: der Knopf selbst übernimmt auf die
+Zum Übernehmen hat jede Notiz und jeder Unteranstrich einen geteilten Knopf: der Knopf selbst übernimmt auf die
 zuletzt gewählte Art und trägt deren Namen (anfangs **Am Cursor**), der Pfeil daneben bietet alle drei Arten:
 **Am Cursor** (in den aktuellen Block an der Cursorstelle), **Danach** (neues Element nach dem aktuellen) und
 **Darunter** (als erstes Unterelement). Die gewählte Art gilt für alle Karten und bleibt nach einem Neustart
-erhalten (`ui.json`). Daneben steht **Wohin damit?** (nur mit lokaler KI). Die Quelle hängt immer am umgebenden Textblock. Neue
-Blöcke und Details aus „Danach“ und „Darunter“ bekommen den Status Relevant; am Cursor behält der Block seinen
-Status, nur die dabei entstehenden Details werden Relevant.
+erhalten (`ui.json`). Daneben steht **Wohin damit?** (nur mit lokaler KI). Die Quelle hängt immer am umgebenden
+Textblock. Neue Blöcke und Details aus „Danach“ und „Darunter“ bekommen den Status Relevant; am Cursor behält der
+Block seinen Status, nur die dabei entstehenden Details werden Relevant.
 
 **Status:** Jeder Textblock und jedes Detail hat einen Arbeitsstand. Die Auswahl in der Leiste (Tooltip „Status des Blocks“) zeigt und
 ändert ihn für das Element am Cursor (auf Überschriften ausgegraut); jede Änderung lässt sich mit „Rückgängig“
@@ -207,7 +207,7 @@ Notizen und Übernehmen
 - [ ] „Verwendete ausblenden“ blendet verwendete Notizen aus.
 - [ ] Die drei Arten zu übernehmen: am Cursor mitten in einem Absatz (der Rest rückt dahinter), „Danach“ und
       „Darunter“ bei Textblock, Detail und Überschrift; die Quelle steht jeweils am umgebenden Textblock, der
-      neue Block bzw. das neue Detail ist grau (`status:: relevant`). Danach trägt der Knopf „Übernehmen“ den Namen der
+      neue Block bzw. das neue Detail ist grau (`status:: relevant`). Danach trägt der Übernehmen-Knopf den Namen der
       zuletzt gewählten Art, auch nach einem Neustart.
 
 Logseq und Obsidian

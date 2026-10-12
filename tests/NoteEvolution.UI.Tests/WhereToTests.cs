@@ -487,6 +487,9 @@ public class WhereToTests : UiTestContext
             Buttons(split));
         Assert.Equal("ne-note-whereto", split.NextElementSibling!.ClassName);
         Assert.Equal("Weitere Arten zu übernehmen", Text("NoteAdoptMore"));
+        Assert.Equal("In den aktuellen Block an der Cursorstelle einfügen", Text("AdoptAtCursorTitle"));
+        Assert.Equal("Als neues Element nach dem aktuellen einfügen", Text("AdoptAfterTitle"));
+        Assert.Equal("Als erstes Unterelement des aktuellen einfügen", Text("AdoptBelowTitle"));
 
         // The arrow opens the menu of all three ways, each with its tooltip.
         cut.Find(".ne-note-adopt-more").Click();
