@@ -610,8 +610,17 @@ html, body {
     min-width: 0;
 }
 
-.ne-note-child-whereto {
+/* A sub-bullet's buttons ("Übernehmen" and "Wohin damit?") stacked to the right of its text, equally wide. */
+.ne-adopt-column {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
     flex-shrink: 0;
+    gap: 2px;
+}
+
+.ne-adopt-column > .ne-adopt-split > button:first-child {
+    flex: 1;
 }
 
 .ne-note-actions {

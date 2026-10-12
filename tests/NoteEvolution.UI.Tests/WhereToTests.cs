@@ -511,7 +511,8 @@ public class WhereToTests : UiTestContext
                 ("ne-adopt-below", Text("AdoptBelow"), Text("AdoptBelowTitle")),
             ],
             Buttons(cut.Find(".ne-adopt-split > .ne-adopt-menu")));
-        Assert.Empty(cut.FindAll(".ne-adopt-row, .ne-adopt-column"));
+        Assert.Empty(cut.FindAll(".ne-adopt-row"));
+        Assert.Empty(cut.FindAll(".ne-note-actions .ne-adopt-column"));
     }
 
     [Fact]
@@ -522,15 +523,18 @@ public class WhereToTests : UiTestContext
 
         var cut = Render<NoteCard>(p => p.Add(c => c.Note, Note(session, OtherText)));
 
-        // The sub-bullet has the same split button after its text, then its own "Wohin damit?".
-        var split = cut.Find(".ne-note-child > .ne-adopt-split");
+        // The sub-bullet has the same split button and below it its own "Wohin damit?", stacked to the right of its text.
+        var column = cut.Find(".ne-note-child > .ne-adopt-column");
+        Assert.Equal("ne-note-child-text", column.PreviousElementSibling!.ClassName);
+        Assert.Equal(2, column.Children.Length);
+        var split = column.Children[0];
+        Assert.Equal("ne-adopt-split", split.ClassName);
         Assert.Equal(
             [
                 ("ne-note-child-adopt", Text("AdoptAtCursor"), Text("AdoptAtCursorTitle")),
                 ("ne-note-child-adopt-more", "▾", Text("NoteAdoptMore")),
             ],
             Buttons(split));
-        Assert.Equal("ne-note-child-text", split.PreviousElementSibling!.ClassName);
         Assert.Equal("ne-note-child-whereto", split.NextElementSibling!.ClassName);
 
         cut.Find(".ne-note-child-adopt-more").Click();

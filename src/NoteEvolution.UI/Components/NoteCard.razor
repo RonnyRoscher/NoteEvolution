@@ -48,12 +48,14 @@
         {
             <div class="ne-note-child" style="margin-left: @(depth * 12)px">
                 <span class="ne-note-child-text">@child.Content</span>
-                @AdoptSplit(child, "ne-note-child-adopt")
-                @if (WhereToAvailable)
-                {
-                    <button type="button" class="ne-note-child-whereto" title="@L["NoteWhereToTitle"]"
-                            aria-expanded="@_whereTo.ContainsKey(child.Key)" @onclick="() => ToggleWhereToAsync(child)">@L["NoteWhereTo"]</button>
-                }
+                <div class="ne-adopt-column">
+                    @AdoptSplit(child, "ne-note-child-adopt")
+                    @if (WhereToAvailable)
+                    {
+                        <button type="button" class="ne-note-child-whereto" title="@L["NoteWhereToTitle"]"
+                                aria-expanded="@_whereTo.ContainsKey(child.Key)" @onclick="() => ToggleWhereToAsync(child)">@L["NoteWhereTo"]</button>
+                    }
+                </div>
             </div>
             @if (_whereTo.TryGetValue(child.Key, out var childList))
             {
