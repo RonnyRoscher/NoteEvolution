@@ -55,6 +55,85 @@ public class PdfExportTests
     }
 
     [Fact]
+    public void Pdf_RelevantAndRemarkBlocks_Missing()
+    {
+        var text = ExportAndRead(
+            "title:: Statusbuch\ntype:: book\n\n" +
+            "- # Kapitel\n" +
+            "\t- Entwurfsblock\n" +
+            "\t- Relevanter Block\n\t  status:: relevant\n" +
+            "\t- Bemerkungsblock\n\t  status:: bemerkung\n" +
+            "\t- Notizblock #notiz\n" +
+            "\t- Letzter Block\n");
+
+        Assert.Contains("Entwurfsblock", text);
+        Assert.Contains("Letzter Block", text);
+        Assert.DoesNotContain("Relevanter Block", text);
+        Assert.DoesNotContain("Bemerkungsblock", text);
+        Assert.DoesNotContain("Notizblock", text);
+        Assert.DoesNotContain("status::", text);
+    }
+
+    [Fact]
+    public void Pdf_ExcludedDetail_SkipsItsSubtree()
+    {
+        var text = ExportAndRead(
+            "title:: Statusbuch\ntype:: book\n\n" +
+            "- # Kapitel\n" +
+            "\t- Hauptabsatz\n" +
+            "\t\t- Vorheriger Detail\n" +
+            "\t\t- Relevantes Detail\n\t\t  status:: relevant\n" +
+            "\t\t\t- Kind des Relevanten\n" +
+            "\t\t\t\t- Enkel des Relevanten\n" +
+            "\t\t- Bemerkungsdetail\n\t\t  status:: bemerkung\n" +
+            "\t\t\t- Kind der Bemerkung\n" +
+            "\t\t- Folgender Detail\n");
+
+        Assert.Contains("Hauptabsatz", text);
+        Assert.Contains("Vorheriger Detail", text);
+        Assert.Contains("Folgender Detail", text);
+        Assert.DoesNotContain("Relevantes Detail", text);
+        Assert.DoesNotContain("Kind des Relevanten", text);
+        Assert.DoesNotContain("Enkel des Relevanten", text);
+        Assert.DoesNotContain("Bemerkungsdetail", text);
+        Assert.DoesNotContain("Kind der Bemerkung", text);
+    }
+
+    [Fact]
+    public void Pdf_ExcludedBlock_SkipsDetailsWhateverTheirStatus()
+    {
+        var text = ExportAndRead(
+            "title:: Statusbuch\ntype:: book\n\n" +
+            "- # Kapitel\n" +
+            "\t- Relevanter Block\n\t  status:: relevant\n" +
+            "\t\t- Fertiges Detail\n\t\t  status:: fertig\n" +
+            "\t\t- Entwurfsdetail\n" +
+            "\t- Sichtbarer Block\n");
+
+        Assert.Contains("Sichtbarer Block", text);
+        Assert.DoesNotContain("Relevanter Block", text);
+        Assert.DoesNotContain("Fertiges Detail", text);
+        Assert.DoesNotContain("Entwurfsdetail", text);
+    }
+
+    [Fact]
+    public void Pdf_WordingAndDone_Exported()
+    {
+        var text = ExportAndRead(
+            "title:: Statusbuch\ntype:: book\n\n" +
+            "- # Kapitel\n" +
+            "\t- Formulierter Block\n\t  status:: formulierung\n" +
+            "\t\t- Fertiges Detail\n\t\t  status:: fertig\n" +
+            "\t- Fertiger Block\n\t  status:: fertig\n" +
+            "\t- Notiz mit Status #notiz\n\t  status:: formulierung\n");
+
+        Assert.Contains("Formulierter Block", text);
+        Assert.Contains("Fertiges Detail", text);
+        Assert.Contains("Fertiger Block", text);
+        Assert.Contains("Notiz mit Status", text);
+    }
+
+    [Fact]
     public void Export_CleansLinksTagsAndRefs_EmphasisMarkersDisappear()
     {
         var text = ExportAndRead(PdfSamples.SpecBookWithTwoChapters);

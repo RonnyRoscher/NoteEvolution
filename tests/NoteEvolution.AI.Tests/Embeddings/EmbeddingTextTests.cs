@@ -78,6 +78,19 @@ public class EmbeddingTextTests
     }
 
     [Fact]
+    public void ForTextBlock_SkipsRemarkStatus_KeepsRelevantStatus()
+    {
+        using var tv = TestVault.Create(("pages/Buch.md",
+            "type:: book\n\n- # Kapitel\n\t- Einleitung\n" +
+            "\t\t- Bemerkung ohne Tag\n\t\t  status:: bemerkung\n" +
+            "\t\t- Relevantes Detail\n\t\t  status:: relevant\n" +
+            "\t\t- Gewöhnliches Detail\n"));
+        var tb = Section(OpenBook(tv), "Kapitel").TextBlocks.Single();
+
+        Assert.Equal("query: Einleitung\nRelevantes Detail\nGewöhnliches Detail", EmbeddingText.ForTextBlock(tb));
+    }
+
+    [Fact]
     public void ForTextBlock_UnescapesStageOneEscapes()
     {
         using var tv = TestVault.Create(("pages/Buch.md",
