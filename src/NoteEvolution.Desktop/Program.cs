@@ -81,6 +81,7 @@ internal static class Program
             app.MainWindow
                 .SetLogVerbosity(0)
                 .SetTitle("NoteEvolution")
+                .SetIconFile(Path.Combine(AppContext.BaseDirectory, "Assets", OperatingSystem.IsWindows() ? "NoteEvolution.ico" : "NoteEvolution.png"))
                 .SetUseOsDefaultSize(false)
                 .SetSize(1400, 900)
                 .Center();

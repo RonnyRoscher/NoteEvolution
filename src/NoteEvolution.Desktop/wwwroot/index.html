@@ -6,9 +6,139 @@
     <title>NoteEvolution</title>
     <base href="/" />
     <link rel="stylesheet" href="_content/NoteEvolution.UI/css/app.css" />
+    <style>
+        /* The splash screen: shown from the first paint until the shell has started (neSplash.done). */
+        #ne-splash {
+            position: fixed;
+            inset: 0;
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(180deg, #34865c 0%, #23603f 100%);
+            color: #ffffff;
+            font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+            transition: opacity 0.35s ease;
+        }
+
+        #ne-splash.ne-splash-out {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .ne-splash-mark {
+            width: 231px;
+            height: 154px;
+        }
+
+        .ne-splash-name {
+            margin-top: 8px;
+            font-size: 34px;
+            font-weight: 300;
+            letter-spacing: 0.02em;
+        }
+
+        .ne-splash-status {
+            min-height: 1.4em;
+            margin-top: 10px;
+            font-size: 14px;
+            opacity: 0.85;
+        }
+
+        /* Five dots that run across, slow in the middle, as in Office. */
+        .ne-splash-dots {
+            position: relative;
+            width: 240px;
+            height: 6px;
+            margin-top: 28px;
+            overflow: hidden;
+        }
+
+        .ne-splash-dots i {
+            position: absolute;
+            top: 0;
+            left: -8px;
+            width: 5px;
+            height: 5px;
+            border-radius: 50%;
+            background: #ffffff;
+            opacity: 0;
+            animation: ne-splash-dot 2.8s infinite cubic-bezier(0.15, 0.7, 0.85, 0.3);
+        }
+
+        .ne-splash-dots i:nth-child(2) { animation-delay: 0.14s; }
+        .ne-splash-dots i:nth-child(3) { animation-delay: 0.28s; }
+        .ne-splash-dots i:nth-child(4) { animation-delay: 0.42s; }
+        .ne-splash-dots i:nth-child(5) { animation-delay: 0.56s; }
+
+        @keyframes ne-splash-dot {
+            0% { left: -8px; opacity: 0; }
+            8% { opacity: 1; }
+            85% { opacity: 1; }
+            100% { left: 248px; opacity: 0; }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .ne-splash-dots i {
+                animation: none;
+                opacity: 0.8;
+            }
+
+            .ne-splash-dots i:nth-child(1) { left: 100px; }
+            .ne-splash-dots i:nth-child(2) { left: 110px; }
+            .ne-splash-dots i:nth-child(3) { left: 120px; }
+            .ne-splash-dots i:nth-child(4) { left: 130px; }
+            .ne-splash-dots i:nth-child(5) { left: 140px; }
+        }
+    </style>
 </head>
 <body>
+    <div id="ne-splash" role="status" aria-live="polite">
+        <!-- The NoteEvolution mark (Assets/NoteEvolution-mark.svg): notes that become a book. -->
+        <svg class="ne-splash-mark" xmlns="http://www.w3.org/2000/svg" viewBox="24 58 210 140" aria-hidden="true">
+            <g stroke-linecap="round">
+                <rect x="34" y="78" width="66" height="84" rx="7" fill="#bfe0cb" transform="rotate(-18 67 120)" />
+                <rect x="40" y="80" width="66" height="84" rx="7" fill="#dff0e5" transform="rotate(-8 73 122)" />
+                <g transform="rotate(3 79 126)">
+                    <rect x="46" y="84" width="66" height="84" rx="7" fill="#ffffff" />
+                    <path d="M58 104h42M58 120h42M58 136h28" stroke="#2f7a55" stroke-width="6" />
+                </g>
+                <path d="M124 116l12 12-12 12" fill="none" stroke="#ffffff" stroke-width="7" stroke-linejoin="round" />
+                <rect x="148" y="66" width="80" height="124" rx="8" fill="#f6f1e4" />
+                <path d="M156 66a8 8 0 0 0-8 8v108a8 8 0 0 0 8 8h12V66z" fill="#174a32" />
+                <rect x="178" y="92" width="38" height="24" rx="3" fill="none" stroke="#2f7a55" stroke-width="4" />
+                <path d="M182 140h30M182 154h22" stroke="#2f7a55" stroke-width="5" />
+            </g>
+        </svg>
+        <div class="ne-splash-name">NoteEvolution</div>
+        <div class="ne-splash-status" id="ne-splash-status"></div>
+        <div class="ne-splash-dots" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+    </div>
     <div id="app"></div>
+    <script>
+        // Called by the shell (Shell.razor): the status line while the start waits, and the end of the start.
+        window.neSplash = {
+            status(text) {
+                const status = document.getElementById('ne-splash-status');
+                if (status) {
+                    status.textContent = text;
+                }
+            },
+            done() {
+                const splash = document.getElementById('ne-splash');
+                if (!splash || splash.classList.contains('ne-splash-out')) {
+                    return;
+                }
+
+                splash.classList.add('ne-splash-out');
+                setTimeout(() => splash.remove(), 400);
+            },
+        };
+
+        // Should the start never report back (an error before the shell runs), the app shows itself after 30 s anyway.
+        setTimeout(() => window.neSplash.done(), 30000);
+    </script>
     <script src="_framework/blazor.webview.js"></script>
 </body>
 </html>
