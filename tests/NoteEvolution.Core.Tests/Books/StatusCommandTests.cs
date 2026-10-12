@@ -200,7 +200,11 @@ public class StatusCommandTests
             Text.Replace("\t\t- Detail 2\n", "\t\t- Detail 2\n\t\t-\n\t\t  status:: bemerkung\n"),
             [],
             ["\t\t-", "\t\t  status:: bemerkung"]);
-        var last = Book.Load(book.Page).FindTextBlock(BlockOf(book, "Text eins").Key)!.Paragraphs[^1];
-        Assert.Equal((key, 1, "", BlockStatus.Remark), (last.Block.Key, last.Depth, last.Text, last.Status));
+        Assert.Equal(key, Book.Load(book.Page).FindTextBlock(BlockOf(book, "Text eins").Key)!.Paragraphs[^1].Block.Key);
+
+        // Read back from the written text, the remark is an empty detail of depth 1 with status Remark.
+        var reloaded = Load(Serialize(book));
+        var last = reloaded.FindTextBlock(BlockOf(reloaded, "Text eins").Key)!.Paragraphs[^1];
+        Assert.Equal((1, "", BlockStatus.Remark), (last.Depth, last.Text, last.Status));
     }
 }

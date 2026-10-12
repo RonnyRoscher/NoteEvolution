@@ -1,5 +1,6 @@
 using System.Text;
 using NoteEvolution.Core.Books;
+using NoteEvolution.Core.Format;
 using NoteEvolution.Core.Links;
 using NoteEvolution.Core.Model;
 using NoteEvolution.TestSupport;
@@ -526,6 +527,30 @@ public class AdoptTests
         Assert.Contains($"\t- Hallo KernWelt\n\t  id:: {r.TextBlockId}\n", cursor.ReadBook());
         Assert.Contains("\t\t- Detail #notiz\n\t\t  status:: relevant\n", cursor.ReadBook());
         Assert.Equal(BlockStatus.Draft, Book.Load(cursor.Book.Page).FindTextBlock(r.TextBlockKey)!.Status);
+    }
+
+    [Fact]
+    public void AdoptInto_AtCursor_SubBulletWithoutPlaceForStatus_Throws_BothPagesUnchanged()
+    {
+        using var s = new LinkSetup(DetailBook);
+        var kern = s.Note("Kern");
+
+        // A sub-bullet whose code fence is never closed has no place for status::. A file with one is read-only, so
+        // the note gets it in memory.
+        s.Journal.InsertBlock(kern, 1, Block.CreateDetached([new RawLine("- ```js", "\n"), new RawLine("  code", "\n")], Guid.NewGuid()));
+        var noteLines = s.Journal.AllBlocks().Select(b => b.Lines.ToList()).ToList();
+        var noteWasDirty = s.Journal.IsDirty;
+
+        Assert.Throws<InvalidOperationException>(() =>
+            s.Links.AdoptInto(s.Book, kern.Key, new IntoPosition.AtCursor(s.Text("Hallo Welt").Key, 6)));
+
+        Assert.Equal(DetailBook, Encoding.UTF8.GetString(PageSerializer.Serialize(s.Book.Page)));
+        Assert.False(s.Book.Page.IsDirty);
+        Assert.Equal(DetailBook, s.ReadBook());
+        Assert.Equal(noteLines, s.Journal.AllBlocks().Select(b => b.Lines.ToList()));
+        Assert.Equal(noteWasDirty, s.Journal.IsDirty);
+        Assert.Null(kern.Id);
+        Assert.False(s.Undo.CanUndo);
     }
 
     private static Block BookBlock(LinkSetup s, string content) => s.Book.Page.AllBlocks().Single(b => b.Content == content);

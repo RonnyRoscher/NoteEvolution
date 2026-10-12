@@ -73,6 +73,15 @@ public sealed class LinkService(IVault vault, IPageWriter writer, UndoManager un
             _ => throw new ArgumentException("Unknown position.", nameof(position)),
         };
         var copy = CopyOf(note);
+
+        // The new top-level details are relevant: at the cursor the note's sub-bullets, else the copy. Set while they
+        // are detached, so that one without a place for it (an unclosed code fence) throws before anything changed.
+        IReadOnlyList<Block> tops = position is IntoPosition.AtCursor ? copy.Children : [copy];
+        foreach (var top in tops)
+        {
+            top.SetProperty(BlockStatuses.Key, Relevant);
+        }
+
         string? content = null;
         if (position is IntoPosition.AtCursor cursor)
         {
@@ -106,8 +115,6 @@ public sealed class LinkService(IVault vault, IPageWriter writer, UndoManager un
                 inserted = [copy];
                 break;
         }
-
-        inserted.ForEach(block => block.SetProperty(BlockStatuses.Key, Relevant));
 
         var textBlockId = textBlock.EnsureId();
         var sourceAdded = AddSource(textBlock, noteId);
