@@ -13,6 +13,7 @@ public sealed class TextBlock : BookItem
         Paragraphs = paragraphs;
         Text = block.Content;
         Sources = SourceValue.Parse(block.GetProperty("source") ?? "");
+        Status = BlockStatuses.Of(block);
     }
 
     public Block Block { get; }
@@ -27,6 +28,9 @@ public sealed class TextBlock : BookItem
     public IReadOnlyList<Guid> Sources { get; }
 
     public OutlineNode Section { get; }
+
+    /// <summary>The <c>status::</c> property, or the <c>#notiz</c> tag as a remark; a draft by default.</summary>
+    public BlockStatus Status { get; }
 
     /// <summary>Words in the text and in the paragraphs that are not notes.</summary>
     internal int WordCount => CountWords(Text) + Paragraphs.Where(p => !p.IsNote).Sum(p => CountWords(p.Text));
