@@ -52,9 +52,26 @@ Jeder Befehl lässt sich mit „Rückgängig“ in der Kopfzeile zurücknehmen, 
 geändert wurde. „N Quellen ▸“ klappt die Quellen des Abschnitts auf; ein Klick springt im Reiter Journal zur Notiz.
 Ist „Verwendete ausblenden“ eingeschaltet, erscheint die Notiz stattdessen als Karte oben im Notizbereich.
 
-„Übernehmen“ an einer Notiz oder einem Unteranstrich übernimmt mit einem Klick **am Cursor** (in den aktuellen Block);
-der Pfeil daneben bietet zusätzlich **Danach** (neues Element nach dem aktuellen) und **Darunter** (als erstes
-Unterelement). Die Quelle hängt immer am umgebenden Textblock.
+An einer Notiz stehen nebeneinander vier Knöpfe, an einem Unteranstrich untereinander: **Am Cursor** (in den
+aktuellen Block an der Cursorstelle), **Danach** (neues Element nach dem aktuellen), **Darunter** (als erstes
+Unterelement) und **Wohin damit?**. Die Quelle hängt immer am umgebenden Textblock.
+
+**Status:** Jeder Textblock und jedes Detail hat einen Arbeitsstand. Die Auswahl „Status“ in der Leiste zeigt und
+ändert ihn für das Element am Cursor (auf Überschriften ausgegraut); jede Änderung lässt sich mit „Rückgängig“
+zurücknehmen.
+
+| Status | In der Datei | Darstellung | PDF |
+| --- | --- | --- | --- |
+| Entwurf (Standard bei selbst geschriebenem Text) | keine Zeile | normal | ja |
+| Relevant (Standard bei übernommenen Notiztexten) | `status:: relevant` | grauer Text | nein |
+| Bemerkung | `status:: bemerkung` oder `#notiz` | beiger Hintergrund (dunkel: gedämpftes Braun) | nein |
+| Formulierung | `status:: formulierung` | gelber Strich am rechten Rand | ja |
+| Fertig | `status:: fertig` | grüner Strich am rechten Rand | ja |
+
+Relevant und Bemerkung fehlen im PDF samt allen Details darunter. Strg+Umschalt+N schaltet das Element am Cursor
+zwischen Bemerkung und Entwurf um; „Bemerkung anfügen“ legt am Ende der Details des aktuellen Textblocks ein leeres
+Detail mit Status Bemerkung an, der Cursor steht darin. Wird ein Block mit `#notiz` auf einen anderen Status gesetzt,
+verschwindet das Tag. Ein unbekannter `status::`-Wert gilt als Entwurf und bleibt unverändert in der Datei.
 
 **Bereich:** Mit „Bereich ▲“ / „Bereich ▼“ (oder Alt+Pfeil hoch/runter) wird der markierte Bereich stufenweise
 erweitert (übergeordnetes Element samt allem darunter, bis zum ganzen Buch) bzw. verkleinert (bis zum Element allein,
@@ -64,14 +81,16 @@ wieder der Standard. Auf den Bereich wirken zwei weitere Knöpfe:
 - **Zusammenfügen:** die Textblöcke im Bereich werden je Überschrift zu einem Block (Texte durch eine Leerzeile
   getrennt, Details wandern mit); Quellen werden vereinigt, die `used-in::`-Verweise der Notizen zeigen danach auf
   den verbleibenden Block. Auf einem Textblock (oder Detail) samt Details fügt „Zusammenfügen“ die Details in seinen
-  Text ein; `#notiz`-Details bleiben als Details erhalten.
+  Text ein; Bemerkungen (auch `#notiz`) bleiben als Details erhalten.
 - **Unter neue Überschrift:** der Bereich kommt unter eine neue, leere Überschrift eine Ebene unter seiner Überschrift
   (bei einem Textblock samt der direkt folgenden Textblöcke bis zur nächsten Unterüberschrift); der Cursor steht im
   neuen Titel.
 
 **Wohin damit?** an einer Notiz oder einem Unteranstrich zeigt die fünf passendsten Textblöcke des Buchs mit
 Überschriftenpfad, Textauszug und Prozent (✓, wenn die Notiz dort schon Quelle ist). Ein Klick springt zum Block,
-die Liste bleibt offen; übernommen wird dort mit dem geteilten „Übernehmen“-Knopf.
+die Liste bleibt offen; übernommen wird dort mit „Danach“ oder „Darunter“. Solange im Reiter „Relevant“ eine solche
+Liste offen ist, bleibt die Relevant-Liste unverändert; nach dem Schließen der letzten Liste wird sie einmal neu
+berechnet.
 
 ## Wo was liegt
 
@@ -147,7 +166,12 @@ Editor
 - [ ] Leerzeichen am Ende eines Absatzes tippen und warten: das Leerzeichen bleibt, der Cursor springt nicht,
       Strg+Z im Editor funktioniert weiter.
 - [ ] Strg+Enter mitten in einem verknüpften Block: die Notiz hat danach zwei `used-in`-Einträge.
-- [ ] Tab, Umschalt+Tab und Strg+Umschalt+N funktionieren (Strg+Umschalt+N wird nicht von WebView2 abgefangen).
+- [ ] Tab, Umschalt+Tab und Strg+Umschalt+N funktionieren (Strg+Umschalt+N wird nicht von WebView2 abgefangen und
+      macht das Element am Cursor zur Bemerkung bzw. wieder zum Entwurf).
+- [ ] Status: in der Leiste alle fünf Stati an Textblock und Detail wählen; Grau, Beige und die Randstriche stimmen im
+      hellen und dunklen Design; die Auswahl zeigt nach einem Cursorwechsel den Status des neuen Elements;
+      „Rückgängig“ in der Kopfzeile nimmt jede Änderung zurück. In Logseq erscheint `status::` als Eigenschaft.
+- [ ] „Bemerkung anfügen“: ein leeres beiges Detail am Ende des Textblocks, der Cursor steht darin.
 - [ ] Rücktaste am Blockanfang verbindet zwei Blöcke; „Rückgängig“ in der Kopfzeile stellt den Block wieder her.
 - [ ] Einen verknüpften Block löschen, ca. 1 s warten, dann Strg+Z im Editor: der Block ist wieder verknüpft
       (Quellen-Chip, `source::` im Buch, `used-in::` an der Notiz). Danach „Rückgängig“ in der Kopfzeile:
@@ -177,7 +201,9 @@ Notizen und Übernehmen
       `id::`/`used-in::`-Zeile hinzu.
 - [ ] „Verwendete ausblenden“ blendet verwendete Notizen aus.
 - [ ] Die drei Arten zu übernehmen: am Cursor mitten in einem Absatz (der Rest rückt dahinter), „Danach“ und
-      „Darunter“ bei Textblock, Detail und Überschrift; die Quelle steht jeweils am umgebenden Textblock.
+      „Darunter“ bei Textblock, Detail und Überschrift; die Quelle steht jeweils am umgebenden Textblock, der
+      übernommene Text ist grau (`status:: relevant`). An der Notiz stehen die vier Knöpfe nebeneinander, an
+      Unteranstrichen untereinander.
 
 Logseq und Obsidian
 - [ ] Den Vault in Logseq öffnen: keine Fehler, Buch und Notizen sehen wie erwartet aus.
@@ -203,7 +229,8 @@ Lokale KI (Modell installiert, Test-Vault mit einigen Dutzend Notizen und einem 
 - [ ] Die Suche findet sinnverwandte Notizen ohne gleiche Wörter (z. B. nach „Müdigkeit“ suchen und eine Notiz über
       „Schlaf“ finden), Treffer mit dem gesuchten Wort stehen weiter oben.
 - [ ] „Wohin damit?“ an einer Notiz und an einem Unteranstrich zeigt höchstens fünf Textblöcke mit Pfad, Auszug und
-      Prozentwert; ein Klick springt zum Block, die Liste bleibt offen; dort mit „Danach“ übernehmen.
+      Prozentwert; ein Klick springt zum Block, die Liste bleibt offen; dort mit „Danach“ übernehmen. Im Reiter
+      „Relevant“ bleibt die Liste dabei stehen, die Notiz verschwindet nicht.
 - [ ] `[handled]`-Assistent: neben jeder Notiz steht „Stelle unbekannt“ (Standard) und bis zu drei Fundstellen mit
       Textauszug und Prozent; nach dem Buchwechsel werden sie neu berechnet. Eine Fundstelle wählen, umwandeln: der
       Buchblock hat `id::` und `source::`, die Notiz `used-in:: [[Buch]] ((id))`, `[handled]` ist entfernt. Eine
@@ -220,4 +247,5 @@ Lokale KI (Modell installiert, Test-Vault mit einigen Dutzend Notizen und einem 
 PDF
 - [ ] PDF-Export für das ganze Buch in A4 und A5 sowie für „Aktueller Abschnitt“: der native Speichern-Dialog schlägt
       einen sinnvollen Dateinamen vor; das PDF hat Titelseite und Inhaltsverzeichnis, Schrift und Abstände sehen gut
-      aus, `#notiz`-Absätze fehlen; Warnungen erscheinen im Dialog.
+      aus, Blöcke mit Status Relevant oder Bemerkung (auch `#notiz`) fehlen samt Details; Warnungen erscheinen im
+      Dialog.
