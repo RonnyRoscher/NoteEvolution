@@ -54,9 +54,11 @@ Ist „Verwendete ausblenden“ eingeschaltet, erscheint die Notiz stattdessen a
 
 An einer Notiz stehen nebeneinander vier Knöpfe, an einem Unteranstrich untereinander: **Am Cursor** (in den
 aktuellen Block an der Cursorstelle), **Danach** (neues Element nach dem aktuellen), **Darunter** (als erstes
-Unterelement) und **Wohin damit?**. Die Quelle hängt immer am umgebenden Textblock.
+Unterelement) und **Wohin damit?** (nur mit lokaler KI). Die Quelle hängt immer am umgebenden Textblock. Neue
+Blöcke und Details aus „Danach“ und „Darunter“ bekommen den Status Relevant; am Cursor behält der Block seinen
+Status, nur die dabei entstehenden Details werden Relevant.
 
-**Status:** Jeder Textblock und jedes Detail hat einen Arbeitsstand. Die Auswahl „Status“ in der Leiste zeigt und
+**Status:** Jeder Textblock und jedes Detail hat einen Arbeitsstand. Die Auswahl in der Leiste (Tooltip „Status des Blocks“) zeigt und
 ändert ihn für das Element am Cursor (auf Überschriften ausgegraut); jede Änderung lässt sich mit „Rückgängig“
 zurücknehmen.
 
@@ -81,7 +83,8 @@ wieder der Standard. Auf den Bereich wirken zwei weitere Knöpfe:
 - **Zusammenfügen:** die Textblöcke im Bereich werden je Überschrift zu einem Block (Texte durch eine Leerzeile
   getrennt, Details wandern mit); Quellen werden vereinigt, die `used-in::`-Verweise der Notizen zeigen danach auf
   den verbleibenden Block. Auf einem Textblock (oder Detail) samt Details fügt „Zusammenfügen“ die Details in seinen
-  Text ein; Bemerkungen (auch `#notiz`) bleiben als Details erhalten.
+  Text ein; Bemerkungen (auch `#notiz`) bleiben als Details erhalten. Der verbleibende Block behält immer seinen
+  eigenen Status; der Status der eingefügten Blöcke geht nicht über.
 - **Unter neue Überschrift:** der Bereich kommt unter eine neue, leere Überschrift eine Ebene unter seiner Überschrift
   (bei einem Textblock samt der direkt folgenden Textblöcke bis zur nächsten Unterüberschrift); der Cursor steht im
   neuen Titel.
@@ -202,7 +205,7 @@ Notizen und Übernehmen
 - [ ] „Verwendete ausblenden“ blendet verwendete Notizen aus.
 - [ ] Die drei Arten zu übernehmen: am Cursor mitten in einem Absatz (der Rest rückt dahinter), „Danach“ und
       „Darunter“ bei Textblock, Detail und Überschrift; die Quelle steht jeweils am umgebenden Textblock, der
-      übernommene Text ist grau (`status:: relevant`). An der Notiz stehen die vier Knöpfe nebeneinander, an
+      neue Block bzw. das neue Detail ist grau (`status:: relevant`). An der Notiz stehen die vier Knöpfe nebeneinander, an
       Unteranstrichen untereinander.
 
 Logseq und Obsidian
