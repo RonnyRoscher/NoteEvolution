@@ -166,7 +166,7 @@ public class NotesPaneTests : UiTestContext
         var cut = Render<NotesPane>();
         Search(cut, "Schlaf");
 
-        CardOf(cut, "Gedächtnis braucht Schlaf").QuerySelector(".ne-note-adopt")!.Click();
+        CardOf(cut, "Gedächtnis braucht Schlaf").QuerySelector(".ne-adopt-row .ne-adopt-at-cursor")!.Click();
 
         var eins = State.CurrentBook!.Root.Children.First();
         Assert.Equal(["Erster Text", "Zweiter Text", "Gedächtnis braucht Schlaf"], eins.TextBlocks.Select(t => t.Text));
@@ -183,9 +183,7 @@ public class NotesPaneTests : UiTestContext
         var cut = Render<NotesPane>();
         ShowJournal(cut);
 
-        // "Danach" in the menu of variants (a click on the button itself adopts at the cursor, see AdoptVariantTests).
-        cut.FindAll(".ne-note-adopt-more")[1].Click();
-        cut.Find(".ne-adopt-after").Click();
+        cut.FindAll(".ne-adopt-row .ne-adopt-after")[1].Click();
 
         Assert.Equal(
             ["Erster Text", "Eine ganz andere Idee", "Zweiter Text"],

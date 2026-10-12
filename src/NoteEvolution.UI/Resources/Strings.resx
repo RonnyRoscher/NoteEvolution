@@ -393,18 +393,6 @@
     <value>Verwendet in {0} Stelle(n) – zur Stelle springen</value>
     <comment>{0} = Anzahl der Verwendungen</comment>
   </data>
-  <data name="NoteAdopt" xml:space="preserve">
-    <value>Übernehmen</value>
-  </data>
-  <data name="NoteAdoptTitle" xml:space="preserve">
-    <value>Diese Notiz ins Buch übernehmen</value>
-  </data>
-  <data name="NoteAdoptChildTitle" xml:space="preserve">
-    <value>Diesen Unterpunkt ins Buch übernehmen</value>
-  </data>
-  <data name="NoteAdoptMore" xml:space="preserve">
-    <value>Weitere Arten zu übernehmen</value>
-  </data>
   <data name="AdoptAtCursor" xml:space="preserve">
     <value>Am Cursor</value>
   </data>
@@ -413,6 +401,15 @@
   </data>
   <data name="AdoptBelow" xml:space="preserve">
     <value>Darunter</value>
+  </data>
+  <data name="AdoptAtCursorTitle" xml:space="preserve">
+    <value>In den aktuellen Block an der Cursorstelle einfügen</value>
+  </data>
+  <data name="AdoptAfterTitle" xml:space="preserve">
+    <value>Als neues Element nach dem aktuellen einfügen</value>
+  </data>
+  <data name="AdoptBelowTitle" xml:space="preserve">
+    <value>Als erstes Unterelement des aktuellen einfügen</value>
   </data>
   <data name="NoteWhereTo" xml:space="preserve">
     <value>Wohin damit?</value>

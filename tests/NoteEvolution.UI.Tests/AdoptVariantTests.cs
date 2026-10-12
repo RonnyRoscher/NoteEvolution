@@ -1,13 +1,10 @@
 using System.Text;
 using Bunit;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Localization;
 using Microsoft.Extensions.Logging.Abstractions;
 using NoteEvolution.Core.Books;
 using NoteEvolution.TestSupport;
 using NoteEvolution.UI.Components;
 using NoteEvolution.UI.Editor;
-using NoteEvolution.UI.Resources;
 using NoteEvolution.UI.State;
 
 namespace NoteEvolution.UI.Tests;
@@ -64,8 +61,6 @@ public class AdoptVariantTests : UiTestContext
     }
 
     private Book Book => State.CurrentBook!;
-
-    private string Text(string key) => Services.GetRequiredService<IStringLocalizer<Strings>>()[key].Value;
 
     private Guid KeyOf(string content) => Book.Page.AllBlocks().Single(b => b.Content == content).Key;
 
@@ -304,57 +299,44 @@ public class AdoptVariantTests : UiTestContext
         Assert.Equal(NoteText + $"\t  used-in:: [[Buch - Alpha]] (({id}))\n", _vault.Read(NotePath));
     }
 
-    [Fact]
-    public async Task SplitButton_MenuShowsThreeVariants()
+    [Theory]
+    [InlineData(false, AdoptVariant.AtCursor)]
+    [InlineData(false, AdoptVariant.After)]
+    [InlineData(false, AdoptVariant.Below)]
+    [InlineData(true, AdoptVariant.AtCursor)]
+    [InlineData(true, AdoptVariant.After)]
+    [InlineData(true, AdoptVariant.Below)]
+    public async Task Buttons_AdoptEachVariant(bool subBullet, AdoptVariant variant)
     {
         var session = await OpenSessionAsync(_vault);
         CursorAt("Erster Text", 7);
         var cut = Render<NoteCard>(p => p.Add(c => c.Note, session.Notes.All().Single(n => n.Block.Content == "Eine Notiz")));
-        Assert.Empty(cut.FindAll(".ne-adopt-menu"));
-        Assert.Equal(Text("NoteAdoptMore"), cut.Find(".ne-note-adopt-more").GetAttribute("title"));
-        Assert.Equal(Text("NoteAdoptMore"), cut.Find(".ne-note-child-adopt-more").GetAttribute("title"));
+        var buttons = subBullet ? ".ne-adopt-column" : ".ne-adopt-row";
+        var adopted = subBullet ? "Unterpunkt" : "Eine Notiz";
 
-        cut.Find(".ne-note-adopt-more").Click();
+        // Each button adopts its block (the note or the sub-bullet) directly, the way its variant says.
+        cut.Find(buttons + " " + variant switch
+        {
+            AdoptVariant.AtCursor => ".ne-adopt-at-cursor",
+            AdoptVariant.After => ".ne-adopt-after",
+            _ => ".ne-adopt-below",
+        }).Click();
 
-        var menu = cut.Find(".ne-adopt-menu");
-        Assert.Equal(
-            [Text("AdoptAtCursor"), Text("AdoptAfter"), Text("AdoptBelow")],
-            menu.QuerySelectorAll("button").Select(b => b.TextContent.Trim()));
-        Assert.Equal(Text("AdoptAtCursor"), cut.Find(".ne-adopt-at-cursor").TextContent);
-        Assert.Equal(Text("AdoptAfter"), cut.Find(".ne-adopt-after").TextContent);
-        Assert.Equal(Text("AdoptBelow"), cut.Find(".ne-adopt-below").TextContent);
+        var section = Book.Root.Children.First();
+        switch (variant)
+        {
+            case AdoptVariant.AtCursor:
+                Assert.Equal(["Erster " + adopted + "Text", "Zweiter Text"], section.TextBlocks.Select(t => t.Text));
+                break;
+            case AdoptVariant.After:
+                Assert.Equal(["Erster Text", adopted, "Zweiter Text"], section.TextBlocks.Select(t => t.Text));
+                break;
+            default:
+                Assert.Equal(adopted, section.TextBlocks.First().Paragraphs[0].Text);
+                break;
+        }
 
-        // A variant of the menu adopts that way and closes the menu.
-        cut.Find(".ne-adopt-below").Click();
-
-        Assert.Empty(cut.FindAll(".ne-adopt-menu"));
-        Assert.Contains("\t\t- Eine Notiz\n\t\t  status:: relevant\n\t\t\t- Unterpunkt\n\t\t- Ein Detail\n", _vault.Read(BookPath));
-
-        // The sub-bullet's arrow opens the menu for the sub-bullet.
-        cut.Find(".ne-note-child-adopt-more").Click();
-        cut.Find(".ne-adopt-after").Click();
-
-        Assert.Contains($"source:: (({ChildId}))", _vault.Read(BookPath));
-        Assert.Single(Book.Page.AllBlocks(), b => b.Content == "Unterpunkt" && Book.FindTextBlock(b.Key) is not null);
-    }
-
-    [Fact]
-    public async Task SplitButton_MainClick_IsAtCursor()
-    {
-        var session = await OpenSessionAsync(_vault);
-        CursorAt("Zweiter Text", 8);
-        var cut = Render<NoteCard>(p => p.Add(c => c.Note, session.Notes.All().Single(n => n.Block.Content == "Eine Notiz")));
-        Assert.Equal(Text("NoteAdopt"), cut.Find(".ne-note-adopt").TextContent);
-
-        cut.Find(".ne-note-adopt").Click();
-
-        Assert.Contains("\t- Zweiter Eine NotizText\n", _vault.Read(BookPath));
-
-        // The sub-bullet's main button adopts it at the cursor as well.
-        CursorAt("Dritter Text", 8);
-        cut.Find(".ne-note-child-adopt").Click();
-
-        Assert.Contains("\t- Dritter UnterpunktText\n", _vault.Read(BookPath));
+        Assert.Contains($"source:: (({(subBullet ? ChildId : NoteId)}))", _vault.Read(BookPath));
     }
 
     [Theory]

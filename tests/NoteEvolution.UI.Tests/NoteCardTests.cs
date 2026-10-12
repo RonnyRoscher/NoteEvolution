@@ -89,7 +89,7 @@ public class NoteCardTests : UiTestContext
         var session = await OpenAlphaAsync(tv);
         var cut = RenderCard(Note(session, "Gedächtnis braucht"));
 
-        cut.Find(".ne-note-child-adopt").Click();
+        cut.Find(".ne-adopt-column .ne-adopt-at-cursor").Click();
 
         var book = session.Vault.FindBook("Buch - Alpha")!;
         var texts = book.Root.Children.First().TextBlocks.Select(t => t.Text).ToList();
@@ -111,9 +111,7 @@ public class NoteCardTests : UiTestContext
         SetCursorInTextBlock(first.Key);
         var cut = RenderCard(Note(session, "Gedächtnis braucht"));
 
-        // "Danach" in the menu of variants (a click on the button itself adopts at the cursor, see AdoptVariantTests).
-        cut.Find(".ne-note-adopt-more").Click();
-        cut.Find(".ne-adopt-after").Click();
+        cut.Find(".ne-adopt-row .ne-adopt-after").Click();
 
         var texts = State.CurrentBook!.Root.Children.First().TextBlocks.Select(t => t.Text).ToList();
         Assert.Equal(["Erster Text", "Gedächtnis braucht Schlaf", "Zweiter Text"], texts);
@@ -127,7 +125,7 @@ public class NoteCardTests : UiTestContext
         var cut = RenderCard(Note(session, "Gedächtnis wird"));
         Assert.Empty(cut.FindAll(".ne-note-used-count"));
 
-        cut.Find(".ne-note-adopt").Click();
+        cut.Find(".ne-adopt-row .ne-adopt-at-cursor").Click();
 
         Assert.Equal("2", cut.Find(".ne-note-used-count").TextContent);
         Assert.Equal(2, Note(session, "Gedächtnis wird").Usages.Count);
@@ -142,7 +140,7 @@ public class NoteCardTests : UiTestContext
         State.Changed += () => notified++;
         var cut = RenderCard(Note(session, "Gedächtnis braucht"));
 
-        cut.Find(".ne-note-adopt").Click();
+        cut.Find(".ne-adopt-row .ne-adopt-at-cursor").Click();
 
         Assert.True(notified > 0);
         var hits = session.Search.Search(new NoteEvolution.AI.Search.SearchQuery("Schlaf", new NoteFilter(HideUsed: true, null, null)));
@@ -160,7 +158,7 @@ public class NoteCardTests : UiTestContext
         ((IDisposable)session.Search).Dispose();
         Assert.ThrowsAny<Exception>(() => session.Search.UpdatePage(session.Notes, note.Page.FilePath));
 
-        cut.Find(".ne-note-adopt").Click();
+        cut.Find(".ne-adopt-row .ne-adopt-at-cursor").Click();
 
         Assert.NotSame(staleBook, State.CurrentBook);
         Assert.Contains("Gedächtnis braucht Schlaf", State.CurrentBook!.Root.Children.First().TextBlocks.Select(t => t.Text));
@@ -176,7 +174,7 @@ public class NoteCardTests : UiTestContext
         var before = tv.Read(AlphaPath);
         var cut = RenderCard(Note(session, "Gedächtnis braucht"));
 
-        cut.Find(".ne-note-adopt").Click();
+        cut.Find(".ne-adopt-row .ne-adopt-at-cursor").Click();
 
         var localizer = Services.GetRequiredService<IStringLocalizer<Strings>>();
         Assert.Equal(localizer["NoteAdoptFailed"].Value, cut.Find(".ne-note-error").TextContent);
@@ -196,7 +194,7 @@ public class NoteCardTests : UiTestContext
         };
         var cut = RenderCard(Note(session, "Gedächtnis braucht"));
 
-        cut.Find(".ne-note-adopt").Click();
+        cut.Find(".ne-adopt-row .ne-adopt-at-cursor").Click();
 
         Assert.True(flushed, "the flush hook runs before the adoption writes anything");
     }
@@ -212,7 +210,9 @@ public class NoteCardTests : UiTestContext
         Assert.Equal("Kaputt", broken.Name);
         var cut = RenderCard(session.Notes.All().First(n => n.Page == broken));
 
-        Assert.All(cut.FindAll(".ne-note-adopt, .ne-note-child-adopt"), b => Assert.True(b.HasAttribute("disabled")));
+        var adoptButtons = cut.FindAll(".ne-adopt-at-cursor, .ne-adopt-after, .ne-adopt-below");
+        Assert.Equal(6, adoptButtons.Count);
+        Assert.All(adoptButtons, b => Assert.True(b.HasAttribute("disabled")));
         Assert.NotEmpty(cut.FindAll(".ne-note-hint"));
     }
 
@@ -231,7 +231,7 @@ public class NoteCardTests : UiTestContext
         var notesBefore = tv.Read(NotesPath);
         var cut = RenderCard(Note(session, "Gedächtnis braucht"));
 
-        cut.Find(".ne-note-adopt").Click();
+        cut.Find(".ne-adopt-row .ne-adopt-at-cursor").Click();
 
         Assert.NotEmpty(cut.FindAll(".ne-note-error"));
         Assert.Equal(before, tv.Read(AlphaPath));
@@ -249,7 +249,7 @@ public class NoteCardTests : UiTestContext
         session.PagesChanged += changed.Add;
         var cut = RenderCard(Note(session, "Gedächtnis braucht"));
 
-        cut.Find(".ne-note-adopt").Click();
+        cut.Find(".ne-adopt-row .ne-adopt-at-cursor").Click();
 
         Assert.Contains(changed, p => string.Equals(p, session.Vault.FindBook("Buch - Alpha")!.Page.FilePath, StringComparison.OrdinalIgnoreCase));
         Assert.NotEmpty(cut.FindAll(".ne-note-error"));
