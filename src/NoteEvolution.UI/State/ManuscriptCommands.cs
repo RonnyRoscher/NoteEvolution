@@ -23,8 +23,9 @@ public static class ManuscriptCommands
     /// marks what the book tree holds (package B), which is what the commands act on. At range level −1 Delete, Indent
     /// and Outdent are not possible on an element with sub-elements (<see cref="HasSubElements"/>): the box marks the
     /// element alone, but they would take its sub-elements along. Merge needs a group of at least two text blocks in the
-    /// marked range (<see cref="RangeInfo.MergeGroups"/>), Wrap a range head that <see cref="ManuscriptEditor.CanWrap"/>
-    /// takes (not the whole book, no detail).
+    /// marked range (<see cref="RangeInfo.MergeGroups"/>) or a text block or detail with its details as the range that
+    /// has a detail to merge into its text (<see cref="RangeInfo.MergesDetails"/>), Wrap a range head that
+    /// <see cref="ManuscriptEditor.CanWrap"/> takes (not the whole book, no detail).
     /// </summary>
     public static bool CanRun(AppState state, SectionCommand command) =>
         state is { Session: { } session, CurrentBook: { Page.IsReadOnly: false } book }
@@ -42,7 +43,9 @@ public static class ManuscriptCommands
     /// refused while a conflict is open for one of those notes' pages (R26). Merge goes through the link service as well
     /// (with its own undo action), refused the same way for the note pages of the merged blocks' sources, and refused
     /// with <c>SectionMergeRefused</c> when the link service refuses it (<see cref="MergeRefusedException"/>); it reveals
-    /// the first remaining block. Wrap gets a targeted undo (<see cref="WrapUndo"/>) and reveals the new heading. Merge
+    /// the first remaining block. On a text block or detail range Merge merges its details into its text instead
+    /// (<see cref="ILinkService.MergeDetails"/>, refused the same way for the note pages of the blocks in its subtree)
+    /// and reveals the head. Wrap gets a targeted undo (<see cref="WrapUndo"/>) and reveals the new heading. Merge
     /// and Wrap do nothing when saving the editor's text changed the marked range (another head or level, e.g. the
     /// cursor's detail the book did not know before). Whatever
     /// happens, the book view is taken from the vault again, the new or moved element is revealed (the cursor goes
@@ -125,7 +128,10 @@ public static class ManuscriptCommands
 
         if (command == SectionCommand.Merge)
         {
-            return Merge(session, book, RangeOf(state, book)!.MergeGroups, logger);
+            var merged = RangeOf(state, book)!;
+            return merged.MergeGroups.Count > 0
+                ? Merge(session, book, merged.MergeGroups, logger)
+                : MergeDetails(session, book, merged.Head!, logger);
         }
 
         // Wrap acts on the head of the range, every other command on its target element.
@@ -154,7 +160,7 @@ public static class ManuscriptCommands
     /// </summary>
     private static bool Applies(AppState state, Book book, SectionCommand command) => command switch
     {
-        SectionCommand.Merge => RangeOf(state, book) is { MergeGroups.Count: > 0 },
+        SectionCommand.Merge => RangeOf(state, book) is { MergeGroups.Count: > 0 } or { MergesDetails: true },
         SectionCommand.Wrap => RangeOf(state, book) is { Head: { } head } && ManuscriptEditor.CanWrap(book, head),
         _ => TargetOf(state, book, command) is { } element && Fits(book, element, command)
              && !(command is SectionCommand.Delete or SectionCommand.Indent or SectionCommand.Outdent
@@ -350,6 +356,29 @@ public static class ManuscriptCommands
         var message = RunLinked(session, book, notePages, logger, "Merging text blocks",
             () => first = session.Links.MergeTextBlocks(book, groups));
         return (message, first);
+    }
+
+    /// <summary>
+    /// Merges the details of the range head <paramref name="head"/> (a text block or a detail with its details) into its
+    /// text through the link service, which moves the notes' usages of merged linked details to the text block and
+    /// pushes its own undo action („Zusammenfügen“). Refused while a conflict is open for the page of a note that is a
+    /// source of a block in the head's subtree (R26).
+    /// </summary>
+    /// <returns>The message, and the head to reveal (none if the merge failed).</returns>
+    private static (AdoptMessage? Message, Guid? Reveal) MergeDetails(
+        VaultSession session, Book book, BookElement head, ILogger logger)
+    {
+        var notePages = NotePagesOf(
+            session, SourceValue.LinkedBlocksIn(BlockOf(book, head)).SelectMany(linked => linked.Sources));
+        if (notePages.Any(session.HasOpenConflict))
+        {
+            return (new AdoptMessage("EditorConflict", true), null);
+        }
+
+        Guid? kept = null;
+        var message = RunLinked(session, book, notePages, logger, "Merging details",
+            () => kept = session.Links.MergeDetails(book, head.Key));
+        return (message, kept);
     }
 
     /// <summary>

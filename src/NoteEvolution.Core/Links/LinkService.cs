@@ -14,6 +14,7 @@ public sealed class LinkService(IVault vault, IPageWriter writer, UndoManager un
     private const string SourceKey = "source";
     private const string UsedInKey = "used-in";
     private const string IdKey = "id";
+    private const string CollapsedKey = "collapsed";
 
     public AdoptResult Adopt(Book book, Guid noteBlockKey, InsertPosition position)
     {
@@ -239,12 +240,10 @@ public sealed class LinkService(IVault vault, IPageWriter writer, UndoManager un
 
         var contents = merges.Select(MergedContent).ToList();
         contents.ForEach(Block.ValidateContent);
-        var plans = merges.Select(PlanMerge).ToList();
+        var plans = merges.Select(blocks => PlanMerge(blocks, takeOverId: true)).ToList();
         EnsureUnreferenced(book, [.. plans.SelectMany(plan => plan.RemovedIds).Distinct()]);
 
-        var before = PageStructureSnapshot.Capture(page);
-        var moves = new List<(Guid FirstId, Guid RemovedId, IReadOnlyList<Guid> Sources)>();
-        try
+        RunMerge(book, moves =>
         {
             foreach (var ((blocks, content), plan) in merges.Zip(contents).Zip(plans))
             {
@@ -286,10 +285,91 @@ public sealed class LinkService(IVault vault, IPageWriter writer, UndoManager un
                     page.RemoveBlock(block);
                 }
             }
+        });
+
+        return merges[0][0].Key;
+    }
+
+    public Guid MergeDetails(Book book, Guid elementKey)
+    {
+        var page = book.Page;
+        EnsureWritable(page);
+        if (BookElements.Find(book, elementKey) is not { Kind: ElementKind.TextBlock or ElementKind.Detail })
+        {
+            throw new ArgumentException("No text block or detail has this key.", nameof(elementKey));
+        }
+
+        var (textBlock, head) = FindElement(book, elementKey, detailOnly: false);
+        var merged = BookElements.DetailsToMerge(head);
+        if (merged.Count == 0)
+        {
+            throw new ArgumentException("The element has no detail to merge.", nameof(elementKey));
+        }
+
+        List<Block> blocks = [head, .. merged];
+        var content = MergedContent(blocks);
+        Block.ValidateContent(content);
+        // collapsed:: is the Logseq view state of a detail that goes: it must not collapse (or block) the head.
+        var plan = PlanMerge(blocks, takeOverId: false, ignoredKeys: [CollapsedKey]);
+        EnsureUnreferenced(book, plan.RemovedIds);
+
+        RunMerge(book, moves =>
+        {
+            foreach (var property in plan.Carried)
+            {
+                head.SetProperty(property.Key, property.Value);
+            }
+
+            foreach (var detail in merged)
+            {
+                // A linked detail: its sources go to the text block (a detail has no source of its own after this), and
+                // the notes' usages of it move to the text block, which needs an id for that.
+                var sources = SourceValue.Parse(detail.GetProperty(SourceKey) ?? "");
+                if (detail.Id is { } removedId && sources.Count > 0)
+                {
+                    moves.Add((textBlock.EnsureId(), removedId, [.. sources.Distinct()]));
+                }
+
+                foreach (var noteId in sources)
+                {
+                    AddSource(textBlock, noteId);
+                }
+            }
+
+            head.SetContent(content);
+            foreach (var detail in head.Children.Where(merged.Contains).ToList())
+            {
+                // The #notiz details below a merged detail stay: they come up to the head, where the detail was.
+                var index = IndexOf(page, detail) + 1;
+                foreach (var note in BookElements.NoteDetailsBelow(detail))
+                {
+                    page.MoveBlock(note, head, index++);
+                }
+
+                page.RemoveBlock(detail);
+            }
+        });
+
+        return head.Key;
+    }
+
+    /// <summary>
+    /// Runs a merge on the book page (<paramref name="apply"/>, which records the usages to move: the notes'
+    /// <c>used-in::</c> of a removed block that are rewritten to the remaining block), saves the book, rewrites those
+    /// usages and records the undo action „Zusammenfügen“ (<see cref="UndoMerge"/>). Whatever fails half-way in
+    /// <paramref name="apply"/>, the page is left as it was.
+    /// </summary>
+    private void RunMerge(Book book, Action<List<(Guid FirstId, Guid RemovedId, IReadOnlyList<Guid> Sources)>> apply)
+    {
+        var page = book.Page;
+        var before = PageStructureSnapshot.Capture(page);
+        var moves = new List<(Guid FirstId, Guid RemovedId, IReadOnlyList<Guid> Sources)>();
+        try
+        {
+            apply(moves);
         }
         catch
         {
-            // Whatever failed half-way, the page is left as it was.
             before.RestoreInto(page);
             throw;
         }
@@ -317,8 +397,6 @@ public sealed class LinkService(IVault vault, IPageWriter writer, UndoManager un
         {
             RetryPending();
         }
-
-        return merges[0][0].Key;
     }
 
     /// <summary>The blocks of one group for <see cref="MergeTextBlocks"/>: at least two text blocks with the same parent.</summary>
@@ -352,26 +430,33 @@ public sealed class LinkService(IVault vault, IPageWriter writer, UndoManager un
     /// What merging <paramref name="blocks"/> does to the first block's properties besides <c>source::</c>: the
     /// <c>id::</c> it takes over (raw value), the properties it gets from the later blocks, and the ids that go.
     /// </summary>
-    /// <param name="TakenId">The first later block's <c>id::</c> with a valid id when the first block has none; else <c>null</c>.</param>
+    /// <param name="TakenId">
+    /// The first later block's <c>id::</c> with a valid id when the first block has none (and ids are taken over);
+    /// else <c>null</c>.
+    /// </param>
     /// <param name="Carried">The later blocks' properties (other than <c>id::</c> and <c>source::</c>) the first block lacks.</param>
     /// <param name="RemovedIds">The ids of the later blocks that vanish (not the one taken over).</param>
     private sealed record MergePlan(string? TakenId, IReadOnlyList<BlockProperty> Carried, IReadOnlyList<Guid> RemovedIds);
 
     /// <summary>
     /// Plans the properties of one group (see <see cref="MergePlan"/>): a later block's property is carried over when
-    /// the first block (or an earlier later block) does not have its key yet (ignoring case).
+    /// the first block (or an earlier later block) does not have its key yet (ignoring case). With
+    /// <paramref name="takeOverId"/> the first block without an <c>id::</c> takes over the first later one's; without
+    /// it every later block's id goes (merged details: their usages move to the text block). Properties with a key in
+    /// <paramref name="ignoredKeys"/> are neither carried over nor compared (the first block keeps its own).
     /// </summary>
     /// <exception cref="MergeRefusedException">Two of the blocks have different values for the same key.</exception>
-    private static MergePlan PlanMerge(List<Block> blocks)
+    private static MergePlan PlanMerge(List<Block> blocks, bool takeOverId, IReadOnlyCollection<string>? ignoredKeys = null)
     {
         var first = blocks[0];
         var later = blocks.Skip(1).ToList();
-        var taken = first.Id is null ? later.FirstOrDefault(block => block.Id is not null) : null;
+        var taken = takeOverId && first.Id is null ? later.FirstOrDefault(block => block.Id is not null) : null;
         var keptId = first.Id ?? taken?.Id;
 
         bool MergedSeparately(BlockProperty property) =>
             string.Equals(property.Key, IdKey, StringComparison.OrdinalIgnoreCase)
-            || string.Equals(property.Key, SourceKey, StringComparison.OrdinalIgnoreCase);
+            || string.Equals(property.Key, SourceKey, StringComparison.OrdinalIgnoreCase)
+            || (ignoredKeys?.Contains(property.Key, StringComparer.OrdinalIgnoreCase) ?? false);
 
         var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var property in first.Properties.Where(p => !MergedSeparately(p)))
@@ -386,7 +471,7 @@ public sealed class LinkService(IVault vault, IPageWriter writer, UndoManager un
             {
                 if (!string.Equals(value, property.Value, StringComparison.Ordinal))
                 {
-                    throw new MergeRefusedException($"The text blocks have different values for the property '{property.Key}'.");
+                    throw new MergeRefusedException($"The merged blocks have different values for the property '{property.Key}'.");
                 }
             }
             else
@@ -427,7 +512,7 @@ public sealed class LinkService(IVault vault, IPageWriter writer, UndoManager un
                 || page.AllBlocks().Any(block =>
                     Mentions(block.Content) || block.Properties.Any(property => !Rewritten(property) && Mentions(property.Value))))
             {
-                throw new MergeRefusedException($"The id of a text block that would go is referenced in '{page.FilePath}'.");
+                throw new MergeRefusedException($"The id of a block that would go is referenced in '{page.FilePath}'.");
             }
         }
     }
@@ -693,9 +778,9 @@ public sealed class LinkService(IVault vault, IPageWriter writer, UndoManager un
     }
 
     /// <summary>
-    /// Puts the book back as it was before <see cref="MergeTextBlocks"/>, then the notes as in <see cref="RestoreNotes"/>
-    /// (a rewrite that only waited in <c>pending.json</c> loses its open add of the first block's usage). Refused before
-    /// anything changes if the book is no longer exactly as the merge left it.
+    /// Puts the book back as it was before <see cref="MergeTextBlocks"/> or <see cref="MergeDetails"/>, then the notes
+    /// as in <see cref="RestoreNotes"/> (a rewrite that only waited in <c>pending.json</c> loses its open add of the
+    /// remaining block's usage). Refused before anything changes if the book is no longer exactly as the merge left it.
     /// </summary>
     private void UndoMerge(
         string bookPath, string linkName, PageStructureSnapshot before, PageStructureSnapshot after,

@@ -12,8 +12,12 @@ public sealed record MarkedNode(Guid Key, bool OwnTextOnly);
 /// <param name="TextBlockKeys">The text blocks in the range (for the topic and the sources), in file order.</param>
 /// <param name="SectionKey">The heading whose path names the topic: the head itself, or the head's section; Guid.Empty for the prologue or the whole book.</param>
 /// <param name="MergeGroups">For every heading (or the root) in the range: its own text blocks in the range, in file order; only groups with ≥ 2 blocks.</param>
+/// <param name="MergesDetails">
+/// The head is a text block or a detail with its details (level ≥ 0) and has a detail „Zusammenfügen“ merges into its
+/// text (one without the <c>#notiz</c> tag, not below a <c>#notiz</c> detail).
+/// </param>
 public sealed record RangeInfo(BookElement? Head, int Level, IReadOnlyList<MarkedNode> Nodes,
-    IReadOnlyList<Guid> TextBlockKeys, Guid SectionKey, IReadOnlyList<IReadOnlyList<Guid>> MergeGroups);
+    IReadOnlyList<Guid> TextBlockKeys, Guid SectionKey, IReadOnlyList<IReadOnlyList<Guid>> MergeGroups, bool MergesDetails);
 
 /// <summary>
 /// Computes the marked range around an element from the book tree (not from the <c>#</c> count). Level 0 is the element
@@ -33,6 +37,7 @@ public static class BookRanges
         var nodes = new List<MarkedNode>();
         var textBlocks = new List<Guid>();
         var mergeGroups = new List<IReadOnlyList<Guid>>();
+        var mergesDetails = false;
         switch (head?.Kind)
         {
             case null:
@@ -44,12 +49,17 @@ public static class BookRanges
             default:
                 // A text block or a detail: the node itself; its text block is the only one in the range.
                 nodes.Add(new MarkedNode(head.Key, ownOnly));
-                textBlocks.Add(BookElements.TextBlockOf(book, head)!.Key);
+                var textBlock = BookElements.TextBlockOf(book, head)!;
+                textBlocks.Add(textBlock.Key);
+                var block = head.Kind == ElementKind.TextBlock
+                    ? textBlock.Block
+                    : textBlock.Paragraphs.First(p => p.Block.Key == head.Key).Block;
+                mergesDetails = !ownOnly && BookElements.DetailsToMerge(block).Count > 0;
                 break;
         }
 
         var sectionKey = head is null ? Guid.Empty : BookElements.SectionOf(book, head);
-        return new RangeInfo(head, level, nodes, textBlocks, sectionKey, mergeGroups);
+        return new RangeInfo(head, level, nodes, textBlocks, sectionKey, mergeGroups, mergesDetails);
     }
 
     /// <summary>The level whose head is the whole book (the number of ancestors of the cursor element up to the root).</summary>

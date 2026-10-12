@@ -289,8 +289,8 @@ public class RangeCommandTests : UiTestContext
         var cut = await RenderAsync();
         var session = State.Session!;
 
-        // A text block alone, and a heading with a single own text block, have nothing to merge.
-        await MoveToAsync(cut, "Erster Text");
+        // A text block without details, and a heading with a single own text block, have nothing to merge.
+        await MoveToAsync(cut, "Zweiter Text");
         cut.WaitForAssertion(() => Assert.Equal(Text("RangeTextBlock"), Label(cut)));
         Assert.True(Disabled(cut, ".ne-sec-merge"));
         await MoveToAsync(cut, "# Zwei");
@@ -309,6 +309,74 @@ public class RangeCommandTests : UiTestContext
         await ClickAsync(cut, ".ne-range-down");
         cut.WaitForAssertion(() => Assert.Equal(Text("RangeHeading", "# Eins") + Text("RangeOwnOnly"), Label(cut)));
         Assert.False(Disabled(cut, ".ne-sec-merge"));
+    }
+
+    [Fact]
+    public async Task Merge_TextBlockWithDetails_MergesDetailsIntoItsText_RevealsIt()
+    {
+        var cut = await RenderAsync();
+        var session = State.Session!;
+        var erster = KeyOf("Erster Text");
+
+        // Level −1 marks the text block without its details: nothing to merge.
+        await MoveToAsync(cut, "Erster Text");
+        await ClickAsync(cut, ".ne-range-down");
+        cut.WaitForAssertion(() => Assert.Equal(Text("RangeTextBlock") + Text("RangeOwnOnly"), Label(cut)));
+        Assert.True(Disabled(cut, ".ne-sec-merge"));
+
+        await ClickAsync(cut, ".ne-range-up");
+        cut.WaitForAssertion(() => Assert.Equal(Text("RangeTextBlock"), Label(cut)));
+        Assert.False(Disabled(cut, ".ne-sec-merge"));
+
+        await ClickAsync(cut, ".ne-sec-merge");
+
+        var merged = BookText.Replace("\t\t- Ein Detail\n", "\n\t  Ein Detail\n");
+        Assert.Equal(merged, _vault.Read(BookPath));
+        AssertChangedLines(BookText, merged, removed: ["\t\t- Ein Detail"], added: ["", "\t  Ein Detail"]);
+        Assert.Equal(NotesText, _vault.Read(NotesPath));
+        cut.WaitForAssertion(() => Assert.Equal(erster, Assert.Single(Editor.Reveals)));
+        Assert.Equal(erster, State.Cursor!.Key);
+        Assert.Equal("Zusammenfügen", session.Undo.NextDescription);
+        Assert.Empty(cut.FindAll(".ne-editor-error"));
+
+        // Nothing is left to merge.
+        cut.WaitForAssertion(() => Assert.True(Disabled(cut, ".ne-sec-merge")));
+
+        await cut.InvokeAsync(() => session.Undo.Undo());
+
+        Assert.Equal(BookText, _vault.Read(BookPath));
+    }
+
+    [Fact]
+    public async Task Merge_DetailWithDeeperDetails_Merges_OnlyNoteDetails_Disabled()
+    {
+        const string book =
+            "title:: Alpha\ntype:: book\n\n" +
+            "- # Eins\n" +
+            "\t- Mit Notiz\n" +
+            "\t\t- Gedanke #notiz\n" +
+            "\t\t\t- Unter Gedanke\n" +
+            "\t- Mit Details\n" +
+            "\t\t- Detail\n" +
+            "\t\t\t- Tiefer\n";
+        var vault = await OpenOtherAsync(book);
+
+        // A text block whose only detail is a #notiz detail has nothing to merge (its sub-details stay with it).
+        State.Cursor = CursorOf("Mit Notiz");
+        Assert.False(ManuscriptCommands.CanRun(State, SectionCommand.Merge));
+        Assert.Null(await ManuscriptCommands.RunAsync(State, SectionCommand.Merge, "x", NullLogger.Instance));
+        Assert.Equal(book, vault.Read(BookPath));
+
+        var detail = KeyOf("Detail");
+        State.Cursor = CursorOf("Detail");
+        Assert.True(ManuscriptCommands.CanRun(State, SectionCommand.Merge));
+
+        Assert.Null(await ManuscriptCommands.RunAsync(State, SectionCommand.Merge, "x", NullLogger.Instance));
+
+        Assert.Equal(book.Replace("\t\t\t- Tiefer\n", "\n\t\t  Tiefer\n"), vault.Read(BookPath));
+        Assert.Equal(detail, State.Cursor!.Key);
+        Assert.Equal(detail, State.PendingReveal);
+        Assert.Equal("Zusammenfügen", State.Session!.Undo.NextDescription);
     }
 
     [Fact]

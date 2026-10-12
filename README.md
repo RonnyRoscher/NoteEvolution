@@ -63,7 +63,8 @@ wieder der Standard. Auf den Bereich wirken zwei weitere Knöpfe:
 
 - **Zusammenfügen:** die Textblöcke im Bereich werden je Überschrift zu einem Block (Texte durch eine Leerzeile
   getrennt, Details wandern mit); Quellen werden vereinigt, die `used-in::`-Verweise der Notizen zeigen danach auf
-  den verbleibenden Block.
+  den verbleibenden Block. Auf einem Textblock (oder Detail) samt Details fügt „Zusammenfügen“ die Details in seinen
+  Text ein; `#notiz`-Details bleiben als Details erhalten.
 - **Unter neue Überschrift:** der Bereich kommt unter eine neue, leere Überschrift eine Ebene unter seiner Überschrift
   (bei einem Textblock samt der direkt folgenden Textblöcke bis zur nächsten Unterüberschrift); der Cursor steht im
   neuen Titel.
