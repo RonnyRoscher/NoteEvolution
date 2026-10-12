@@ -211,7 +211,9 @@ public class WhereToTests : UiTestContext
         // The cursor was in another block before the jump.
         SetCursorInTextBlock(TextBlock(Excerpt(cut.FindAll(".ne-note-whereto-item")[2])).Key);
         cut.FindAll(".ne-note-whereto-item")[1].Click();
+        cut.WaitForAssertion(() => Assert.NotNull(State.PendingReveal));
 
+        // The menu is opened after the jump rendered, as a person would.
         cut.Find(".ne-note-adopt-more").Click();
         cut.Find(".ne-adopt-after").Click();
 
@@ -335,7 +337,15 @@ public class WhereToTests : UiTestContext
         }
 
         List<string> Texts() => [.. cut.FindAll(".ne-note-card > .ne-note-body > .ne-note-text").Select(e => e.TextContent.Trim())];
-        cut.WaitForAssertion(() => Assert.Equal(3, Texts().Count(text => text.Contains("Schlaf", StringComparison.Ordinal))));
+
+        // The search's debounce may start only after the first advance (it runs on the fake clock), so time goes on while waiting.
+        cut.WaitForAssertion(
+            () =>
+            {
+                Time.Advance(TimeSpan.FromMilliseconds(300));
+                Assert.Equal(3, Texts().Count(text => text.Contains("Schlaf", StringComparison.Ordinal)));
+            },
+            TimeSpan.FromSeconds(10));
         var index = Texts().IndexOf(NoteText);
         Assert.True(index >= 0);
         var card = cut.FindAll(".ne-note-card")[index];

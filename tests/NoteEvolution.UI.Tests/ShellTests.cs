@@ -1,9 +1,12 @@
 using System.Text.Json.Nodes;
 using Bunit;
 using Microsoft.AspNetCore.Components.Web;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Localization;
 using NoteEvolution.Core.Links;
 using NoteEvolution.TestSupport;
 using NoteEvolution.UI.Components;
+using NoteEvolution.UI.Resources;
 using NoteEvolution.UI.State;
 
 namespace NoteEvolution.UI.Tests;
@@ -14,6 +17,50 @@ public class ShellTests : UiTestContext
         ("pages/Buch - Alpha.md", "title:: Alpha\ntype:: book\n\n- # Eins\n\t- Erster Text\n"),
         ("pages/Buch - Beta.md", "title:: Beta\ntype:: book\n\n- # Zwei\n"),
         ("journals/2026_03_01.md", "- Eine Notiz\n"));
+
+    private string Text(string key) => Services.GetRequiredService<IStringLocalizer<Strings>>()[key].Value;
+
+    /// <summary>The calls of the host page's splash screen, in order.</summary>
+    private List<string> SplashCalls() =>
+        [.. JSInterop.Invocations.Where(i => i.Identifier.StartsWith("neSplash.", StringComparison.Ordinal)).Select(i => i.Identifier)];
+
+    [Fact]
+    public void Startup_WithLastVault_SplashSaysOpening_EndsWhenTheVaultIsOpen()
+    {
+        using var tv = TwoBooks();
+        Settings.LastVault = tv.Root;
+
+        var cut = Render<Shell>();
+
+        cut.WaitForAssertion(() => Assert.Equal(["neSplash.status", "neSplash.done"], SplashCalls()), TimeSpan.FromSeconds(10));
+        Assert.NotNull(State.Session);
+        Assert.Equal(Text("VaultOpening"), JSInterop.Invocations["neSplash.status"].Single().Arguments[0]);
+    }
+
+    [Fact]
+    public void Startup_WithoutVault_SplashEnds_OnlyOnce()
+    {
+        var cut = Render<Shell>();
+
+        cut.WaitForAssertion(() => Assert.Equal(["neSplash.done"], SplashCalls()), TimeSpan.FromSeconds(10));
+
+        // Later renderings leave the splash screen alone.
+        cut.Find(".ne-outline .ne-collapse").Click();
+        Assert.Equal(["neSplash.done"], SplashCalls());
+    }
+
+    [Fact]
+    public void Startup_LastVaultGone_SplashEndsWithoutOpening()
+    {
+        using var dir = new TempDir();
+        Settings.LastVault = Path.Combine(dir.Path, "weg");
+
+        var cut = Render<Shell>();
+
+        cut.WaitForAssertion(() => Assert.Equal(["neSplash.done"], SplashCalls()), TimeSpan.FromSeconds(10));
+        Assert.Null(State.Session);
+        Assert.Single(cut.FindAll(".ne-welcome"));
+    }
 
     [Fact]
     public void Shell_RendersThreeAreas_WithSavedWidths()

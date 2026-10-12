@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <!-- NoteEvolution mark: three fanned notes that become a closed book (for a green ground). -->
+  <g stroke-linecap="round">
+    <rect x="34" y="78" width="66" height="84" rx="7" fill="#bfe0cb" transform="rotate(-18 67 120)"/>
+    <rect x="40" y="80" width="66" height="84" rx="7" fill="#dff0e5" transform="rotate(-8 73 122)"/>
+    <g transform="rotate(3 79 126)">
+      <rect x="46" y="84" width="66" height="84" rx="7" fill="#ffffff"/>
+      <path d="M58 104h42M58 120h42M58 136h28" stroke="#2f7a55" stroke-width="6"/>
+    </g>
+    <path d="M124 116l12 12-12 12" fill="none" stroke="#ffffff" stroke-width="7" stroke-linejoin="round"/>
+    <rect x="148" y="66" width="80" height="124" rx="8" fill="#f6f1e4"/>
+    <path d="M156 66a8 8 0 0 0-8 8v108a8 8 0 0 0 8 8h12V66z" fill="#174a32"/>
+    <rect x="178" y="92" width="38" height="24" rx="3" fill="none" stroke="#2f7a55" stroke-width="4"/>
+    <path d="M182 140h30M182 154h22" stroke="#2f7a55" stroke-width="5"/>
+  </g>
+</svg>

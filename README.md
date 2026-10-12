@@ -32,6 +32,15 @@ node build.mjs
 
 `node_modules` wird nicht eingecheckt.
 
+## Logo und Startbildschirm
+
+Das Logo (Notizzettel, die zu einem Buch werden) liegt als Quelle in
+`src/NoteEvolution.Desktop/Assets/NoteEvolution.svg` (App-Symbol mit grüner Kachel) und `NoteEvolution-mark.svg` (nur das
+Motiv, für den Startbildschirm); `NoteEvolution.ico` (16–256 px) ist Programm- und Fenstersymbol unter Windows,
+`NoteEvolution.png` das Fenstersymbol unter Linux und macOS. Bis die Oberfläche läuft und der zuletzt geöffnete Vault geöffnet ist,
+zeigt das Hauptfenster einen grünen Startbildschirm mit Logo, Statuszeile und laufenden Punkten (in
+`src/NoteEvolution.Desktop/wwwroot/index.html`); danach blendet er aus, spätestens nach 30 s.
+
 ## Das Manuskript
 
 Der Editor zeigt immer das ganze Buch. Der **aktuelle Abschnitt** ist das Element am Cursor (Überschrift, Textblock
@@ -158,6 +167,8 @@ selbst gewählt und bestätigt hast. Ohne Modell arbeitet die App unverändert m
 Mit einem künstlichen Test-Vault (keine persönlichen Texte), Änderungen jeweils mit `git diff` gegen eine Kopie prüfen.
 
 Fenster und Grundlayout
+- [ ] Beim Start zeigt das Fenster sofort den grünen Startbildschirm (Logo, „Vault wird geöffnet …“, laufende Punkte),
+      der nach dem Öffnen des Vaults ausblendet; Titelleiste, Taskleiste und die `.exe` zeigen das Logo.
 - [ ] Das Fenster öffnet sich, nach der Ordnerauswahl erscheinen die Bücher; Darstellung hell/dunkel/System stimmt.
 - [ ] Die Trenner zwischen den drei Bereichen lassen sich ziehen; die Breiten sind nach einem Neustart wieder da.
 - [ ] Einstellungen: Schriftgröße, Zeilenbreite und Farbschema wirken; geänderte Notizordner laden den Vault neu.

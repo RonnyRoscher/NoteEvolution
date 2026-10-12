@@ -28,6 +28,10 @@ public abstract class UiTestContext : BunitContext
         Services.AddSingleton<IClock>(Clock);
         Services.AddSingleton<TimeProvider>(Time);
         Services.AddSingleton<IEditorInterop>(Editor);
+
+        // The host page's splash screen (index.html), which the shell ends after the start.
+        JSInterop.SetupVoid("neSplash.status", _ => true).SetVoidResult();
+        JSInterop.SetupVoid("neSplash.done").SetVoidResult();
     }
 
     /// <summary>The editor every rendered <c>EditorPane</c> talks to.</summary>
