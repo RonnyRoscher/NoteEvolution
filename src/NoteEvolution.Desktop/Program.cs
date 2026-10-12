@@ -78,10 +78,16 @@ internal static class Program
                 app.Services.GetRequiredService<ILoggerFactory>().CreateLogger<EditorCloseGuard>());
             app.MainWindow.RegisterWindowClosingHandler((_, _) => closeGuard.OnClosing());
 
+            // The window icon is only decoration: without its file (e.g. a copied output folder) the app starts anyway.
+            var icon = Path.Combine(AppContext.BaseDirectory, "Assets", OperatingSystem.IsWindows() ? "NoteEvolution.ico" : "NoteEvolution.png");
+            if (File.Exists(icon))
+            {
+                app.MainWindow.SetIconFile(icon);
+            }
+
             app.MainWindow
                 .SetLogVerbosity(0)
                 .SetTitle("NoteEvolution")
-                .SetIconFile(Path.Combine(AppContext.BaseDirectory, "Assets", OperatingSystem.IsWindows() ? "NoteEvolution.ico" : "NoteEvolution.png"))
                 .SetUseOsDefaultSize(false)
                 .SetSize(1400, 900)
                 .Center();

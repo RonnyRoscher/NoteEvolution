@@ -328,13 +328,18 @@
         State.AiModelDialogRequested += OnAiModelDialogRequested;
         // The host page's splash screen (index.html) says what the start waits for and fades out after it (the last
         // vault is open, or there is none). It is only a display, so the start never waits for it.
-        if (Settings.LastVault is { } last && Directory.Exists(last))
+        try
         {
-            _ = SplashAsync("neSplash.status", L["VaultOpening"].Value);
-            await OpenVaultAsync(last);
+            if (Settings.LastVault is { } last && Directory.Exists(last))
+            {
+                _ = SplashAsync("neSplash.status", L["VaultOpening"].Value);
+                await OpenVaultAsync(last);
+            }
         }
-
-        _ = SplashAsync("neSplash.done");
+        finally
+        {
+            _ = SplashAsync("neSplash.done");
+        }
     }
 
     /// <summary>Calls the splash screen of the host page; it is only a display, so a failure is logged and ignored.</summary>

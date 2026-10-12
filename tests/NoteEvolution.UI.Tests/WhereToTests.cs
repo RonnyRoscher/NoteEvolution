@@ -337,8 +337,15 @@ public class WhereToTests : UiTestContext
         }
 
         List<string> Texts() => [.. cut.FindAll(".ne-note-card > .ne-note-body > .ne-note-text").Select(e => e.TextContent.Trim())];
+
+        // The search's debounce may start only after the first advance (it runs on the fake clock), so time goes on while waiting.
         cut.WaitForAssertion(
-            () => Assert.Equal(3, Texts().Count(text => text.Contains("Schlaf", StringComparison.Ordinal))), TimeSpan.FromSeconds(10));
+            () =>
+            {
+                Time.Advance(TimeSpan.FromMilliseconds(300));
+                Assert.Equal(3, Texts().Count(text => text.Contains("Schlaf", StringComparison.Ordinal)));
+            },
+            TimeSpan.FromSeconds(10));
         var index = Texts().IndexOf(NoteText);
         Assert.True(index >= 0);
         var card = cut.FindAll(".ne-note-card")[index];

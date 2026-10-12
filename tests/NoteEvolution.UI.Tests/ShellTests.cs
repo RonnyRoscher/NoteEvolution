@@ -44,9 +44,22 @@ public class ShellTests : UiTestContext
 
         cut.WaitForAssertion(() => Assert.Equal(["neSplash.done"], SplashCalls()), TimeSpan.FromSeconds(10));
 
-        // Later renderings (and opening a vault later) leave the splash screen alone.
+        // Later renderings leave the splash screen alone.
         cut.Find(".ne-outline .ne-collapse").Click();
         Assert.Equal(["neSplash.done"], SplashCalls());
+    }
+
+    [Fact]
+    public void Startup_LastVaultGone_SplashEndsWithoutOpening()
+    {
+        using var dir = new TempDir();
+        Settings.LastVault = Path.Combine(dir.Path, "weg");
+
+        var cut = Render<Shell>();
+
+        cut.WaitForAssertion(() => Assert.Equal(["neSplash.done"], SplashCalls()), TimeSpan.FromSeconds(10));
+        Assert.Null(State.Session);
+        Assert.Single(cut.FindAll(".ne-welcome"));
     }
 
     [Fact]

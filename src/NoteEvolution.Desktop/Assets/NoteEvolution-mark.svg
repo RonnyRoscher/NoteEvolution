@@ -9,7 +9,7 @@
     </g>
     <path d="M124 116l12 12-12 12" fill="none" stroke="#ffffff" stroke-width="7" stroke-linejoin="round"/>
     <rect x="148" y="66" width="80" height="124" rx="8" fill="#f6f1e4"/>
-    <path d="M156 66h-0a8 8 0 0 0-8 8v108a8 8 0 0 0 8 8h12V66z" fill="#174a32"/>
+    <path d="M156 66a8 8 0 0 0-8 8v108a8 8 0 0 0 8 8h12V66z" fill="#174a32"/>
     <rect x="178" y="92" width="38" height="24" rx="3" fill="none" stroke="#2f7a55" stroke-width="4"/>
     <path d="M182 140h30M182 154h22" stroke="#2f7a55" stroke-width="5"/>
   </g>
