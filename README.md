@@ -66,7 +66,7 @@ zurücknehmen.
 | --- | --- | --- | --- |
 | Entwurf (Standard bei selbst geschriebenem Text) | keine Zeile | normal | ja |
 | Relevant (Standard bei übernommenen Notiztexten) | `status:: relevant` | grauer Text | nein |
-| Bemerkung | `status:: bemerkung` oder `#notiz` | beiger Hintergrund (dunkel: gedämpftes Braun) | nein |
+| Bemerkung | `status:: bemerkung` oder `#notiz` | beige-braune Schrift (dunkel: helles Beige) | nein |
 | Formulierung | `status:: formulierung` | gelber Strich am rechten Rand | ja |
 | Fertig | `status:: fertig` | grüner Strich am rechten Rand | ja |
 
@@ -171,10 +171,10 @@ Editor
 - [ ] Strg+Enter mitten in einem verknüpften Block: die Notiz hat danach zwei `used-in`-Einträge.
 - [ ] Tab, Umschalt+Tab und Strg+Umschalt+N funktionieren (Strg+Umschalt+N wird nicht von WebView2 abgefangen und
       macht das Element am Cursor zur Bemerkung bzw. wieder zum Entwurf).
-- [ ] Status: in der Leiste alle fünf Stati an Textblock und Detail wählen; Grau, Beige und die Randstriche stimmen im
+- [ ] Status: in der Leiste alle fünf Stati an Textblock und Detail wählen; graue und beige Schrift und die Randstriche stimmen im
       hellen und dunklen Design; die Auswahl zeigt nach einem Cursorwechsel den Status des neuen Elements;
       „Rückgängig“ in der Kopfzeile nimmt jede Änderung zurück. In Logseq erscheint `status::` als Eigenschaft.
-- [ ] „Bemerkung anfügen“: ein leeres beiges Detail am Ende des Textblocks, der Cursor steht darin.
+- [ ] „Bemerkung anfügen“: ein leeres Detail mit beiger Schrift am Ende des Textblocks, der Cursor steht darin.
 - [ ] Rücktaste am Blockanfang verbindet zwei Blöcke; „Rückgängig“ in der Kopfzeile stellt den Block wieder her.
 - [ ] Einen verknüpften Block löschen, ca. 1 s warten, dann Strg+Z im Editor: der Block ist wieder verknüpft
       (Quellen-Chip, `source::` im Buch, `used-in::` an der Notiz). Danach „Rückgängig“ in der Kopfzeile:

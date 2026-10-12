@@ -15,7 +15,7 @@ Dazu kommen zwei Vereinfachungen beim Übernehmen:
 - **Status:** Jeder Textblock und jedes Detail hat einen von fünf Stati: Entwurf, Relevant, Bemerkung, Formulierung, Fertig.
   - Er lässt sich in der Leiste am aktuellen Block ändern, und jede Änderung ist rückgängig zu machen.
   - Er bleibt in der Logseq-Datei erhalten.
-- **Darstellung:** Relevant ist grau, Bemerkung hat einen beigen Hintergrund. Formulierung und Fertig tragen eine farbige Randmarke.
+- **Darstellung:** Relevant ist grau, Bemerkung hat eine beige Schrift. Formulierung und Fertig tragen eine farbige Randmarke.
 - **PDF:** Blöcke mit Relevant oder Bemerkung fehlen samt ihren Details.
 - **Übernehmen:** Übernommene Notiztexte, die als neuer Block oder neues Detail entstehen, haben den Status Relevant.
 - **„Bemerkung anfügen“:** legt am aktuellen Textblock ein neues Detail mit Status Bemerkung an.
@@ -31,7 +31,7 @@ Dazu kommen zwei Vereinfachungen beim Übernehmen:
 |---|---|---|---|
 | Entwurf | keine Zeile (Standard) | normal | ja |
 | Relevant | `status:: relevant` | grauer Text | nein |
-| Bemerkung | `status:: bemerkung` oder (bestehend) das Tag `#notiz` | beiger Hintergrund hinter dem Text; im dunklen Design gedämpftes Braun | nein |
+| Bemerkung | `status:: bemerkung` oder (bestehend) das Tag `#notiz` | beige-braune Schrift (lesbar dunkles Beige, #9a7440); im dunklen Design helles Beige (#d6c08f) | nein |
 | Formulierung | `status:: formulierung` | normaler Text, gelber Strich am rechten Rand | ja |
 | Fertig | `status:: fertig` | normaler Text, grüner Strich am rechten Rand | ja |
 
