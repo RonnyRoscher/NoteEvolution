@@ -936,9 +936,12 @@ html, body {
     top: 0.3em;
 }
 
-/* The section bar (40 px, TipTapInterop.BarHeight) sits in the gap below the marking, so it covers no text. */
+/*
+ * The section bar sits in the gap below the marking, so it covers no text: the editor sets --bar-height to the bar's
+ * current height (one or two lines; 40 px, TipTapInterop.BarHeight, before it is measured).
+ */
 .ne-current-last {
-    margin-bottom: 40px;
+    margin-bottom: var(--bar-height, 40px);
 }
 
 .ne-current-last::after {
@@ -951,25 +954,26 @@ html, body {
 }
 
 /*
- * The section bar (spec 2, 3) at the bottom of the marking: at least as wide as the marking box (the text column plus
- * the box's 16 px on each side, measured in the text's font), wider if its buttons need it, at most the pane; 40 px
- * high (TipTapInterop.BarHeight).
+ * The section bar (spec 2, 3) at the bottom of the marking: exactly as wide as the marking box (the text column plus
+ * the box's 16 px on each side, measured in the text's font; in a narrow pane the column is the pane less the
+ * document's 32 px padding on each side), never wider. What does not fit in one line wraps into a second one; the bar
+ * is at least 40 px high (TipTapInterop.BarHeight), and the editor follows its actual height.
  */
 .ne-section-bar {
     position: absolute;
     left: 0;
     right: 0;
     margin: 0 auto;
-    width: fit-content;
-    min-width: min(100%, calc(var(--line-width, 70ch) + 32px));
+    width: min(calc(100% - 32px), calc(var(--line-width, 70ch) + 32px));
     max-width: 100%;
-    height: 40px;
+    min-height: 40px;
     box-sizing: border-box;
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    padding: 0 8px;
+    justify-content: flex-start;
+    gap: 4px;
+    padding: 4px 8px;
     background: var(--bg-raised);
     border: 1px solid var(--border);
     border-top: none;
@@ -992,10 +996,12 @@ html, body {
     font-size: 12px;
 }
 
-/* In a narrow pane the buttons scroll instead of leaving the bar's 40 px. */
+/*
+ * The buttons are items of the bar itself: what does not fit wraps into the next line, and the sources stand at the
+ * end of the last line (not in a line of their own).
+ */
 .ne-sec-buttons {
-    min-width: 0;
-    overflow-x: auto;
+    display: contents;
 }
 
 .ne-sec-buttons button,
@@ -1003,9 +1009,11 @@ html, body {
     white-space: nowrap;
 }
 
+/* The sources stay at the right end, also alone in a second line. */
 .ne-sec-sources-area {
     position: relative;
     flex-shrink: 0;
+    margin-left: auto;
 }
 
 /*

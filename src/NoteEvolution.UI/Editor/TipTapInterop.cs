@@ -13,7 +13,10 @@ public sealed class TipTapInterop(IJSRuntime js, AppState state) : IEditorIntero
 {
     private const string ModulePath = "./_content/NoteEvolution.UI/js/editor.bundle.js";
 
-    /// <summary>The height of the section bar in px; the script keeps the bar's top this far above the pane's visible bottom.</summary>
+    /// <summary>
+    /// The section bar's height in px (one line) until the script can measure it; the script then follows the bar's
+    /// actual height (it may wrap into two lines) to keep its top that far above the pane's visible bottom.
+    /// </summary>
     private const int BarHeight = 40;
 
     private IJSObjectReference? _module;

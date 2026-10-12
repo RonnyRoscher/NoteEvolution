@@ -636,12 +636,18 @@ function dropTarget(view, event) {
 /**
  * Creates the editor in host. dotnet receives DocumentChanged(json), CursorChanged(kind, key, textBlockKey, offset),
  * SectionCommand(name), SectionBoxMoved(barTop, visible), ChipClicked(noteId), ChipRemoved(blockKey, noteId) and
- * NoteDropped(afterKey). options.barHeight is the height of the section bar C# shows at the marking box's bottom.
+ * NoteDropped(afterKey). options.barHeight is the height of the section bar C# shows at the marking box's bottom
+ * (.ne-section-bar in the .ne-editor-pane) until the bar can be measured; the bar may wrap into more lines, so its
+ * actual height is followed (the gap below the marking, --bar-height, and the scroll distance from the bottom).
  */
 export function createEditor(host, dotnet, options = {}) {
-    const barHeight = options.barHeight ?? 0;
+    const defaultBarHeight = options.barHeight ?? 0;
+    let barHeight = defaultBarHeight;
+    // The bar element whose size is observed (Blazor may render a new one, e.g. for another book).
+    let observedBar = null;
     const root = document.createElement('div');
     root.className = 'ne-editor-root mode-manuscript';
+    root.style.setProperty('--bar-height', `${barHeight}px`);
     host.appendChild(root);
     const call = (method, ...args) => dotnet.invokeMethodAsync(method, ...args).catch(error => console.error(error));
     let lastCursor;
@@ -665,7 +671,8 @@ export function createEditor(host, dotnet, options = {}) {
      * Reports where the section bar goes: at the marking box's bottom (relative to .ne-editor-pane), but at least
      * barHeight above the visible bottom of the scrolling pane; and whether the box is visible at all (never before a
      * cursor was reported for the shown book). The marking runs from the first segment's top to the last segment's
-     * bottom; the bar hangs at the last one.
+     * bottom; the bar hangs at the last one. barHeight is the bar's current height (it may wrap into two lines;
+     * options.barHeight while it is hidden or not there), also given to the marking's gap below as --bar-height.
      */
     const reportBox = () => {
         boxFrame = 0;
@@ -673,6 +680,7 @@ export function createEditor(host, dotnet, options = {}) {
             return;
         }
         const pane = host.closest('.ne-editor-pane') ?? host;
+        measureBar(pane.querySelector('.ne-section-bar'));
         const area = visibleArea(scrollParent(host));
         const first = root.querySelector('.ne-current-first');
         const ends = root.querySelectorAll('.ne-current-last');
@@ -690,6 +698,28 @@ export function createEditor(host, dotnet, options = {}) {
     const scheduleBox = () => {
         boxFrame ||= requestAnimationFrame(reportBox);
     };
+    // Resizing the editor (e.g. the gap below the marking) or the bar (one line or two) moves the box too.
+    const resizes = new ResizeObserver(scheduleBox);
+    /** Observes the bar's size and takes its current height (offsetHeight is 0 while it is hidden). */
+    const measureBar = bar => {
+        if (bar !== observedBar) {
+            if (observedBar) {
+                resizes.unobserve(observedBar);
+            }
+            if (bar) {
+                resizes.observe(bar);
+            }
+            observedBar = bar;
+        }
+        const height = bar && bar.offsetHeight > 0 ? bar.offsetHeight : defaultBarHeight;
+        if (height !== barHeight) {
+            barHeight = height;
+            root.style.setProperty('--bar-height', `${height}px`);
+        }
+    };
+    // Read by ProseMirror at each scroll into view: the line being typed in or moved to stays above the bar.
+    const scrollThreshold = { top: 0, right: 0, left: 0, get bottom() { return barHeight + 8; } };
+    const scrollMargin = { top: 5, right: 5, left: 5, get bottom() { return barHeight + 8; } };
 
     const editor = new Editor({
         element: root,
@@ -720,8 +750,8 @@ export function createEditor(host, dotnet, options = {}) {
         editorProps: {
             attributes: { class: 'ne-doc', spellcheck: 'true' },
             // The section bar covers the pane's bottom: the line being typed in or moved to stays above it.
-            scrollThreshold: { top: 0, right: 0, bottom: barHeight + 8, left: 0 },
-            scrollMargin: { top: 5, right: 5, bottom: barHeight + 8, left: 5 },
+            scrollThreshold,
+            scrollMargin,
             handleDOMEvents: {
                 drop: (view, event) => {
                     if (view.dragging) {
@@ -744,7 +774,6 @@ export function createEditor(host, dotnet, options = {}) {
     // Scrolling (of any pane; the frame and the 1 px check keep that cheap) and resizing move the box too.
     document.addEventListener('scroll', scheduleBox, { capture: true, passive: true });
     window.addEventListener('resize', scheduleBox);
-    const resizes = new ResizeObserver(scheduleBox);
     resizes.observe(root);
 
     return {
