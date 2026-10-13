@@ -44,28 +44,7 @@
     }
     <div class="ne-note-body @(collapsible && !_expanded ? "collapsed" : null)">
         <div class="ne-note-text">@Note.Block.Content</div>
-        @foreach (var (child, depth) in Descendants(Note.Block, 1))
-        {
-            <div class="ne-note-child" style="margin-left: @(depth * 12)px">
-                <span class="ne-note-child-text">@child.Content</span>
-                @* Only sub-bullets with more than one line that are no list item get buttons of their own. *@
-                @if (SubBulletButtons.Offer(child))
-                {
-                    <div class="ne-adopt-column">
-                        @AdoptSplit(child, "ne-note-child-adopt")
-                        @if (WhereToAvailable)
-                        {
-                            <button type="button" class="ne-note-child-whereto" title="@L["NoteWhereToTitle"]"
-                                    aria-expanded="@_whereTo.ContainsKey(child.Key)" @onclick="() => ToggleWhereToAsync(child)">@L["NoteWhereTo"]</button>
-                        }
-                    </div>
-                }
-            </div>
-            @if (_whereTo.TryGetValue(child.Key, out var childList) && SubBulletButtons.Offer(child))
-            {
-                @WhereToResults(childList, child, depth * 12)
-            }
-        }
+        @SubBullets(Note.Block)
     </div>
     @if (Note.Page.IsReadOnly)
     {
@@ -86,7 +65,7 @@
     </footer>
     @if (_whereTo.TryGetValue(Note.Block.Key, out var noteList))
     {
-        @WhereToResults(noteList, Note.Block, 0)
+        @WhereToResults(noteList, Note.Block)
     }
     @if (_message is { } message)
     {
@@ -165,7 +144,7 @@
 
     /// <summary>Lines of the note's text and all its sub-bullets.</summary>
     private int LineCount =>
-        Lines(Note.Block.Content) + Descendants(Note.Block, 1).Sum(entry => Lines(entry.Block.Content));
+        Lines(Note.Block.Content) + Descendants(Note.Block).Sum(block => Lines(block.Content));
 
     /// <summary>
     /// A note can be adopted into the current book: it is safely readable (R13: adopting from a read-only page
@@ -277,8 +256,8 @@
 
     private static int Lines(string text) => text.Count(c => c == '\n') + 1;
 
-    private static IEnumerable<(Block Block, int Depth)> Descendants(Block block, int depth) =>
-        block.Children.SelectMany(child => Descendants(child, depth + 1).Prepend((child, depth)));
+    private static IEnumerable<Block> Descendants(Block block) =>
+        block.Children.SelectMany(child => Descendants(child).Prepend(child));
 
     private void OnDragStart() => State.DraggedNoteKey = Note.Key;
 
@@ -467,10 +446,10 @@
 
     /// <summary>
     /// The "Wohin damit?" list of <paramref name="block"/>: the busy hint while it searches, then its hits or the hint
-    /// that there are none. <paramref name="indent"/> (pixels) aligns the list of a sub-bullet with it.
+    /// that there are none.
     /// </summary>
-    private RenderFragment WhereToResults(WhereToList list, Block block, int indent) =>
-        @<div class="ne-note-whereto-results" style="@(indent > 0 ? $"margin-left: {indent}px" : null)">
+    private RenderFragment WhereToResults(WhereToList list, Block block) =>
+        @<div class="ne-note-whereto-results">
             @if (list.Hits is not { } hits)
             {
                 <div class="ne-note-hint ne-note-whereto-busy" role="status">@L["NoteWhereToBusy"]</div>
@@ -503,6 +482,40 @@
                 </ul>
             }
         </div>;
+
+    /// <summary>
+    /// The sub-bullets of <paramref name="parent"/>, each as a box with the line on its left: its own row (text and,
+    /// for sub-bullets with more than one line that are no list item, its buttons), its "Wohin damit?" list, and the
+    /// boxes of all its sub-blocks. The box shows what its buttons take: the sub-bullet with everything below it.
+    /// </summary>
+    private RenderFragment SubBullets(Block parent) =>
+        @<text>
+            @foreach (var child in parent.Children)
+            {
+                var offer = SubBulletButtons.Offer(child);
+                <div @key="child.Key" class="ne-note-child">
+                    <div class="ne-note-child-row">
+                        <span class="ne-note-child-text">@child.Content</span>
+                        @if (offer)
+                        {
+                            <div class="ne-adopt-column">
+                                @AdoptSplit(child, "ne-note-child-adopt")
+                                @if (WhereToAvailable)
+                                {
+                                    <button type="button" class="ne-note-child-whereto" title="@L["NoteWhereToTitle"]"
+                                            aria-expanded="@_whereTo.ContainsKey(child.Key)" @onclick="() => ToggleWhereToAsync(child)">@L["NoteWhereTo"]</button>
+                                }
+                            </div>
+                        }
+                    </div>
+                    @if (offer && _whereTo.TryGetValue(child.Key, out var childList))
+                    {
+                        @WhereToResults(childList, child)
+                    }
+                    @SubBullets(child)
+                </div>
+            }
+        </text>;
 
     /// <summary>
     /// The key of the heading or text block with the id <paramref name="blockId"/>; for a paragraph (detail) the key of

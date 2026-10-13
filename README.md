@@ -64,7 +64,8 @@ Ist „Verwendete ausblenden“ eingeschaltet, erscheint die Notiz stattdessen a
 Zum Übernehmen hat jede Notiz einen geteilten Knopf, ebenso jeder Unteranstrich mit mehr als einer Zeile (mehr als
 80 Zeichen, ein Zeilenumbruch oder eigene Unteranstriche), der kein Punkt einer Aufzählung ist („1.“, „2)“, „a)“, „–“,
 „•“ an mindestens zwei Geschwistern); kurze Einträge und Listenpunkte werden mit ihrer Notiz übernommen. An einem
-Unteranstrich stehen die Knöpfe untereinander rechts neben dem Text. Der Knopf selbst übernimmt auf die
+Unteranstrich stehen die Knöpfe untereinander rechts neben dem Text; sie nehmen ihn mit allen seinen Unterpunkten (die
+Linie links umfasst sie, beim Zeigen auf die Knöpfe ist der Bereich hinterlegt). Der Knopf selbst übernimmt auf die
 zuletzt gewählte Art und trägt deren Namen (anfangs **Am Cursor**), der Pfeil daneben bietet alle drei Arten:
 **Am Cursor** (in den aktuellen Block an der Cursorstelle), **Danach** (neues Element nach dem aktuellen) und
 **Darunter** (als erstes Unterelement). Die gewählte Art gilt für alle Karten und bleibt nach einem Neustart

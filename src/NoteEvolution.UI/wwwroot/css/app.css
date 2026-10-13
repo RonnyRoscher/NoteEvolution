@@ -642,12 +642,33 @@ html, body {
     overflow: hidden;
 }
 
+/* A sub-bullet as a box: the line on its left runs along its row and all its sub-blocks, which its buttons take along. */
 .ne-note-child {
+    margin-top: 2px;
+    padding-left: 6px;
+    border-left: 2px solid var(--border);
+    border-radius: 0 4px 4px 0;
+}
+
+.ne-note-body > .ne-note-child {
+    margin-left: 12px;
+}
+
+.ne-note-child > .ne-note-child {
+    margin-left: 6px;
+}
+
+.ne-note-child-row {
     display: flex;
     align-items: baseline;
     gap: 6px;
-    padding-left: 6px;
-    border-left: 2px solid var(--border);
+}
+
+/* Pointing at a sub-bullet's buttons tints what they take: its whole box. */
+.ne-note-child:has(> .ne-note-child-row > .ne-adopt-column:hover),
+.ne-note-child:has(> .ne-note-child-row > .ne-adopt-column:focus-within) {
+    background: color-mix(in srgb, var(--accent) 9%, transparent);
+    border-left-color: var(--accent);
 }
 
 .ne-note-child-text {
