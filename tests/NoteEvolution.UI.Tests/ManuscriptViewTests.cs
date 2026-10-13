@@ -304,6 +304,7 @@ public class ManuscriptViewTests : UiTestContext
         var editor = Render<EditorPane>();
         editor.WaitForAssertion(() => Assert.NotEmpty(Editor.Documents));
         var pane = Render<NotesPane>();
+        pane.Find(".ne-tab-relevant").Click();
         pane.WaitForAssertion(() => Assert.StartsWith("Schlaf", First(pane)));
 
         // The cursor in a text block: that block and its neighbours.

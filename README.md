@@ -61,9 +61,10 @@ Jeder Befehl lässt sich mit „Rückgängig“ in der Kopfzeile zurücknehmen, 
 geändert wurde. „N Quellen ▸“ klappt die Quellen des Abschnitts auf; ein Klick springt im Reiter Journal zur Notiz.
 Ist „Verwendete ausblenden“ eingeschaltet, erscheint die Notiz stattdessen als Karte oben im Notizbereich.
 
-Der Reiter **Journal** zeigt jede Journal-Datei als eine Karte (ein Tag, mit Datum und „In Logseq öffnen“); ihre
-Hauptpunkte stehen darin als Kästen mit Linie, jeder mit seinen eigenen Knöpfen und Unterpunkten. „Suche“ und
-„Relevant“ zeigen weiter einzelne Hauptpunkte als Treffer.
+Der Reiter **Journal** ist beim Start ausgewählt und zeigt jede Journal-Datei als eine Karte (ein Tag, mit Datum
+und „In Logseq öffnen“); ihre Hauptpunkte stehen darin als Kästen mit Linie, jeder mit seinen Knöpfen untereinander
+rechts neben dem Text (darüber ✓, wenn verwendet) und seinen Unterpunkten darunter. „Suche“ und „Relevant“ zeigen
+weiter einzelne Hauptpunkte als Treffer.
 
 Zum Übernehmen hat jede Notiz einen geteilten Knopf, ebenso jeder Unteranstrich mit mehr als einer Zeile (mehr als
 80 Zeichen, ein Zeilenumbruch oder eigene Unteranstriche), der kein Punkt einer Aufzählung ist („1.“, „2)“, „a)“, „–“,
@@ -214,8 +215,9 @@ Editor
 - [ ] „Abschnitt löschen“ an einer Überschrift mit verknüpften Blöcken: die `used-in::`-Einträge verschwinden,
       „Rückgängig“ bringt Buch und Notizen zurück.
 - [ ] Quellen der Markierung aufklappen, eine Quelle anklicken: der Reiter Journal springt zur Notiz und hebt sie hervor.
-- [ ] Reiter Journal: eine Karte je Tag (Datum und „In Logseq öffnen“ oben), darin jeder Hauptpunkt als Kasten mit
-      Linie und eigenen Knöpfen; „Verwendete ausblenden“ blendet verwendete Hauptpunkte in ihrer Tageskarte aus.
+- [ ] Reiter Journal (beim Start ausgewählt): eine Karte je Tag (Datum und „In Logseq öffnen“ oben), darin jeder
+      Hauptpunkt als Kasten mit Linie und Knöpfen untereinander rechts; „Verwendete ausblenden“ blendet verwendete
+      Hauptpunkte in ihrer Tageskarte aus.
 - [ ] Großes Buch (mehrere hundert Blöcke): Tippen und Scrollen bleiben flüssig.
 - [ ] Bereich mit ▲/▼ und Alt+Pfeil erweitern und verkleinern; Kasten, Bereichsanzeige und Quellenanzahl folgen; ein
       Bereich mit Text nach Unterabschnitten zeigt zwei Kästen.

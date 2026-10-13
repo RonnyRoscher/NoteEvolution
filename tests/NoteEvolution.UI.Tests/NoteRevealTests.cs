@@ -35,7 +35,11 @@ public class NoteRevealTests : UiTestContext
     private async Task<IRenderedComponent<NotesPane>> RenderPaneAsync(TestVault vault)
     {
         await OpenSessionAsync(vault);
-        return Render<NotesPane>();
+
+        // The pane starts with the journal; the jumps are tested from another tab.
+        var cut = Render<NotesPane>();
+        cut.Find(".ne-tab-search").Click();
+        return cut;
     }
 
     private Task RevealAsync(IRenderedComponent<NotesPane> cut, string id) =>
