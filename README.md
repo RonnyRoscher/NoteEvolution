@@ -61,7 +61,10 @@ Jeder Befehl lässt sich mit „Rückgängig“ in der Kopfzeile zurücknehmen, 
 geändert wurde. „N Quellen ▸“ klappt die Quellen des Abschnitts auf; ein Klick springt im Reiter Journal zur Notiz.
 Ist „Verwendete ausblenden“ eingeschaltet, erscheint die Notiz stattdessen als Karte oben im Notizbereich.
 
-Zum Übernehmen hat jede Notiz und jeder Unteranstrich einen geteilten Knopf: der Knopf selbst übernimmt auf die
+Zum Übernehmen hat jede Notiz einen geteilten Knopf, ebenso jeder Unteranstrich mit mehr als einer Zeile (mehr als
+80 Zeichen, ein Zeilenumbruch oder eigene Unteranstriche), der kein Punkt einer Aufzählung ist („1.“, „2)“, „a)“, „–“,
+„•“ an mindestens zwei Geschwistern); kurze Einträge und Listenpunkte werden mit ihrer Notiz übernommen. An einem
+Unteranstrich stehen die Knöpfe untereinander rechts neben dem Text. Der Knopf selbst übernimmt auf die
 zuletzt gewählte Art und trägt deren Namen (anfangs **Am Cursor**), der Pfeil daneben bietet alle drei Arten:
 **Am Cursor** (in den aktuellen Block an der Cursorstelle), **Danach** (neues Element nach dem aktuellen) und
 **Darunter** (als erstes Unterelement). Die gewählte Art gilt für alle Karten und bleibt nach einem Neustart
@@ -100,7 +103,7 @@ wieder der Standard. Auf den Bereich wirken zwei weitere Knöpfe:
   (bei einem Textblock samt der direkt folgenden Textblöcke bis zur nächsten Unterüberschrift); der Cursor steht im
   neuen Titel.
 
-**Wohin damit?** an einer Notiz oder einem Unteranstrich zeigt die fünf passendsten Textblöcke des Buchs mit
+**Wohin damit?** an einer Notiz oder einem Unteranstrich mit eigenen Knöpfen (siehe oben) zeigt die fünf passendsten Textblöcke des Buchs mit
 Überschriftenpfad, Textauszug und Prozent (✓, wenn die Notiz dort schon Quelle ist). Ein Klick springt zum Block,
 die Liste bleibt offen; übernommen wird dort mit „Danach“ oder „Darunter“. Solange im Reiter „Relevant“ eine solche
 Liste offen ist, bleibt die Relevant-Liste unverändert; nach dem Schließen der letzten Liste wird sie einmal neu
@@ -129,7 +132,7 @@ neu aufgebaut. Dasselbe Buch sollte nicht gleichzeitig in Logseq bearbeitet werd
 ## Lokale KI
 
 Die KI-Funktionen sind ein Zusatz: „Relevant“ (die Notizen, die zum Abschnitt oder zur Textstelle passen), die Suche
-nach Bedeutung (ergänzt die Volltextsuche), „Wohin damit?“ an jeder Notiz und jedem Unteranstrich (die fünf
+nach Bedeutung (ergänzt die Volltextsuche), „Wohin damit?“ an jeder Notiz und jedem längeren Unteranstrich (die fünf
 passendsten Textblöcke des Buchs) und Fundstellen-Vorschläge im `[handled]`-Assistenten. Sie schreiben und formulieren keinen Buchtext. Einzige
 Schreibaktion sind die Verknüpfungszeilen (`id::`, `source::`, `used-in::`) für Fundstellen, die du im Assistenten
 selbst gewählt und bestätigt hast. Ohne Modell arbeitet die App unverändert mit der Volltextsuche.
@@ -170,7 +173,11 @@ Fenster und Grundlayout
 - [ ] Beim Start zeigt das Fenster sofort den grünen Startbildschirm (Logo, „Vault wird geöffnet …“, laufende Punkte),
       der nach dem Öffnen des Vaults ausblendet; Titelleiste, Taskleiste und die `.exe` zeigen das Logo.
 - [ ] Das Fenster öffnet sich, nach der Ordnerauswahl erscheinen die Bücher; Darstellung hell/dunkel/System stimmt.
-- [ ] Die Trenner zwischen den drei Bereichen lassen sich ziehen; die Breiten sind nach einem Neustart wieder da.
+- [ ] Die Trenner zwischen den drei Bereichen lassen sich ziehen; die Breiten sind nach einem Neustart wieder da. Der
+      Notizbereich lässt sich ohne feste Obergrenze verbreitern, bis der Editor nur noch 200 px breit ist; beim
+      Verkleinern des Fensters gibt er zuerst nach.
+- [ ] Im Notizbereich bleiben Kopfzeile, Reiter, Filter und das Suchfeld bzw. der Datumssprung stehen, nur die Karten
+      scrollen.
 - [ ] Einstellungen: Schriftgröße, Zeilenbreite und Farbschema wirken; geänderte Notizordner laden den Vault neu.
 
 Gliederung
@@ -244,7 +251,7 @@ Lokale KI (Modell installiert, Test-Vault mit einigen Dutzend Notizen und einem 
 - [ ] „Verwendete ausblenden“ und der Zeitraum wirken auch in „Relevant“.
 - [ ] Die Suche findet sinnverwandte Notizen ohne gleiche Wörter (z. B. nach „Müdigkeit“ suchen und eine Notiz über
       „Schlaf“ finden), Treffer mit dem gesuchten Wort stehen weiter oben.
-- [ ] „Wohin damit?“ an einer Notiz und an einem Unteranstrich zeigt höchstens fünf Textblöcke mit Pfad, Auszug und
+- [ ] „Wohin damit?“ an einer Notiz und an einem längeren Unteranstrich zeigt höchstens fünf Textblöcke mit Pfad, Auszug und
       Prozentwert; ein Klick springt zum Block, die Liste bleibt offen; dort mit „Danach“ übernehmen. Im Reiter
       „Relevant“ bleibt die Liste dabei stehen, die Notiz verschwindet nicht.
 - [ ] `[handled]`-Assistent: neben jeder Notiz steht „Stelle unbekannt“ (Standard) und bis zu drei Fundstellen mit

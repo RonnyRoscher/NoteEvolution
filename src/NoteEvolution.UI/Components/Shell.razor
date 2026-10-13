@@ -73,7 +73,8 @@
 
         @if (!Settings.NotesCollapsed)
         {
-            <Splitter Width="Settings.NotesWidth" WidthChanged="w => Settings.NotesWidth = w" DragEnded="SaveSettings" PaneOnRight="true" />
+            <Splitter Width="Settings.NotesWidth" WidthChanged="w => Settings.NotesWidth = w" DragEnded="SaveSettings" PaneOnRight="true"
+                      MaxWidth="double.PositiveInfinity" MinPointerX="NotesMinPointerX" />
         }
         <section class="ne-pane ne-notes @(Settings.NotesCollapsed ? "collapsed" : null)" style="@PaneStyle(Settings.NotesWidth, Settings.NotesCollapsed)">
             <div class="ne-pane-head">
@@ -364,6 +365,19 @@
             _subscribed.PagesChanged -= OnPagesChanged;
         }
     }
+
+    /// <summary>The editor keeps at least this width when the notes pane is widened (see app.css, <c>.ne-editor</c>).</summary>
+    private const double EditorMinWidth = 200;
+
+    /// <summary>The width of a collapsed pane (app.css, <c>.collapsed</c>).</summary>
+    private const double CollapsedPaneWidth = 32;
+
+    /// <summary>
+    /// The notes pane has no fixed maximum width: its splitter may be dragged left until the editor next to the
+    /// outline would get narrower than <see cref="EditorMinWidth"/>.
+    /// </summary>
+    private double NotesMinPointerX =>
+        (Settings.OutlineCollapsed ? CollapsedPaneWidth : Settings.OutlineWidth) + EditorMinWidth;
 
     private static string PaneStyle(double width, bool collapsed) =>
         collapsed ? "" : $"width: {width.ToString(CultureInfo.InvariantCulture)}px";

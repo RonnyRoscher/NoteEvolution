@@ -1,7 +1,9 @@
 @* A vertical divider between two panes: dragging it changes the width of the pane on one side. *@
+@using Microsoft.JSInterop
 @inject IStringLocalizer<Strings> L
+@inject IJSRuntime JS
 
-<div class="ne-splitter @(_dragging ? "dragging" : null)" role="separator" aria-orientation="vertical"
+<div @ref="_element" class="ne-splitter @(_dragging ? "dragging" : null)" role="separator" aria-orientation="vertical"
      title="@L["ResizePane"]" @onpointerdown="Start"></div>
 @if (_dragging)
 {
@@ -11,8 +13,10 @@
 
 @code {
     public const double MinWidth = 160;
-    public const double MaxWidth = 800;
 
+    public const double DefaultMaxWidth = 800;
+
+    private ElementReference _element;
     private bool _dragging;
     private double _startX;
     private double _startWidth;
@@ -28,17 +32,50 @@
     /// <summary>The pane lies to the right of the splitter: dragging to the left widens it.</summary>
     [Parameter] public bool PaneOnRight { get; set; }
 
-    private void Start(PointerEventArgs e)
+    /// <summary>The widest the pane may get; <see cref="double.PositiveInfinity"/> for no fixed maximum.</summary>
+    [Parameter] public double MaxWidth { get; set; } = DefaultMaxWidth;
+
+    /// <summary>
+    /// For a pane on the right: the pointer position (from the window's left edge) the splitter may not be dragged
+    /// past, so the panes to its left keep their room; <c>null</c> for no such limit.
+    /// </summary>
+    [Parameter] public double? MinPointerX { get; set; }
+
+    /// <summary>
+    /// Starts dragging from the width the pane shows: a narrower window can shrink the notes pane below its stored
+    /// width, and dragging from the stored width would leave the splitter standing still at first.
+    /// </summary>
+    private async Task Start(PointerEventArgs e)
     {
-        _dragging = true;
+        var shown = await ShownWidthAsync();
         _startX = e.ClientX;
-        _startWidth = Width;
+        _startWidth = shown > 0 ? shown : Width;
+        _dragging = true;
+    }
+
+    /// <summary>The width the pane shows next to the splitter (index.html, <c>neLayout</c>); 0 if unknown.</summary>
+    private async Task<double> ShownWidthAsync()
+    {
+        try
+        {
+            return await JS.InvokeAsync<double>("neLayout.paneWidth", _element, PaneOnRight);
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or InvalidOperationException or TaskCanceledException)
+        {
+            return 0;
+        }
     }
 
     private async Task Move(PointerEventArgs e)
     {
         var delta = e.ClientX - _startX;
-        var width = Math.Clamp(_startWidth + (PaneOnRight ? -delta : delta), MinWidth, MaxWidth);
+        var max = MaxWidth;
+        if (PaneOnRight && MinPointerX is { } minX)
+        {
+            max = Math.Min(max, _startWidth + (_startX - minX));
+        }
+
+        var width = Math.Clamp(_startWidth + (PaneOnRight ? -delta : delta), MinWidth, Math.Max(MinWidth, max));
         if (width != Width)
         {
             await WidthChanged.InvokeAsync(width);

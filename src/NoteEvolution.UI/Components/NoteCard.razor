@@ -48,16 +48,20 @@
         {
             <div class="ne-note-child" style="margin-left: @(depth * 12)px">
                 <span class="ne-note-child-text">@child.Content</span>
-                <div class="ne-adopt-column">
-                    @AdoptSplit(child, "ne-note-child-adopt")
-                    @if (WhereToAvailable)
-                    {
-                        <button type="button" class="ne-note-child-whereto" title="@L["NoteWhereToTitle"]"
-                                aria-expanded="@_whereTo.ContainsKey(child.Key)" @onclick="() => ToggleWhereToAsync(child)">@L["NoteWhereTo"]</button>
-                    }
-                </div>
+                @* Only sub-bullets with more than one line that are no list item get buttons of their own. *@
+                @if (SubBulletButtons.Offer(child))
+                {
+                    <div class="ne-adopt-column">
+                        @AdoptSplit(child, "ne-note-child-adopt")
+                        @if (WhereToAvailable)
+                        {
+                            <button type="button" class="ne-note-child-whereto" title="@L["NoteWhereToTitle"]"
+                                    aria-expanded="@_whereTo.ContainsKey(child.Key)" @onclick="() => ToggleWhereToAsync(child)">@L["NoteWhereTo"]</button>
+                        }
+                    </div>
+                }
             </div>
-            @if (_whereTo.TryGetValue(child.Key, out var childList))
+            @if (_whereTo.TryGetValue(child.Key, out var childList) && SubBulletButtons.Offer(child))
             {
                 @WhereToResults(childList, child, depth * 12)
             }

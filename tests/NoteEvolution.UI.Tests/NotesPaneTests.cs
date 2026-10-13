@@ -43,6 +43,25 @@ public class NotesPaneTests : UiTestContext
     }
 
     [Fact]
+    public async Task NotesPane_HeadStaysAboveTheScrollingCards()
+    {
+        using var tv = Create();
+        await OpenAlphaAsync(tv);
+        var cut = Render<NotesPane>();
+
+        ShowJournal(cut);
+
+        // Tabs and filters stand in the fixed head; the tab's own row and its cards scroll below it.
+        var head = cut.Find(".ne-notes-pane > .ne-notes-head");
+        Assert.NotNull(head.QuerySelector(".ne-notes-tabs"));
+        Assert.NotNull(head.QuerySelector(".ne-notes-filters"));
+        Assert.Empty(head.QuerySelectorAll(".ne-note-card"));
+        var scroll = cut.Find(".ne-notes-pane > .ne-notes-scroll");
+        Assert.NotNull(scroll.QuerySelector(".ne-journal-jump"));
+        Assert.Equal(4, scroll.QuerySelectorAll(".ne-note-card").Length);
+    }
+
+    [Fact]
     public async Task NotesPane_Journal_ListsEntriesNewestDayFirst()
     {
         using var tv = Create();

@@ -136,6 +136,14 @@
             },
         };
 
+        // Called by the splitters (Splitter.razor): the width the pane next to a splitter shows.
+        window.neLayout = {
+            paneWidth(splitter, paneOnRight) {
+                const pane = paneOnRight ? splitter?.nextElementSibling : splitter?.previousElementSibling;
+                return pane ? pane.getBoundingClientRect().width : 0;
+            },
+        };
+
         // Should the start never report back (an error before the shell runs), the app shows itself after 30 s anyway.
         setTimeout(() => window.neSplash.done(), 30000);
     </script>

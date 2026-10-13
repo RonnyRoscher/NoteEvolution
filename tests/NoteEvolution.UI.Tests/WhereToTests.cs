@@ -20,6 +20,9 @@ public class WhereToTests : UiTestContext
     private const string NoteText = "Schlaf und Träume im Alltag";
     private const string OtherText = "Musik Gitarre Klavier Notiz";
     private const string ChildText = "Rosen und Tomaten pflanzen";
+
+    /// <summary>The sub-bullet in the notes: <see cref="ChildText"/> and a second line, so it has buttons of its own.</summary>
+    private const string ChildLines = ChildText + "\n\t  Rosen Tomaten";
     private const string NoteId = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
 
     private readonly List<TestVault> _vaults = [];
@@ -52,7 +55,7 @@ public class WhereToTests : UiTestContext
                 "- # Garten\n\t- Rosen und Tomaten pflanzen\n" +
                 "- # Sport\n\t- Laufen und Schwimmen im See\n" +
                 "- # Lesen\n\t- Romane und Gedichte am Abend\n"),
-            (NotesPath, $"- {NoteText}\n{noteExtra}- {OtherText}\n\t- {ChildText}\n"));
+            (NotesPath, $"- {NoteText}\n{noteExtra}- {OtherText}\n\t- {ChildLines}\n"));
         _vaults.Add(vault);
         return vault;
     }
@@ -431,7 +434,7 @@ public class WhereToTests : UiTestContext
         var tv = TestVault.Create(
             (AlphaPath, "title:: Alpha\ntype:: book\n\n- # Eins\n\t- Schlaf und Träume\n"),
             ("pages/Buch - Beta.md", "title:: Beta\ntype:: book\n\n- # Zwei\n\t- Musik Gitarre\n"),
-            (NotesPath, $"- {NoteText}\n\t- {ChildText}\n"));
+            (NotesPath, $"- {NoteText}\n\t- {ChildLines}\n"));
         _vaults.Add(tv);
         var session = await OpenWithAiAsync(tv);
         var cut = RenderCard(session);

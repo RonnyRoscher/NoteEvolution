@@ -106,6 +106,66 @@ public class ShellTests : UiTestContext
     }
 
     [Fact]
+    public void Splitter_DragNotesLeft_NoFixedMaximum_EditorKeeps200Px()
+    {
+        Settings.OutlineWidth = 260;
+        Settings.NotesWidth = 380;
+        var cut = Render<Shell>();
+
+        // Beyond the former 800 px: the notes pane widens until the editor would get narrower than 200 px, i.e. until
+        // the pointer is 260 + 200 px from the left.
+        cut.FindAll(".ne-splitter")[1].PointerDown(new PointerEventArgs { ClientX = 1000 });
+        cut.Find(".ne-splitter-overlay").PointerMove(new PointerEventArgs { ClientX = 500 });
+        Assert.Contains("width: 880px", cut.Find(".ne-notes").GetAttribute("style"));
+
+        cut.Find(".ne-splitter-overlay").PointerMove(new PointerEventArgs { ClientX = 100 });
+        cut.Find(".ne-splitter-overlay").PointerUp(new PointerEventArgs { ClientX = 100 });
+
+        Assert.Contains("width: 920px", cut.Find(".ne-notes").GetAttribute("style"));
+        Assert.Equal(920, UiSettings.Load(Platform.UserDataDirectory).NotesWidth);
+    }
+
+    [Fact]
+    public void Splitter_DragNotesLeft_CollapsedOutline_LeavesOnlyTheEditorsMinimum()
+    {
+        Settings.OutlineCollapsed = true;
+        Settings.NotesWidth = 380;
+        var cut = Render<Shell>();
+
+        cut.FindAll(".ne-splitter")[0].PointerDown(new PointerEventArgs { ClientX = 1000 });
+        cut.Find(".ne-splitter-overlay").PointerUp(new PointerEventArgs { ClientX = 0 });
+
+        // The collapsed outline is 32 px wide: the pointer may go to 32 + 200 px.
+        Assert.Contains("width: 1148px", cut.Find(".ne-notes").GetAttribute("style"));
+    }
+
+    [Fact]
+    public void Splitter_NotesShownNarrowerThanStored_DragStartsFromWhatIsShown()
+    {
+        // The pane was widened to 920 px, then the window got narrower and the pane shows only 530 px.
+        Settings.NotesWidth = 920;
+        JSInterop.Setup<double>("neLayout.paneWidth", _ => true).SetResult(530);
+        var cut = Render<Shell>();
+
+        cut.FindAll(".ne-splitter")[1].PointerDown(new PointerEventArgs { ClientX = 470 });
+        cut.Find(".ne-splitter-overlay").PointerUp(new PointerEventArgs { ClientX = 460 });
+
+        // 10 px to the left widen what is shown by 10 px (not the stored 920).
+        Assert.Contains("width: 540px", cut.Find(".ne-notes").GetAttribute("style"));
+    }
+
+    [Fact]
+    public void Splitter_DragOutlineRight_StillAtMost800()
+    {
+        var cut = Render<Shell>();
+
+        cut.FindAll(".ne-splitter")[0].PointerDown(new PointerEventArgs { ClientX = 260 });
+        cut.Find(".ne-splitter-overlay").PointerUp(new PointerEventArgs { ClientX = 2000 });
+
+        Assert.Contains("width: 800px", cut.Find(".ne-outline").GetAttribute("style"));
+    }
+
+    [Fact]
     public void CollapseOutline_HidesPaneAndSplitter_AndIsSaved()
     {
         var cut = Render<Shell>();
