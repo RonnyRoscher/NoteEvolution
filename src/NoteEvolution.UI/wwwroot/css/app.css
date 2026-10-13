@@ -225,8 +225,20 @@ html, body {
     width: 32px;
 }
 
+/* The notes pane has no fixed maximum width; when the window gets narrower it gives way before the editor. Its head
+   stays in place, only the cards below it scroll (.ne-notes-scroll). */
+.ne-notes {
+    overflow: hidden;
+}
+
+.ne-notes:not(.collapsed) {
+    flex-shrink: 1;
+    min-width: 160px;
+}
+
 .ne-editor {
     flex: 1;
+    min-width: 200px;
     font-family: var(--font-text);
     font-size: var(--font-size, 12pt);
 }
@@ -428,9 +440,39 @@ html, body {
 .ne-notes-pane {
     display: flex;
     flex-direction: column;
-    gap: 6px;
-    padding: 0 8px 8px;
+    flex: 1;
     min-height: 0;
+}
+
+.ne-notes-head {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    flex: none;
+    padding: 0 8px 6px;
+}
+
+.ne-notes-scroll {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 0 8px 8px;
+}
+
+/* A tab's own row (the search field, the date jump) stays on top of its scrolling cards. */
+.ne-notes-scroll .ne-search-input,
+.ne-notes-scroll .ne-journal-jump-label {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    box-shadow: 0 0 0 6px var(--bg-pane);
+}
+
+.ne-notes-scroll .ne-journal-jump-label {
+    background: var(--bg-pane);
 }
 
 .ne-notes-tabs {

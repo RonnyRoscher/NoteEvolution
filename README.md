@@ -61,7 +61,10 @@ Jeder Befehl lässt sich mit „Rückgängig“ in der Kopfzeile zurücknehmen, 
 geändert wurde. „N Quellen ▸“ klappt die Quellen des Abschnitts auf; ein Klick springt im Reiter Journal zur Notiz.
 Ist „Verwendete ausblenden“ eingeschaltet, erscheint die Notiz stattdessen als Karte oben im Notizbereich.
 
-Zum Übernehmen hat jede Notiz und jeder Unteranstrich einen geteilten Knopf: der Knopf selbst übernimmt auf die
+Zum Übernehmen hat jede Notiz einen geteilten Knopf, ebenso jeder Unteranstrich mit mehr als einer Zeile (mehr als
+80 Zeichen, ein Zeilenumbruch oder eigene Unteranstriche), der kein Punkt einer Aufzählung ist („1.“, „2)“, „a)“, „–“,
+„•“ an mindestens zwei Geschwistern); kurze Einträge und Listenpunkte werden mit ihrer Notiz übernommen. An einem
+Unteranstrich stehen die Knöpfe untereinander rechts neben dem Text. Der Knopf selbst übernimmt auf die
 zuletzt gewählte Art und trägt deren Namen (anfangs **Am Cursor**), der Pfeil daneben bietet alle drei Arten:
 **Am Cursor** (in den aktuellen Block an der Cursorstelle), **Danach** (neues Element nach dem aktuellen) und
 **Darunter** (als erstes Unterelement). Die gewählte Art gilt für alle Karten und bleibt nach einem Neustart
@@ -170,7 +173,11 @@ Fenster und Grundlayout
 - [ ] Beim Start zeigt das Fenster sofort den grünen Startbildschirm (Logo, „Vault wird geöffnet …“, laufende Punkte),
       der nach dem Öffnen des Vaults ausblendet; Titelleiste, Taskleiste und die `.exe` zeigen das Logo.
 - [ ] Das Fenster öffnet sich, nach der Ordnerauswahl erscheinen die Bücher; Darstellung hell/dunkel/System stimmt.
-- [ ] Die Trenner zwischen den drei Bereichen lassen sich ziehen; die Breiten sind nach einem Neustart wieder da.
+- [ ] Die Trenner zwischen den drei Bereichen lassen sich ziehen; die Breiten sind nach einem Neustart wieder da. Der
+      Notizbereich lässt sich ohne feste Obergrenze verbreitern, bis der Editor nur noch 200 px breit ist; beim
+      Verkleinern des Fensters gibt er zuerst nach.
+- [ ] Im Notizbereich bleiben Kopfzeile, Reiter, Filter und das Suchfeld bzw. der Datumssprung stehen, nur die Karten
+      scrollen.
 - [ ] Einstellungen: Schriftgröße, Zeilenbreite und Farbschema wirken; geänderte Notizordner laden den Vault neu.
 
 Gliederung

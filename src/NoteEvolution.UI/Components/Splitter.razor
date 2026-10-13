@@ -11,7 +11,8 @@
 
 @code {
     public const double MinWidth = 160;
-    public const double MaxWidth = 800;
+
+    public const double DefaultMaxWidth = 800;
 
     private bool _dragging;
     private double _startX;
@@ -28,6 +29,15 @@
     /// <summary>The pane lies to the right of the splitter: dragging to the left widens it.</summary>
     [Parameter] public bool PaneOnRight { get; set; }
 
+    /// <summary>The widest the pane may get; <see cref="double.PositiveInfinity"/> for no fixed maximum.</summary>
+    [Parameter] public double MaxWidth { get; set; } = DefaultMaxWidth;
+
+    /// <summary>
+    /// For a pane on the right: the pointer position (from the window's left edge) the splitter may not be dragged
+    /// past, so the panes to its left keep their room; <c>null</c> for no such limit.
+    /// </summary>
+    [Parameter] public double? MinPointerX { get; set; }
+
     private void Start(PointerEventArgs e)
     {
         _dragging = true;
@@ -38,7 +48,13 @@
     private async Task Move(PointerEventArgs e)
     {
         var delta = e.ClientX - _startX;
-        var width = Math.Clamp(_startWidth + (PaneOnRight ? -delta : delta), MinWidth, MaxWidth);
+        var max = MaxWidth;
+        if (PaneOnRight && MinPointerX is { } minX)
+        {
+            max = Math.Min(max, _startWidth + (_startX - minX));
+        }
+
+        var width = Math.Clamp(_startWidth + (PaneOnRight ? -delta : delta), MinWidth, Math.Max(MinWidth, max));
         if (width != Width)
         {
             await WidthChanged.InvokeAsync(width);
