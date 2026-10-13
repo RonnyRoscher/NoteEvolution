@@ -19,6 +19,12 @@ namespace NoteEvolution.UI.Tests;
 
 public class DialogTests : UiTestContext
 {
+    /// <summary>
+    /// The "[handled]" assistant computes its places with the AI in the background, which can take longer than bUnit's
+    /// default second under load.
+    /// </summary>
+    private static readonly TimeSpan HandledWait = TimeSpan.FromSeconds(10);
+
     private const string JournalPath = "journals/2026_03_01.md";
     private const string NotesPath = "pages/Notizen.md";
     private const string IdoenPath = "pages/Ideen.md";
@@ -416,7 +422,7 @@ public class DialogTests : UiTestContext
         Assert.Equal("- [handled] Eins\n- [handled] Zwei\n- Drei\n", tv.Read(NotesPath));
         cut.Find(".ne-handled-yes").Click();
 
-        cut.WaitForAssertion(() => Assert.Single(cut.FindAll(".ne-handled-done")));
+        cut.WaitForAssertion(() => Assert.Single(cut.FindAll(".ne-handled-done")), HandledWait);
         Assert.Equal("- Eins\n  used-in:: [[Buch - Alpha]]\n- [handled] Zwei\n- Drei\n", tv.Read(NotesPath));
         Assert.Equal(1, flushed);
         Assert.Single(session.Handled.Find());
@@ -433,7 +439,7 @@ public class DialogTests : UiTestContext
         cut.Find(".ne-handled-convert").Click();
         cut.Find(".ne-handled-yes").Click();
 
-        cut.WaitForAssertion(() => Assert.Single(cut.FindAll(".ne-handled-done")));
+        cut.WaitForAssertion(() => Assert.Single(cut.FindAll(".ne-handled-done")), HandledWait);
         Assert.Equal("- Eins\n  used-in:: [[Buch - Beta]]\n- Zwei\n  used-in:: [[Buch - Beta]]\n- Drei\n", tv.Read(NotesPath));
     }
 
@@ -468,7 +474,7 @@ public class DialogTests : UiTestContext
         Assert.Single(cut.FindAll(".ne-handled-readonly"));
         cut.Find(".ne-handled-convert").Click();
         cut.Find(".ne-handled-yes").Click();
-        cut.WaitForAssertion(() => Assert.Single(cut.FindAll(".ne-handled-done")));
+        cut.WaitForAssertion(() => Assert.Single(cut.FindAll(".ne-handled-done")), HandledWait);
         Assert.Equal("- Eins\n  used-in:: [[Buch - Alpha]]\n", tv.Read(NotesPath));
     }
 
@@ -522,7 +528,7 @@ public class DialogTests : UiTestContext
         var tv = PlacementVault();
         var session = await OpenWithAiAsync(tv);
         var cut = Render<HandledWizard>();
-        cut.WaitForAssertion(() => Assert.Equal(2, cut.FindAll(".ne-handled-place").Count));
+        cut.WaitForAssertion(() => Assert.Equal(2, cut.FindAll(".ne-handled-place").Count), HandledWait);
         var place = Place(cut, 0);
         var options = place.QuerySelectorAll("option").ToList();
         Assert.Equal(3, options.Count);
@@ -534,7 +540,7 @@ public class DialogTests : UiTestContext
         cut.Find(".ne-handled-convert").Click();
         cut.Find(".ne-handled-yes").Click();
 
-        cut.WaitForAssertion(() => Assert.Single(cut.FindAll(".ne-handled-done")));
+        cut.WaitForAssertion(() => Assert.Single(cut.FindAll(".ne-handled-done")), HandledWait);
         var notes = tv.Read(NotesPath);
         Assert.DoesNotContain("[handled] Schlaf", notes);
         Assert.Matches(@"- Schlaf und Träume\n  id:: [0-9a-f-]{36}\n  used-in:: \[\[Buch - Alpha\]\] \(\([0-9a-f-]{36}\)\)\n", notes);
@@ -550,12 +556,12 @@ public class DialogTests : UiTestContext
         var tv = PlacementVault();
         await OpenWithAiAsync(tv);
         var cut = Render<HandledWizard>();
-        cut.WaitForAssertion(() => Assert.Equal(2, cut.FindAll(".ne-handled-place").Count));
+        cut.WaitForAssertion(() => Assert.Equal(2, cut.FindAll(".ne-handled-place").Count), HandledWait);
 
         cut.Find(".ne-handled-convert").Click();
         cut.Find(".ne-handled-yes").Click();
 
-        cut.WaitForAssertion(() => Assert.Single(cut.FindAll(".ne-handled-done")));
+        cut.WaitForAssertion(() => Assert.Single(cut.FindAll(".ne-handled-done")), HandledWait);
         Assert.Equal(
             "- Schlaf und Träume\n  used-in:: [[Buch - Alpha]]\n- Zwei\n  used-in:: [[Buch - Alpha]]\n- Drei\n", tv.Read(NotesPath));
         Assert.DoesNotContain("source::", tv.Read("pages/Buch - Alpha.md"));
@@ -578,7 +584,7 @@ public class DialogTests : UiTestContext
         var tv = PlacementVault();
         await OpenWithAiAsync(tv);
         var cut = Render<HandledWizard>();
-        cut.WaitForAssertion(() => Assert.Equal(2, cut.FindAll(".ne-handled-place").Count));
+        cut.WaitForAssertion(() => Assert.Equal(2, cut.FindAll(".ne-handled-place").Count), HandledWait);
         var place = Place(cut, 0);
         place.Change(OptionFor(place, SleepText));
 
@@ -589,7 +595,7 @@ public class DialogTests : UiTestContext
         Assert.DoesNotContain(Place(cut, 0).QuerySelectorAll("option"), o => o.TextContent.StartsWith(SleepText, StringComparison.Ordinal));
         cut.Find(".ne-handled-convert").Click();
         cut.Find(".ne-handled-yes").Click();
-        cut.WaitForAssertion(() => Assert.Single(cut.FindAll(".ne-handled-done")));
+        cut.WaitForAssertion(() => Assert.Single(cut.FindAll(".ne-handled-done")), HandledWait);
         Assert.Equal(
             "- Schlaf und Träume\n  used-in:: [[Buch - Beta]]\n- Zwei\n  used-in:: [[Buch - Beta]]\n- Drei\n", tv.Read(NotesPath));
     }
@@ -600,7 +606,7 @@ public class DialogTests : UiTestContext
         var tv = PlacementVault();
         var session = await OpenWithAiAsync(tv);
         var cut = Render<HandledWizard>();
-        cut.WaitForAssertion(() => Assert.Equal(2, cut.FindAll(".ne-handled-place").Count));
+        cut.WaitForAssertion(() => Assert.Equal(2, cut.FindAll(".ne-handled-place").Count), HandledWait);
         var place = Place(cut, 0);
         place.Change(OptionFor(place, SleepText));
         var path = Path.Combine(tv.Root, "pages/Buch - Alpha.md");
@@ -625,7 +631,7 @@ public class DialogTests : UiTestContext
         var tv = PlacementVault();
         var session = await OpenWithAiAsync(tv);
         var cut = Render<HandledWizard>();
-        cut.WaitForAssertion(() => Assert.Equal(2, cut.FindAll(".ne-handled-place").Count));
+        cut.WaitForAssertion(() => Assert.Equal(2, cut.FindAll(".ne-handled-place").Count), HandledWait);
         var place = Place(cut, 0);
         place.Change(OptionFor(place, SleepText));
         var path = Path.Combine(tv.Root, "pages/Buch - Alpha.md");
@@ -652,7 +658,7 @@ public class DialogTests : UiTestContext
         cut.Find(".ne-handled-convert").Click();
         cut.Find(".ne-handled-yes").Click();
 
-        cut.WaitForAssertion(() => Assert.Single(cut.FindAll(".ne-handled-done")));
+        cut.WaitForAssertion(() => Assert.Single(cut.FindAll(".ne-handled-done")), HandledWait);
         Assert.Equal(
             "- Schlaf und Träume\n  used-in:: [[Buch - Alpha]]\n- Zwei\n  used-in:: [[Buch - Alpha]]\n- Drei\n", tv.Read(NotesPath));
     }
