@@ -144,10 +144,13 @@ public class WhereToTests : UiTestContext
         cut.WaitForAssertion(() => Assert.Equal(5, cut.FindAll(".ne-note-card > .ne-note-whereto-results .ne-note-whereto-item").Count), TimeSpan.FromSeconds(10));
         Assert.Equal(10, cut.FindAll(".ne-note-whereto-item").Count);
 
-        // The sub-bullet's toggle closes only its own list.
+        // The sub-bullet's toggle closes only its own list (waited for: another rendering may still be under way).
         cut.Find(".ne-note-child-whereto").Click();
-        Assert.Empty(cut.FindAll(".ne-note-body .ne-note-whereto-item"));
-        Assert.Equal(5, cut.FindAll(".ne-note-whereto-item").Count);
+        cut.WaitForAssertion(() =>
+        {
+            Assert.Empty(cut.FindAll(".ne-note-body .ne-note-whereto-item"));
+            Assert.Equal(5, cut.FindAll(".ne-note-whereto-item").Count);
+        });
     }
 
     [Fact]

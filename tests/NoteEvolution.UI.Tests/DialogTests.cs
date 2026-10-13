@@ -420,7 +420,7 @@ public class DialogTests : UiTestContext
         cut.Find(".ne-handled-convert").Click();
         Assert.Single(cut.FindAll(".ne-handled-confirm-text"));
         Assert.Equal("- [handled] Eins\n- [handled] Zwei\n- Drei\n", tv.Read(NotesPath));
-        cut.Find(".ne-handled-yes").Click();
+        cut.WaitForElement(".ne-handled-yes").Click();
 
         cut.WaitForAssertion(() => Assert.Single(cut.FindAll(".ne-handled-done")), HandledWait);
         Assert.Equal("- Eins\n  used-in:: [[Buch - Alpha]]\n- [handled] Zwei\n- Drei\n", tv.Read(NotesPath));
@@ -437,7 +437,7 @@ public class DialogTests : UiTestContext
 
         cut.Find(".ne-handled-book-select").Change("Buch - Beta");
         cut.Find(".ne-handled-convert").Click();
-        cut.Find(".ne-handled-yes").Click();
+        cut.WaitForElement(".ne-handled-yes").Click();
 
         cut.WaitForAssertion(() => Assert.Single(cut.FindAll(".ne-handled-done")), HandledWait);
         Assert.Equal("- Eins\n  used-in:: [[Buch - Beta]]\n- Zwei\n  used-in:: [[Buch - Beta]]\n- Drei\n", tv.Read(NotesPath));
@@ -473,7 +473,7 @@ public class DialogTests : UiTestContext
         Assert.Equal(2, cut.FindAll(".ne-handled-item").Count);
         Assert.Single(cut.FindAll(".ne-handled-readonly"));
         cut.Find(".ne-handled-convert").Click();
-        cut.Find(".ne-handled-yes").Click();
+        cut.WaitForElement(".ne-handled-yes").Click();
         cut.WaitForAssertion(() => Assert.Single(cut.FindAll(".ne-handled-done")), HandledWait);
         Assert.Equal("- Eins\n  used-in:: [[Buch - Alpha]]\n", tv.Read(NotesPath));
     }
@@ -492,7 +492,7 @@ public class DialogTests : UiTestContext
         var cut = Render<HandledWizard>();
 
         cut.Find(".ne-handled-convert").Click();
-        cut.Find(".ne-handled-yes").Click();
+        cut.WaitForElement(".ne-handled-yes").Click();
 
         cut.WaitForAssertion(() => Assert.Equal(Text("AssistantConflict"), cut.Find(".ne-dialog-error").TextContent));
         Assert.Equal(external, tv.Read(NotesPath));
@@ -538,7 +538,7 @@ public class DialogTests : UiTestContext
 
         place.Change(OptionFor(place, SleepText));
         cut.Find(".ne-handled-convert").Click();
-        cut.Find(".ne-handled-yes").Click();
+        cut.WaitForElement(".ne-handled-yes").Click();
 
         cut.WaitForAssertion(() => Assert.Single(cut.FindAll(".ne-handled-done")), HandledWait);
         var notes = tv.Read(NotesPath);
@@ -559,7 +559,7 @@ public class DialogTests : UiTestContext
         cut.WaitForAssertion(() => Assert.Equal(2, cut.FindAll(".ne-handled-place").Count), HandledWait);
 
         cut.Find(".ne-handled-convert").Click();
-        cut.Find(".ne-handled-yes").Click();
+        cut.WaitForElement(".ne-handled-yes").Click();
 
         cut.WaitForAssertion(() => Assert.Single(cut.FindAll(".ne-handled-done")), HandledWait);
         Assert.Equal(
@@ -595,7 +595,7 @@ public class DialogTests : UiTestContext
             HandledWait);
         Assert.DoesNotContain(Place(cut, 0).QuerySelectorAll("option"), o => o.TextContent.StartsWith(SleepText, StringComparison.Ordinal));
         cut.Find(".ne-handled-convert").Click();
-        cut.Find(".ne-handled-yes").Click();
+        cut.WaitForElement(".ne-handled-yes").Click();
         cut.WaitForAssertion(() => Assert.Single(cut.FindAll(".ne-handled-done")), HandledWait);
         Assert.Equal(
             "- Schlaf und Träume\n  used-in:: [[Buch - Beta]]\n- Zwei\n  used-in:: [[Buch - Beta]]\n- Drei\n", tv.Read(NotesPath));
@@ -619,7 +619,7 @@ public class DialogTests : UiTestContext
         var before = tv.Read(NotesPath);
 
         cut.Find(".ne-handled-convert").Click();
-        cut.Find(".ne-handled-yes").Click();
+        cut.WaitForElement(".ne-handled-yes").Click();
 
         cut.WaitForAssertion(() => Assert.Equal(Text("AssistantConflict"), cut.Find(".ne-dialog-error").TextContent));
         Assert.Equal(before, tv.Read(NotesPath));
@@ -642,7 +642,7 @@ public class DialogTests : UiTestContext
         var before = tv.Read(NotesPath);
 
         cut.Find(".ne-handled-convert").Click();
-        cut.Find(".ne-handled-yes").Click();
+        cut.WaitForElement(".ne-handled-yes").Click();
 
         cut.WaitForAssertion(() => Assert.Equal(Text("HandledPlacementFailed"), cut.Find(".ne-dialog-error").TextContent));
         Assert.Empty(cut.FindAll(".ne-handled-done"));
@@ -657,7 +657,7 @@ public class DialogTests : UiTestContext
             Assert.Contains(options, o => o.StartsWith("Etwas ganz anderes", StringComparison.Ordinal));
         }, HandledWait);
         cut.Find(".ne-handled-convert").Click();
-        cut.Find(".ne-handled-yes").Click();
+        cut.WaitForElement(".ne-handled-yes").Click();
 
         cut.WaitForAssertion(() => Assert.Single(cut.FindAll(".ne-handled-done")), HandledWait);
         Assert.Equal(
