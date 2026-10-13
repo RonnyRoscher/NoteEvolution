@@ -590,8 +590,9 @@ public class DialogTests : UiTestContext
 
         cut.Find(".ne-handled-book-select").Change("Buch - Beta");
 
-        cut.WaitForAssertion(() =>
-            Assert.Contains(Place(cut, 0).QuerySelectorAll("option"), o => o.TextContent.StartsWith("Musik Gitarre", StringComparison.Ordinal)));
+        cut.WaitForAssertion(
+            () => Assert.Contains(Place(cut, 0).QuerySelectorAll("option"), o => o.TextContent.StartsWith("Musik Gitarre", StringComparison.Ordinal)),
+            HandledWait);
         Assert.DoesNotContain(Place(cut, 0).QuerySelectorAll("option"), o => o.TextContent.StartsWith(SleepText, StringComparison.Ordinal));
         cut.Find(".ne-handled-convert").Click();
         cut.Find(".ne-handled-yes").Click();
@@ -654,7 +655,7 @@ public class DialogTests : UiTestContext
             var options = Place(cut, 0).QuerySelectorAll("option").Select(o => o.TextContent).ToList();
             Assert.DoesNotContain(options, o => o.StartsWith(SleepText, StringComparison.Ordinal));
             Assert.Contains(options, o => o.StartsWith("Etwas ganz anderes", StringComparison.Ordinal));
-        });
+        }, HandledWait);
         cut.Find(".ne-handled-convert").Click();
         cut.Find(".ne-handled-yes").Click();
 

@@ -432,6 +432,10 @@
   <data name="NoteOpenLogseq" xml:space="preserve">
     <value>In Logseq öffnen</value>
   </data>
+  <data name="JournalDayLogseqTitle" xml:space="preserve">
+    <value>Tag {0} in Logseq öffnen</value>
+    <comment>{0} = Datum des Journaltags</comment>
+  </data>
   <data name="NoteReadOnlyHint" xml:space="preserve">
     <value>Diese Notizdatei ist nicht sicher lesbar. Übernehmen ist nicht möglich.</value>
   </data>

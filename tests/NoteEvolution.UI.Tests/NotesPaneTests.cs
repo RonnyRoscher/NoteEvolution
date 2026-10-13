@@ -108,6 +108,43 @@ public class NotesPaneTests : UiTestContext
     }
 
     [Fact]
+    public async Task NotesPane_Journal_DayLink_GoesToItsFirstBlockWithAnId()
+    {
+        const string id = "33333333-3333-4333-8333-333333333333";
+        using var tv = TestVault.Create(
+            (AlphaPath, "title:: Alpha\ntype:: book\n\n- # Eins\n"),
+            ("journals/2026_10_02.md", $"- Ohne Id\n- Mit Id\n  id:: {id}\n"));
+        await OpenAlphaAsync(tv);
+        var cut = Render<NotesPane>();
+        ShowJournal(cut);
+
+        // Logseq names journal pages by their own title format; a block of the day opens the right page.
+        var button = cut.Find(".ne-journal-day-logseq");
+        button.Click();
+
+        Assert.Equal([$"logseq://graph/{Uri.EscapeDataString(Path.GetFileName(tv.Root))}?block-id={id}"], Platform.OpenedUris);
+        Assert.Equal("Tag 02.10.2026 in Logseq öffnen", button.GetAttribute("title"));
+        Assert.Equal("Tag 02.10.2026 in Logseq öffnen", button.GetAttribute("aria-label"));
+    }
+
+    [Fact]
+    public async Task NotesPane_Journal_HideUsed_DayWithOnlyUsedBlocksIsGone()
+    {
+        using var tv = TestVault.Create(
+            (AlphaPath, "title:: Alpha\ntype:: book\n\n- # Eins\n"),
+            ("journals/2026_10_02.md", "- Schon verwendet\n  used-in:: [[Buch - Alpha]]\n"),
+            ("journals/2026_10_01.md", "- Noch offen\n"));
+        await OpenAlphaAsync(tv);
+        var cut = Render<NotesPane>();
+        ShowJournal(cut);
+        Assert.Equal(2, cut.FindAll(".ne-journal-day").Count);
+
+        cut.Find(".ne-hide-used").Change(true);
+
+        Assert.Equal(["01.10.2026"], cut.FindAll(".ne-journal-day-date").Select(e => e.TextContent));
+    }
+
+    [Fact]
     public async Task NotesPane_Journal_HideUsed_HidesUsedMainPointsInTheirDay()
     {
         using var tv = Create();

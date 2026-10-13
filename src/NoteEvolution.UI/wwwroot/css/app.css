@@ -628,6 +628,13 @@ html, body {
     margin-left: 8px;
 }
 
+/* Pointing at a root block's buttons tints what they take: its whole box, as for sub-bullets. */
+.ne-note-card.ne-note-in-day:has(> .ne-note-body > .ne-note-actions:hover),
+.ne-note-card.ne-note-in-day:has(> .ne-note-body > .ne-note-actions:focus-within) {
+    background: color-mix(in srgb, var(--accent) 9%, transparent);
+    border-left-color: var(--accent);
+}
+
 .ne-note-card.ne-note-in-day.ne-note-highlight {
     border-left-color: var(--accent);
     box-shadow: none;
