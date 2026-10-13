@@ -16,50 +16,47 @@
     var usageCount = Note.Usages.Count;
 }
 
-<article @ref="_root" class="ne-note-card @(Highlighted ? "ne-note-highlight" : null)" tabindex="-1" draggable="true" data-note-key="@Note.Key"
-         @ondragstart="OnDragStart" @ondragend="OnDragEnd">
-    <header class="ne-note-head">
-        <span class="ne-note-origin">@Origin</span>
-        @if (Percent is { } percent)
-        {
-            <span class="ne-note-score" title="@L["NoteScoreTitle"]">@percent %</span>
-        }
-        @if (Note.IsUsed)
-        {
-            <button type="button" class="ne-note-used" title="@L["NoteUsedTitle", usageCount]"
-                    aria-label="@L["NoteUsedTitle", usageCount]" @onclick="GoToUsage">
-                <span class="ne-note-used-mark">✓</span>
-                @if (usageCount > 1)
-                {
-                    <span class="ne-note-used-count">@usageCount</span>
-                }
-            </button>
-        }
-    </header>
+<article @ref="_root" class="ne-note-card @(InDay ? "ne-note-in-day" : null) @(Highlighted ? "ne-note-highlight" : null)" tabindex="-1"
+         draggable="true" data-note-key="@Note.Key" @ondragstart="OnDragStart" @ondragend="OnDragEnd">
+    @if (!InDay || Percent is not null || Note.IsUsed)
+    {
+        <header class="ne-note-head">
+            @if (!InDay)
+            {
+                <span class="ne-note-origin">@Origin</span>
+            }
+            @if (Percent is { } percent)
+            {
+                <span class="ne-note-score" title="@L["NoteScoreTitle"]">@percent %</span>
+            }
+            @if (Note.IsUsed)
+            {
+                <button type="button" class="ne-note-used" title="@L["NoteUsedTitle", usageCount]"
+                        aria-label="@L["NoteUsedTitle", usageCount]" @onclick="GoToUsage">
+                    <span class="ne-note-used-mark">✓</span>
+                    @if (usageCount > 1)
+                    {
+                        <span class="ne-note-used-count">@usageCount</span>
+                    }
+                </button>
+            }
+        </header>
+    }
     @if (Note.ContextPath.Count > 0)
     {
         <div class="ne-note-context">@string.Join(" › ", Note.ContextPath)</div>
     }
     <div class="ne-note-body">
         <div class="ne-note-text">@Note.Block.Content</div>
+        @if (InDay)
+        {
+            @Actions()
+        }
         @SubBullets(Note.Block)
     </div>
-    @if (Note.Page.IsReadOnly)
+    @if (!InDay)
     {
-        <div class="ne-note-hint">@L["NoteReadOnlyHint"]</div>
-    }
-    <footer class="ne-note-actions">
-        @AdoptSplit(Note.Block, "ne-note-adopt")
-        @if (WhereToAvailable)
-        {
-            <button type="button" class="ne-note-whereto" title="@L["NoteWhereToTitle"]"
-                    aria-expanded="@_whereTo.ContainsKey(Note.Block.Key)" @onclick="() => ToggleWhereToAsync(Note.Block)">@L["NoteWhereTo"]</button>
-        }
-        <button type="button" class="ne-note-logseq" @onclick="OpenInLogseq">@L["NoteOpenLogseq"]</button>
-    </footer>
-    @if (_whereTo.TryGetValue(Note.Block.Key, out var noteList))
-    {
-        @WhereToResults(noteList, Note.Block)
+        @Actions()
     }
     @if (_message is { } message)
     {
@@ -118,6 +115,13 @@
 
     /// <summary>The card is marked for a moment after a source jumped to its note (see <c>JournalTab</c>).</summary>
     [Parameter] public bool Highlighted { get; set; }
+
+    /// <summary>
+    /// The card stands in the card of its journal day (<c>JournalTab</c>), which shows the date and opens the page in
+    /// Logseq: drawn as a box with the line on its left, without an origin and a Logseq button of its own; its buttons
+    /// and its "Wohin damit?" list stand right below its text, above its sub-bullets.
+    /// </summary>
+    [Parameter] public bool InDay { get; set; }
 
     /// <summary>
     /// A new (positive) number puts the focus on the card after it rendered, which scrolls it into view; 0 asks for
@@ -246,17 +250,39 @@
 
     private void OpenInLogseq()
     {
-        if (State.Session is not { } session)
+        if (State.Session is { } session)
         {
-            return;
+            Platform.OpenExternal(LogseqLink.For(session.Vault.Root, Note.Block.Id, Note.Page.Name));
         }
-
-        var graph = Uri.EscapeDataString(Path.GetFileName(Path.TrimEndingDirectorySeparator(session.Vault.Root)));
-        var target = Note.Block.Id is { } id
-            ? $"block-id={Uri.EscapeDataString(id.ToString("D"))}"
-            : $"page={Uri.EscapeDataString(Note.Page.Name)}";
-        Platform.OpenExternal($"logseq://graph/{graph}?{target}");
     }
+
+    /// <summary>
+    /// The note's actions: the hint of a read-only page, "Übernehmen", "Wohin damit?" (with its list below) and, outside
+    /// a journal day, "In Logseq öffnen".
+    /// </summary>
+    private RenderFragment Actions() =>
+        @<text>
+            @if (Note.Page.IsReadOnly)
+            {
+                <div class="ne-note-hint">@L["NoteReadOnlyHint"]</div>
+            }
+            <footer class="ne-note-actions">
+                @AdoptSplit(Note.Block, "ne-note-adopt")
+                @if (WhereToAvailable)
+                {
+                    <button type="button" class="ne-note-whereto" title="@L["NoteWhereToTitle"]"
+                            aria-expanded="@_whereTo.ContainsKey(Note.Block.Key)" @onclick="() => ToggleWhereToAsync(Note.Block)">@L["NoteWhereTo"]</button>
+                }
+                @if (!InDay)
+                {
+                    <button type="button" class="ne-note-logseq" @onclick="OpenInLogseq">@L["NoteOpenLogseq"]</button>
+                }
+            </footer>
+            @if (_whereTo.TryGetValue(Note.Block.Key, out var noteList))
+            {
+                @WhereToResults(noteList, Note.Block)
+            }
+        </text>;
 
     /// <summary>
     /// Goes to the place where the note is used: the book of its first <c>used-in::</c> entry with a block
