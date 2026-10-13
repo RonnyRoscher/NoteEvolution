@@ -277,35 +277,20 @@ public class NoteCardTests : UiTestContext
     }
 
     [Fact]
-    public async Task NoteCard_LongText_CollapsedAfterThreeLines()
+    public async Task NoteCard_LongNote_AlwaysShownInFull()
     {
         using var tv = TestVault.Create(
             (AlphaPath, "title:: Alpha\ntype:: book\n\n- # Eins\n"),
-            (NotesPath, "- Zeile eins\n  Zeile zwei\n  Zeile drei\n  Zeile vier\n  Zeile fünf\n- Kurz\n"));
+            (NotesPath, "- Zeile eins\n  Zeile zwei\n  Zeile drei\n  Zeile vier\n  Zeile fünf\n\t- Zwei\n\t\t- Drei\n\t\t\t- Vier\n"));
         var session = await OpenAlphaAsync(tv);
+
         var cut = RenderCard(Note(session, "Zeile eins"));
 
-        Assert.Contains("collapsed", cut.Find(".ne-note-body").ClassList);
-        cut.Find(".ne-note-more").Click();
+        // No collapsing and no "mehr"/"weniger": the whole note with all its sub-bullets is shown.
         Assert.DoesNotContain("collapsed", cut.Find(".ne-note-body").ClassList);
-
-        var shortCard = RenderCard(Note(session, "Kurz"));
-        Assert.Empty(shortCard.FindAll(".ne-note-more"));
-        Assert.DoesNotContain("collapsed", shortCard.Find(".ne-note-body").ClassList);
-    }
-
-    [Fact]
-    public async Task NoteCard_SubBulletsCountTowardsTheThreeLines()
-    {
-        using var tv = TestVault.Create(
-            (AlphaPath, "title:: Alpha\ntype:: book\n\n- # Eins\n"),
-            (NotesPath, "- Eins\n\t- Zwei\n\t\t- Drei\n\t\t\t- Vier\n"));
-        var session = await OpenAlphaAsync(tv);
-
-        var cut = RenderCard(Note(session, "Eins"));
-
+        Assert.Empty(cut.FindAll(".ne-note-more"));
+        Assert.Equal("Zeile eins\nZeile zwei\nZeile drei\nZeile vier\nZeile fünf", cut.Find(".ne-note-text").TextContent);
         Assert.Equal(3, cut.FindAll(".ne-note-child").Count);
-        Assert.Contains("collapsed", cut.Find(".ne-note-body").ClassList);
     }
 
     [Fact]

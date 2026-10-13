@@ -13,9 +13,7 @@
 
 @* One note of the notes pane: origin, score, usage mark, the block text with its sub-bullets, and the actions. *@
 @{
-    var lineCount = LineCount;
     var usageCount = Note.Usages.Count;
-    var collapsible = lineCount > CollapsedLines;
 }
 
 <article @ref="_root" class="ne-note-card @(Highlighted ? "ne-note-highlight" : null)" tabindex="-1" draggable="true" data-note-key="@Note.Key"
@@ -42,7 +40,7 @@
     {
         <div class="ne-note-context">@string.Join(" › ", Note.ContextPath)</div>
     }
-    <div class="ne-note-body @(collapsible && !_expanded ? "collapsed" : null)">
+    <div class="ne-note-body">
         <div class="ne-note-text">@Note.Block.Content</div>
         @SubBullets(Note.Block)
     </div>
@@ -58,10 +56,6 @@
                     aria-expanded="@_whereTo.ContainsKey(Note.Block.Key)" @onclick="() => ToggleWhereToAsync(Note.Block)">@L["NoteWhereTo"]</button>
         }
         <button type="button" class="ne-note-logseq" @onclick="OpenInLogseq">@L["NoteOpenLogseq"]</button>
-        @if (collapsible)
-        {
-            <button type="button" class="ne-note-more" @onclick="() => _expanded = !_expanded">@(_expanded ? L["NoteLess"] : L["NoteMore"])</button>
-        }
     </footer>
     @if (_whereTo.TryGetValue(Note.Block.Key, out var noteList))
     {
@@ -74,12 +68,8 @@
 </article>
 
 @code {
-    /// <summary>From this many lines on, the card is collapsed to three lines until "mehr" is clicked.</summary>
-    private const int CollapsedLines = 3;
-
     private ElementReference _root;
     private int _focused;
-    private bool _expanded;
     private AdoptMessage? _message;
 
     /// <summary>The key of the block (the note or a sub-bullet) whose menu of adopt variants is open; <c>null</c> if none.</summary>
@@ -141,10 +131,6 @@
     private string Origin => Note.Date is { } date
         ? date.ToString("dd.MM.yyyy", CultureInfo.InvariantCulture)
         : Note.Page.Name;
-
-    /// <summary>Lines of the note's text and all its sub-bullets.</summary>
-    private int LineCount =>
-        Lines(Note.Block.Content) + Descendants(Note.Block).Sum(block => Lines(block.Content));
 
     /// <summary>
     /// A note can be adopted into the current book: it is safely readable (R13: adopting from a read-only page
@@ -254,11 +240,6 @@
         }
     });
 
-    private static int Lines(string text) => text.Count(c => c == '\n') + 1;
-
-    private static IEnumerable<Block> Descendants(Block block) =>
-        block.Children.SelectMany(child => Descendants(child).Prepend(child));
-
     private void OnDragStart() => State.DraggedNoteKey = Note.Key;
 
     private void OnDragEnd() => State.DraggedNoteKey = null;
@@ -347,12 +328,6 @@
         var generation = ++_whereGeneration;
         _whereTo[block.Key] = new WhereToList(generation, book.LinkName);
         State.OpenWhereTo(Note.Key);
-        if (!isNote)
-        {
-            // The list of a sub-bullet stands in the body, which a collapsed card would cut off.
-            _expanded = true;
-        }
-
         IReadOnlyList<PlacementHit> hits;
         try
         {
@@ -567,18 +542,8 @@
         </span>;
     }
 
-    /// <summary>
-    /// Opens the menu of adopt variants of <paramref name="blockKey"/> (closing any other), or closes it. A sub-bullet's
-    /// menu expands the card, so a collapsed body does not cut it off.
-    /// </summary>
-    private void ToggleAdoptMenu(Guid blockKey)
-    {
-        _adoptMenu = _adoptMenu == blockKey ? null : blockKey;
-        if (_adoptMenu is not null && blockKey != Note.Block.Key)
-        {
-            _expanded = true;
-        }
-    }
+    /// <summary>Opens the menu of adopt variants of <paramref name="blockKey"/> (closing any other), or closes it.</summary>
+    private void ToggleAdoptMenu(Guid blockKey) => _adoptMenu = _adoptMenu == blockKey ? null : blockKey;
 
     /// <summary>The menu of adopt variants for <paramref name="block"/>, each with a tooltip that explains it.</summary>
     private RenderFragment AdoptMenu(Block block) =>

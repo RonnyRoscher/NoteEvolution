@@ -630,16 +630,13 @@ html, body {
 .ne-note-body {
     margin-top: 4px;
     font-family: var(--font-text);
-    white-space: pre-wrap;
     overflow-wrap: anywhere;
 }
 
-.ne-note-body.collapsed {
-    display: -webkit-box;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 3;
-    line-clamp: 3;
-    overflow: hidden;
+/* Line breaks count only in the texts themselves, not in the markup between the note's line and its sub-bullets. */
+.ne-note-text,
+.ne-note-child-text {
+    white-space: pre-wrap;
 }
 
 /* A sub-bullet as a box: the line on its left runs along its row and all its sub-blocks, which its buttons take along. */
