@@ -432,12 +432,6 @@
   <data name="NoteOpenLogseq" xml:space="preserve">
     <value>In Logseq öffnen</value>
   </data>
-  <data name="NoteMore" xml:space="preserve">
-    <value>mehr</value>
-  </data>
-  <data name="NoteLess" xml:space="preserve">
-    <value>weniger</value>
-  </data>
   <data name="NoteReadOnlyHint" xml:space="preserve">
     <value>Diese Notizdatei ist nicht sicher lesbar. Übernehmen ist nicht möglich.</value>
   </data>

@@ -223,7 +223,7 @@ Drei Bereiche, Trennlinien verstellbar, Layout wird gespeichert, helles und dunk
 **Notizen (rechts, einklappbar):**
 - Reiter *Relevant* (ab Stufe 2), *Suche* und *Journal* (chronologisch, mit Datumssprung).
 - Notizkarte: Datum, Trefferquote, Status. Verwendete Einträge zeigen ✓; ein Klick springt zur Buchstelle.
-- Lange Blöcke sind nach drei Zeilen eingeklappt.
+- Blöcke werden immer vollständig gezeigt (das Einklappen nach drei Zeilen mit „mehr“/„weniger“ ist am 2026-10-13 entfallen).
 - Aktionen: Übernehmen (ganz oder pro Unteranstrich), Ziehen ins Buch, Wohin damit? (ab Stufe 2), In Logseq öffnen (`logseq://`-Link).
 - Schalter „Verwendete ausblenden“ und Datumsfilter.
 
