@@ -83,9 +83,27 @@ public class NoteCardTests : UiTestContext
     }
 
     [Fact]
+    public async Task NoteCard_ShortSubBullet_NoButtonsOfItsOwn()
+    {
+        using var tv = Create();
+        var session = await OpenAlphaAsync(tv);
+
+        var cut = RenderCard(Note(session, "Gedächtnis braucht"));
+
+        // "Unterpunkt Träume" is a single short line: it is adopted with its note, whose buttons stay.
+        Assert.Single(cut.FindAll(".ne-note-child"));
+        Assert.Empty(cut.FindAll(".ne-adopt-column, .ne-note-child-adopt, .ne-note-child-whereto"));
+        Assert.Single(cut.FindAll(".ne-note-adopt"));
+    }
+
+    [Fact]
     public async Task NoteCard_AdoptChild_CallsAdoptWithChildKey()
     {
         using var tv = Create();
+
+        // A sub-bullet of more than one line has buttons of its own.
+        File.WriteAllText(
+            Path.Combine(tv.Root, NotesPath), tv.Read(NotesPath).Replace("\t- Unterpunkt Träume\n", "\t- Unterpunkt Träume\n\t  aus der Nacht\n"));
         var session = await OpenAlphaAsync(tv);
         var cut = RenderCard(Note(session, "Gedächtnis braucht"));
 
@@ -93,7 +111,7 @@ public class NoteCardTests : UiTestContext
 
         var book = session.Vault.FindBook("Buch - Alpha")!;
         var texts = book.Root.Children.First().TextBlocks.Select(t => t.Text).ToList();
-        Assert.Equal(["Erster Text", "Zweiter Text", "Unterpunkt Träume"], texts);
+        Assert.Equal(["Erster Text", "Zweiter Text", "Unterpunkt Träume\naus der Nacht"], texts);
         var adopted = book.Root.Children.First().TextBlocks.Last();
         Assert.Single(adopted.Sources);
         var child = Note(session, "Unterpunkt Träume");
