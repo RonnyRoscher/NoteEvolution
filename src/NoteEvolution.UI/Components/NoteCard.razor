@@ -65,7 +65,7 @@
     </footer>
     @if (_whereTo.TryGetValue(Note.Block.Key, out var noteList))
     {
-        @WhereToResults(noteList, Note.Block, 0)
+        @WhereToResults(noteList, Note.Block)
     }
     @if (_message is { } message)
     {
@@ -144,7 +144,7 @@
 
     /// <summary>Lines of the note's text and all its sub-bullets.</summary>
     private int LineCount =>
-        Lines(Note.Block.Content) + Descendants(Note.Block, 1).Sum(entry => Lines(entry.Block.Content));
+        Lines(Note.Block.Content) + Descendants(Note.Block).Sum(block => Lines(block.Content));
 
     /// <summary>
     /// A note can be adopted into the current book: it is safely readable (R13: adopting from a read-only page
@@ -256,8 +256,8 @@
 
     private static int Lines(string text) => text.Count(c => c == '\n') + 1;
 
-    private static IEnumerable<(Block Block, int Depth)> Descendants(Block block, int depth) =>
-        block.Children.SelectMany(child => Descendants(child, depth + 1).Prepend((child, depth)));
+    private static IEnumerable<Block> Descendants(Block block) =>
+        block.Children.SelectMany(child => Descendants(child).Prepend(child));
 
     private void OnDragStart() => State.DraggedNoteKey = Note.Key;
 
@@ -446,10 +446,10 @@
 
     /// <summary>
     /// The "Wohin damit?" list of <paramref name="block"/>: the busy hint while it searches, then its hits or the hint
-    /// that there are none. <paramref name="indent"/> (pixels) aligns the list of a sub-bullet with it.
+    /// that there are none.
     /// </summary>
-    private RenderFragment WhereToResults(WhereToList list, Block block, int indent) =>
-        @<div class="ne-note-whereto-results" style="@(indent > 0 ? $"margin-left: {indent}px" : null)">
+    private RenderFragment WhereToResults(WhereToList list, Block block) =>
+        @<div class="ne-note-whereto-results">
             @if (list.Hits is not { } hits)
             {
                 <div class="ne-note-hint ne-note-whereto-busy" role="status">@L["NoteWhereToBusy"]</div>
@@ -493,7 +493,7 @@
             @foreach (var child in parent.Children)
             {
                 var offer = SubBulletButtons.Offer(child);
-                <div class="ne-note-child">
+                <div @key="child.Key" class="ne-note-child">
                     <div class="ne-note-child-row">
                         <span class="ne-note-child-text">@child.Content</span>
                         @if (offer)
@@ -510,7 +510,7 @@
                     </div>
                     @if (offer && _whereTo.TryGetValue(child.Key, out var childList))
                     {
-                        @WhereToResults(childList, child, 0)
+                        @WhereToResults(childList, child)
                     }
                     @SubBullets(child)
                 </div>
