@@ -73,8 +73,91 @@ public class NotesPaneTests : UiTestContext
         Assert.Equal(
             ["Gedächtnis im Alltag beobachten", "Eine ganz andere Idee", "Gedächtnis und Musik", "Septemberidee"],
             Texts(cut));
-        Assert.Equal(["01.10.2026", "01.10.2026", "15.09.2026", "15.09.2026"], cut.FindAll(".ne-note-origin").Select(e => e.TextContent));
         Assert.Empty(cut.FindAll(".ne-note-score"));
+    }
+
+    [Fact]
+    public async Task NotesPane_Journal_OneCardPerDay_ItsMainPointsAsBoxes()
+    {
+        using var tv = Create();
+        var session = await OpenAlphaAsync(tv);
+        var cut = Render<NotesPane>();
+
+        ShowJournal(cut);
+
+        // One card per journal file, its date on top once; the main points stand in it, each with its own buttons.
+        var days = cut.FindAll(".ne-journal-day");
+        Assert.Equal(["01.10.2026", "15.09.2026"], days.Select(d => d.QuerySelector(".ne-journal-day-date")!.TextContent));
+        Assert.Equal(
+            ["Gedächtnis im Alltag beobachten", "Eine ganz andere Idee"],
+            days[0].QuerySelectorAll(".ne-note-card > .ne-note-body > .ne-note-text").Select(e => e.TextContent));
+        Assert.All(days[0].QuerySelectorAll(".ne-note-card"), card =>
+        {
+            Assert.Contains("ne-note-in-day", card.ClassList);
+            Assert.NotNull(card.QuerySelector(".ne-note-adopt"));
+        });
+        Assert.Empty(cut.FindAll(".ne-journal-day .ne-note-origin"));
+        Assert.Empty(cut.FindAll(".ne-journal-day .ne-note-logseq"));
+
+        // The day's own "In Logseq öffnen" opens its page.
+        days[0].QuerySelector(".ne-journal-day-logseq")!.Click();
+        var page = Note(session, "Gedächtnis im Alltag").Page;
+        Assert.Equal(
+            [$"logseq://graph/{Uri.EscapeDataString(Path.GetFileName(tv.Root))}?page={Uri.EscapeDataString(page.Name)}"],
+            Platform.OpenedUris);
+    }
+
+    [Fact]
+    public async Task NotesPane_Journal_DayLink_GoesToItsFirstBlockWithAnId()
+    {
+        const string id = "33333333-3333-4333-8333-333333333333";
+        using var tv = TestVault.Create(
+            (AlphaPath, "title:: Alpha\ntype:: book\n\n- # Eins\n"),
+            ("journals/2026_10_02.md", $"- Ohne Id\n- Mit Id\n  id:: {id}\n"));
+        await OpenAlphaAsync(tv);
+        var cut = Render<NotesPane>();
+        ShowJournal(cut);
+
+        // Logseq names journal pages by their own title format; a block of the day opens the right page.
+        var button = cut.Find(".ne-journal-day-logseq");
+        button.Click();
+
+        Assert.Equal([$"logseq://graph/{Uri.EscapeDataString(Path.GetFileName(tv.Root))}?block-id={id}"], Platform.OpenedUris);
+        Assert.Equal("Tag 02.10.2026 in Logseq öffnen", button.GetAttribute("title"));
+        Assert.Equal("Tag 02.10.2026 in Logseq öffnen", button.GetAttribute("aria-label"));
+    }
+
+    [Fact]
+    public async Task NotesPane_Journal_HideUsed_DayWithOnlyUsedBlocksIsGone()
+    {
+        using var tv = TestVault.Create(
+            (AlphaPath, "title:: Alpha\ntype:: book\n\n- # Eins\n"),
+            ("journals/2026_10_02.md", "- Schon verwendet\n  used-in:: [[Buch - Alpha]]\n"),
+            ("journals/2026_10_01.md", "- Noch offen\n"));
+        await OpenAlphaAsync(tv);
+        var cut = Render<NotesPane>();
+        ShowJournal(cut);
+        Assert.Equal(2, cut.FindAll(".ne-journal-day").Count);
+
+        cut.Find(".ne-hide-used").Change(true);
+
+        Assert.Equal(["01.10.2026"], cut.FindAll(".ne-journal-day-date").Select(e => e.TextContent));
+    }
+
+    [Fact]
+    public async Task NotesPane_Journal_HideUsed_HidesUsedMainPointsInTheirDay()
+    {
+        using var tv = Create();
+        await OpenAlphaAsync(tv);
+        var cut = Render<NotesPane>();
+        ShowJournal(cut);
+
+        cut.Find(".ne-hide-used").Change(true);
+
+        // "Gedächtnis und Musik" is used: its day keeps only "Septemberidee".
+        var september = cut.FindAll(".ne-journal-day")[1];
+        Assert.Equal("15.09.2026", september.QuerySelector(".ne-journal-day-date")!.TextContent);
+        Assert.Equal(["Septemberidee"], september.QuerySelectorAll(".ne-note-text").Select(e => e.TextContent));
     }
 
     [Fact]

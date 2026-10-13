@@ -1,15 +1,17 @@
+@using NoteEvolution.Core.Model
 @using NoteEvolution.Core.Vaults
 @implements IDisposable
 @inject AppState State
+@inject IPlatformServices Platform
 @inject TimeProvider Time
 @inject IStringLocalizer<Strings> L
 
-@* The "Journal" tab: the root blocks of the journal pages, newest day first, from a chosen day on. *@
+@* The "Journal" tab: one card per journal page (a day), newest first, from a chosen day on; its root blocks inside. *@
 @{
-    var visible = _entries.Where(note => _jump is not { } jump || note.Date <= jump).ToList();
+    var visible = Days(_entries.Where(note => _jump is not { } jump || note.Date <= jump));
 
-    // A card with an open "Wohin damit?" list stays, also beyond the entries shown so far.
-    var shown = visible.Where((note, index) => index < _shown || State.WhereToOpenNotes.Contains(note.Key));
+    // A day with a card whose "Wohin damit?" list is open stays, also beyond the days shown so far.
+    var shown = visible.Where((day, index) => index < _shown || day.Any(note => State.WhereToOpenNotes.Contains(note.Key)));
 }
 
 <div class="ne-journal">
@@ -23,10 +25,21 @@
         <div class="ne-search-empty">@L["NotesJournalEmpty"]</div>
     }
     <div class="ne-journal-list">
-        @foreach (var note in shown)
+        @foreach (var day in shown)
         {
-            <NoteCard @key="note.Key" Note="note" Highlighted="note.Key == _highlightKey"
-                      FocusRequest="note.Key == _highlightKey ? _focusRequest : 0" />
+            var page = day[0].Page;
+            <section @key="page.FilePath" class="ne-journal-day">
+                <header class="ne-journal-day-head">
+                    <span class="ne-journal-day-date">@DayLabel(day[0])</span>
+                    <button type="button" class="ne-journal-day-logseq" title="@L["JournalDayLogseqTitle", DayLabel(day[0])]"
+                            aria-label="@L["JournalDayLogseqTitle", DayLabel(day[0])]" @onclick="() => OpenInLogseq(day)">@L["NoteOpenLogseq"]</button>
+                </header>
+                @foreach (var note in day)
+                {
+                    <NoteCard @key="note.Key" Note="note" InDay="true" Highlighted="note.Key == _highlightKey"
+                              FocusRequest="note.Key == _highlightKey ? _focusRequest : 0" />
+                }
+            </section>
         }
     </div>
     @if (visible.Count > _shown)
@@ -36,8 +49,8 @@
 </div>
 
 @code {
-    /// <summary>How many entries are shown at first and added by each "Weitere anzeigen".</summary>
-    private const int PageSize = 50;
+    /// <summary>How many days are shown at first and added by each "Weitere anzeigen".</summary>
+    private const int PageSize = 20;
 
     private (NoteFilter Filter, int Revision)? _last;
     private List<NoteBlock> _entries = [];
@@ -107,7 +120,7 @@
         }
 
         _jump = day;
-        _shown = Math.Max(_shown, _entries.Where(note => note.Date <= day).ToList().FindIndex(note => note.Key == key) + 1);
+        _shown = Math.Max(_shown, Days(_entries.Where(note => note.Date <= day)).FindIndex(d => d.Any(note => note.Key == key)) + 1);
         _highlightKey = key;
         _focusRequest++;
         _highlightTimer?.Dispose();
@@ -119,6 +132,33 @@
                 StateHasChanged();
             }
         }), null, HighlightDuration, Timeout.InfiniteTimeSpan);
+    }
+
+    /// <summary>
+    /// The notes grouped by their journal page, newest day first, the root blocks of a day in their order (also when a
+    /// note kept for its open "Wohin damit?" list stands at another place of the list).
+    /// </summary>
+    private static List<List<NoteBlock>> Days(IEnumerable<NoteBlock> notes) =>
+    [
+        .. notes.GroupBy(note => note.Page.FilePath, StringComparer.OrdinalIgnoreCase)
+            .Select(day => day.ToList())
+            .OrderByDescending(day => day[0].Date ?? DateOnly.MinValue),
+    ];
+
+    private static string DayLabel(NoteBlock note) =>
+        note.Date is { } date ? date.ToString("dd.MM.yyyy", CultureInfo.InvariantCulture) : note.Page.Name;
+
+    /// <summary>
+    /// Opens the day in Logseq: through its first root block with an id (Logseq names journal pages by its own title
+    /// format, not by the file), else by the page's name.
+    /// </summary>
+    private void OpenInLogseq(List<NoteBlock> day)
+    {
+        if (State.Session is { } session)
+        {
+            var id = day.Select(note => note.Block.Id).FirstOrDefault(id => id is not null);
+            Platform.OpenExternal(LogseqLink.For(session.Vault.Root, id, day[0].Page.Name));
+        }
     }
 
     private void OnJump(ChangeEventArgs e)

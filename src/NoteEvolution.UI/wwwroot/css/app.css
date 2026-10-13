@@ -591,6 +591,56 @@ html, body {
     box-shadow: 0 0 0 2px var(--accent);
 }
 
+/* The journal: one card per day; its root blocks inside as boxes with the line on their left, like sub-bullets. */
+.ne-journal-day {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 6px 8px;
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+}
+
+.ne-journal-day-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+    color: var(--fg-muted);
+}
+
+.ne-journal-day-date {
+    flex: 1;
+}
+
+.ne-note-card.ne-note-in-day {
+    padding: 2px 0 2px 8px;
+    background: transparent;
+    border: none;
+    border-left: 2px solid var(--border);
+    border-radius: 0 4px 4px 0;
+}
+
+/* In a day, a used mark (or a score) stands at the right of the block's first line. */
+.ne-note-in-day > .ne-note-head {
+    float: right;
+    margin-left: 8px;
+}
+
+/* Pointing at a root block's buttons tints what they take: its whole box, as for sub-bullets. */
+.ne-note-card.ne-note-in-day:has(> .ne-note-body > .ne-note-actions:hover),
+.ne-note-card.ne-note-in-day:has(> .ne-note-body > .ne-note-actions:focus-within) {
+    background: color-mix(in srgb, var(--accent) 9%, transparent);
+    border-left-color: var(--accent);
+}
+
+.ne-note-card.ne-note-in-day.ne-note-highlight {
+    border-left-color: var(--accent);
+    box-shadow: none;
+    background: color-mix(in srgb, var(--accent) 9%, transparent);
+}
+
 .ne-note-head {
     display: flex;
     align-items: center;
