@@ -61,7 +61,7 @@
                     </div>
                 }
             </div>
-            @if (_whereTo.TryGetValue(child.Key, out var childList))
+            @if (_whereTo.TryGetValue(child.Key, out var childList) && SubBulletButtons.Offer(child))
             {
                 @WhereToResults(childList, child, depth * 12)
             }

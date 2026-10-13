@@ -140,6 +140,21 @@ public class ShellTests : UiTestContext
     }
 
     [Fact]
+    public void Splitter_NotesShownNarrowerThanStored_DragStartsFromWhatIsShown()
+    {
+        // The pane was widened to 920 px, then the window got narrower and the pane shows only 530 px.
+        Settings.NotesWidth = 920;
+        JSInterop.Setup<double>("neLayout.paneWidth", _ => true).SetResult(530);
+        var cut = Render<Shell>();
+
+        cut.FindAll(".ne-splitter")[1].PointerDown(new PointerEventArgs { ClientX = 470 });
+        cut.Find(".ne-splitter-overlay").PointerUp(new PointerEventArgs { ClientX = 460 });
+
+        // 10 px to the left widen what is shown by 10 px (not the stored 920).
+        Assert.Contains("width: 540px", cut.Find(".ne-notes").GetAttribute("style"));
+    }
+
+    [Fact]
     public void Splitter_DragOutlineRight_StillAtMost800()
     {
         var cut = Render<Shell>();

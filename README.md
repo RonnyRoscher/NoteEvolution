@@ -103,7 +103,7 @@ wieder der Standard. Auf den Bereich wirken zwei weitere Knöpfe:
   (bei einem Textblock samt der direkt folgenden Textblöcke bis zur nächsten Unterüberschrift); der Cursor steht im
   neuen Titel.
 
-**Wohin damit?** an einer Notiz oder einem Unteranstrich zeigt die fünf passendsten Textblöcke des Buchs mit
+**Wohin damit?** an einer Notiz oder einem Unteranstrich mit eigenen Knöpfen (siehe oben) zeigt die fünf passendsten Textblöcke des Buchs mit
 Überschriftenpfad, Textauszug und Prozent (✓, wenn die Notiz dort schon Quelle ist). Ein Klick springt zum Block,
 die Liste bleibt offen; übernommen wird dort mit „Danach“ oder „Darunter“. Solange im Reiter „Relevant“ eine solche
 Liste offen ist, bleibt die Relevant-Liste unverändert; nach dem Schließen der letzten Liste wird sie einmal neu
@@ -132,7 +132,7 @@ neu aufgebaut. Dasselbe Buch sollte nicht gleichzeitig in Logseq bearbeitet werd
 ## Lokale KI
 
 Die KI-Funktionen sind ein Zusatz: „Relevant“ (die Notizen, die zum Abschnitt oder zur Textstelle passen), die Suche
-nach Bedeutung (ergänzt die Volltextsuche), „Wohin damit?“ an jeder Notiz und jedem Unteranstrich (die fünf
+nach Bedeutung (ergänzt die Volltextsuche), „Wohin damit?“ an jeder Notiz und jedem längeren Unteranstrich (die fünf
 passendsten Textblöcke des Buchs) und Fundstellen-Vorschläge im `[handled]`-Assistenten. Sie schreiben und formulieren keinen Buchtext. Einzige
 Schreibaktion sind die Verknüpfungszeilen (`id::`, `source::`, `used-in::`) für Fundstellen, die du im Assistenten
 selbst gewählt und bestätigt hast. Ohne Modell arbeitet die App unverändert mit der Volltextsuche.
@@ -251,7 +251,7 @@ Lokale KI (Modell installiert, Test-Vault mit einigen Dutzend Notizen und einem 
 - [ ] „Verwendete ausblenden“ und der Zeitraum wirken auch in „Relevant“.
 - [ ] Die Suche findet sinnverwandte Notizen ohne gleiche Wörter (z. B. nach „Müdigkeit“ suchen und eine Notiz über
       „Schlaf“ finden), Treffer mit dem gesuchten Wort stehen weiter oben.
-- [ ] „Wohin damit?“ an einer Notiz und an einem Unteranstrich zeigt höchstens fünf Textblöcke mit Pfad, Auszug und
+- [ ] „Wohin damit?“ an einer Notiz und an einem längeren Unteranstrich zeigt höchstens fünf Textblöcke mit Pfad, Auszug und
       Prozentwert; ein Klick springt zum Block, die Liste bleibt offen; dort mit „Danach“ übernehmen. Im Reiter
       „Relevant“ bleibt die Liste dabei stehen, die Notiz verschwindet nicht.
 - [ ] `[handled]`-Assistent: neben jeder Notiz steht „Stelle unbekannt“ (Standard) und bis zu drei Fundstellen mit

@@ -32,6 +32,9 @@ public abstract class UiTestContext : BunitContext
         // The host page's splash screen (index.html), which the shell ends after the start.
         JSInterop.SetupVoid("neSplash.status", _ => true).SetVoidResult();
         JSInterop.SetupVoid("neSplash.done").SetVoidResult();
+
+        // The width a pane shows (index.html); 0 means unknown, the splitter then starts from the stored width.
+        JSInterop.Setup<double>("neLayout.paneWidth", _ => true).SetResult(0);
     }
 
     /// <summary>The editor every rendered <c>EditorPane</c> talks to.</summary>
