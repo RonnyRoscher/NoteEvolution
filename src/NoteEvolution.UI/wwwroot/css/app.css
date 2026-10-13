@@ -622,15 +622,25 @@ html, body {
     border-radius: 0 4px 4px 0;
 }
 
-/* In a day, a used mark (or a score) stands at the right of the block's first line. */
-.ne-note-in-day > .ne-note-head {
-    float: right;
-    margin-left: 8px;
+/* In a day, a root block's text and its stacked buttons (with the used mark on top) side by side; the rest below. */
+.ne-note-in-day > .ne-note-body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: 6px;
+    align-items: start;
+}
+
+.ne-note-in-day > .ne-note-body > :not(.ne-note-text):not(.ne-adopt-column) {
+    grid-column: 1 / -1;
+}
+
+.ne-note-in-day > .ne-note-body > .ne-adopt-column > .ne-note-used {
+    align-self: flex-end;
 }
 
 /* Pointing at a root block's buttons tints what they take: its whole box, as for sub-bullets. */
-.ne-note-card.ne-note-in-day:has(> .ne-note-body > .ne-note-actions:hover),
-.ne-note-card.ne-note-in-day:has(> .ne-note-body > .ne-note-actions:focus-within) {
+.ne-note-card.ne-note-in-day:has(> .ne-note-body > .ne-adopt-column:hover),
+.ne-note-card.ne-note-in-day:has(> .ne-note-body > .ne-adopt-column:focus-within) {
     background: color-mix(in srgb, var(--accent) 9%, transparent);
     border-left-color: var(--accent);
 }

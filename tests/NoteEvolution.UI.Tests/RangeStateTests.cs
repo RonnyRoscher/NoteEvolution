@@ -252,6 +252,7 @@ public class RangeStateTests : UiTestContext
         State.CurrentSectionKey = KeyOf("# Eins");
         State.ChangeRange(-1);
         var cut = Render<NotesPane>();
+        cut.Find(".ne-tab-relevant").Click();
         await Eventually(() => embedder.Texts.Contains("query: Zweiter Text"));
         Assert.DoesNotContain("query: Unter Text", embedder.Texts);
 
