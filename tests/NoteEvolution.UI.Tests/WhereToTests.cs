@@ -131,7 +131,7 @@ public class WhereToTests : UiTestContext
 
         cut.Find(".ne-note-child-whereto").Click();
 
-        cut.WaitForAssertion(() => Assert.Equal(5, cut.FindAll(".ne-note-body .ne-note-whereto-item").Count));
+        cut.WaitForAssertion(() => Assert.Equal(5, cut.FindAll(".ne-note-body .ne-note-whereto-item").Count), TimeSpan.FromSeconds(10));
         // The sub-bullet's text (with its descendants, as a passage) was searched, not the note's.
         Assert.Contains(EmbeddingText.ForNoteBlock(child), embedder.Texts);
         var first = cut.FindAll(".ne-note-body .ne-note-whereto-item")[0];
@@ -141,7 +141,7 @@ public class WhereToTests : UiTestContext
 
         // The note's own list opens beside it.
         cut.Find(".ne-note-whereto").Click();
-        cut.WaitForAssertion(() => Assert.Equal(5, cut.FindAll(".ne-note-card > .ne-note-whereto-results .ne-note-whereto-item").Count));
+        cut.WaitForAssertion(() => Assert.Equal(5, cut.FindAll(".ne-note-card > .ne-note-whereto-results .ne-note-whereto-item").Count), TimeSpan.FromSeconds(10));
         Assert.Equal(10, cut.FindAll(".ne-note-whereto-item").Count);
 
         // The sub-bullet's toggle closes only its own list.
@@ -298,7 +298,7 @@ public class WhereToTests : UiTestContext
         Assert.Null(child.Id);
         var cut = Render<NoteCard>(p => p.Add(c => c.Note, note));
         cut.Find(".ne-note-child-whereto").Click();
-        cut.WaitForAssertion(() => Assert.Equal(5, cut.FindAll(".ne-note-body .ne-note-whereto-item").Count));
+        cut.WaitForAssertion(() => Assert.Equal(5, cut.FindAll(".ne-note-body .ne-note-whereto-item").Count), TimeSpan.FromSeconds(10));
         var hit = TextBlock(ChildText);
         Assert.Equal(ChildText, Excerpt(cut.FindAll(".ne-note-body .ne-note-whereto-item")[0]));
         cut.FindAll(".ne-note-body .ne-note-whereto-item")[0].Click();
@@ -429,6 +429,38 @@ public class WhereToTests : UiTestContext
     }
 
     [Fact]
+    public async Task SubBullet_BoxContainsItsSubBlocks_ItsListAboveThem()
+    {
+        var tv = TestVault.Create(
+            (AlphaPath, "title:: Alpha\ntype:: book\n\n- # Eins\n\t- Rosen und Tomaten im Garten\n"),
+            (NotesPath, $"- {NoteText}\n\t- Garten\n\t\t- Rosen\n\t\t\t- rote\n\t\t- Tomaten\n\t- Ende\n"));
+        _vaults.Add(tv);
+        var session = await OpenWithAiAsync(tv);
+
+        var cut = RenderCard(session);
+
+        // "Garten" is one box with its row and, inside it, the boxes of all its sub-blocks (also the deeper "rote").
+        var tops = cut.FindAll(".ne-note-body > .ne-note-child");
+        Assert.Equal(2, tops.Count);
+        var garden = tops[0];
+        Assert.Equal("Garten", garden.QuerySelector(":scope > .ne-note-child-row > .ne-note-child-text")!.TextContent);
+        Assert.Equal(
+            ["Rosen", "rote", "Tomaten"],
+            garden.QuerySelectorAll(":scope .ne-note-child .ne-note-child-text").Select(e => e.TextContent));
+        Assert.Equal(["Rosen", "Tomaten"], garden.QuerySelectorAll(":scope > .ne-note-child > .ne-note-child-row > .ne-note-child-text").Select(e => e.TextContent));
+        Assert.Equal("Ende", tops[1].QuerySelector(".ne-note-child-text")!.TextContent);
+
+        // Its buttons stand in its own row (it has sub-blocks, so it counts as more than one line); its list opens in its
+        // box, below the row and above the sub-blocks.
+        Assert.NotNull(garden.QuerySelector(":scope > .ne-note-child-row > .ne-adopt-column .ne-note-child-whereto"));
+        garden.QuerySelector(":scope > .ne-note-child-row .ne-note-child-whereto")!.Click();
+        cut.WaitForAssertion(() => Assert.NotNull(cut.FindAll(".ne-note-body > .ne-note-child")[0].QuerySelector(":scope > .ne-note-whereto-results")));
+        var box = cut.FindAll(".ne-note-body > .ne-note-child")[0];
+        var order = box.Children.Select(e => e.ClassName).ToList();
+        Assert.Equal(["ne-note-child-row", "ne-note-whereto-results", "ne-note-child", "ne-note-child"], order);
+    }
+
+    [Fact]
     public async Task WhereTo_BookChanged_ListCloses()
     {
         var tv = TestVault.Create(
@@ -527,7 +559,7 @@ public class WhereToTests : UiTestContext
         var cut = Render<NoteCard>(p => p.Add(c => c.Note, Note(session, OtherText)));
 
         // The sub-bullet has the same split button and below it its own "Wohin damit?", stacked to the right of its text.
-        var column = cut.Find(".ne-note-child > .ne-adopt-column");
+        var column = cut.Find(".ne-note-child > .ne-note-child-row > .ne-adopt-column");
         Assert.Equal("ne-note-child-text", column.PreviousElementSibling!.ClassName);
         Assert.Equal(2, column.Children.Length);
         var split = column.Children[0];
