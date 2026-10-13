@@ -18,6 +18,13 @@ namespace NoteEvolution.UI.Tests;
 /// <summary>A bUnit context with the services the components expect, all fake or in memory.</summary>
 public abstract class UiTestContext : BunitContext
 {
+    /// <summary>
+    /// The suite runs its test projects in parallel, and the AI tests keep the CPU busy: opening a vault or computing
+    /// with the AI in the background can then take longer than bUnit's default second. A wait that passes ends as soon
+    /// as it passes; only a failing one takes the full time.
+    /// </summary>
+    static UiTestContext() => DefaultWaitTimeout = TimeSpan.FromSeconds(10);
+
     protected UiTestContext()
     {
         Services.AddLocalization();
