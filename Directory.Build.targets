@@ -1,0 +1,28 @@
+<Project>
+  <!--
+    The version counts the commits with code changes (src, tests, solution and build files; no merges, no docs), written
+    digit by digit: 131 such commits give 0.1.3.1, the next one 0.1.3.2, after 0.1.3.9 comes 0.1.4.0. It is computed
+    from the git history at build time, so every such commit raises it by one without a version file to keep up to
+    date. Without git (or outside a repository) it is 0.0.0.0.
+  -->
+  <Target Name="NeCodeCommitVersion" BeforeTargets="GetAssemblyVersion;GenerateNuspec" Condition="'$(NeCodeCommits)' == ''">
+    <Exec Command="git rev-list --count --no-merges HEAD -- src tests &quot;*.slnx&quot; &quot;Directory.Build.*&quot; global.json"
+          WorkingDirectory="$(MSBuildThisFileDirectory)" ConsoleToMSBuild="true" StandardOutputImportance="low"
+          StandardErrorImportance="low" IgnoreExitCode="true" EchoOff="true">
+      <Output TaskParameter="ConsoleOutput" PropertyName="NeGitOutput" />
+      <Output TaskParameter="ExitCode" PropertyName="NeGitExitCode" />
+    </Exec>
+    <PropertyGroup>
+      <NeCodeCommits>$(NeGitOutput.Trim())</NeCodeCommits>
+      <NeCodeCommits Condition="'$(NeGitExitCode)' != '0' or '$(NeCodeCommits)' == ''">0</NeCodeCommits>
+      <NeVersionD>$([MSBuild]::Modulo($(NeCodeCommits), 10))</NeVersionD>
+      <NeVersionC>$([MSBuild]::Modulo($([System.Math]::Floor($([MSBuild]::Divide($(NeCodeCommits), 10)))), 10))</NeVersionC>
+      <NeVersionB>$([MSBuild]::Modulo($([System.Math]::Floor($([MSBuild]::Divide($(NeCodeCommits), 100)))), 10))</NeVersionB>
+      <NeVersionA>$([System.Math]::Floor($([MSBuild]::Divide($(NeCodeCommits), 1000))))</NeVersionA>
+      <Version>$(NeVersionA).$(NeVersionB).$(NeVersionC).$(NeVersionD)</Version>
+      <AssemblyVersion>$(Version)</AssemblyVersion>
+      <FileVersion>$(Version)</FileVersion>
+      <InformationalVersion>$(Version)</InformationalVersion>
+    </PropertyGroup>
+  </Target>
+</Project>

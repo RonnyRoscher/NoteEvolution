@@ -87,7 +87,7 @@ internal static class Program
 
             app.MainWindow
                 .SetLogVerbosity(0)
-                .SetTitle("NoteEvolution")
+                .SetTitle(AppVersion.Title(typeof(Program).Assembly.GetName().Version))
                 .SetUseOsDefaultSize(false)
                 .SetSize(1400, 900)
                 .Center();
