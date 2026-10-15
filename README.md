@@ -32,6 +32,11 @@ node build.mjs
 
 `node_modules` wird nicht eingecheckt.
 
+**Version:** Die Programmversion steht im Fenstertitel („NoteEvolution v0.1.3.2“). Sie zählt die Commits mit
+Codeänderungen (unter `src/` und `tests/` sowie Projekt- und Builddateien; ohne Merges und reine Doku-Commits), Stelle
+für Stelle dezimal: auf 0.1.3.9 folgt 0.1.4.0. Berechnet wird sie beim Bauen aus der Git-Historie
+(`Directory.Build.targets`); ohne Git ist sie 0.0.0.0.
+
 ## Logo und Startbildschirm
 
 Das Logo (Notizzettel, die zu einem Buch werden) liegt als Quelle in
