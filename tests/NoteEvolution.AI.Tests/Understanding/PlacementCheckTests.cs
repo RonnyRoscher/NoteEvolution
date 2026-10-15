@@ -111,5 +111,35 @@ public class PlacementCheckTests
 
         Assert.Equal(300, verdict!.Reason.Length);
     }
-}
 
+    [Fact]
+    public void Prompt_NoteOver4000_Capped()
+    {
+        var note = "  " + new string('a', 3000) + new string('b', 2000) + "  ";
+        var prompt = Build(Load(), note);
+
+        Assert.Contains(new string('a', 3000) + new string('b', 1000) + "\n", prompt.User);
+        Assert.DoesNotContain(new string('b', 1001), prompt.User);
+    }
+
+    [Fact]
+    public void Parse_PlaceNotInTopic_Null()
+    {
+        Assert.Null(PlacementCheck.Parse("{\"thema\":1,\"stelle\":\"1.9\",\"begruendung\":\"x\"}", Build(Load())));
+    }
+
+    [Fact]
+    public void Parse_StelleOfOtherTopic_Null()
+    {
+        Assert.Null(PlacementCheck.Parse("{\"thema\":1,\"stelle\":\"2.1\",\"begruendung\":\"x\"}", Build(Load())));
+    }
+
+    [Fact]
+    public void Parse_N0_NewPlace()
+    {
+        var s = Load();
+        var verdict = PlacementCheck.Parse("{\"thema\":1,\"stelle\":\"1.0\",\"begruendung\":\"x\"}", Build(s));
+
+        Assert.Equal(new PlacementVerdict(s.A, null, "x"), verdict);
+    }
+}

@@ -37,7 +37,7 @@ public static class UnderstandingItems
     /// <summary>The note's item, or <c>null</c> when its text is shorter than <see cref="NoteMinLength"/>.</summary>
     public static UnderstandingItem? ForNote(NoteBlock note, string chatModel)
     {
-        var text = Limit(NoteText(note));
+        var text = LimitNote(NoteText(note));
         if (text.Length < NoteMinLength)
         {
             return null;
@@ -61,9 +61,10 @@ public static class UnderstandingItems
 
     /// <summary>Fingerprint of a note from its <see cref="NoteText"/> (limited to <see cref="NoteInputLimit"/> after trimming); equals the one of <see cref="ForNote"/>.</summary>
     public static string NoteFingerprint(string noteText, string chatModel) =>
-        Hash([PromptVersion.ToString(), chatModel, Limit(noteText)]);
+        Hash([PromptVersion.ToString(), chatModel, LimitNote(noteText)]);
 
-    private static string Limit(string noteText)
+    /// <summary>The note text as the model sees it: trimmed and cut to <see cref="NoteInputLimit"/> characters.</summary>
+    internal static string LimitNote(string noteText)
     {
         var text = noteText.Trim();
         return text.Length > NoteInputLimit ? text[..NoteInputLimit].TrimEnd() : text;

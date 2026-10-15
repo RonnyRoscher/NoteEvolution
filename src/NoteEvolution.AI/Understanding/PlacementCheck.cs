@@ -39,7 +39,7 @@ public static class PlacementCheck
     public static PlacementCheckPrompt Prompt(Book book, string noteText, IReadOnlyList<TopicHit> topics,
         IReadOnlyDictionary<Guid, IReadOnlyList<PlacementHit>> places)
     {
-        var lines = new List<string> { "Notiz:", noteText.Trim(), "", "Themen:" };
+        var lines = new List<string> { "Notiz:", UnderstandingItems.LimitNote(noteText), "", "Themen:" };
         var numbered = new List<CheckTopic>();
         foreach (var topic in topics)
         {
