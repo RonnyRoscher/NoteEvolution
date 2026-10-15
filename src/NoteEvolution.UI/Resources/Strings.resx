@@ -1062,4 +1062,16 @@
   <data name="LlmResume" xml:space="preserve">
     <value>Sprachmodell fortsetzen</value>
   </data>
+  <data name="SysMeter" xml:space="preserve">
+    <value>CPU {0} % · RAM {1}/{2} GB · Frei {3} GB</value>
+    <comment>Systemanzeige in der Kopfzeile: {0} = Prozessorauslastung, {1}/{2} = Arbeitsspeicher belegt/gesamt, {3} = freier Platz auf dem Laufwerk des Vaults; unbekannte Werte „–“</comment>
+  </data>
+  <data name="SysMeterTooltip" xml:space="preserve">
+    <value>Ollama: CPU {0} %, RAM {1} GB
+NoteEvolution: CPU {2} %, RAM {3} GB</value>
+    <comment>Tooltip der Systemanzeige: Anteile von Ollama ({0}, {1}) und NoteEvolution ({2}, {3}); unbekannte Werte „–“</comment>
+  </data>
+  <data name="SettingsSystemMeter" xml:space="preserve">
+    <value>Systemanzeige in der Kopfzeile (CPU, Arbeitsspeicher, freier Platz)</value>
+  </data>
 </root>

@@ -38,6 +38,12 @@
         <input id="ne-settings-width" class="ne-settings-width" type="number" min="@UiSettings.MinLineWidthCh" max="@UiSettings.MaxLineWidthCh"
                @bind="_lineWidth" @bind:event="onchange" />
     </div>
+    <div class="ne-settings-field">
+        <label class="ne-settings-check">
+            <input type="checkbox" class="ne-settings-sysmeter" @bind="_systemMeter" />
+            @L["SettingsSystemMeter"]
+        </label>
+    </div>
     @if (_ai is { } ai)
     {
         <div class="ne-settings-field ne-settings-ai">
@@ -98,6 +104,7 @@
     private ThemeChoice _theme;
     private int _fontSize;
     private int _lineWidth;
+    private bool _systemMeter;
     private bool _busy;
     private string? _error;
 
@@ -148,6 +155,7 @@
         _theme = Settings.Theme;
         _fontSize = Settings.FontSizePt;
         _lineWidth = Settings.LineWidthCh;
+        _systemMeter = Settings.SystemMeterVisible;
     }
 
     /// <summary>Reads the models installed on the configured server for the model choice.</summary>
@@ -259,6 +267,7 @@
             Settings.Theme = _theme;
             Settings.FontSizePt = _fontSize = Math.Clamp(_fontSize, UiSettings.MinFontSizePt, UiSettings.MaxFontSizePt);
             Settings.LineWidthCh = _lineWidth = Math.Clamp(_lineWidth, UiSettings.MinLineWidthCh, UiSettings.MaxLineWidthCh);
+            Settings.SystemMeterVisible = _systemMeter;
             var llmChanged = _language is not null && TakeLanguageModelValues();
             try
             {

@@ -12,6 +12,7 @@ using NoteEvolution.Core.Links;
 using NoteEvolution.Core.Model;
 using NoteEvolution.Core.Storage;
 using NoteEvolution.Core.Vaults;
+using NoteEvolution.UI.Platform;
 
 namespace NoteEvolution.UI.State;
 
@@ -30,13 +31,18 @@ namespace NoteEvolution.UI.State;
 /// <c>.noteevolution</c> folder, the <see cref="UnderstandingWorker"/> fed with snapshots taken on the UI thread (on
 /// opening, <see cref="PageIndexDelay"/> after page changes, and when the current book or section changes), and
 /// <see cref="Relevance"/> with the summaries and core statements. While the model is not ready, or the worker finds the
-/// server gone, relevance works as without it. Nothing of it writes a note or book file.
+/// server gone, relevance works as without it. Nothing of it writes a note or book file. While the
+/// <see cref="ISystemMonitor"/> tells that the computer runs on battery, the work pauses (read at most every
+/// <see cref="BatteryReadInterval"/>).
 /// </para>
 /// </summary>
 public sealed class VaultSession : IDisposable
 {
     /// <summary>How long a replaced page is left alone before its notes are embedded again (debounced per path).</summary>
     public static readonly TimeSpan PageIndexDelay = TimeSpan.FromMilliseconds(2000);
+
+    /// <summary>How long the battery state read from the <see cref="ISystemMonitor"/> is used before it is read again.</summary>
+    public static readonly TimeSpan BatteryReadInterval = TimeSpan.FromSeconds(30);
 
     private readonly ILogger _logger;
     private readonly Func<Action, Task> _dispatch;
@@ -66,6 +72,12 @@ public sealed class VaultSession : IDisposable
 
     private readonly LanguageModelRuntime? _language;
 
+    /// <summary>Tells the worker whether the computer runs on battery; without it the work never pauses for that.</summary>
+    private readonly ISystemMonitor? _monitor;
+
+    /// <summary>The battery state last read and when; guarded by <see cref="_gate"/>.</summary>
+    private (DateTimeOffset At, bool OnBattery)? _battery;
+
     /// <summary>The language model's parts while it is ready; set and cleared under <see cref="_gate"/>.</summary>
     private volatile UnderstandingParts? _understanding;
 
@@ -79,9 +91,10 @@ public sealed class VaultSession : IDisposable
 
     private VaultSession(
         string root, IClock clock, ILogger logger, TimeProvider timeProvider, Func<Action, Task> dispatch, AiRuntime? ai,
-        LanguageModelRuntime? language)
+        LanguageModelRuntime? language, ISystemMonitor? monitor)
     {
         _logger = logger;
+        _monitor = monitor;
         _dispatch = dispatch;
         _ai = ai;
         _language = language;
@@ -248,10 +261,11 @@ public sealed class VaultSession : IDisposable
     /// </param>
     /// <param name="ai">The app's AI runtime; without it the AI is off (<see cref="AiState.Off"/>).</param>
     /// <param name="language">The app's language model; without it there is no background understanding.</param>
+    /// <param name="monitor">Tells whether the computer runs on battery (the background understanding pauses then).</param>
     /// <exception cref="DirectoryNotFoundException"><paramref name="root"/> is not a folder.</exception>
     public static Task<VaultSession> OpenAsync(
         string root, IClock clock, ILogger? logger = null, TimeProvider? timeProvider = null, Func<Action, Task>? dispatch = null,
-        AiRuntime? ai = null, LanguageModelRuntime? language = null)
+        AiRuntime? ai = null, LanguageModelRuntime? language = null, ISystemMonitor? monitor = null)
     {
         if (!Directory.Exists(root))
         {
@@ -262,7 +276,7 @@ public sealed class VaultSession : IDisposable
         {
             var session = new VaultSession(
                 root, clock, logger ?? NullLogger.Instance, timeProvider ?? TimeProvider.System, dispatch ?? RunInline, ai,
-                language);
+                language, monitor);
             try
             {
                 session.Start();
@@ -927,6 +941,35 @@ public sealed class VaultSession : IDisposable
         }
     }
 
+    /// <summary>
+    /// Whether the computer runs on battery, for the worker (on its thread): read from the monitor at most every
+    /// <see cref="BatteryReadInterval"/>; not recognizable (no monitor, unknown) means no.
+    /// </summary>
+    private bool OnBattery()
+    {
+        if (_monitor is null)
+        {
+            return false;
+        }
+
+        var now = _time.GetUtcNow();
+        lock (_gate)
+        {
+            if (_battery is { } known && now - known.At < BatteryReadInterval)
+            {
+                return known.OnBattery;
+            }
+        }
+
+        var onBattery = _monitor.Read(null).OnBattery == true;
+        lock (_gate)
+        {
+            _battery = (now, onBattery);
+        }
+
+        return onBattery;
+    }
+
     private void StartUnderstanding(IChatModel chat, string model)
     {
         var ai = _aiParts!;
@@ -943,7 +986,7 @@ public sealed class VaultSession : IDisposable
 
         var understanding = new StoreUnderstanding(store, model, ai.EmbedModel);
         var worker = new UnderstandingWorker(
-            chat, model, store, text => ai.Embedder.Embed([text])[0], ai.EmbedModel, _time, () => false, _logger)
+            chat, model, store, text => ai.Embedder.Embed([text])[0], ai.EmbedModel, _time, OnBattery, _logger)
         {
             Paused = _language!.Settings.LanguageModelPaused,
         };

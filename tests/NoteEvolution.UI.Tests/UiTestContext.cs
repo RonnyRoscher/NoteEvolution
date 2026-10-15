@@ -35,6 +35,7 @@ public abstract class UiTestContext : BunitContext
         Services.AddSingleton<IClock>(Clock);
         Services.AddSingleton<TimeProvider>(Time);
         Services.AddSingleton<IEditorInterop>(Editor);
+        Services.AddSingleton<ISystemMonitor>(SystemMonitor);
 
         // The host page's splash screen (index.html), which the shell ends after the start.
         JSInterop.SetupVoid("neSplash.status", _ => true).SetVoidResult();
@@ -48,6 +49,9 @@ public abstract class UiTestContext : BunitContext
     protected FakeEditorInterop Editor { get; } = new();
 
     protected FakePlatformServices Platform { get; } = new();
+
+    /// <summary>The system meter's readings and the battery state of sessions opened by <see cref="OpenSessionAsync"/>.</summary>
+    protected FakeSystemMonitor SystemMonitor { get; } = new();
 
     protected UiSettings Settings { get; } = new();
 
@@ -132,11 +136,11 @@ public abstract class UiTestContext : BunitContext
 
     /// <summary>
     /// Opens <paramref name="vault"/> as the app's session (dispatching inline, with <see cref="LanguageModel"/> if one is
-    /// registered) and selects its first book.
+    /// registered, and <see cref="SystemMonitor"/>) and selects its first book.
     /// </summary>
     protected async Task<VaultSession> OpenSessionAsync(TestVault vault, AiRuntime? ai = null)
     {
-        var session = await VaultSession.OpenAsync(vault.Root, Clock, timeProvider: Time, ai: ai, language: LanguageModel);
+        var session = await VaultSession.OpenAsync(vault.Root, Clock, timeProvider: Time, ai: ai, language: LanguageModel, monitor: SystemMonitor);
         State.Session = session;
         State.CurrentBook = session.Vault.Books.FirstOrDefault();
         State.CurrentSectionKey = State.CurrentBook?.Root.Key ?? Guid.Empty;

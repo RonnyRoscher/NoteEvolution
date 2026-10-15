@@ -1,0 +1,121 @@
+@using Microsoft.Extensions.DependencyInjection
+@implements IDisposable
+@inject AppState State
+@inject UiSettings Settings
+@inject TimeProvider Time
+@inject IServiceProvider Services
+@inject IStringLocalizer<Strings> L
+
+@* The system meter in the header (spec 11.2): "CPU 63 % · RAM 9,8/15,8 GB · Frei 112 GB", the shares in the tooltip. *@
+@if (Settings.SystemMeterVisible && _snapshot is { } snapshot)
+{
+    <span class="ne-sysmeter@(IsWarning(snapshot) ? " ne-sysmeter-warn" : "")" title="@Tooltip(snapshot)">@Text(snapshot)</span>
+}
+
+@code {
+    /// <summary>How often the meter reads the values anew.</summary>
+    public static readonly TimeSpan Interval = TimeSpan.FromSeconds(2);
+
+    /// <summary>Shown for a value that cannot be told.</summary>
+    private const string Unknown = "–";
+
+    /// <summary>Numbers as the German text shows them: a comma before the decimals.</summary>
+    private static readonly NumberFormatInfo German = new() { NumberDecimalSeparator = ",", NumberGroupSeparator = "." };
+
+    /// <summary>The app's system monitor; <c>null</c> when none is registered (no meter).</summary>
+    private ISystemMonitor? _monitor;
+
+    private ITimer? _timer;
+    private volatile bool _disposed;
+
+    /// <summary>The open vault's folder, taken on the UI thread; the readings on the timer's thread use it.</summary>
+    private volatile string? _vaultRoot;
+
+    /// <summary>The latest reading; <c>null</c> before the first (or while the meter is switched off from the start).</summary>
+    private SystemSnapshot? _snapshot;
+
+    protected override void OnInitialized()
+    {
+        _monitor = Services.GetService<ISystemMonitor>();
+        if (_monitor is null)
+        {
+            return;
+        }
+
+        State.Changed += OnStateChanged;
+        _vaultRoot = State.Session?.Vault.Root;
+        if (Settings.SystemMeterVisible)
+        {
+            _snapshot = _monitor.Read(_vaultRoot);
+        }
+
+        _timer = Time.CreateTimer(_ => OnTick(), null, Interval, Interval);
+    }
+
+    public void Dispose()
+    {
+        _disposed = true;
+        _timer?.Dispose();
+        if (_monitor is not null)
+        {
+            State.Changed -= OnStateChanged;
+        }
+    }
+
+    /// <summary>Reads on the timer's thread (while the meter is shown) and shows the reading on the UI thread.</summary>
+    private void OnTick()
+    {
+        if (_disposed || !Settings.SystemMeterVisible || _monitor is not { } monitor)
+        {
+            return;
+        }
+
+        var snapshot = monitor.Read(_vaultRoot);
+        _ = InvokeAsync(() =>
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            _snapshot = snapshot;
+            StateHasChanged();
+        });
+    }
+
+    /// <summary>
+    /// Another vault, or the meter switched on or off in the settings: read at once when the vault changed or nothing was
+    /// read yet, so the meter does not wait for the next tick.
+    /// </summary>
+    private void OnStateChanged() => _ = InvokeAsync(() =>
+    {
+        if (_disposed || _monitor is null)
+        {
+            return;
+        }
+
+        var root = State.Session?.Vault.Root;
+        var otherVault = root != _vaultRoot;
+        _vaultRoot = root;
+        if (Settings.SystemMeterVisible && (_snapshot is null || otherVault))
+        {
+            _snapshot = _monitor.Read(root);
+        }
+
+        StateHasChanged();
+    });
+
+    private string Text(SystemSnapshot s) =>
+        L["SysMeter", Whole(s.CpuPercent), Decimal(s.RamUsedGb), Decimal(s.RamTotalGb), Whole(s.DiskFreeGb)];
+
+    private string Tooltip(SystemSnapshot s) =>
+        L["SysMeterTooltip", Whole(s.OllamaCpuPercent), Decimal(s.OllamaRamGb), Whole(s.AppCpuPercent), Decimal(s.AppRamGb)];
+
+    /// <summary>The warning color: the processor is busier than 90 %, or less than 1 GB of memory is free.</summary>
+    private static bool IsWarning(SystemSnapshot s) =>
+        s.CpuPercent > 90 || (s.RamTotalGb is { } total && s.RamUsedGb is { } used && total - used < 1);
+
+    private static string Whole(double? value) => value?.ToString("0", German) ?? Unknown;
+
+    private static string Decimal(double? value) => value?.ToString("0.0", German) ?? Unknown;
+}

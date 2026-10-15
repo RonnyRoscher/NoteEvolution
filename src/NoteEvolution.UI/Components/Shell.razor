@@ -142,6 +142,9 @@
     /// <summary>The app's language model; <c>null</c> when none is registered.</summary>
     private LanguageModelRuntime? _language;
 
+    /// <summary>Tells the sessions whether the computer runs on battery; <c>null</c> when none is registered.</summary>
+    private ISystemMonitor? _monitor;
+
     private bool _aiDialogOpen;
 
     /// <summary>The AI model dialog waits for the dialog shown after opening the vault (the link check) to close.</summary>
@@ -393,6 +396,7 @@
         _logger = LoggerFactory.CreateLogger<Shell>();
         _ai = Services.GetService<AiRuntime>();
         _language = Services.GetService<LanguageModelRuntime>();
+        _monitor = Services.GetService<ISystemMonitor>();
 
         // Asks the language-model server in the background; vault sessions start their work once it is ready.
         _ = _language?.RefreshAsync(CancellationToken.None);
@@ -488,7 +492,7 @@
         try
         {
             var session = await VaultSession.OpenAsync(
-                root, Clock, LoggerFactory.CreateLogger<VaultSession>(), Time, action => InvokeAsync(action), _ai, _language);
+                root, Clock, LoggerFactory.CreateLogger<VaultSession>(), Time, action => InvokeAsync(action), _ai, _language, _monitor);
             Activate(session);
             Settings.LastVault = root;
             _hintVisible = !Settings.LogseqHintShown;

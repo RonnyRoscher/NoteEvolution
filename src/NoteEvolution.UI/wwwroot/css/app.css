@@ -143,6 +143,20 @@ html, body {
     line-height: 1.4;
 }
 
+/* The system meter at the right end of the header (spec 11.2) */
+.ne-sysmeter {
+    color: var(--fg-muted);
+    font-size: 12px;
+    padding: 0 4px;
+    white-space: nowrap;
+    cursor: default;
+    font-variant-numeric: tabular-nums;
+}
+
+.ne-sysmeter.ne-sysmeter-warn {
+    color: var(--warning);
+}
+
 .ne-undo-error {
     color: var(--danger);
     font-size: 12px;

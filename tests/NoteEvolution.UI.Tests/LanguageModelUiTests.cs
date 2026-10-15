@@ -429,7 +429,7 @@ public class LanguageModelUiTests : UiTestContext
         cut.WaitForAssertion(() => Assert.Equal(
             Text("LlmHeaderProgress", 1, 5) + " · " + Text("LlmPauseUnreachable"), cut.Find(".ne-llm-text").TextContent));
 
-        // On battery (the session cannot tell yet, so the text is checked directly).
+        // The texts of the other reasons (battery end to end: LanguageModelTests.Worker_OnBattery_FromMonitor).
         var l = Services.GetRequiredService<IStringLocalizer<Strings>>();
         Assert.Equal(
             Text("LlmHeaderProgress", 1, 5) + " · " + Text("LlmPauseBattery"),

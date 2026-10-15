@@ -47,6 +47,7 @@ internal static class Program
             builder.Services.AddSingleton<AppState>();
             builder.Services.AddSingleton<IClock, SystemClock>();
             builder.Services.AddSingleton(TimeProvider.System);
+            builder.Services.AddSingleton<ISystemMonitor>(new SystemMonitor(TimeProvider.System));
             builder.Services.AddSingleton<IPdfExporter, QuestPdfExporter>();
             builder.Services.AddSingleton(sp => new AiRuntime(
                 models,

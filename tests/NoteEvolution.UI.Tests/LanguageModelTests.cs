@@ -5,6 +5,7 @@ using NoteEvolution.AI.Tests;
 using NoteEvolution.AI.Understanding;
 using NoteEvolution.Core.Books;
 using NoteEvolution.TestSupport;
+using NoteEvolution.UI.Platform;
 using NoteEvolution.UI.State;
 
 namespace NoteEvolution.UI.Tests;
@@ -236,6 +237,29 @@ public class LanguageModelTests : UiTestContext
 
         Time.Advance(UnderstandingWorker.TypingQuiet);
         await AllDone(session, 5);
+    }
+
+    [Fact]
+    public async Task Worker_OnBattery_FromMonitor()
+    {
+        var tv = Vault();
+        SystemMonitor.Snapshot = new SystemSnapshot(10, 4, 16, 100, null, null, null, null, OnBattery: true);
+        var language = UseLanguageModel(_chat);
+        await language.RefreshAsync(CancellationToken.None);
+        var session = await OpenWithAiAsync(tv);
+
+        // On battery the work waits and says why; nothing is asked.
+        await Eventually(() => session.Understanding?.Pause == UnderstandingPause.Battery);
+        await Task.Delay(50);
+        Assert.Empty(_chat.Calls);
+
+        // On the power supply again: the worker looks again after its battery interval and the session reads anew.
+        SystemMonitor.Snapshot = SystemMonitor.Snapshot with { OnBattery = false };
+        Time.Advance(UnderstandingWorker.BatteryCheck);
+        await AllDone(session, 5);
+
+        // The session keeps the battery state for a while instead of reading it before every request.
+        Assert.Equal(2, SystemMonitor.Reads);
     }
 
     [Fact]
