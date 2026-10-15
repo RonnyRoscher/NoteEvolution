@@ -892,4 +892,142 @@
   <data name="NotesRelevantNoBook" xml:space="preserve">
     <value>Kein Buch gewählt</value>
   </data>
+
+  <!-- Sprachmodell (Ollama) -->
+  <data name="DurationSeconds" xml:space="preserve">
+    <value>{0} s</value>
+    <comment>{0} = Sekunden (unter 1 Minute)</comment>
+  </data>
+  <data name="DurationMinutes" xml:space="preserve">
+    <value>{0}:{1:00}</value>
+    <comment>{0} = Minuten, {1} = Sekunden (unter 1 Stunde)</comment>
+  </data>
+  <data name="DurationHours" xml:space="preserve">
+    <value>{0} h {1} min</value>
+    <comment>{0} = Stunden, {1} = Minuten</comment>
+  </data>
+  <data name="SettingsLlm" xml:space="preserve">
+    <value>Sprachmodell (Ollama)</value>
+  </data>
+  <data name="SettingsLlmEnabled" xml:space="preserve">
+    <value>Sprachmodell verwenden</value>
+  </data>
+  <data name="SettingsLlmAddress" xml:space="preserve">
+    <value>Adresse</value>
+  </data>
+  <data name="SettingsLlmModel" xml:space="preserve">
+    <value>Modell</value>
+  </data>
+  <data name="LlmStateOff" xml:space="preserve">
+    <value>ausgeschaltet</value>
+  </data>
+  <data name="LlmStateReady" xml:space="preserve">
+    <value>verbunden (Ollama {0})</value>
+    <comment>{0} = Version von Ollama</comment>
+  </data>
+  <data name="LlmStateUnreachable" xml:space="preserve">
+    <value>Ollama nicht erreichbar</value>
+  </data>
+  <data name="LlmStateModelMissing" xml:space="preserve">
+    <value>Modell nicht installiert</value>
+  </data>
+  <data name="LlmStatePulling" xml:space="preserve">
+    <value>Modell wird geladen …</value>
+  </data>
+  <data name="LlmPullButton" xml:space="preserve">
+    <value>Modell laden</value>
+  </data>
+  <data name="LlmRemoteWarning" xml:space="preserve">
+    <value>Notiz- und Buchtexte werden an diesen Rechner gesendet</value>
+  </data>
+  <data name="LlmRemoteConfirm" xml:space="preserve">
+    <value>Trotzdem diese Adresse verwenden</value>
+  </data>
+  <data name="LlmRemoteNotConfirmed" xml:space="preserve">
+    <value>Die Adresse zeigt nicht auf diesen Rechner; bitte bestätigen, dass Notiz- und Buchtexte dorthin gesendet werden dürfen.</value>
+  </data>
+  <data name="LlmAddressInvalid" xml:space="preserve">
+    <value>Die Adresse des Sprachmodells ist ungültig (Beispiel: http://127.0.0.1:11434).</value>
+  </data>
+  <data name="LlmOfferTitle" xml:space="preserve">
+    <value>Sprachmodell einrichten?</value>
+  </data>
+  <data name="LlmOfferText" xml:space="preserve">
+    <value>Ollama ist erreichbar. Mit einem Sprachmodell fasst die App die Themen der Abschnitte und die Kernaussagen der Notizen zusammen und findet so passendere Stellen. Die Berechnung läuft im Hintergrund; Texte werden dabei nie geändert.</value>
+  </data>
+  <data name="LlmSetup" xml:space="preserve">
+    <value>Einrichten</value>
+  </data>
+  <data name="LlmNotNow" xml:space="preserve">
+    <value>Nicht jetzt</value>
+  </data>
+  <data name="LlmSetupUnreachable" xml:space="preserve">
+    <value>Ollama ist nicht erreichbar.</value>
+  </data>
+  <data name="LlmPullTitle" xml:space="preserve">
+    <value>Sprachmodell laden</value>
+  </data>
+  <data name="LlmPullConfirm" xml:space="preserve">
+    <value>Das Modell „{0}“ ist in Ollama nicht installiert. Jetzt laden? Download ca. {1} GB.</value>
+    <comment>{0} = Name des Modells, {1} = Größe in GB</comment>
+  </data>
+  <data name="LlmPullConfirmUnknownSize" xml:space="preserve">
+    <value>Das Modell „{0}“ ist in Ollama nicht installiert. Jetzt laden?</value>
+    <comment>{0} = Name des Modells</comment>
+  </data>
+  <data name="LlmPullProgress" xml:space="preserve">
+    <value>{0} von {1} MB · noch ca. {2}</value>
+    <comment>{0} = geladen, {1} = gesamt, {2} = Restzeit</comment>
+  </data>
+  <data name="LlmPullProgressUnknown" xml:space="preserve">
+    <value>{0} von {1} MB · Restzeit wird ermittelt</value>
+    <comment>{0} = geladen, {1} = gesamt</comment>
+  </data>
+  <data name="LlmPullFailed" xml:space="preserve">
+    <value>Das Modell konnte nicht geladen werden.</value>
+  </data>
+  <data name="LlmHeaderProgress" xml:space="preserve">
+    <value>Sprachmodell {0}/{1}</value>
+    <comment>{0} = erledigte Einträge, {1} = alle Einträge</comment>
+  </data>
+  <data name="LlmHeaderRemaining" xml:space="preserve">
+    <value>noch ca. {0}</value>
+    <comment>{0} = Restzeit</comment>
+  </data>
+  <data name="LlmHeaderRemainingUnknown" xml:space="preserve">
+    <value>Restzeit wird ermittelt</value>
+  </data>
+  <data name="LlmHeaderReady" xml:space="preserve">
+    <value>Sprachmodell bereit</value>
+  </data>
+  <data name="LlmHeaderUnreachable" xml:space="preserve">
+    <value>Sprachmodell nicht erreichbar</value>
+  </data>
+  <data name="LlmHeaderModelMissing" xml:space="preserve">
+    <value>Sprachmodell: Modell nicht installiert</value>
+  </data>
+  <data name="LlmHeaderPulling" xml:space="preserve">
+    <value>Sprachmodell: Modell wird geladen …</value>
+  </data>
+  <data name="LlmPauseUser" xml:space="preserve">
+    <value>pausiert</value>
+  </data>
+  <data name="LlmPauseTyping" xml:space="preserve">
+    <value>wartet auf Tipppause</value>
+  </data>
+  <data name="LlmPauseBattery" xml:space="preserve">
+    <value>Akkubetrieb</value>
+  </data>
+  <data name="LlmPauseUnreachable" xml:space="preserve">
+    <value>nicht erreichbar</value>
+  </data>
+  <data name="LlmPauseModelMissing" xml:space="preserve">
+    <value>Modell nicht installiert</value>
+  </data>
+  <data name="LlmPause" xml:space="preserve">
+    <value>Sprachmodell pausieren</value>
+  </data>
+  <data name="LlmResume" xml:space="preserve">
+    <value>Sprachmodell fortsetzen</value>
+  </data>
 </root>

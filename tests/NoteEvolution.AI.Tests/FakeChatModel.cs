@@ -106,5 +106,13 @@ public sealed class FakeChatModel : IChatModel
         }
     }
 
-    public Task PullAsync(string model, IProgress<PullProgress>? progress, CancellationToken ct) => Task.CompletedTask;
+    /// <summary>What a pull does; <c>null</c> reports Ollama's final <c>success</c> status at once.</summary>
+    public Func<string, IProgress<PullProgress>?, CancellationToken, Task>? Pull { get; set; }
+
+    public Task PullAsync(string model, IProgress<PullProgress>? progress, CancellationToken ct)
+    {
+        if (Pull is { } pull) return pull(model, progress, ct);
+        progress?.Report(new PullProgress("success", 0, 0));
+        return Task.CompletedTask;
+    }
 }

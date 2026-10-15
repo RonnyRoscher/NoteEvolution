@@ -116,6 +116,10 @@
     {
         <AiModelDialog OnClose="CloseAiDialog" OnSwitch="SwitchAiModelAsync" />
     }
+    else if (_languageOfferOpen && _language is not null)
+    {
+        <LanguageModelDialog Offer="true" OnClose="CloseLanguageOffer" />
+    }
 
     <ConflictDialog />
     <UndoToast />
@@ -143,6 +147,12 @@
     /// <summary>The AI model dialog waits for the dialog shown after opening the vault (the link check) to close.</summary>
     private bool _aiDialogPending;
 
+    /// <summary>The language model's first-setup offer is shown.</summary>
+    private bool _languageOfferOpen;
+
+    /// <summary>The offer waits for the other dialogs (the link check, the AI model) to close.</summary>
+    private bool _languageOfferPending;
+
     private enum Dialog
     {
         None,
@@ -163,9 +173,63 @@
             _aiDialogPending = false;
             _aiDialogOpen = _ai is { ModelInstalled: false };
         }
+
+        ShowPendingLanguageOffer();
     }
 
-    private void CloseAiDialog() => _aiDialogOpen = false;
+    private void CloseAiDialog()
+    {
+        _aiDialogOpen = false;
+        ShowPendingLanguageOffer();
+    }
+
+    private void CloseLanguageOffer() => _languageOfferOpen = false;
+
+    /// <summary>The waiting language model offer appears once no other dialog is shown.</summary>
+    private void ShowPendingLanguageOffer()
+    {
+        if (_languageOfferPending && _dialog == Dialog.None && !_aiDialogOpen)
+        {
+            _languageOfferPending = false;
+            _languageOfferOpen = true;
+        }
+    }
+
+    /// <summary>
+    /// After a vault was opened: while the language model was never offered (and is not switched on), Ollama is asked
+    /// again (the runtime's answer may be from the app's start) and, if it is reachable, the setup is offered once (spec 7),
+    /// after the other dialogs shown after opening.
+    /// </summary>
+    private async Task OfferLanguageModelAsync()
+    {
+        if (_language is not { } language || Settings.LanguageModelOffered || Settings.LanguageModelEnabled
+            || _languageOfferOpen || _languageOfferPending)
+        {
+            return;
+        }
+
+        try
+        {
+            await language.RefreshAsync(CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Asking the language model server failed");
+            return;
+        }
+
+        await InvokeAsync(() =>
+        {
+            if (language.Version is null || Settings.LanguageModelOffered || Settings.LanguageModelEnabled || _languageOfferOpen)
+            {
+                return;
+            }
+
+            _languageOfferPending = true;
+            ShowPendingLanguageOffer();
+            StateHasChanged();
+        });
+    }
 
     /// <summary>
     /// The model dialog downloaded <paramref name="target"/>: it becomes the active model. The vault session shares the
@@ -438,6 +502,7 @@
             }
 
             OfferAiModel();
+            _ = OfferLanguageModelAsync();
         }
         catch (Exception ex)
         {

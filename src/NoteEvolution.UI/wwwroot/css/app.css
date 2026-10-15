@@ -122,6 +122,27 @@ html, body {
     cursor: help;
 }
 
+/* The language model's background work, next to the AI status */
+.ne-llm {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--fg-muted);
+    font-size: 12px;
+    white-space: nowrap;
+}
+
+.ne-llm-progress {
+    width: 60px;
+    height: 6px;
+}
+
+.ne-llm-pause {
+    padding: 0 4px;
+    font-size: 11px;
+    line-height: 1.4;
+}
+
 .ne-undo-error {
     color: var(--danger);
     font-size: 12px;
@@ -1560,6 +1581,33 @@ html, body {
 .ne-settings-ai-status {
     color: var(--fg-muted);
     font-size: 12px;
+}
+
+.ne-settings-check {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.ne-settings-llm-state {
+    color: var(--fg-muted);
+    font-size: 12px;
+}
+
+.ne-settings-llm-remote {
+    margin: 0;
+    color: var(--warning);
+    font-weight: 600;
+}
+
+.ne-settings-llm-pull {
+    align-self: flex-start;
+}
+
+/* Language model dialog */
+
+.ne-llm-pull-progress {
+    width: 100%;
 }
 
 /* AI model dialog */

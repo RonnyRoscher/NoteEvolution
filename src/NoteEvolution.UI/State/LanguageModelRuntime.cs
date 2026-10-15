@@ -41,6 +41,9 @@ public sealed class LanguageModelRuntime
     private bool _pulling;
     private ITimer? _retry;
 
+    /// <summary>Counts the checks started; only the newest one's result is taken (an older one may end later).</summary>
+    private long _generation;
+
     /// <param name="settings">The app's settings; the language model's values are read on every <see cref="RefreshAsync"/>.</param>
     /// <param name="connect">Creates the client for a server address (called once per address).</param>
     /// <param name="time">The clock for <see cref="RetryInterval"/> and <see cref="CheckTimeout"/>.</param>
@@ -82,13 +85,17 @@ public sealed class LanguageModelRuntime
     /// <summary>The settings the runtime reads (the vault session takes the model name and the pause switch from them).</summary>
     internal UiSettings Settings => _settings;
 
-    /// <summary><see cref="State"/>, <see cref="Version"/> or <see cref="Chat"/> may have changed; handlers must not throw (a throwing one is logged).</summary>
+    /// <summary>
+    /// <see cref="State"/>, <see cref="Version"/>, <see cref="Chat"/> or the pause switch may have changed; handlers must
+    /// not throw (a throwing one is logged).
+    /// </summary>
     public event Action? Changed;
 
     /// <summary>
     /// Asks the configured server for its version and installed models and sets <see cref="State"/>: <see cref="LanguageModelState.Off"/>
     /// while switched off (the version is still read, for the first-setup offer), otherwise unreachable, model missing or ready.
-    /// Never throws for a failing server; only cancelling <paramref name="ct"/> throws.
+    /// Never throws for a failing server; only cancelling <paramref name="ct"/> throws. When checks overlap (a retry still
+    /// waits for an answer while the settings were saved), the result of the one started last counts.
     /// </summary>
     public async Task RefreshAsync(CancellationToken ct)
     {
@@ -101,6 +108,12 @@ public sealed class LanguageModelRuntime
     /// <summary>The work of <see cref="RefreshAsync"/>; returns whether anything changed.</summary>
     private async Task<bool> UpdateAsync(CancellationToken ct)
     {
+        long generation;
+        lock (_gate)
+        {
+            generation = ++_generation;
+        }
+
         var enabled = _settings.LanguageModelEnabled;
         var model = _settings.LanguageModelName;
         var client = Client();
@@ -135,6 +148,11 @@ public sealed class LanguageModelRuntime
         bool changed;
         lock (_gate)
         {
+            if (generation != _generation)
+            {
+                return false; // a newer check (e.g. after saving the settings) has started; its result counts
+            }
+
             changed = state != _state || version != _version || !ReferenceEquals(client, _client);
             _state = state;
             _version = version;
@@ -157,7 +175,7 @@ public sealed class LanguageModelRuntime
     /// Downloads the configured model (only after the user confirmed it); <see cref="State"/> is <see cref="LanguageModelState.Pulling"/>
     /// meanwhile and is refreshed afterwards, also when the pull fails or is cancelled.
     /// </summary>
-    /// <exception cref="ChatModelUnavailableException">The server is unreachable or the pull failed.</exception>
+    /// <exception cref="ChatModelUnavailableException">The server is unreachable, or the pull failed or ended without Ollama's <c>success</c>.</exception>
     /// <exception cref="OperationCanceledException"><paramref name="ct"/> was cancelled.</exception>
     /// <exception cref="InvalidOperationException">A pull is already running.</exception>
     public async Task PullAsync(IProgress<PullProgress>? progress, CancellationToken ct)
@@ -176,7 +194,14 @@ public sealed class LanguageModelRuntime
         RaiseChanged();
         try
         {
-            await client.PullAsync(_settings.LanguageModelName, progress, ct);
+            var status = new LastStatus(progress);
+            await client.PullAsync(_settings.LanguageModelName, status, ct);
+            if (status.Status != "success")
+            {
+                // Ollama ends a complete pull with this status; a stream that just stops is a broken download.
+                throw new ChatModelUnavailableException($"The download of '{_settings.LanguageModelName}' ended without success.");
+            }
+
             _logger.LogInformation("Language model {Model} pulled", _settings.LanguageModelName);
         }
         finally
@@ -188,6 +213,40 @@ public sealed class LanguageModelRuntime
 
             await UpdateAsync(CancellationToken.None);
             RaiseChanged(); // Pulling ended in any case
+        }
+    }
+
+    /// <summary>
+    /// The user's pause switch for the background work (spec 4): sets <see cref="UiSettings.LanguageModelPaused"/> and
+    /// raises <see cref="Changed"/>, so open vault sessions pass it to their worker at once. The caller saves the settings.
+    /// </summary>
+    public void SetPaused(bool paused)
+    {
+        _settings.LanguageModelPaused = paused;
+        RaiseChanged();
+    }
+
+    /// <summary>
+    /// The models installed on the configured server (for the settings' choice); empty when it is unreachable, does not
+    /// answer within <see cref="CheckTimeout"/> or the address is invalid. Only cancelling <paramref name="ct"/> throws.
+    /// </summary>
+    public async Task<IReadOnlyList<ChatModelInfo>> InstalledModelsAsync(CancellationToken ct)
+    {
+        if (Client() is not { } client)
+        {
+            return [];
+        }
+
+        using var timeout = new CancellationTokenSource(CheckTimeout, _time);
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, timeout.Token);
+        try
+        {
+            return await client.ModelsAsync(linked.Token);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
+        {
+            _logger.LogInformation(ex, "The language model server at {Address} did not list its models", _settings.LanguageModelAddress);
+            return [];
         }
     }
 
@@ -233,6 +292,20 @@ public sealed class LanguageModelRuntime
     private static bool IsModel(string name, string model) =>
         string.Equals(name, model, StringComparison.OrdinalIgnoreCase) ||
         string.Equals(name, model + ":latest", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Passes a pull's reports on and keeps the last status (Ollama reports synchronously, before the pull returns).</summary>
+    private sealed class LastStatus(IProgress<PullProgress>? inner) : IProgress<PullProgress>
+    {
+        private volatile string? _status;
+
+        public string? Status => _status;
+
+        public void Report(PullProgress value)
+        {
+            _status = value.Status;
+            inner?.Report(value);
+        }
+    }
 
     private void RaiseChanged()
     {

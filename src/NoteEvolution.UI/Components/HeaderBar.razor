@@ -2,8 +2,11 @@
 @using NoteEvolution.Core.Links
 @using NoteEvolution.Core.Model
 @using Microsoft.Extensions.DependencyInjection
+@using NoteEvolution.AI.Understanding
 @implements IDisposable
 @inject AppState State
+@inject UiSettings Settings
+@inject IPlatformServices Platform
 @inject IStringLocalizer<Strings> L
 @inject ILogger<HeaderBar> Logger
 @inject IServiceProvider Services
@@ -95,6 +98,23 @@
     @{ var ai = AiStatusNow; }
     @* Also the fallback hint of spec 9: without a usable model the search is full text only. *@
     <span class="ne-ai ne-ai-@ai.State.ToString().ToLowerInvariant()" title="@(ai.State == AiState.Failed ? ai.Error : null)">@AiText(ai)</span>
+    @if (LanguageModelNow() is { } llm)
+    {
+        @* The language model's background work (spec 4, 11.1): count, bar and remaining time, or why it waits. *@
+        <span class="ne-llm">
+            <span class="ne-llm-text">@llm.Text</span>
+            @if (llm.Progress is { } progress)
+            {
+                @if (progress.Done < progress.Total)
+                {
+                    <progress class="ne-llm-progress" max="@progress.Total" value="@progress.Done"></progress>
+                }
+                <button type="button" class="ne-llm-pause" title="@L[Settings.LanguageModelPaused ? "LlmResume" : "LlmPause"]"
+                        aria-label="@L[Settings.LanguageModelPaused ? "LlmResume" : "LlmPause"]"
+                        aria-pressed="@(Settings.LanguageModelPaused ? "true" : "false")" @onclick="TogglePause">@(Settings.LanguageModelPaused ? "▶" : "⏸")</button>
+            }
+        </span>
+    }
 </header>
 
 @code {
@@ -103,6 +123,9 @@
 
     private VaultSession? _session;
     private AiRuntime? _ai;
+
+    /// <summary>The app's language model; <c>null</c> when none is registered.</summary>
+    private LanguageModelRuntime? _language;
     private bool _readOnlyOpen;
     private bool _assistantsOpen;
     private int _selectVersion;
@@ -144,6 +167,12 @@
         {
             _ai.ModelChanged += OnSessionChanged;
         }
+
+        _language = Services.GetService<LanguageModelRuntime>();
+        if (_language is not null)
+        {
+            _language.Changed += OnSessionChanged;
+        }
     }
 
     public void Dispose()
@@ -153,6 +182,80 @@
         if (_ai is not null)
         {
             _ai.ModelChanged -= OnSessionChanged;
+        }
+
+        if (_language is not null)
+        {
+            _language.Changed -= OnSessionChanged;
+        }
+    }
+
+    /// <summary>
+    /// What the header shows of the language model: the open vault's background work, or without it what keeps the
+    /// switched-on model from working; <c>null</c> when there is nothing to show (switched off, or ready without a vault).
+    /// </summary>
+    private (string Text, UnderstandingProgress? Progress)? LanguageModelNow()
+    {
+        if (_language is null || _language.State == LanguageModelState.Off)
+        {
+            return null;
+        }
+
+        if (State.Session?.Understanding is { } progress)
+        {
+            return (LanguageModelText(progress, L), progress);
+        }
+
+        return _language.State switch
+        {
+            LanguageModelState.Unreachable => (L["LlmHeaderUnreachable"], null),
+            LanguageModelState.ModelMissing => (L["LlmHeaderModelMissing"], null),
+            LanguageModelState.Pulling => (L["LlmHeaderPulling"], null),
+            _ => null,
+        };
+    }
+
+    /// <summary>
+    /// The text of the background work: "Sprachmodell 34/120 · noch ca. 1 h 10 min" (before the third answer "Restzeit
+    /// wird ermittelt"), why it waits instead of the time, or "Sprachmodell bereit" when all is done.
+    /// </summary>
+    public static string LanguageModelText(UnderstandingProgress progress, IStringLocalizer<Strings> l)
+    {
+        var away = progress.Pause is UnderstandingPause.Unreachable or UnderstandingPause.ModelMissing;
+        if (progress.Done >= progress.Total && !away)
+        {
+            return l["LlmHeaderReady"];
+        }
+
+        string detail = progress.Pause switch
+        {
+            UnderstandingPause.User => l["LlmPauseUser"],
+            UnderstandingPause.Typing => l["LlmPauseTyping"],
+            UnderstandingPause.Battery => l["LlmPauseBattery"],
+            UnderstandingPause.Unreachable => l["LlmPauseUnreachable"],
+            UnderstandingPause.ModelMissing => l["LlmPauseModelMissing"],
+            _ when progress.Remaining is { } remaining => l["LlmHeaderRemaining", Durations.Format(remaining, l)],
+            _ => l["LlmHeaderRemainingUnknown"],
+        };
+        return $"{l["LlmHeaderProgress", progress.Done, progress.Total]} · {detail}";
+    }
+
+    /// <summary>The pause switch: saved, and passed to the open vault's work at once (through the runtime's change).</summary>
+    private void TogglePause()
+    {
+        if (_language is null)
+        {
+            return;
+        }
+
+        _language.SetPaused(!Settings.LanguageModelPaused);
+        try
+        {
+            Settings.Save(Platform.UserDataDirectory);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Logger.LogWarning(ex, "Saving the UI settings failed");
         }
     }
 
@@ -203,6 +306,7 @@
             _session.Undo.Pushed += OnUndoPushed;
             _session.ConflictsChanged += OnSessionChanged;
             _session.AiStatusChanged += OnSessionChanged;
+            _session.UnderstandingChanged += OnSessionChanged;
         }
     }
 
@@ -214,6 +318,7 @@
             _session.Undo.Pushed -= OnUndoPushed;
             _session.ConflictsChanged -= OnSessionChanged;
             _session.AiStatusChanged -= OnSessionChanged;
+            _session.UnderstandingChanged -= OnSessionChanged;
         }
     }
 

@@ -48,12 +48,50 @@
             <button type="button" class="ne-settings-ai-choose" disabled="@ai.IsDownloading" @onclick="State.RequestAiModelDialog">@L["SettingsAiChoose"]</button>
         </div>
     }
+    @if (_language is { } language)
+    {
+        <div class="ne-settings-field ne-settings-llm">
+            <span class="ne-settings-label">@L["SettingsLlm"]</span>
+            <label class="ne-settings-check">
+                <input type="checkbox" class="ne-settings-llm-enabled" @bind="_llmEnabled" />
+                @L["SettingsLlmEnabled"]
+            </label>
+            <label for="ne-settings-llm-address">@L["SettingsLlmAddress"]</label>
+            <input id="ne-settings-llm-address" class="ne-settings-llm-address" type="text" @bind="_llmAddress" @bind:event="oninput" />
+            @if (LlmRemote)
+            {
+                <p class="ne-settings-llm-remote" role="alert">@L["LlmRemoteWarning"]</p>
+                <label class="ne-settings-check">
+                    <input type="checkbox" class="ne-settings-llm-remote-confirm" @bind="_llmRemoteConfirmed" />
+                    @L["LlmRemoteConfirm"]
+                </label>
+            }
+            <label for="ne-settings-llm-model">@L["SettingsLlmModel"]</label>
+            <select id="ne-settings-llm-model" class="ne-settings-llm-model" @bind="_llmModel">
+                @foreach (var name in LlmModelChoices())
+                {
+                    <option value="@name">@name</option>
+                }
+            </select>
+            <span class="ne-settings-llm-state">@LlmStateText(language)</span>
+            @if (language.State == LanguageModelState.ModelMissing)
+            {
+                <button type="button" class="ne-settings-llm-pull" @onclick="() => _pullOpen = true">@L["LlmPullButton"]</button>
+            }
+        </div>
+    }
     </ChildContent>
     <Footer>
         <button type="button" class="ne-settings-save" disabled="@_busy" @onclick="SaveAsync">@L["Save"]</button>
         <button type="button" class="ne-settings-cancel" disabled="@_busy" @onclick="OnClose">@L["Cancel"]</button>
     </Footer>
 </Modal>
+
+@* Above the settings, which stay open underneath. *@
+@if (_pullOpen && _language is not null)
+{
+    <LanguageModelDialog OnClose="() => _pullOpen = false" />
+}
 
 @code {
     private string _folders = "";
@@ -71,6 +109,23 @@
     /// <summary>The app's AI runtime; <c>null</c> when none is registered (the AI is off, no model section).</summary>
     private AiRuntime? _ai;
 
+    /// <summary>The app's language model; <c>null</c> when none is registered (no language model section).</summary>
+    private LanguageModelRuntime? _language;
+
+    private bool _llmEnabled;
+    private string _llmAddress = "";
+    private string _llmModel = "";
+    private bool _llmRemoteConfirmed;
+
+    /// <summary>The models installed on the configured server; empty until they are read (or when it is unreachable).</summary>
+    private IReadOnlyList<string> _llmInstalled = [];
+
+    /// <summary>The pull dialog for the configured model is open.</summary>
+    private bool _pullOpen;
+
+    /// <summary>Ends reading the installed models when the dialog closes.</summary>
+    private readonly CancellationTokenSource _closing = new();
+
     protected override void OnInitialized()
     {
         _ai = Services.GetService<AiRuntime>();
@@ -79,10 +134,88 @@
             _ai.ModelChanged += OnModelChanged;
         }
 
+        _language = Services.GetService<LanguageModelRuntime>();
+        if (_language is not null)
+        {
+            _language.Changed += OnModelChanged;
+        }
+
+        _llmEnabled = Settings.LanguageModelEnabled;
+        _llmAddress = Settings.LanguageModelAddress;
+        _llmModel = Settings.LanguageModelName;
+
         _folders = string.Join('\n', State.Session?.Vault.Settings.NoteFolders ?? []);
         _theme = Settings.Theme;
         _fontSize = Settings.FontSizePt;
         _lineWidth = Settings.LineWidthCh;
+    }
+
+    /// <summary>Reads the models installed on the configured server for the model choice.</summary>
+    protected override async Task OnInitializedAsync()
+    {
+        if (_language is null)
+        {
+            return;
+        }
+
+        try
+        {
+            _llmInstalled = [.. (await _language.InstalledModelsAsync(_closing.Token)).Select(m => m.Name)];
+        }
+        catch (OperationCanceledException)
+        {
+            // the dialog closed meanwhile
+        }
+    }
+
+    /// <summary>The configured model first, then the installed ones.</summary>
+    private IEnumerable<string> LlmModelChoices() =>
+        new[] { Settings.LanguageModelName, _llmModel }.Concat(_llmInstalled)
+            .Where(name => name.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>The entered address as a server address (absolute http or https); <c>null</c> when it is none.</summary>
+    private Uri? LlmAddress() =>
+        Uri.TryCreate(_llmAddress.Trim(), UriKind.Absolute, out var address) && (address.Scheme == Uri.UriSchemeHttp || address.Scheme == Uri.UriSchemeHttps)
+            ? address
+            : null;
+
+    /// <summary>The entered address is valid and points to another computer (spec 7): texts would leave this one.</summary>
+    private bool LlmRemote => LlmAddress() is { } address && !LanguageModelRuntime.IsLocal(address);
+
+    private string LlmStateText(LanguageModelRuntime language) => language.State switch
+    {
+        LanguageModelState.Ready => L["LlmStateReady", language.Version ?? "–"],
+        LanguageModelState.Unreachable => L["LlmStateUnreachable"],
+        LanguageModelState.ModelMissing => L["LlmStateModelMissing"],
+        LanguageModelState.Pulling => L["LlmStatePulling"],
+        _ => L["LlmStateOff"],
+    };
+
+    /// <summary>
+    /// Checks the language model's values: the address must be a server address, and a new one on another computer
+    /// needs the user's confirmation; otherwise <see cref="_error"/> says why not.
+    /// </summary>
+    private bool LlmValid()
+    {
+        if (_language is null)
+        {
+            return true;
+        }
+
+        if (LlmAddress() is null)
+        {
+            _error = L["LlmAddressInvalid"];
+            return false;
+        }
+
+        if (LlmRemote && !_llmRemoteConfirmed && _llmAddress.Trim() != Settings.LanguageModelAddress)
+        {
+            _error = L["LlmRemoteNotConfirmed"];
+            return false;
+        }
+
+        return true;
     }
 
     /// <summary>
@@ -101,6 +234,11 @@
         _error = null;
         try
         {
+            if (!LlmValid())
+            {
+                return;
+            }
+
             var folders = Folders();
             var foldersChanged = false;
             if (State.Session is { } session)
@@ -121,6 +259,7 @@
             Settings.Theme = _theme;
             Settings.FontSizePt = _fontSize = Math.Clamp(_fontSize, UiSettings.MinFontSizePt, UiSettings.MaxFontSizePt);
             Settings.LineWidthCh = _lineWidth = Math.Clamp(_lineWidth, UiSettings.MinLineWidthCh, UiSettings.MaxLineWidthCh);
+            var llmChanged = _language is not null && TakeLanguageModelValues();
             try
             {
                 Settings.Save(Platform.UserDataDirectory);
@@ -146,6 +285,12 @@
                     _error = L["SettingsSaveFailed"];
                     return;
                 }
+            }
+
+            if (llmChanged)
+            {
+                // Asks the server with the new values; its result wins over a check that is still running (a retry).
+                _ = _language!.RefreshAsync(CancellationToken.None);
             }
 
             State.Notify();
@@ -187,15 +332,39 @@
         return true;
     }
 
+    /// <summary>Takes the language model's values into the settings; tells whether any changed.</summary>
+    private bool TakeLanguageModelValues()
+    {
+        var address = _llmAddress.Trim();
+        var model = _llmModel.Trim();
+        var changed = _llmEnabled != Settings.LanguageModelEnabled || address != Settings.LanguageModelAddress
+            || (model.Length > 0 && model != Settings.LanguageModelName);
+        Settings.LanguageModelEnabled = _llmEnabled;
+        Settings.LanguageModelAddress = address;
+        if (model.Length > 0)
+        {
+            Settings.LanguageModelName = model;
+        }
+
+        return changed;
+    }
+
     public void Dispose()
     {
+        _closing.Cancel();
+        _closing.Dispose();
         if (_ai is not null)
         {
             _ai.ModelChanged -= OnModelChanged;
         }
+
+        if (_language is not null)
+        {
+            _language.Changed -= OnModelChanged;
+        }
     }
 
-    /// <summary>A download started or ended (on the download's thread): the model's status is shown anew.</summary>
+    /// <summary>A download started or ended, or the language model's state changed (on their threads): the status is shown anew.</summary>
     private void OnModelChanged() => _ = InvokeAsync(StateHasChanged);
 
     /// <summary>One folder per line; blank lines and repeats are dropped.</summary>
