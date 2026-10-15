@@ -304,6 +304,33 @@ public sealed class UnderstandingWorkerTests
     }
 
     [Fact]
+    public async Task Worker_VersionNeverAnswers_TimesOutAndRetriesAfter60s()
+    {
+        await using var f = new Fixture();
+        f.Chat.VersionHangs = true; // accepts the connection, never answers
+        f.Worker.SetWork([], null, [Note("Eins")], []);
+
+        f.Start();
+        await Until(() => f.Chat.VersionCalls == 1, "the first check");
+        f.Time.Advance(UnderstandingWorker.CheckTimeout - TimeSpan.FromSeconds(1));
+        await Quiet();
+        Assert.NotEqual(UnderstandingPause.Unreachable, f.Worker.Progress.Pause);
+
+        f.Time.Advance(TimeSpan.FromSeconds(1));
+        await Until(() => f.Worker.Progress.Pause == UnderstandingPause.Unreachable, "the unreachable pause");
+        Assert.Empty(f.Chat.Calls);
+
+        f.Time.Advance(UnderstandingWorker.RetryInterval - TimeSpan.FromSeconds(1));
+        await Quiet();
+        Assert.Equal(1, f.Chat.VersionCalls);
+
+        f.Chat.VersionHangs = false;
+        f.Time.Advance(TimeSpan.FromSeconds(1));
+        await Until(() => f.Store.Get("fp-Eins") is not null, "the note after the retry");
+        Assert.Equal(2, f.Chat.VersionCalls);
+    }
+
+    [Fact]
     public async Task Worker_ModelMissing_Reported()
     {
         await using var f = new Fixture();

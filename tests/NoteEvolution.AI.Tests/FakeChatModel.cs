@@ -23,6 +23,9 @@ public sealed class FakeChatModel : IChatModel
     /// <summary>The server version; <c>null</c> means unreachable.</summary>
     public string? Version { get; set; } = "0.5.0";
 
+    /// <summary>When set, a version check never answers (a server that accepts the connection but hangs) until its token is cancelled.</summary>
+    public bool VersionHangs { get; set; }
+
     public List<ChatModelInfo> Models { get; set; } = [new("qwen2.5:7b", 4_700_000_000)];
 
     /// <summary>The answer to a call, given the call and its 1-based number.</summary>
@@ -48,8 +51,14 @@ public sealed class FakeChatModel : IChatModel
         lock (_gate)
         {
             VersionCalls++;
-            return Task.FromResult(Version);
+            return VersionHangs ? Hang(ct) : Task.FromResult(Version);
         }
+    }
+
+    private static async Task<string?> Hang(CancellationToken ct)
+    {
+        await Task.Delay(Timeout.Infinite, ct);
+        return null;
     }
 
     public Task<IReadOnlyList<ChatModelInfo>> ModelsAsync(CancellationToken ct)

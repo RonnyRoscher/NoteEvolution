@@ -344,6 +344,22 @@ public class LanguageModelTests : UiTestContext
     }
 
     [Fact]
+    public async Task Session_CheckPlacement_SearchFails_NoAnswerWithoutRequest()
+    {
+        var tv = Vault();
+        var session = await OpenReadyAsync(tv);
+        var before = _chat.Calls.Count;
+
+        // A missing book stands in for any unexpected failure while topics and places are searched.
+        var (verdict, failure) = await session.CheckPlacementAsync(
+            NoteKey(session, NewerNote), NoteText(session, NewerNote), null!, CancellationToken.None);
+
+        Assert.Null(verdict);
+        Assert.Equal(PlacementCheckFailure.NoAnswer, failure);
+        Assert.Equal(before, _chat.Calls.Count);
+    }
+
+    [Fact]
     public async Task Session_CheckPlacement_CancelAndTimeout()
     {
         var tv = Vault();

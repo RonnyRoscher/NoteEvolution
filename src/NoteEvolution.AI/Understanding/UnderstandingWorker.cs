@@ -33,6 +33,9 @@ public sealed class UnderstandingWorker : IDisposable
     /// <summary>How often an unreachable server (or a missing model) is checked again.</summary>
     public static readonly TimeSpan RetryInterval = TimeSpan.FromSeconds(60);
 
+    /// <summary>A server that does not answer the version or model check within this time counts as unreachable.</summary>
+    public static readonly TimeSpan CheckTimeout = TimeSpan.FromSeconds(10);
+
     /// <summary>How often the battery state is checked again while running on battery.</summary>
     public static readonly TimeSpan BatteryCheck = TimeSpan.FromSeconds(30);
 
@@ -396,11 +399,19 @@ public sealed class UnderstandingWorker : IDisposable
 
     private async Task<UnderstandingPause> ConnectionPauseAsync(CancellationToken ct)
     {
+        // The HTTP client has no timeout of its own: a server that accepts the connection but never answers must not hang the loop.
+        using var timeout = new CancellationTokenSource(CheckTimeout, _time);
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, timeout.Token);
         try
         {
-            if (await _chat.VersionAsync(ct) is null) return UnderstandingPause.Unreachable;
-            var models = await _chat.ModelsAsync(ct);
+            if (await _chat.VersionAsync(linked.Token) is null) return UnderstandingPause.Unreachable;
+            var models = await _chat.ModelsAsync(linked.Token);
             return models.Any(m => IsModel(m.Name)) ? UnderstandingPause.None : UnderstandingPause.ModelMissing;
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            _logger.LogDebug("Language model server check timed out");
+            return UnderstandingPause.Unreachable;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

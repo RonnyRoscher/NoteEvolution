@@ -1,6 +1,7 @@
 using System.Net;
 using Microsoft.Extensions.Logging;
 using NoteEvolution.AI.Language;
+using NoteEvolution.AI.Understanding;
 
 namespace NoteEvolution.UI.State;
 
@@ -21,7 +22,7 @@ public sealed class LanguageModelRuntime
     public static readonly TimeSpan RetryInterval = TimeSpan.FromSeconds(60);
 
     /// <summary>A server that does not answer the version or model list within this time counts as unreachable.</summary>
-    public static readonly TimeSpan CheckTimeout = TimeSpan.FromSeconds(10);
+    public static readonly TimeSpan CheckTimeout = UnderstandingWorker.CheckTimeout;
 
     private readonly UiSettings _settings;
     private readonly Func<Uri, IChatModel> _connect;

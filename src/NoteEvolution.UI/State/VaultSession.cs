@@ -781,7 +781,7 @@ public sealed class VaultSession : IDisposable
     /// <param name="noteText"><c>EmbeddingText.ForNote(note)</c>, as for <see cref="IRelevanceService.Placements"/>.</param>
     /// <returns>
     /// The verdict, or why there is none: <see cref="PlacementCheckFailure.Unavailable"/> without a ready model or when the
-    /// server fails, <see cref="PlacementCheckFailure.NoAnswer"/> when the time ran out, <see cref="PlacementCheckFailure.Unusable"/>
+    /// server fails, <see cref="PlacementCheckFailure.NoAnswer"/> when the time ran out or the search for topics and places failed, <see cref="PlacementCheckFailure.Unusable"/>
     /// for an answer that names no offered topic and place (or without topics to offer), <see cref="PlacementCheckFailure.Cancelled"/>
     /// when <paramref name="ct"/> was cancelled.
     /// </returns>
@@ -815,6 +815,11 @@ public sealed class VaultSession : IDisposable
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
             return (null, PlacementCheckFailure.Cancelled);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Searching topics and places for the placement check failed");
+            return (null, PlacementCheckFailure.NoAnswer);
         }
 
         if (prompt.Topics.Count == 0)
