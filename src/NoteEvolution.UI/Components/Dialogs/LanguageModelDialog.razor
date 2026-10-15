@@ -1,0 +1,253 @@
+@using NoteEvolution.AI.Language
+@implements IDisposable
+@inject LanguageModelRuntime Language
+@inject UiSettings Settings
+@inject IPlatformServices Platform
+@inject TimeProvider Time
+@inject IStringLocalizer<Strings> L
+@inject ILogger<LanguageModelDialog> Logger
+
+@* The first-setup offer (spec 7) and pulling the configured model; the pull starts only here, after the user confirmed it,
+   and ends with the dialog (Cancel, or closing it). *@
+<Modal Title="@(_step == Step.Offer ? L["LlmOfferTitle"] : L["LlmPullTitle"])" CssClass="ne-llm-dialog">
+    <ChildContent>
+        @if (_step == Step.Offer)
+        {
+            <p class="ne-llm-offer-text">@L["LlmOfferText"]</p>
+        }
+        else
+        {
+            <p class="ne-llm-confirm">@ConfirmText</p>
+            @if (_meter is { } meter)
+            {
+                <progress class="ne-llm-pull-progress" max="@(meter.Total > 0 ? meter.Total : (long?)null)" value="@(meter.Total > 0 ? meter.Done : (long?)null)"></progress>
+                <span class="ne-dialog-hint ne-llm-pull-status">@PullStatus(meter)</span>
+            }
+        }
+        @if (_failure is { } failure)
+        {
+            <p class="ne-dialog-error ne-llm-failure" role="alert">
+                @L[failure]
+                @if (_error is { } error)
+                {
+                    <span class="ne-llm-error"> @error</span>
+                }
+            </p>
+        }
+    </ChildContent>
+    <Footer>
+        @if (_step == Step.Offer)
+        {
+            <button type="button" class="ne-llm-setup" disabled="@_busy" @onclick="SetupAsync">@L["LlmSetup"]</button>
+            <button type="button" class="ne-llm-not-now" disabled="@_busy" @onclick="OnClose">@L["LlmNotNow"]</button>
+        }
+        else if (_pull is not null)
+        {
+            <button type="button" class="ne-llm-cancel" @onclick="CancelPull">@L["Cancel"]</button>
+        }
+        else
+        {
+            <button type="button" class="ne-llm-pull" @onclick="PullAsync">@L["LlmPullButton"]</button>
+            <button type="button" class="ne-llm-close" @onclick="OnClose">@L["Cancel"]</button>
+        }
+    </Footer>
+</Modal>
+
+@code {
+    /// <summary>Download sizes of common models, for the confirmation (Ollama tells the size only while pulling).</summary>
+    private static readonly Dictionary<string, long> KnownSizes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["qwen2.5:7b"] = 4_700_000_000,
+        ["qwen2.5:3b"] = 1_900_000_000,
+    };
+
+    private enum Step { Offer, Confirm }
+
+    private Step _step;
+    private bool _busy;
+
+    /// <summary>The running pull; <c>null</c> while none runs.</summary>
+    private CancellationTokenSource? _pull;
+
+    private PullMeter? _meter;
+
+    /// <summary>What failed (a key in <c>Strings.resx</c>); <c>null</c> while nothing did.</summary>
+    private string? _failure;
+
+    /// <summary>The details of <see cref="_failure"/>, if any.</summary>
+    private string? _error;
+
+    /// <summary>Starts with the first-setup offer instead of the pull's confirmation.</summary>
+    [Parameter] public bool Offer { get; set; }
+
+    /// <summary>The dialog is done: the model is ready, or the user chose "not now" or cancelled.</summary>
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    protected override void OnInitialized()
+    {
+        _step = Offer ? Step.Offer : Step.Confirm;
+        if (Offer)
+        {
+            // Offered once only, whatever the user answers.
+            Settings.LanguageModelOffered = true;
+            SaveSettings();
+        }
+    }
+
+    private string ConfirmText => KnownSizes.TryGetValue(Settings.LanguageModelName, out var size)
+        ? L["LlmPullConfirm", Settings.LanguageModelName, ModelSizes.Gigabytes(size)]
+        : L["LlmPullConfirmUnknownSize", Settings.LanguageModelName];
+
+    private string PullStatus(PullMeter meter)
+    {
+        var done = ModelSizes.Megabytes(meter.Done);
+        var total = ModelSizes.Megabytes(meter.Total);
+        return meter.Remaining is { } remaining
+            ? L["LlmPullProgress", done, total, Durations.Format(remaining, L)]
+            : L["LlmPullProgressUnknown", done, total];
+    }
+
+    /// <summary>Switches the language model on and asks the server: ready closes the dialog, a missing model offers the pull.</summary>
+    private async Task SetupAsync()
+    {
+        _busy = true;
+        Fail(null, null);
+        try
+        {
+            Settings.LanguageModelEnabled = true;
+            SaveSettings();
+            await Language.RefreshAsync(CancellationToken.None);
+        }
+        finally
+        {
+            _busy = false;
+        }
+
+        switch (Language.State)
+        {
+            case LanguageModelState.Ready:
+                await OnClose.InvokeAsync();
+                break;
+            case LanguageModelState.ModelMissing:
+                _step = Step.Confirm;
+                break;
+            default:
+                Fail("LlmSetupUnreachable", null);
+                break;
+        }
+    }
+
+    /// <summary>Pulls the configured model; success closes the dialog, a failure is shown, cancelling shows the confirmation again.</summary>
+    private async Task PullAsync()
+    {
+        if (_pull is not null)
+        {
+            return;
+        }
+
+        Fail(null, null);
+        _meter = new PullMeter();
+        var pull = _pull = new CancellationTokenSource();
+        try
+        {
+            await Language.PullAsync(new Progress(this, pull), pull.Token);
+            if (!pull.IsCancellationRequested)
+            {
+                await OnClose.InvokeAsync();
+            }
+        }
+        catch (OperationCanceledException) when (pull.IsCancellationRequested)
+        {
+            // cancelled by the user (or by closing the dialog): nothing to report
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Pulling the language model failed");
+            Fail("LlmPullFailed", ex.Message);
+        }
+        finally
+        {
+            _pull = null;
+            _meter = null;
+            pull.Dispose();
+        }
+    }
+
+    private void CancelPull() => _pull?.Cancel();
+
+    public void Dispose() => CancelPull();
+
+    /// <summary>Shows what failed (<paramref name="failure"/>, a key in <c>Strings.resx</c>) with its details; <c>null</c> clears it.</summary>
+    private void Fail(string? failure, string? error)
+    {
+        _failure = failure;
+        _error = error;
+    }
+
+    private void SaveSettings()
+    {
+        try
+        {
+            Settings.Save(Platform.UserDataDirectory);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Logger.LogWarning(ex, "Saving the UI settings failed");
+        }
+    }
+
+    /// <summary>
+    /// Sums Ollama's reports, which come per layer (each with its own Completed/Total), and estimates the remaining time
+    /// from the speed since the first report with a size (spec 11.1).
+    /// </summary>
+    private sealed class PullMeter
+    {
+        private readonly Dictionary<string, (long Completed, long Total)> _layers = [];
+        private (long Done, long Timestamp)? _start;
+
+        public long Done { get; private set; }
+
+        public long Total { get; private set; }
+
+        /// <summary>Null until bytes arrived after the first report.</summary>
+        public TimeSpan? Remaining { get; private set; }
+
+        public void Add(PullProgress report, long timestamp, TimeProvider time)
+        {
+            if (report.Total <= 0)
+            {
+                return; // manifest, verifying, writing: no bytes to count
+            }
+
+            _layers[report.Status] = (Math.Clamp(report.Completed, 0, report.Total), report.Total);
+            Done = _layers.Values.Sum(l => l.Completed);
+            Total = _layers.Values.Sum(l => l.Total);
+            if (_start is not { } start)
+            {
+                _start = (Done, timestamp);
+                return;
+            }
+
+            var seconds = time.GetElapsedTime(start.Timestamp, timestamp).TotalSeconds;
+            var bytes = Done - start.Done;
+            Remaining = seconds > 0 && bytes > 0 ? TimeSpan.FromSeconds((Total - Done) / (bytes / seconds)) : null;
+        }
+    }
+
+    /// <summary>Shows the pull's progress; reports come from the pull's thread and are timed when they arrive.</summary>
+    private sealed class Progress(LanguageModelDialog dialog, CancellationTokenSource pull) : IProgress<PullProgress>
+    {
+        public void Report(PullProgress value)
+        {
+            var timestamp = dialog.Time.GetTimestamp();
+            _ = dialog.InvokeAsync(() =>
+            {
+                if (ReferenceEquals(dialog._pull, pull) && dialog._meter is { } meter)
+                {
+                    meter.Add(value, timestamp, dialog.Time);
+                    dialog.StateHasChanged();
+                }
+            });
+        }
+    }
+}

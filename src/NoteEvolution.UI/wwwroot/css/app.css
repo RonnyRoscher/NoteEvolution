@@ -122,6 +122,41 @@ html, body {
     cursor: help;
 }
 
+/* The language model's background work, next to the AI status */
+.ne-llm {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--fg-muted);
+    font-size: 12px;
+    white-space: nowrap;
+}
+
+.ne-llm-progress {
+    width: 60px;
+    height: 6px;
+}
+
+.ne-llm-pause {
+    padding: 0 4px;
+    font-size: 11px;
+    line-height: 1.4;
+}
+
+/* The system meter at the right end of the header (spec 11.2) */
+.ne-sysmeter {
+    color: var(--fg-muted);
+    font-size: 12px;
+    padding: 0 4px;
+    white-space: nowrap;
+    cursor: default;
+    font-variant-numeric: tabular-nums;
+}
+
+.ne-sysmeter.ne-sysmeter-warn {
+    color: var(--warning);
+}
+
 .ne-undo-error {
     color: var(--danger);
     font-size: 12px;
@@ -824,7 +859,8 @@ html, body {
     text-align: left;
 }
 
-.ne-note-whereto-path {
+.ne-note-whereto-path,
+.ne-note-whereto-topic {
     flex: 0 0 100%;
     overflow: hidden;
     font-size: 11px;
@@ -833,7 +869,8 @@ html, body {
     white-space: nowrap;
 }
 
-.ne-note-whereto-excerpt {
+.ne-note-whereto-excerpt,
+.ne-note-whereto-place {
     flex: 1;
     min-width: 0;
     overflow: hidden;
@@ -848,6 +885,50 @@ html, body {
 .ne-note-whereto-percent {
     color: var(--fg-muted);
     font-size: 11px;
+}
+
+/* The model's recommendation ("Genauer prüfen"): marked, first in the list, with its reason on its own line. */
+.ne-shell .ne-note-whereto-recommended {
+    border-color: var(--accent);
+}
+
+.ne-note-whereto-recommended-label {
+    flex: 0 0 100%;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--accent);
+}
+
+.ne-note-whereto-reason {
+    flex: 0 0 100%;
+    font-size: 11px;
+    color: var(--fg-muted);
+    white-space: normal;
+}
+
+.ne-shell .ne-note-whereto-check {
+    margin-top: 6px;
+}
+
+/* A running check: the elapsed of the expected time, the bar and "Abbrechen". */
+.ne-note-whereto-checking {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 8px;
+    margin-top: 6px;
+    font-size: 11px;
+    color: var(--fg-muted);
+}
+
+.ne-note-whereto-check-bar {
+    flex: 1 1 80px;
+    min-width: 60px;
+    height: 6px;
+}
+
+.ne-note-whereto-check-longer {
+    font-style: italic;
 }
 
 .ne-note-hint,
@@ -1560,6 +1641,39 @@ html, body {
 .ne-settings-ai-status {
     color: var(--fg-muted);
     font-size: 12px;
+}
+
+.ne-settings-check {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.ne-settings-llm-state {
+    color: var(--fg-muted);
+    font-size: 12px;
+}
+
+.ne-settings-llm-remote {
+    margin: 0;
+    color: var(--warning);
+    font-weight: 600;
+}
+
+.ne-settings-llm-needs-ai {
+    margin: 0;
+    color: var(--warning);
+    font-size: 12px;
+}
+
+.ne-settings-llm-pull {
+    align-self: flex-start;
+}
+
+/* Language model dialog */
+
+.ne-llm-pull-progress {
+    width: 100%;
 }
 
 /* AI model dialog */

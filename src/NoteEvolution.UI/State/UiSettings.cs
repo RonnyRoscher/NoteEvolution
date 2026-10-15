@@ -63,6 +63,24 @@ public sealed class UiSettings
     /// <summary>The id of the AI model in use (<see cref="AI.Model.ModelInfo.Id"/>); null for the catalog's default.</summary>
     public string? AiModelId { get; set; }
 
+    /// <summary>The local language model (Ollama) is used; off until the user sets it up (spec 7).</summary>
+    public bool LanguageModelEnabled { get; set; }
+
+    /// <summary>The address of the language-model server.</summary>
+    public string LanguageModelAddress { get; set; } = "http://127.0.0.1:11434";
+
+    /// <summary>The language model to ask (an Ollama model name).</summary>
+    public string LanguageModelName { get; set; } = "qwen2.5:7b";
+
+    /// <summary>The user paused the language model's background computation (header switch, spec 4).</summary>
+    public bool LanguageModelPaused { get; set; }
+
+    /// <summary>The one-time offer to set up the language model has been shown.</summary>
+    public bool LanguageModelOffered { get; set; }
+
+    /// <summary>The header shows the system meter (CPU, memory, free disk space; spec 11.2).</summary>
+    public bool SystemMeterVisible { get; set; } = true;
+
     /// <summary>
     /// The book chosen last in each vault: the vault folder (full path) to the book page's path relative to it, with
     /// <c>/</c> separators. Use <see cref="LastBookOf"/> and <see cref="RememberBook"/>.
@@ -100,6 +118,9 @@ public sealed class UiSettings
             }
 
             settings.LastBooks = books;
+            var defaults = new UiSettings();
+            settings.LanguageModelAddress ??= defaults.LanguageModelAddress;
+            settings.LanguageModelName ??= defaults.LanguageModelName;
             return settings;
         }
         catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)

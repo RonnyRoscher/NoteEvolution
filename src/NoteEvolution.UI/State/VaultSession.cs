@@ -1,14 +1,18 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using NoteEvolution.AI.Embeddings;
+using NoteEvolution.AI.Language;
 using NoteEvolution.AI.Relevance;
 using NoteEvolution.AI.Search;
 using NoteEvolution.AI.Semantic;
+using NoteEvolution.AI.Understanding;
 using NoteEvolution.Core.Assistants;
 using NoteEvolution.Core.Books;
 using NoteEvolution.Core.Links;
 using NoteEvolution.Core.Model;
 using NoteEvolution.Core.Storage;
 using NoteEvolution.Core.Vaults;
+using NoteEvolution.UI.Platform;
 
 namespace NoteEvolution.UI.State;
 
@@ -21,11 +25,28 @@ namespace NoteEvolution.UI.State;
 /// (<see cref="Semantic"/>, spec 5.1 step 4); a page replaced in the vault is embedded again <see cref="PageIndexDelay"/>
 /// after its last change. Search and relevance fall back to full text and "unavailable" while there is no index.
 /// </para>
+/// <para>
+/// With a <see cref="LanguageModelRuntime"/> that is <see cref="LanguageModelState.Ready"/> and a semantic index, the
+/// language model's background work runs for this vault (spec 4): the <see cref="UnderstandingStore"/> in the vault's
+/// <c>.noteevolution</c> folder, the <see cref="UnderstandingWorker"/> fed with snapshots taken on the UI thread (on
+/// opening, <see cref="PageIndexDelay"/> after page changes, when the current book changes and <see cref="FocusFeedDelay"/>
+/// after the current section last changed; the items are computed from the snapshots in the background), and
+/// <see cref="Relevance"/> with the summaries and core statements. While the model is not ready, or the worker finds the
+/// server gone, relevance works as without it. Nothing of it writes a note or book file. While the
+/// <see cref="ISystemMonitor"/> tells that the computer runs on battery, the work pauses (read at most every
+/// <see cref="BatteryReadInterval"/>).
+/// </para>
 /// </summary>
 public sealed class VaultSession : IDisposable
 {
     /// <summary>How long a replaced page is left alone before its notes are embedded again (debounced per path).</summary>
     public static readonly TimeSpan PageIndexDelay = TimeSpan.FromMilliseconds(2000);
+
+    /// <summary>How long the current section must stay before the worker is fed with it (debounced).</summary>
+    public static readonly TimeSpan FocusFeedDelay = TimeSpan.FromMilliseconds(500);
+
+    /// <summary>How long the battery state read from the <see cref="ISystemMonitor"/> is used before it is read again.</summary>
+    public static readonly TimeSpan BatteryReadInterval = TimeSpan.FromSeconds(30);
 
     private readonly ILogger _logger;
     private readonly Func<Action, Task> _dispatch;
@@ -53,12 +74,43 @@ public sealed class VaultSession : IDisposable
 
     private int _aiStarted;
 
+    private readonly LanguageModelRuntime? _language;
+
+    /// <summary>Tells the worker whether the computer runs on battery; without it the work never pauses for that.</summary>
+    private readonly ISystemMonitor? _monitor;
+
+    /// <summary>The battery state last read and when; guarded by <see cref="_gate"/>.</summary>
+    private (DateTimeOffset At, bool OnBattery)? _battery;
+
+    /// <summary>The language model's parts while it is ready; set and cleared under <see cref="_gate"/>.</summary>
+    private volatile UnderstandingParts? _understanding;
+
+    /// <summary>Feeds the worker again after page changes (debounced like the page index); guarded by <see cref="_gate"/>.</summary>
+    private ITimer? _feedTimer;
+
+    /// <summary>Feeds the worker after the current section changed (debounced); guarded by <see cref="_gate"/>.</summary>
+    private ITimer? _focusTimer;
+
+    // On the UI thread: the current book (link name) and section the worker puts first, and the notes' snapshot (newest
+    // first; taken again after page changes).
+    private string? _focusBook;
+    private Guid _focusSection;
+    private IReadOnlyList<NoteSnapshot>? _noteSnapshot;
+
+    /// <summary>The number of the last feed started; only its result is applied (under <see cref="_feedGate"/>).</summary>
+    private int _feedsStarted;
+    private readonly object _feedGate = new();
+    private int _feedsApplied;
+
     private VaultSession(
-        string root, IClock clock, ILogger logger, TimeProvider timeProvider, Func<Action, Task> dispatch, AiRuntime? ai)
+        string root, IClock clock, ILogger logger, TimeProvider timeProvider, Func<Action, Task> dispatch, AiRuntime? ai,
+        LanguageModelRuntime? language, ISystemMonitor? monitor)
     {
         _logger = logger;
+        _monitor = monitor;
         _dispatch = dispatch;
         _ai = ai;
+        _language = language;
         _time = timeProvider;
         var vault = Core.Vaults.Vault.Open(root);
         var registry = new SelfWriteRegistry();
@@ -80,6 +132,11 @@ public sealed class VaultSession : IDisposable
             _ai.ModelChanged += OnModelChanged;
             vault.PageReplaced += OnPageReplaced;
         }
+
+        if (_language is not null)
+        {
+            _language.Changed += OnLanguageChanged;
+        }
     }
 
     public IVault Vault { get; }
@@ -98,8 +155,29 @@ public sealed class VaultSession : IDisposable
     /// <summary>The embeddings of the notes; <c>null</c> without AI, while the model is missing or could not be loaded.</summary>
     public ISemanticIndex? Semantic => _aiParts?.Index;
 
-    /// <summary>Meaning-based suggestions; without a semantic index a service that is never available.</summary>
-    public IRelevanceService Relevance => (IRelevanceService?)_aiParts?.Relevance ?? UnavailableRelevance.Instance;
+    /// <summary>
+    /// Meaning-based suggestions; without a semantic index a service that is never available. With the language model's
+    /// understanding while the model is ready and its server reachable, otherwise without it (as before).
+    /// </summary>
+    public IRelevanceService Relevance =>
+        _understanding is { ServerAway: false } understanding
+            ? understanding.Relevance
+            : (IRelevanceService?)_aiParts?.Relevance ?? UnavailableRelevance.Instance;
+
+    /// <summary>The language model's background progress; <c>null</c> while it does not run for this vault.</summary>
+    public UnderstandingProgress? Understanding => _understanding?.Worker.Progress;
+
+    /// <summary>
+    /// The background work found the language model's server unreachable or the model missing and got no answer since;
+    /// <see cref="AiStatusChanged"/> is raised when this changes.
+    /// </summary>
+    public bool LanguageModelAway => _understanding is { ServerAway: true };
+
+    /// <summary>How many feeds reached the worker (stale ones are dropped); for tests.</summary>
+    internal int FeedsApplied => Volatile.Read(ref _feedsApplied);
+
+    /// <summary><see cref="Understanding"/> may have changed (also from or to <c>null</c>); raised on the UI thread.</summary>
+    public event Action? UnderstandingChanged;
 
     /// <summary>The AI's state for this vault: the runtime's (model missing, downloading, load failed) or the index's.</summary>
     public AiStatus AiStatus
@@ -204,10 +282,12 @@ public sealed class VaultSession : IDisposable
     /// semantic indexing and <see cref="AiStatusChanged"/> go through it. If <c>null</c>, they run on the calling thread.
     /// </param>
     /// <param name="ai">The app's AI runtime; without it the AI is off (<see cref="AiState.Off"/>).</param>
+    /// <param name="language">The app's language model; without it there is no background understanding.</param>
+    /// <param name="monitor">Tells whether the computer runs on battery (the background understanding pauses then).</param>
     /// <exception cref="DirectoryNotFoundException"><paramref name="root"/> is not a folder.</exception>
     public static Task<VaultSession> OpenAsync(
         string root, IClock clock, ILogger? logger = null, TimeProvider? timeProvider = null, Func<Action, Task>? dispatch = null,
-        AiRuntime? ai = null)
+        AiRuntime? ai = null, LanguageModelRuntime? language = null, ISystemMonitor? monitor = null)
     {
         if (!Directory.Exists(root))
         {
@@ -217,7 +297,8 @@ public sealed class VaultSession : IDisposable
         return Task.Run(() =>
         {
             var session = new VaultSession(
-                root, clock, logger ?? NullLogger.Instance, timeProvider ?? TimeProvider.System, dispatch ?? RunInline, ai);
+                root, clock, logger ?? NullLogger.Instance, timeProvider ?? TimeProvider.System, dispatch ?? RunInline, ai,
+                language, monitor);
             try
             {
                 session.Start();
@@ -390,6 +471,8 @@ public sealed class VaultSession : IDisposable
             }
 
             _pageIndexTimers.Clear();
+            _feedTimer?.Dispose();
+            _focusTimer?.Dispose();
         }
 
         if (_ai is not null)
@@ -398,8 +481,15 @@ public sealed class VaultSession : IDisposable
             Vault.PageReplaced -= OnPageReplaced;
         }
 
-        // The index stops its run and closes its cache; the shared embedder stays with the runtime.
+        if (_language is not null)
+        {
+            _language.Changed -= OnLanguageChanged;
+        }
+
+        // The worker stops its request (nothing of it is stored) before its store closes; then the index stops its run
+        // and closes its cache. The shared embedder stays with the runtime.
         _aiLifetime.Cancel();
+        StopUnderstanding();
         _aiParts?.Index.Dispose();
         Watcher.ExternalChange -= OnWatcherChange;
         Watcher.Dispose();
@@ -570,11 +660,13 @@ public sealed class VaultSession : IDisposable
                     return;
                 }
 
-                _aiParts = new AiParts(index, new HybridSearchService(_search, index, Notes), new RelevanceService(index));
+                _aiParts = new AiParts(
+                    index, new HybridSearchService(_search, index, Notes), new RelevanceService(index), embedder, _ai.Model.Id);
             }
 
             index.StatusChanged += RaiseAiStatusChanged;
             Dispatch(StartIndexing, "the start of the semantic indexing");
+            Dispatch(UpdateUnderstanding, "the start of the language model");
         }
         catch (Exception ex)
         {
@@ -624,6 +716,7 @@ public sealed class VaultSession : IDisposable
                 return;
             }
 
+            ScheduleFeed();
             if (_pageIndexTimers.TryGetValue(fullPath, out var timer))
             {
                 timer.Change(PageIndexDelay, Timeout.InfiniteTimeSpan);
@@ -709,8 +802,560 @@ public sealed class VaultSession : IDisposable
             "the AI status");
     }
 
-    /// <summary>The services that exist once the semantic index does.</summary>
-    private sealed record AiParts(SemanticIndex Index, HybridSearchService Search, RelevanceService Relevance);
+    // ---- Language model ----
+
+    /// <summary>How many topics "Genauer prüfen" offers the model (spec 5.2).</summary>
+    private const int CheckTopics = 3;
+
+    /// <summary>Called after every input in the editor: the background work waits until nothing was typed for a while (spec 4).</summary>
+    public void NotifyTyping() => _understanding?.Worker.NotifyTyping();
+
+    /// <summary>
+    /// "Genauer prüfen" (spec 5.2): asks the language model which of the note's best topics and places fits, as the
+    /// worker's next request (after a running background request), within <see cref="UnderstandingWorker.RequestTimeout"/>.
+    /// Call it on the UI thread; topics and places are computed in the background from the given snapshots.
+    /// </summary>
+    /// <param name="noteText"><c>EmbeddingText.ForNote(note)</c>, as for <see cref="IRelevanceService.Placements"/>.</param>
+    /// <param name="waiting">Called when the request has to wait behind a running background request (spec 5.2).</param>
+    /// <param name="started">Called (on the worker's thread) when the request goes to the server.</param>
+    /// <returns>
+    /// The verdict, or why there is none: <see cref="PlacementCheckFailure.Unavailable"/> without a ready model or when the
+    /// server fails, <see cref="PlacementCheckFailure.NoAnswer"/> when the time ran out or the search for topics and places failed, <see cref="PlacementCheckFailure.Unusable"/>
+    /// for an answer that names no offered topic and place (or without topics to offer), <see cref="PlacementCheckFailure.Cancelled"/>
+    /// when <paramref name="ct"/> was cancelled.
+    /// </returns>
+    public async Task<(PlacementVerdict? Verdict, PlacementCheckFailure? Failure)> CheckPlacementAsync(
+        Guid noteKey, string noteText, Book book, CancellationToken ct, Action? waiting = null, Action? started = null)
+    {
+        if (IsDisposed || _understanding is not { } understanding)
+        {
+            return (null, PlacementCheckFailure.Unavailable);
+        }
+
+        var relevance = Relevance;
+        var text = noteText.StartsWith(EmbeddingText.PassagePrefix, StringComparison.Ordinal)
+            ? noteText[EmbeddingText.PassagePrefix.Length..]
+            : noteText;
+        PlacementCheckPrompt prompt;
+        try
+        {
+            // Only snapshots (the book, the note's text and key) go to the background.
+            prompt = await Task.Run(
+                () =>
+                {
+                    var topics = relevance.Topics(noteKey, noteText, book, CheckTopics);
+                    var places = relevance.Placements(noteKey, noteText, book, int.MaxValue)
+                        .GroupBy(hit => hit.SectionKey)
+                        .ToDictionary(group => group.Key, group => (IReadOnlyList<PlacementHit>)[.. group]);
+                    return PlacementCheck.Prompt(book, text, topics, places);
+                },
+                ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return (null, PlacementCheckFailure.Cancelled);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Searching topics and places for the placement check failed");
+            return (null, PlacementCheckFailure.NoAnswer);
+        }
+
+        if (prompt.Topics.Count == 0)
+        {
+            return (null, PlacementCheckFailure.Unusable);
+        }
+
+        using var timeout = new CancellationTokenSource(UnderstandingWorker.RequestTimeout, _time);
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, timeout.Token);
+        try
+        {
+            var answer = await understanding.Worker.RunNextAsync(
+                prompt.System, prompt.User, new ChatOptions(UnderstandingPrompts.CheckTokens, Json: true), linked.Token,
+                waiting, started);
+            return PlacementCheck.Parse(answer, prompt) is { } verdict
+                ? (verdict, null)
+                : (null, PlacementCheckFailure.Unusable);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return (null, PlacementCheckFailure.Cancelled);
+        }
+        catch (OperationCanceledException) when (timeout.IsCancellationRequested)
+        {
+            _logger.LogWarning("The placement check timed out");
+            return (null, PlacementCheckFailure.NoAnswer);
+        }
+        catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException or ChatModelUnavailableException)
+        {
+            // The server failed, or the worker stopped (the model was switched off, the vault closed).
+            _logger.LogWarning(ex, "The placement check failed");
+            return (null, PlacementCheckFailure.Unavailable);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "The placement check failed");
+            return (null, PlacementCheckFailure.NoAnswer);
+        }
+    }
+
+    /// <summary>
+    /// The topic summary of the heading <paramref name="sectionKey"/> of <paramref name="book"/> (spec 5.1 tooltip), while
+    /// the relevance search uses the language model's understanding; null without one. Reads only the snapshot and the
+    /// store, so it may be called from any thread.
+    /// </summary>
+    public string? TopicSummary(Book book, Guid sectionKey)
+    {
+        if (_understanding is not { ServerAway: false } understanding || book.FindNode(sectionKey) is not { } heading)
+        {
+            return null;
+        }
+
+        return understanding.Understanding.Heading(book, heading)?.Text;
+    }
+
+    /// <summary>
+    /// The current book and section changed (<see cref="AppState"/> reports it on the UI thread): the worker puts their
+    /// headings first. Another book is fed at once; another section once it stayed for <see cref="FocusFeedDelay"/>
+    /// (moving the cursor through the book feeds only once).
+    /// </summary>
+    internal void SetFocus(Book? book, Guid sectionKey)
+    {
+        var name = book?.LinkName;
+        if (string.Equals(name, _focusBook, StringComparison.OrdinalIgnoreCase) && sectionKey == _focusSection)
+        {
+            return;
+        }
+
+        var bookChanged = !string.Equals(name, _focusBook, StringComparison.OrdinalIgnoreCase);
+        _focusBook = name;
+        _focusSection = sectionKey;
+        lock (_gate)
+        {
+            // Under the lock: starting the language model's parts (which sets them under it) feeds the focus as it is then.
+            if (_disposed || _understanding is null)
+            {
+                return;
+            }
+
+            if (!bookChanged)
+            {
+                if (_focusTimer is { } timer)
+                {
+                    timer.Change(FocusFeedDelay, Timeout.InfiniteTimeSpan);
+                }
+                else
+                {
+                    _focusTimer = _time.CreateTimer(
+                        _ => Dispatch(() => Feed(notesChanged: false), "the language model's focus"), null, FocusFeedDelay,
+                        Timeout.InfiniteTimeSpan);
+                }
+
+                return;
+            }
+
+            // Another book (rare; its headings make the progress's count): fed at once, a pending section change with it.
+            _focusTimer?.Change(Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
+        }
+
+        Feed(notesChanged: false);
+    }
+
+    /// <summary>Raised on the thread of the runtime's refresh or pull.</summary>
+    private void OnLanguageChanged() => Dispatch(UpdateUnderstanding, "the language model's state");
+
+    /// <summary>
+    /// On the UI thread: starts the language model's parts when the model is ready and the semantic index exists, stops
+    /// them when it no longer is (or another server or model is configured), and forwards the pause switch.
+    /// </summary>
+    private void UpdateUnderstanding()
+    {
+        if (IsDisposed || _language is null)
+        {
+            return;
+        }
+
+        var chat = _aiParts is null ? null : _language.Chat;
+        var model = _language.Settings.LanguageModelName;
+        if (_understanding is { } current)
+        {
+            if (chat is not null && ReferenceEquals(current.Chat, chat) && current.ChatModel == model)
+            {
+                current.Worker.Paused = _language.Settings.LanguageModelPaused;
+                return;
+            }
+
+            StopUnderstanding();
+        }
+
+        if (chat is not null)
+        {
+            StartUnderstanding(chat, model);
+        }
+    }
+
+    /// <summary>
+    /// Whether the computer runs on battery, for the worker (on its thread): read from the monitor at most every
+    /// <see cref="BatteryReadInterval"/>; not recognizable (no monitor, unknown) means no.
+    /// </summary>
+    private bool OnBattery()
+    {
+        if (_monitor is null)
+        {
+            return false;
+        }
+
+        var now = _time.GetUtcNow();
+        lock (_gate)
+        {
+            if (_battery is { } known && now - known.At < BatteryReadInterval)
+            {
+                return known.OnBattery;
+            }
+        }
+
+        var onBattery = _monitor.Read(null).OnBattery == true;
+        lock (_gate)
+        {
+            _battery = (now, onBattery);
+        }
+
+        return onBattery;
+    }
+
+    private void StartUnderstanding(IChatModel chat, string model)
+    {
+        var ai = _aiParts!;
+        UnderstandingStore store;
+        try
+        {
+            store = UnderstandingStore.Open(Vault.Root, _logger);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Opening the language model's store failed");
+            return;
+        }
+
+        var understanding = new StoreUnderstanding(store, model, ai.EmbedModel);
+        var worker = new UnderstandingWorker(
+            chat, model, store, text => ai.Embedder.Embed([text])[0], ai.EmbedModel, _time, OnBattery, _logger)
+        {
+            Paused = _language!.Settings.LanguageModelPaused,
+        };
+        var parts = new UnderstandingParts(chat, model, store, understanding, new RelevanceService(ai.Index, understanding), worker);
+        lock (_gate)
+        {
+            if (_disposed)
+            {
+                parts.Dispose();
+                return;
+            }
+
+            _understanding = parts;
+        }
+
+        worker.ProgressChanged += () => OnUnderstandingProgress(parts);
+        Feed(notesChanged: true);
+        Observe(() => Task.Run(() => worker.RunAsync(_aiLifetime.Token)), "The language model's background work");
+        RaiseUnderstandingChanged();
+        RaiseAiStatusChanged();
+    }
+
+    /// <summary>Stops the worker (a running request is cancelled, nothing of it stored), then closes the store.</summary>
+    private void StopUnderstanding()
+    {
+        UnderstandingParts? parts;
+        lock (_gate)
+        {
+            parts = _understanding;
+            _understanding = null;
+        }
+
+        if (parts is null)
+        {
+            return;
+        }
+
+        parts.Dispose();
+        RaiseUnderstandingChanged();
+        RaiseAiStatusChanged();
+    }
+
+    /// <summary>
+    /// On the UI thread: takes snapshots of the books and the notes (newest first; their texts read again only with
+    /// <paramref name="notesChanged"/>) and gives the worker its work from them (the current book's headings, the notes,
+    /// the other books' headings) and the understanding the notes' fingerprints. The items are computed in the background
+    /// (headings once per book instance, notes once per snapshot); when all of them are known already (a focus change),
+    /// they are handed over at once. A result is dropped when a later feed started meanwhile (its snapshots are newer).
+    /// </summary>
+    private void Feed(bool notesChanged)
+    {
+        if (IsDisposed || _understanding is not { } parts)
+        {
+            return;
+        }
+
+        try
+        {
+            var book = _focusBook is { } name ? Vault.FindBook(name) : null;
+            var section = _focusSection == Guid.Empty ? (Guid?)null : _focusSection;
+            var books = Vault.Books;
+            if (notesChanged || _noteSnapshot is null)
+            {
+                // Only the texts are read here (the vault model belongs to the UI thread); the items are computed later.
+                _noteSnapshot =
+                [
+                    .. Notes.All()
+                        .Where(note => note.Block.Parent is null)
+                        .OrderByDescending(note => note.Date ?? DateOnly.MinValue)
+                        .Select(note => new NoteSnapshot(
+                            note.Key, UnderstandingItems.NoteText(note), note.Block.Content, note.Page.FilePath)),
+                ];
+            }
+
+            var notes = _noteSnapshot;
+            var feed = Interlocked.Increment(ref _feedsStarted);
+            if (Work(parts, book, books, notes, cachedOnly: true) is { } known)
+            {
+                Apply(parts, feed, section, notes, known);
+                return;
+            }
+
+            Observe(
+                () => Task.Run(() => Apply(parts, feed, section, notes, Work(parts, book, books, notes, cachedOnly: false)!.Value)),
+                "Feeding the language model's background work");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Feeding the language model's background work failed");
+        }
+    }
+
+    /// <summary>
+    /// The worker's work from the snapshots; with <paramref name="cachedOnly"/> only from items computed before (null if
+    /// any is missing), otherwise computing what is missing (in the background).
+    /// </summary>
+    private static FeedWork? Work(UnderstandingParts parts, Book? book, IReadOnlyList<Book> books,
+        IReadOnlyList<NoteSnapshot> notes, bool cachedOnly)
+    {
+        var understanding = parts.Understanding;
+        IReadOnlyList<UnderstandingItem>? Items(Book b) => cachedOnly ? understanding.CachedItems(b) : understanding.Items(b);
+
+        if ((cachedOnly ? parts.CachedNoteItems(notes) : parts.NoteItems(notes)) is not { } noteItems)
+        {
+            return null;
+        }
+
+        IReadOnlyList<UnderstandingItem> current = [];
+        if (book is not null)
+        {
+            if (Items(book) is not { } bookItems)
+            {
+                return null;
+            }
+
+            current = bookItems;
+        }
+
+        var others = new List<UnderstandingItem>();
+        foreach (var other in books)
+        {
+            if (string.Equals(other.LinkName, book?.LinkName, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (Items(other) is not { } items)
+            {
+                return null;
+            }
+
+            others.AddRange(items);
+        }
+
+        return new FeedWork(current, noteItems, others);
+    }
+
+    /// <summary>Hands the work to the worker and the notes' fingerprints to the understanding, unless a later feed started.</summary>
+    private void Apply(UnderstandingParts parts, int feed, Guid? section, IReadOnlyList<NoteSnapshot> notes, FeedWork work)
+    {
+        lock (_feedGate)
+        {
+            if (feed != Volatile.Read(ref _feedsStarted) || !ReferenceEquals(_understanding, parts))
+            {
+                return; // a later feed started, or the model's parts were replaced
+            }
+
+            if (parts.TakeNotesChanged(notes))
+            {
+                // Only notes long enough for a core statement are looked up.
+                var map = new Dictionary<Guid, string>();
+                foreach (var item in work.Notes)
+                {
+                    map[item.Key] = item.Fingerprint;
+                }
+
+                parts.Understanding.UpdateNotes(map);
+            }
+
+            parts.Worker.SetWork(work.Current, section, work.Notes, work.Others);
+            Interlocked.Increment(ref _feedsApplied);
+        }
+    }
+
+    /// <summary>(Re)starts the debounce of feeding the worker after a page change; call it under <see cref="_gate"/>.</summary>
+    private void ScheduleFeed()
+    {
+        if (_language is null)
+        {
+            return;
+        }
+
+        if (_feedTimer is { } timer)
+        {
+            timer.Change(PageIndexDelay, Timeout.InfiniteTimeSpan);
+            return;
+        }
+
+        _feedTimer = _time.CreateTimer(
+            _ => Dispatch(() => Feed(notesChanged: true), "the language model's work"), null, PageIndexDelay, Timeout.InfiniteTimeSpan);
+    }
+
+    /// <summary>
+    /// Raised on the worker's thread. A pause for an unreachable server or a missing model makes relevance work without the
+    /// understanding until the worker gets answers again (spec 8); the worker itself retries every 60 s.
+    /// </summary>
+    private void OnUnderstandingProgress(UnderstandingParts parts)
+    {
+        var pause = parts.Worker.Progress.Pause;
+        var away = pause switch
+        {
+            UnderstandingPause.Unreachable or UnderstandingPause.ModelMissing => true,
+            UnderstandingPause.None => false,
+            _ => parts.ServerAway,
+        };
+        var changed = away != parts.ServerAway;
+        parts.ServerAway = away;
+        RaiseUnderstandingChanged();
+        if (changed)
+        {
+            RaiseAiStatusChanged();
+        }
+    }
+
+    /// <summary>Called on any thread; never throws.</summary>
+    private void RaiseUnderstandingChanged()
+    {
+        if (IsDisposed)
+        {
+            return;
+        }
+
+        Dispatch(
+            () =>
+            {
+                if (!IsDisposed)
+                {
+                    UnderstandingChanged?.Invoke();
+                }
+            },
+            "the language model's progress");
+    }
+
+    /// <summary>The language model's parts for this vault; the relevance service uses the understanding over the store.</summary>
+    private sealed class UnderstandingParts(
+        IChatModel chat, string chatModel, UnderstandingStore store, StoreUnderstanding understanding, RelevanceService relevance,
+        UnderstandingWorker worker) : IDisposable
+    {
+        public IChatModel Chat { get; } = chat;
+
+        public string ChatModel { get; } = chatModel;
+
+        public StoreUnderstanding Understanding { get; } = understanding;
+
+        public RelevanceService Relevance { get; } = relevance;
+
+        public UnderstandingWorker Worker { get; } = worker;
+
+        // The notes' items of the last snapshot computed, and the snapshot last given to the understanding; under _notesGate.
+        private readonly Lock _notesGate = new();
+        private (IReadOnlyList<NoteSnapshot> Snapshot, IReadOnlyList<UnderstandingItem> Items)? _noteItems;
+        private IReadOnlyList<NoteSnapshot>? _notesGiven;
+
+        /// <summary>The notes' items (notes long enough for a core statement, in the snapshot's order); computed once per snapshot.</summary>
+        public IReadOnlyList<UnderstandingItem> NoteItems(IReadOnlyList<NoteSnapshot> snapshot)
+        {
+            if (CachedNoteItems(snapshot) is { } known)
+            {
+                return known;
+            }
+
+            IReadOnlyList<UnderstandingItem> items =
+            [
+                .. snapshot
+                    .Select(note => UnderstandingItems.ForNote(note.Key, note.Text, note.Content, note.FilePath, ChatModel))
+                    .OfType<UnderstandingItem>(),
+            ];
+            lock (_notesGate)
+            {
+                _noteItems = (snapshot, items);
+            }
+
+            return items;
+        }
+
+        /// <summary>The notes' items if they were computed for <paramref name="snapshot"/> already, else null.</summary>
+        public IReadOnlyList<UnderstandingItem>? CachedNoteItems(IReadOnlyList<NoteSnapshot> snapshot)
+        {
+            lock (_notesGate)
+            {
+                return _noteItems is { } known && ReferenceEquals(known.Snapshot, snapshot) ? known.Items : null;
+            }
+        }
+
+        /// <summary>Whether <paramref name="snapshot"/> was not the last one given to the understanding (and marks it given).</summary>
+        public bool TakeNotesChanged(IReadOnlyList<NoteSnapshot> snapshot)
+        {
+            lock (_notesGate)
+            {
+                if (ReferenceEquals(_notesGiven, snapshot))
+                {
+                    return false;
+                }
+
+                _notesGiven = snapshot;
+                return true;
+            }
+        }
+
+        /// <summary>The worker paused because the server is unreachable or the model missing, and got no answer since.</summary>
+        public bool ServerAway
+        {
+            get => Volatile.Read(ref _serverAway);
+            set => Volatile.Write(ref _serverAway, value);
+        }
+
+        private bool _serverAway;
+
+        /// <summary>The worker first (so nothing is stored any more), then the store; searches still running find no understanding.</summary>
+        public void Dispose()
+        {
+            Worker.Dispose();
+            store.Dispose();
+        }
+    }
+
+    /// <summary>What a note's understanding item is computed from, read on the UI thread.</summary>
+    private sealed record NoteSnapshot(Guid Key, string Text, string Content, string FilePath);
+
+    /// <summary>The worker's work of one feed: the current book's headings, the notes, the other books' headings.</summary>
+    private readonly record struct FeedWork(
+        IReadOnlyList<UnderstandingItem> Current, IReadOnlyList<UnderstandingItem> Notes, IReadOnlyList<UnderstandingItem> Others);
+
+    /// <summary>The services that exist once the semantic index does, with the embedder and model id behind it.</summary>
+    private sealed record AiParts(
+        SemanticIndex Index, HybridSearchService Search, RelevanceService Relevance, IEmbedder Embedder, string EmbedModel);
 
     /// <summary>Relevance without a semantic index: never available, never a suggestion.</summary>
     private sealed class UnavailableRelevance : IRelevanceService
@@ -724,5 +1369,7 @@ public sealed class VaultSession : IDisposable
         public IReadOnlyList<SectionHit> WhereTo(Guid noteKey, string noteText, Book book, int limit = 5) => [];
 
         public IReadOnlyList<PlacementHit> Placements(Guid noteKey, string noteText, Book book, int limit = 3) => [];
+
+        public IReadOnlyList<TopicHit> Topics(Guid noteKey, string noteText, Book book, int limit = 3) => [];
     }
 }

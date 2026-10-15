@@ -116,6 +116,10 @@
     {
         <AiModelDialog OnClose="CloseAiDialog" OnSwitch="SwitchAiModelAsync" />
     }
+    else if (_languageOfferOpen && _language is not null)
+    {
+        <LanguageModelDialog Offer="true" OnClose="CloseLanguageOffer" />
+    }
 
     <ConflictDialog />
     <UndoToast />
@@ -135,10 +139,22 @@
     /// <summary>The app's AI runtime; <c>null</c> when none is registered (the AI is off).</summary>
     private AiRuntime? _ai;
 
+    /// <summary>The app's language model; <c>null</c> when none is registered.</summary>
+    private LanguageModelRuntime? _language;
+
+    /// <summary>Tells the sessions whether the computer runs on battery; <c>null</c> when none is registered.</summary>
+    private ISystemMonitor? _monitor;
+
     private bool _aiDialogOpen;
 
     /// <summary>The AI model dialog waits for the dialog shown after opening the vault (the link check) to close.</summary>
     private bool _aiDialogPending;
+
+    /// <summary>The language model's first-setup offer is shown.</summary>
+    private bool _languageOfferOpen;
+
+    /// <summary>The offer waits for the other dialogs (the link check, the AI model) to close.</summary>
+    private bool _languageOfferPending;
 
     private enum Dialog
     {
@@ -160,9 +176,63 @@
             _aiDialogPending = false;
             _aiDialogOpen = _ai is { ModelInstalled: false };
         }
+
+        ShowPendingLanguageOffer();
     }
 
-    private void CloseAiDialog() => _aiDialogOpen = false;
+    private void CloseAiDialog()
+    {
+        _aiDialogOpen = false;
+        ShowPendingLanguageOffer();
+    }
+
+    private void CloseLanguageOffer() => _languageOfferOpen = false;
+
+    /// <summary>The waiting language model offer appears once no other dialog is shown.</summary>
+    private void ShowPendingLanguageOffer()
+    {
+        if (_languageOfferPending && _dialog == Dialog.None && !_aiDialogOpen)
+        {
+            _languageOfferPending = false;
+            _languageOfferOpen = true;
+        }
+    }
+
+    /// <summary>
+    /// After a vault was opened: while the language model was never offered (and is not switched on), Ollama is asked
+    /// again (the runtime's answer may be from the app's start) and, if it is reachable, the setup is offered once (spec 7),
+    /// after the other dialogs shown after opening.
+    /// </summary>
+    private async Task OfferLanguageModelAsync()
+    {
+        if (_language is not { } language || Settings.LanguageModelOffered || Settings.LanguageModelEnabled
+            || _languageOfferOpen || _languageOfferPending)
+        {
+            return;
+        }
+
+        try
+        {
+            await language.RefreshAsync(CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Asking the language model server failed");
+            return;
+        }
+
+        await InvokeAsync(() =>
+        {
+            if (language.Version is null || Settings.LanguageModelOffered || Settings.LanguageModelEnabled || _languageOfferOpen)
+            {
+                return;
+            }
+
+            _languageOfferPending = true;
+            ShowPendingLanguageOffer();
+            StateHasChanged();
+        });
+    }
 
     /// <summary>
     /// The model dialog downloaded <paramref name="target"/>: it becomes the active model. The vault session shares the
@@ -325,6 +395,11 @@
     {
         _logger = LoggerFactory.CreateLogger<Shell>();
         _ai = Services.GetService<AiRuntime>();
+        _language = Services.GetService<LanguageModelRuntime>();
+        _monitor = Services.GetService<ISystemMonitor>();
+
+        // Asks the language-model server in the background; vault sessions start their work once it is ready.
+        _ = _language?.RefreshAsync(CancellationToken.None);
         State.Changed += OnStateChanged;
         State.AiModelDialogRequested += OnAiModelDialogRequested;
         // The host page's splash screen (index.html) says what the start waits for and fades out after it (the last
@@ -417,7 +492,7 @@
         try
         {
             var session = await VaultSession.OpenAsync(
-                root, Clock, LoggerFactory.CreateLogger<VaultSession>(), Time, action => InvokeAsync(action), _ai);
+                root, Clock, LoggerFactory.CreateLogger<VaultSession>(), Time, action => InvokeAsync(action), _ai, _language, _monitor);
             Activate(session);
             Settings.LastVault = root;
             _hintVisible = !Settings.LogseqHintShown;
@@ -431,6 +506,7 @@
             }
 
             OfferAiModel();
+            _ = OfferLanguageModelAsync();
         }
         catch (Exception ex)
         {
