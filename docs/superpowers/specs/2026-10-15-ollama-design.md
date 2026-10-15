@@ -167,3 +167,20 @@ Zu Beginn der Umsetzung: reale Antwortzeiten von `qwen2.5:7b` auf dem Zielrechne
 - Prüfen der Fundstellen-Vorschläge im `[handled]`-Assistenten durch das Sprachmodell (nutzt aber die zweistufige Suche aus 5.1 mit).
 - Schreiben oder Umformulieren von Buchtext (bleibt bewusst ausgeschlossen, Spezifikation vom 2026-10-05, 12).
 - Einstellen der Ollama-Laufzeit (Threads, Kontextlänge) aus der App heraus.
+
+## 11. Nachtrag: Zeitangaben und Systemanzeige
+
+### 11.1 Dauer mit Zeitangabe und Fortschrittsbalken
+
+- **Hintergrundberechnung:** Die Anzeige in der Kopfzeile (Abschnitt 4) bekommt einen kleinen Balken (Anteil erledigt) und eine geschätzte Restzeit, z. B. „Sprachmodell 34/120 · noch ca. 1 h 10 min“. Die Schätzung ist der gleitende Mittelwert der letzten 10 Antwortzeiten mal die Zahl der offenen Einträge; vor der dritten Antwort steht „Restzeit wird ermittelt“.
+- **„Genauer prüfen“:** Laufanzeige mit vergangener Zeit und erwarteter Dauer, z. B. „Prüfe … 0:42 von ca. 1:20“, und Balken. Die erwartete Dauer ist der Mittelwert der letzten 5 Prüfungen (vor der ersten: 90 s). Läuft sie länger, wird der Balken unbestimmt (pulsierend) und der Text „dauert länger als erwartet“.
+- **Laden des Modells:** Balken mit Megabyte und Restzeit aus der Ladegeschwindigkeit (wie beim heutigen KI-Modell).
+- **Zeitformat:** unter 1 Minute „42 s“, darunter „1:20“, ab 1 Stunde „1 h 10 min“; alle Texte in `Strings.resx`.
+
+### 11.2 Systemanzeige
+
+- **Wo:** klein rechts in der Kopfzeile, immer sichtbar (abschaltbar in den Einstellungen, Vorgabe an).
+- **Was:** Prozessorauslastung des ganzen Rechners in %, Arbeitsspeicher belegt/gesamt in GB, freier Platz auf dem Laufwerk des Vaults in GB; z. B. „CPU 63 % · RAM 9,8/15,8 GB · Frei 112 GB“. Ein Tooltip zeigt zusätzlich den Anteil von Ollama und NoteEvolution an CPU und RAM, soweit ermittelbar.
+- **Aktualisierung:** alle 2 s; die Messung selbst darf den Rechner nicht spürbar belasten.
+- **Plattformen:** Windows vollständig. Linux und macOS zeigen, was ohne Zusatzwerkzeuge lesbar ist; Werte, die nicht ermittelbar sind, erscheinen als „–“.
+- **Warnfarbe:** CPU über 90 % oder freier Arbeitsspeicher unter 1 GB färbt den Wert in der Warnfarbe (`--warning`).
