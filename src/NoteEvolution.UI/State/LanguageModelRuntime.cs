@@ -24,6 +24,12 @@ public sealed class LanguageModelRuntime
     /// <summary>A server that does not answer the version or model list within this time counts as unreachable.</summary>
     public static readonly TimeSpan CheckTimeout = UnderstandingWorker.CheckTimeout;
 
+    /// <summary>The expected duration of "Genauer prüfen" before any check was timed (spec 11.1).</summary>
+    public static readonly TimeSpan FirstCheckDuration = TimeSpan.FromSeconds(90);
+
+    /// <summary>How many of the last checks the expected duration averages.</summary>
+    private const int CheckWindow = 5;
+
     private readonly UiSettings _settings;
     private readonly Func<Uri, IChatModel> _connect;
     private readonly TimeProvider _time;
@@ -43,6 +49,9 @@ public sealed class LanguageModelRuntime
 
     /// <summary>Counts the checks started; only the newest one's result is taken (an older one may end later).</summary>
     private long _generation;
+
+    /// <summary>The durations of the last <see cref="CheckWindow"/> placement checks, oldest first.</summary>
+    private readonly Queue<TimeSpan> _checkDurations = new();
 
     /// <param name="settings">The app's settings; the language model's values are read on every <see cref="RefreshAsync"/>.</param>
     /// <param name="connect">Creates the client for a server address (called once per address).</param>
@@ -79,6 +88,36 @@ public sealed class LanguageModelRuntime
         get
         {
             lock (_gate) return !_pulling && _state == LanguageModelState.Ready ? _client : null;
+        }
+    }
+
+    /// <summary>
+    /// How long "Genauer prüfen" is expected to take: the mean of the last 5 timed checks (<see cref="RecordCheck"/>),
+    /// <see cref="FirstCheckDuration"/> before the first.
+    /// </summary>
+    public TimeSpan ExpectedCheckDuration
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _checkDurations.Count == 0
+                    ? FirstCheckDuration
+                    : TimeSpan.FromTicks((long)_checkDurations.Average(d => d.Ticks));
+            }
+        }
+    }
+
+    /// <summary>Keeps the duration of a placement check the model answered (for <see cref="ExpectedCheckDuration"/>).</summary>
+    public void RecordCheck(TimeSpan duration)
+    {
+        lock (_gate)
+        {
+            _checkDurations.Enqueue(duration);
+            while (_checkDurations.Count > CheckWindow)
+            {
+                _checkDurations.Dequeue();
+            }
         }
     }
 

@@ -567,4 +567,47 @@ public sealed class UnderstandingWorkerTests
         f.Chat.Gate.Release();
         await Until(() => f.Store.Get("fp-Zwei") is not null);
     }
+    [Fact]
+    public async Task RunNext_BehindRunningRequest_ReportsWaitingThenStarted()
+    {
+        await using var f = new Fixture();
+        f.Chat.Gate = new SemaphoreSlim(0);
+        f.Worker.SetWork([], null, [Note("Eins")], []);
+        f.Start();
+        await Until(() => f.Chat.Calls.Count == 1);
+        Assert.True(f.Worker.Busy);
+
+        var events = new List<string>();
+        var check = f.Worker.RunNextAsync("System", "Frage", new ChatOptions(10), CancellationToken.None,
+            waiting: () => { lock (events) events.Add("waiting"); },
+            started: () => { lock (events) events.Add("started"); });
+        await Quiet();
+        lock (events) Assert.Equal(["waiting"], events);
+
+        // The background request ends; the check's own request starts.
+        f.Chat.Gate.Release();
+        await Until(() => f.Chat.Calls.Count == 2);
+        lock (events) Assert.Equal(["waiting", "started"], events);
+        Assert.True(f.Worker.Busy);
+        f.Chat.Gate.Release();
+        Assert.Equal("Antwort 2.", await check.WaitAsync(TimeSpan.FromSeconds(10)));
+    }
+
+    [Fact]
+    public async Task RunNext_Idle_StartsWithoutWaiting()
+    {
+        await using var f = new Fixture();
+        f.Start();
+        await Quiet();
+        Assert.False(f.Worker.Busy);
+
+        var events = new List<string>();
+        var answer = await f.Worker.RunNextAsync("System", "Frage", new ChatOptions(10), CancellationToken.None,
+            waiting: () => { lock (events) events.Add("waiting"); },
+            started: () => { lock (events) events.Add("started"); }).WaitAsync(TimeSpan.FromSeconds(10));
+
+        Assert.Equal("Antwort 1.", answer);
+        lock (events) Assert.Equal(["started"], events);
+        Assert.False(f.Worker.Busy);
+    }
 }

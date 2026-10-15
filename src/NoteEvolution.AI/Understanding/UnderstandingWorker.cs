@@ -86,6 +86,9 @@ public sealed class UnderstandingWorker : IDisposable
 
     private volatile UnderstandingProgress _progress = new(0, 0, null, UnderstandingPause.None);
 
+    /// <summary>A request (background or <see cref="RunNextAsync"/>) is with the server.</summary>
+    private volatile bool _busy;
+
     /// <param name="chat">The language-model server.</param>
     /// <param name="chatModel">The model to ask; it is part of every item's fingerprint.</param>
     /// <param name="store">Where results go; owned by the caller and disposed after this worker.</param>
@@ -111,6 +114,9 @@ public sealed class UnderstandingWorker : IDisposable
     public event Action? ProgressChanged;
 
     public UnderstandingProgress Progress => _progress;
+
+    /// <summary>Whether a request (a background one or a <see cref="RunNextAsync"/> call) is with the server right now.</summary>
+    public bool Busy => _busy;
 
     /// <summary>The user's pause switch: when set, no further background request starts (a running one finishes).</summary>
     public bool Paused
@@ -156,9 +162,17 @@ public sealed class UnderstandingWorker : IDisposable
     /// while the background computation is paused. Throws what the server throws; cancelling <paramref name="ct"/> withdraws
     /// or cancels it.
     /// </summary>
-    public async Task<string> RunNextAsync(string system, string user, ChatOptions options, CancellationToken ct)
+    /// <param name="waiting">Called at once (on the caller's thread) when another request is with the server, so this one waits.</param>
+    /// <param name="started">Called on the worker's thread when this request goes to the server.</param>
+    public async Task<string> RunNextAsync(string system, string user, ChatOptions options, CancellationToken ct,
+        Action? waiting = null, Action? started = null)
     {
-        var call = new PendingCall(system, user, options, ct);
+        var call = new PendingCall(system, user, options, ct, started);
+        if (_busy)
+        {
+            waiting?.Invoke(); // before the call is queued, so it always comes before started
+        }
+
         lock (_gate)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
@@ -278,7 +292,15 @@ public sealed class UnderstandingWorker : IDisposable
         {
             using var timeout = new CancellationTokenSource(RequestTimeout, _time);
             using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, timeout.Token);
-            answer = await _chat.ChatAsync(_chatModel, system, user, options, linked.Token);
+            _busy = true;
+            try
+            {
+                answer = await _chat.ChatAsync(_chatModel, system, user, options, linked.Token);
+            }
+            finally
+            {
+                _busy = false;
+            }
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
@@ -331,7 +353,11 @@ public sealed class UnderstandingWorker : IDisposable
         {
             if (call.Result.Task.IsCompleted) return; // withdrawn while waiting
             using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, call.Ct);
-            call.Result.TrySetResult(await _chat.ChatAsync(_chatModel, call.System, call.User, call.Options, linked.Token));
+            _busy = true;
+            call.Started?.Invoke();
+            var answer = await _chat.ChatAsync(_chatModel, call.System, call.User, call.Options, linked.Token);
+            _busy = false; // before the caller continues
+            call.Result.TrySetResult(answer);
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
@@ -344,6 +370,7 @@ public sealed class UnderstandingWorker : IDisposable
         }
         finally
         {
+            _busy = false;
             call.Result.TrySetCanceled(); // the worker stopped
         }
     }
@@ -696,7 +723,7 @@ public sealed class UnderstandingWorker : IDisposable
     private sealed record Work(IReadOnlyList<UnderstandingItem> Book, Guid? SectionKey, IReadOnlyList<UnderstandingItem> Notes,
         IReadOnlyList<UnderstandingItem> OtherBooks);
 
-    private sealed record PendingCall(string System, string User, ChatOptions Options, CancellationToken Ct)
+    private sealed record PendingCall(string System, string User, ChatOptions Options, CancellationToken Ct, Action? Started)
     {
         public TaskCompletionSource<string> Result { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
     }

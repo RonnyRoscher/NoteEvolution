@@ -95,6 +95,21 @@ public class LanguageModelTests : UiTestContext
     // ---- Runtime ----
 
     [Fact]
+    public void Runtime_ExpectedCheckDuration_MeanOfLastFive_90sBeforeFirst()
+    {
+        var runtime = new LanguageModelRuntime(Settings, _ => _chat, Time, NullLogger<LanguageModelRuntime>.Instance);
+        Assert.Equal(TimeSpan.FromSeconds(90), runtime.ExpectedCheckDuration);
+
+        runtime.RecordCheck(TimeSpan.FromSeconds(100)); // pushed out by the five below
+        foreach (var seconds in new[] { 10, 20, 30, 40, 50 })
+        {
+            runtime.RecordCheck(TimeSpan.FromSeconds(seconds));
+        }
+
+        Assert.Equal(TimeSpan.FromSeconds(30), runtime.ExpectedCheckDuration);
+    }
+
+    [Fact]
     public async Task Runtime_States_OffUnreachableModelMissingReady()
     {
         var runtime = new LanguageModelRuntime(Settings, _ => _chat, Time, NullLogger<LanguageModelRuntime>.Instance);

@@ -779,6 +779,8 @@ public sealed class VaultSession : IDisposable
     /// Call it on the UI thread; topics and places are computed in the background from the given snapshots.
     /// </summary>
     /// <param name="noteText"><c>EmbeddingText.ForNote(note)</c>, as for <see cref="IRelevanceService.Placements"/>.</param>
+    /// <param name="waiting">Called when the request has to wait behind a running background request (spec 5.2).</param>
+    /// <param name="started">Called (on the worker's thread) when the request goes to the server.</param>
     /// <returns>
     /// The verdict, or why there is none: <see cref="PlacementCheckFailure.Unavailable"/> without a ready model or when the
     /// server fails, <see cref="PlacementCheckFailure.NoAnswer"/> when the time ran out or the search for topics and places failed, <see cref="PlacementCheckFailure.Unusable"/>
@@ -786,7 +788,7 @@ public sealed class VaultSession : IDisposable
     /// when <paramref name="ct"/> was cancelled.
     /// </returns>
     public async Task<(PlacementVerdict? Verdict, PlacementCheckFailure? Failure)> CheckPlacementAsync(
-        Guid noteKey, string noteText, Book book, CancellationToken ct)
+        Guid noteKey, string noteText, Book book, CancellationToken ct, Action? waiting = null, Action? started = null)
     {
         if (IsDisposed || _understanding is not { } understanding)
         {
@@ -832,7 +834,8 @@ public sealed class VaultSession : IDisposable
         try
         {
             var answer = await understanding.Worker.RunNextAsync(
-                prompt.System, prompt.User, new ChatOptions(UnderstandingPrompts.CheckTokens, Json: true), linked.Token);
+                prompt.System, prompt.User, new ChatOptions(UnderstandingPrompts.CheckTokens, Json: true), linked.Token,
+                waiting, started);
             return PlacementCheck.Parse(answer, prompt) is { } verdict
                 ? (verdict, null)
                 : (null, PlacementCheckFailure.Unusable);
@@ -857,6 +860,21 @@ public sealed class VaultSession : IDisposable
             _logger.LogWarning(ex, "The placement check failed");
             return (null, PlacementCheckFailure.NoAnswer);
         }
+    }
+
+    /// <summary>
+    /// The topic summary of the heading <paramref name="sectionKey"/> of <paramref name="book"/> (spec 5.1 tooltip), while
+    /// the relevance search uses the language model's understanding; null without one. Reads only the snapshot and the
+    /// store, so it may be called from any thread.
+    /// </summary>
+    public string? TopicSummary(Book book, Guid sectionKey)
+    {
+        if (_understanding is not { ServerAway: false } understanding || book.FindNode(sectionKey) is not { } heading)
+        {
+            return null;
+        }
+
+        return understanding.Understanding.Heading(book, heading)?.Text;
     }
 
     /// <summary>

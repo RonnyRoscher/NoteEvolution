@@ -429,6 +429,38 @@
   <data name="NoteWhereToItemTitle" xml:space="preserve">
     <value>Zu dieser Stelle springen</value>
   </data>
+  <data name="NoteWhereToAfter" xml:space="preserve">
+    <value>nach ‚{0}‘</value>
+    <comment>{0} = Anfang des Textblocks, nach dem die Notiz passt</comment>
+  </data>
+  <data name="NoteWhereToNewPlace" xml:space="preserve">
+    <value>neue Stelle am Ende des Themas</value>
+  </data>
+  <data name="CheckButton" xml:space="preserve">
+    <value>Genauer prüfen</value>
+  </data>
+  <data name="CheckButtonTitle" xml:space="preserve">
+    <value>Das Sprachmodell entscheiden lassen, welche Stelle am besten passt</value>
+  </data>
+  <data name="CheckRunning" xml:space="preserve">
+    <value>Prüfe … {0} von ca. {1}</value>
+    <comment>{0} = vergangene Zeit, {1} = erwartete Dauer</comment>
+  </data>
+  <data name="CheckWaiting" xml:space="preserve">
+    <value>Wartet auf das Sprachmodell …</value>
+  </data>
+  <data name="CheckLonger" xml:space="preserve">
+    <value>dauert länger als erwartet</value>
+  </data>
+  <data name="CheckCancel" xml:space="preserve">
+    <value>Abbrechen</value>
+  </data>
+  <data name="CheckRecommended" xml:space="preserve">
+    <value>Empfehlung</value>
+  </data>
+  <data name="CheckUnusable" xml:space="preserve">
+    <value>Das Sprachmodell hat keine verwertbare Antwort gegeben</value>
+  </data>
   <data name="NoteOpenLogseq" xml:space="preserve">
     <value>In Logseq öffnen</value>
   </data>
