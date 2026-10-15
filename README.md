@@ -176,6 +176,43 @@ selbst gewählt und bestätigt hast. Ohne Modell arbeitet die App unverändert m
   (das Indexieren läuft im Hintergrund, die Kopfzeile zeigt den Fortschritt). Wie alles unter `.noteevolution/` kann
   sie von der Synchronisation ausgenommen werden.
 
+## Sprachmodell (Ollama)
+
+Ein lokales Sprachmodell über [Ollama](https://ollama.com) verbessert „Relevant“ und „Wohin damit?“: Es schreibt im
+Hintergrund für jede Überschrift des Buchs eine Themen-Zusammenfassung (von unten nach oben, einschließlich aller
+Unterabschnitte) und für jede Notiz eine Kernaussage. Diese Texte werden mit dem lokalen KI-Modell (siehe „Lokale KI“)
+verglichen; dadurch weiß jede Überschrift, worum es in ihren Unterabschnitten geht.
+
+- **Einrichten:** Ollama installieren und starten. Ist Ollama erreichbar, bietet die App einmal „Sprachmodell
+  einrichten?“ an; sonst in den Einstellungen unter „Sprachmodell (Ollama)“: „Sprachmodell verwenden“, Adresse
+  (Vorgabe `http://127.0.0.1:11434`) und Modell (Vorgabe `qwen2.5:7b`, etwa 4,7 GB). Fehlt das Modell, lädt
+  „Modell laden“ es über Ollama (Bestätigung, Fortschritt mit Restzeit, abbrechbar). Die Werte stehen in `ui.json`.
+- **„Wohin damit?“** sucht zweistufig: erst die drei passendsten Themen (eine Überschrift zählt auch mit 90 % ihres
+  besten Unterabschnitts), dann die Stelle darin. Die Liste zeigt „Thema › Stelle“, der Tooltip die
+  Themen-Zusammenfassung. **„Genauer prüfen“** lässt das Sprachmodell unter den besten Themen wählen und begründen
+  (auf der CPU etwa 1–2 Minuten; Anzeige „Prüfe … 0:42 von ca. 1:20“, abbrechbar); die Empfehlung steht oben in der
+  Liste.
+- **„Relevant“** beschreibt den Abschnitt über seine Zusammenfassung (und zu einem Viertel die seines Oberabschnitts)
+  und vergleicht die Notizen über Kernaussage und Text.
+- **Hintergrund:** immer nur eine Anfrage; zuerst das aktuelle Kapitel, dann das übrige Buch, dann die Notizen
+  (neueste zuerst). Beim Tippen wartet die Berechnung 10 s Ruhe ab, im Akkubetrieb pausiert sie, der Schalter ⏸/▶ in
+  der Kopfzeile hält sie an. Die Kopfzeile zeigt den Fortschritt mit Balken und Restzeit („Sprachmodell 34/120 · noch
+  ca. 1 h 10 min“). Eine Anfrage darf höchstens 5 Minuten dauern; nach 3 Fehlversuchen wird ein Eintrag bis zur
+  nächsten Änderung übersprungen; scheitern mehrere Einträge hintereinander am Server, pausiert die Berechnung und
+  versucht es nach 60 s erneut.
+- **Speicher und Datenschutz:** Ergebnisse liegen in `<vault>/.noteevolution/understanding.db` (wiederherstellbar,
+  kann von der Synchronisation ausgenommen werden). Alles bleibt auf dem Rechner; eine Adresse außerhalb des eigenen
+  Rechners wird nur nach einer Warnung übernommen. Das Sprachmodell schreibt keinen Buchtext und ändert keine Datei.
+- **Ohne Ollama** (oder solange noch nichts berechnet ist) arbeiten alle Funktionen wie bisher.
+- **Qualität messen:** `dotnet run tests/quality/measure.cs -- --model qwen2.5:7b` vergleicht auf einem Referenzbuch
+  mit 40 Notizen die heutige mit der neuen Suche und misst die Antwortzeiten (braucht Ollama mit dem Modell;
+  `--limit N` für einen kurzen Lauf).
+
+**Systemanzeige:** Rechts in der Kopfzeile stehen Prozessorlast, belegter Arbeitsspeicher und freier Platz auf dem
+Laufwerk des Vaults („CPU 63 % · RAM 9,8/15,8 GB · Frei 112 GB“, alle 2 s; der Tooltip zeigt den Anteil von Ollama
+und NoteEvolution). Über 90 % CPU oder unter 1 GB freiem Arbeitsspeicher erscheint der Wert in der Warnfarbe.
+Abschaltbar in den Einstellungen.
+
 ## Manuelle Abnahme
 
 Mit einem künstlichen Test-Vault (keine persönlichen Texte), Änderungen jeweils mit `git diff` gegen eine Kopie prüfen.
@@ -280,6 +317,19 @@ Lokale KI (Modell installiert, Test-Vault mit einigen Dutzend Notizen und einem 
       alten Modell.
 - [ ] Modellordner umbenennen: die App fällt auf die Volltextsuche zurück und bietet den Download an; `vectors.db`
       löschen und neu öffnen: sie wird neu aufgebaut.
+
+Sprachmodell (Ollama, Modell `qwen2.5:7b` geladen)
+- [ ] Ollama läuft, Vault öffnen: „Sprachmodell einrichten?“ erscheint einmal; einrichten; die Kopfzeile zeigt
+      „Sprachmodell 0/…“ mit Balken, nach drei Antworten eine Restzeit.
+- [ ] Tippen im Editor: die Kopfzeile zeigt die Tipppause; ⏸ hält an, ▶ setzt fort; beides bleibt nach einem
+      Neustart erhalten.
+- [ ] Ollama beenden: die Kopfzeile meldet „nicht erreichbar“, „Relevant“ und „Wohin damit?“ arbeiten weiter; Ollama
+      starten: nach spätestens 60 s geht es weiter.
+- [ ] „Wohin damit?“ zeigt „Thema › Stelle“ mit Zusammenfassung im Tooltip; „Genauer prüfen“ zeigt die laufende Zeit
+      und die Empfehlung mit Begründung oben; „Abbrechen“ beendet die Prüfung.
+- [ ] Einstellungen: eine Adresse auf einem anderen Rechner verlangt die Bestätigung der Warnung.
+- [ ] Systemanzeige: Werte plausibel (Task-Manager), Warnfarbe bei Volllast, abschaltbar.
+- [ ] Nach einer Berechnung sind alle Buch- und Notizdateien unverändert (`git diff`).
 
 PDF
 - [ ] PDF-Export für das ganze Buch in A4 und A5 sowie für „Aktueller Abschnitt“: der native Speichern-Dialog schlägt
