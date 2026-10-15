@@ -23,4 +23,11 @@ public record TopicRequest(
 /// <summary>A book section that fits a note; <paramref name="SectionKey"/> is <see cref="Guid.Empty"/> for the root.</summary>
 public record SectionHit(Guid SectionKey, double Score);
 
-public record PlacementHit(Guid TextBlockKey, double Score);
+/// <summary>
+/// A text block that fits a note. <paramref name="SectionKey"/> is the topic (chosen heading) the block was found in by the
+/// two-stage search (<see cref="Guid.Empty"/> for the root); <see cref="Guid.Empty"/> without the language model's understanding.
+/// </summary>
+public sealed record PlacementHit(Guid TextBlockKey, double Score, Guid SectionKey = default);
+
+/// <summary>A heading that fits a note as a topic; <paramref name="Summary"/> is its topic summary, if the model made one.</summary>
+public sealed record TopicHit(Guid SectionKey, double Score, string? Summary);

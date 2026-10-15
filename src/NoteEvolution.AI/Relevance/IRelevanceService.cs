@@ -32,6 +32,17 @@ public interface IRelevanceService
     /// <param name="noteText"><c>EmbeddingText.ForNote(note)</c>, computed on the UI thread; embedded if the note is not indexed.</param>
     IReadOnlyList<SectionHit> WhereTo(Guid noteKey, string noteText, Book book, int limit = 5);
 
-    /// <summary>The text blocks of <paramref name="book"/> that fit the note best, best first. Parameters as for <see cref="WhereTo"/>.</summary>
+    /// <summary>
+    /// The text blocks of <paramref name="book"/> that fit the note best, best first. With the language model's
+    /// understanding the search has two stages: the best 3 <see cref="Topics"/> first, then the text blocks within them
+    /// (sub-sections included). Parameters as for <see cref="WhereTo"/>.
+    /// </summary>
     IReadOnlyList<PlacementHit> Placements(Guid noteKey, string noteText, Book book, int limit = 3);
+
+    /// <summary>
+    /// The headings of <paramref name="book"/> that fit the note best as topics, best first: compared through their topic
+    /// summaries where there are any, a heading scores at least 0.9 × its best sub-heading. The root counts (with its own
+    /// score only) if it has text blocks. Parameters as for <see cref="WhereTo"/>.
+    /// </summary>
+    IReadOnlyList<TopicHit> Topics(Guid noteKey, string noteText, Book book, int limit = 3);
 }
