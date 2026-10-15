@@ -5,12 +5,15 @@
 // Quality and speed measurement of the language model's topic understanding (spec 9.2, 9.3). Not part of the test suite:
 // it needs a running Ollama with the model installed and the local embedding model of the app in the user profile.
 //
-//   dotnet run tests/quality/measure.cs -- --ollama http://127.0.0.1:11434 --model qwen2.5:7b [--embed ID] [--limit N]
+//   dotnet run tests/quality/measure.cs -- --ollama http://127.0.0.1:11434 --model qwen2.5:7b [--embed ID] [--limit N] [--keep DIR]
+//
+// With --keep DIR the vault and its computed summaries stay in DIR; a later run with the same DIR reuses them and only
+// computes what changed (a run then mainly measures "Genauer prüfen").
 //
 // It copies Referenzbuch.md and Notizen.md into a temporary vault, measures today's "Wohin damit?" (correct chapter among
 // the first 3), computes all heading summaries and note core statements with the real model into a temporary store,
 // measures the new two-stage search and "Genauer prüfen" (correct sub-chapter first), and prints the response times.
-// Nothing outside the temporary vault is written; no model is pulled.
+// Nothing outside the temporary vault (or DIR) is written; no model is pulled.
 
 using System.Diagnostics;
 using System.Globalization;
@@ -30,7 +33,7 @@ using NoteEvolution.Core.Vaults;
 var options = Options.Parse(args);
 if (options is null)
 {
-    Console.Error.WriteLine("Aufruf / usage: dotnet run tests/quality/measure.cs -- [--ollama URL] [--model NAME] [--embed MODEL_ID] [--limit N]");
+    Console.Error.WriteLine("Aufruf / usage: dotnet run tests/quality/measure.cs -- [--ollama URL] [--model NAME] [--embed MODEL_ID] [--limit N] [--keep DIR]");
     return 1;
 }
 
@@ -73,13 +76,13 @@ if (!installed.Any(m => string.Equals(m.Name, options.Model, StringComparison.Or
     return 3;
 }
 
-var root = Path.Combine(Path.GetTempPath(), "ne-quality-" + Guid.NewGuid().ToString("N"));
+var root = options.Keep is { } keep ? Path.GetFullPath(keep) : Path.Combine(Path.GetTempPath(), "ne-quality-" + Guid.NewGuid().ToString("N"));
 try
 {
     Directory.CreateDirectory(Path.Combine(root, "pages"));
     Directory.CreateDirectory(Path.Combine(root, "journals"));
-    File.Copy(Path.Combine(dataDir, "Referenzbuch.md"), Path.Combine(root, "pages", "Referenzbuch.md"));
-    File.Copy(Path.Combine(dataDir, "Notizen.md"), Path.Combine(root, "journals", "2026_10_15.md"));
+    File.Copy(Path.Combine(dataDir, "Referenzbuch.md"), Path.Combine(root, "pages", "Referenzbuch.md"), overwrite: true);
+    File.Copy(Path.Combine(dataDir, "Notizen.md"), Path.Combine(root, "journals", "2026_10_15.md"), overwrite: true);
     var expected = JsonSerializer.Deserialize<Dictionary<string, Expectation>>(
         File.ReadAllBytes(Path.Combine(dataDir, "expected.json")), new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
 
@@ -201,6 +204,10 @@ try
                 var answer = await chat.CheckAsync(options.Model, prompt.System, prompt.User,
                     new ChatOptions(UnderstandingPrompts.CheckTokens, Json: true), timeout.Token);
                 verdict = PlacementCheck.Parse(answer, prompt);
+                if (verdict is null)
+                {
+                    Console.Error.WriteLine($"  Unbrauchbare Antwort / unusable answer ({c.FirstLine[..Math.Min(40, c.FirstLine.Length)]}): {answer.ReplaceLineEndings(" ")}");
+                }
             }
             catch (Exception ex) when (ex is ChatModelUnavailableException
                                        || (ex is OperationCanceledException && !cts.IsCancellationRequested))
@@ -235,13 +242,16 @@ catch (OperationCanceledException) when (cts.IsCancellationRequested)
 finally
 {
     SqliteConnection.ClearAllPools();
-    try
+    if (options.Keep is null)
     {
-        Directory.Delete(root, recursive: true);
-    }
-    catch (IOException)
-    {
-        Console.Error.WriteLine($"Temporärer Vault bleibt / temporary vault left: {root}");
+        try
+        {
+            Directory.Delete(root, recursive: true);
+        }
+        catch (IOException)
+        {
+            Console.Error.WriteLine($"Temporärer Vault bleibt / temporary vault left: {root}");
+        }
     }
 }
 
@@ -358,8 +368,8 @@ sealed record Case(NoteBlock Note, string Text, OutlineNode Chapter, OutlineNode
 /// <summary>An entry of <c>expected.json</c> (keyed by the note's first line).</summary>
 sealed record Expectation(string Chapter, string Subchapter, bool OtherAspect);
 
-/// <summary>The command line: <c>--ollama URL</c>, <c>--model NAME</c>, <c>--embed MODEL_ID</c>, <c>--limit N</c>.</summary>
-sealed record Options(Uri Ollama, string Model, string? Embed, int? Limit)
+/// <summary>The command line: <c>--ollama URL</c>, <c>--model NAME</c>, <c>--embed MODEL_ID</c>, <c>--limit N</c>, <c>--keep DIR</c>.</summary>
+sealed record Options(Uri Ollama, string Model, string? Embed, int? Limit, string? Keep)
 {
     public static Options? Parse(string[] args)
     {
@@ -367,6 +377,7 @@ sealed record Options(Uri Ollama, string Model, string? Embed, int? Limit)
         var model = "qwen2.5:7b";
         string? embed = null;
         int? limit = null;
+        string? keep = null;
         for (var i = 0; i < args.Length; i++)
         {
             if (i + 1 >= args.Length)
@@ -389,12 +400,15 @@ sealed record Options(Uri Ollama, string Model, string? Embed, int? Limit)
                 case "--limit" when int.TryParse(value, out var n) && n > 0:
                     limit = n;
                     break;
+                case "--keep":
+                    keep = value;
+                    break;
                 default:
                     return null;
             }
         }
 
-        return new Options(ollama, model, embed, limit);
+        return new Options(ollama, model, embed, limit, keep);
     }
 }
 
