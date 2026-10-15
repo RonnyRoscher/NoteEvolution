@@ -149,6 +149,25 @@ public sealed class UnderstandingWorkerTests
     }
 
     [Fact]
+    public async Task Worker_CurrentSectionsChapter_BeforeEarlierChapters()
+    {
+        await using var f = new Fixture();
+        var a1 = Heading("A1");
+        var a = Heading("A", a1);
+        var b1 = Heading("B1");
+        var b2x = Heading("B2x");
+        var b2 = Heading("B2", b2x);
+        var b = Heading("B", b1, b2);
+        f.Worker.SetWork([a1, a, b1, b2x, b2, b], b2.Key, [], []);
+
+        f.Start();
+        await Until(() => f.Chat.Calls.Count == 6);
+
+        // the section's subtree and path first, then the rest of its chapter (its sibling B1), then the chapter itself
+        Assert.Equal(["B2x", "B2", "B1", "B", "A1", "A"], f.Subjects);
+    }
+
+    [Fact]
     public async Task Worker_ChangedText_FirstInItsGroup()
     {
         await using var f = new Fixture();
@@ -317,6 +336,51 @@ public sealed class UnderstandingWorkerTests
         Assert.Equal(["Kaputt", "Gut", "Kaputt", "Kaputt"], f.Subjects); // a failed entry is retried later
         Assert.Null(f.Store.Get("fp-Kaputt"));
         Assert.NotNull(f.Store.Get("fp-Gut"));
+    }
+
+    [Fact]
+    public async Task Worker_ServerErrorOnEveryRequest_PausesWithoutSkippingItems()
+    {
+        await using var f = new Fixture();
+        var broken = true;
+        f.Chat.Failure = (_, _) => broken ? new ChatModelUnavailableException("HTTP 500: model runner crashed") : null;
+        string[] fingerprints = ["fp-A", "fp-B", "fp-C", "fp-D"];
+        f.Worker.SetWork([], null, [Note("A"), Note("B"), Note("C"), Note("D")], []);
+
+        f.Start();
+        await Until(() => f.Worker.Progress.Pause == UnderstandingPause.Unreachable);
+        Assert.Equal(3, f.Chat.Calls.Count); // three different items in a row: a server problem
+        Assert.All(fingerprints, fp => Assert.Equal(0, f.Store.Attempts(fp)));
+        Assert.Equal(0, f.Worker.Progress.Done);
+
+        f.Time.Advance(UnderstandingWorker.RetryInterval); // one more try, failing again: paused at once, nothing charged
+        await Until(() => f.Chat.Calls.Count == 4);
+        await Until(() => f.Worker.Progress.Pause == UnderstandingPause.Unreachable);
+        await Quiet();
+        Assert.Equal(4, f.Chat.Calls.Count);
+        Assert.All(fingerprints, fp => Assert.Equal(0, f.Store.Attempts(fp)));
+
+        broken = false;
+        f.Time.Advance(UnderstandingWorker.RetryInterval);
+        await Until(() => fingerprints.All(fp => f.Store.Get(fp) is not null));
+        await Until(() => f.Worker.Progress is { Done: 4, Total: 4, Pause: UnderstandingPause.None });
+    }
+
+    [Fact]
+    public async Task Worker_SingleItemFailing_AmongSuccesses_StillSkippedAfter3()
+    {
+        await using var f = new Fixture();
+        f.Chat.Failure = (call, _) => Subject(call) == "Kaputt" ? new ChatModelUnavailableException("HTTP 500") : null;
+        f.Worker.SetWork([], null, [Note("Kaputt"), Note("G1"), Note("G2"), Note("G3")], []);
+
+        f.Start();
+        await Until(() => f.Store.Attempts("fp-Kaputt") == 3);
+        await Until(() => f.Worker.Progress is { Done: 4, Total: 4 });
+        await Quiet();
+
+        Assert.Equal(["Kaputt", "G1", "G2", "G3", "Kaputt", "Kaputt"], f.Subjects);
+        Assert.DoesNotContain(f.Reports, r => r.Pause == UnderstandingPause.Unreachable);
+        Assert.Null(f.Store.Get("fp-Kaputt"));
     }
 
     [Fact]

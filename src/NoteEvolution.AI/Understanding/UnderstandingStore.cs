@@ -175,6 +175,33 @@ public sealed class UnderstandingStore : IDisposable
         }
     }
 
+    /// <summary>Takes back one failed attempt (one that turned out to be the server's fault, not the content's); never below zero.</summary>
+    public void ForgetFailure(string fingerprint)
+    {
+        lock (_gate)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            using var tx = _db.BeginTransaction();
+            using (var command = _db.CreateCommand())
+            {
+                command.Transaction = tx;
+                command.CommandText = "UPDATE attempts SET count = count - 1 WHERE fingerprint = $fp";
+                command.Parameters.AddWithValue("$fp", fingerprint);
+                command.ExecuteNonQuery();
+            }
+
+            using (var clear = _db.CreateCommand())
+            {
+                clear.Transaction = tx;
+                clear.CommandText = "DELETE FROM attempts WHERE fingerprint = $fp AND count <= 0";
+                clear.Parameters.AddWithValue("$fp", fingerprint);
+                clear.ExecuteNonQuery();
+            }
+
+            tx.Commit();
+        }
+    }
+
     /// <summary>
     /// Deletes every entry whose fingerprint is not live, except the newest entry of each kind for a live identity (the
     /// stale fallback), and the failed attempts of deleted fingerprints.

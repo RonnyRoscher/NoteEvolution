@@ -79,6 +79,24 @@ public sealed class UnderstandingStoreTests
     }
 
     [Fact]
+    public void ForgetFailure_CountsDown_NotBelowZero()
+    {
+        using var dir = new TempDir();
+        using var store = UnderstandingStore.Open(dir.Path);
+        store.RecordFailure("fp");
+        store.RecordFailure("fp");
+
+        store.ForgetFailure("fp");
+        Assert.Equal(1, store.Attempts("fp"));
+        store.ForgetFailure("fp");
+        store.ForgetFailure("fp");
+        store.ForgetFailure("unknown");
+        Assert.Equal(0, store.Attempts("fp"));
+        store.RecordFailure("fp");
+        Assert.Equal(1, store.Attempts("fp"));
+    }
+
+    [Fact]
     public void Prune_KeepsLiveFingerprintsAndLatestOfLiveIdentities()
     {
         using var dir = new TempDir();

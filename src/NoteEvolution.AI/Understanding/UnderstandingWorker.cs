@@ -39,6 +39,9 @@ public sealed class UnderstandingWorker : IDisposable
     /// <summary>Failed attempts per item and fingerprint after which it is skipped until its content changes.</summary>
     public const int MaxAttempts = 3;
 
+    /// <summary>Different items failing in a row with a server error that make it a server problem rather than theirs.</summary>
+    public const int ServerErrorItems = 3;
+
     private const int DurationWindow = 10;
     private const int MinDurations = 3;
 
@@ -72,6 +75,8 @@ public sealed class UnderstandingWorker : IDisposable
     private readonly HashSet<string> _retryLater = [];
     private readonly HashSet<string> _unembeddable = [];
     private readonly Queue<TimeSpan> _durations = new();
+    private readonly List<string> _serverErrorStreak = [];
+    private bool _serverTrouble;
     private bool _connected;
     private UnderstandingPause _connectionPause;
     private DateTimeOffset _nextConnectionCheck = DateTimeOffset.MinValue;
@@ -275,24 +280,29 @@ public sealed class UnderstandingWorker : IDisposable
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
             _logger.LogWarning("Language model request for {Identity} timed out", item.Identity);
+            _serverErrorStreak.Clear();
             Fail(item, ct);
             return;
         }
         catch (ChatModelUnavailableException ex)
         {
             _logger.LogWarning(ex, "Language model request for {Identity} failed", item.Identity);
-            // Unreachable or model gone: pause without blaming the item; the server answered: a failed attempt.
+            // Unreachable or model gone: pause without blaming the item; the server answered with an error: see ServerError.
             _connected = false;
-            if (await ConnectAsync(ct)) Fail(item, ct);
+            if (await ConnectAsync(ct)) ServerError(item, ct);
             return;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger.LogWarning(ex, "Language model request for {Identity} failed", item.Identity);
+            _serverErrorStreak.Clear();
             Fail(item, ct);
             return;
         }
 
+        // The server answered: whatever failed before was not a server-wide problem.
+        _serverErrorStreak.Clear();
+        _serverTrouble = false;
         RecordDuration(_time.GetElapsedTime(started));
         var text = UnderstandingPrompts.Clean(answer, heading ? UnderstandingPrompts.SummaryLimit : UnderstandingPrompts.CoreLimit);
         if (text.Length == 0)
@@ -335,24 +345,53 @@ public sealed class UnderstandingWorker : IDisposable
         }
     }
 
+    /// <summary>
+    /// The reachable server answered a request with an error. One item failing among successes is that item's failed
+    /// attempt. <see cref="ServerErrorItems"/> different items failing in a row is a server problem (out of memory, crashed
+    /// runner): their attempts are taken back and the worker pauses as for an unreachable server; until a request succeeds
+    /// again, every further error pauses again without charging the item.
+    /// </summary>
+    private void ServerError(UnderstandingItem item, CancellationToken ct)
+    {
+        if (!_serverTrouble)
+        {
+            Fail(item, ct);
+            _serverErrorStreak.Add(item.Fingerprint);
+            if (_serverErrorStreak.Distinct(StringComparer.Ordinal).Count() < ServerErrorItems) return;
+
+            _logger.LogWarning("Language model server fails every request; pausing");
+            foreach (var fingerprint in _serverErrorStreak) Write(ct, () => _store.ForgetFailure(fingerprint));
+            _serverErrorStreak.Clear();
+            _serverTrouble = true;
+            _planStale = true;
+        }
+
+        PauseConnection(UnderstandingPause.Unreachable);
+    }
+
     /// <summary>Checks server and model; on a problem sets the pause and the next check. Returns whether requests can go out.</summary>
     private async Task<bool> ConnectAsync(CancellationToken ct)
     {
         var pause = await ConnectionPauseAsync(ct);
-        _connected = pause == UnderstandingPause.None;
-        if (!_connected)
+        if (pause != UnderstandingPause.None)
         {
-            if (pause != _connectionPause) _logger.LogInformation("Language model paused: {Pause}", pause);
-            _connectionPause = pause;
-            _nextConnectionCheck = _time.GetUtcNow() + RetryInterval;
-            Report(pause);
-        }
-        else
-        {
-            _connectionPause = UnderstandingPause.None;
+            PauseConnection(pause);
+            return false;
         }
 
-        return _connected;
+        _connected = true;
+        _connectionPause = UnderstandingPause.None;
+        return true;
+    }
+
+    /// <summary>No request goes out (except <see cref="RunNextAsync"/>) before the next check in <see cref="RetryInterval"/>.</summary>
+    private void PauseConnection(UnderstandingPause pause)
+    {
+        if (pause != _connectionPause) _logger.LogInformation("Language model paused: {Pause}", pause);
+        _connected = false;
+        _connectionPause = pause;
+        _nextConnectionCheck = _time.GetUtcNow() + RetryInterval;
+        Report(pause);
     }
 
     private async Task<UnderstandingPause> ConnectionPauseAsync(CancellationToken ct)
@@ -530,11 +569,13 @@ public sealed class UnderstandingWorker : IDisposable
                 states[item.Fingerprint] = ItemState.Skipped;
         }
 
-        var priority = SectionAndAncestors(work.Book, work.SectionKey);
+        // An ancestor waits for all its children, so its whole chapter comes first; the section's own path before its siblings.
+        var (path, chapter) = SectionAndChapter(work.Book, work.SectionKey);
         var groups = new[]
         {
-            work.Book.Where(i => priority.Contains(i.Fingerprint)),
-            work.Book.Where(i => !priority.Contains(i.Fingerprint)),
+            work.Book.Where(i => path.Contains(i.Fingerprint)),
+            work.Book.Where(i => chapter.Contains(i.Fingerprint) && !path.Contains(i.Fingerprint)),
+            work.Book.Where(i => !chapter.Contains(i.Fingerprint)),
             work.Notes,
             work.OtherBooks,
         };
@@ -558,11 +599,15 @@ public sealed class UnderstandingWorker : IDisposable
         return new Plan(order, states, items, counted.Count, open, missing);
     }
 
-    /// <summary>Fingerprints of the current section, everything below it and its ancestors.</summary>
-    private static HashSet<string> SectionAndAncestors(IReadOnlyList<UnderstandingItem> book, Guid? sectionKey)
+    /// <summary>
+    /// <c>Path</c>: fingerprints of the current section, everything below it and its ancestors. <c>Chapter</c>: everything
+    /// below the outermost ancestor (the current top-level chapter), including it.
+    /// </summary>
+    private static (HashSet<string> Path, HashSet<string> Chapter) SectionAndChapter(IReadOnlyList<UnderstandingItem> book,
+        Guid? sectionKey)
     {
-        var result = new HashSet<string>(StringComparer.Ordinal);
-        if (sectionKey is null || book.FirstOrDefault(i => i.Key == sectionKey) is not { } section) return result;
+        var path = new HashSet<string>(StringComparer.Ordinal);
+        if (sectionKey is null || book.FirstOrDefault(i => i.Key == sectionKey) is not { } section) return (path, path);
 
         var byFingerprint = new Dictionary<string, UnderstandingItem>(StringComparer.Ordinal);
         var parentOf = new Dictionary<string, UnderstandingItem>(StringComparer.Ordinal);
@@ -572,20 +617,25 @@ public sealed class UnderstandingWorker : IDisposable
             foreach (var child in item.ChildFingerprints) parentOf.TryAdd(child, item);
         }
 
-        var below = new Stack<UnderstandingItem>([section]);
+        AddSubtree(section, byFingerprint, path);
+        var top = section;
+        while (parentOf.TryGetValue(top.Fingerprint, out var parent) && path.Add(parent.Fingerprint)) top = parent;
+
+        var chapter = new HashSet<string>(StringComparer.Ordinal);
+        AddSubtree(top, byFingerprint, chapter);
+        return (path, chapter);
+    }
+
+    private static void AddSubtree(UnderstandingItem root, Dictionary<string, UnderstandingItem> byFingerprint,
+        HashSet<string> result)
+    {
+        var below = new Stack<UnderstandingItem>([root]);
         while (below.TryPop(out var item))
         {
             if (!result.Add(item.Fingerprint)) continue;
             foreach (var child in item.ChildFingerprints)
                 if (byFingerprint.TryGetValue(child, out var childItem)) below.Push(childItem);
         }
-
-        for (var fp = section.Fingerprint; parentOf.TryGetValue(fp, out var parent); fp = parent.Fingerprint)
-        {
-            if (!result.Add(parent.Fingerprint)) break;
-        }
-
-        return result;
     }
 
     private PendingCall? TakeCall()
