@@ -19,8 +19,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- The AI tests' deterministic embedder, shared without a project reference to the AI tests. -->
+    <!-- The AI tests' deterministic embedder and language-model stand-in, shared without a project reference to the AI tests. -->
     <Compile Include="..\NoteEvolution.AI.Tests\FakeEmbedder.cs" Link="FakeEmbedder.cs" />
+    <Compile Include="..\NoteEvolution.AI.Tests\FakeChatModel.cs" Link="FakeChatModel.cs" />
   </ItemGroup>
 
   <ItemGroup>

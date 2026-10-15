@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using NoteEvolution.AI.Embeddings;
+using NoteEvolution.AI.Language;
 using NoteEvolution.AI.Model;
 using NoteEvolution.Core.Storage;
 using NoteEvolution.Core.Vaults;
@@ -29,6 +30,10 @@ internal static class Program
         var settings = UiSettings.Load(userData);
         using var http = new HttpClient { Timeout = TimeSpan.FromMinutes(30) };
 
+        // The language model's requests have no client timeout: the worker limits each one (5 minutes), and answers on
+        // the CPU can take longer than HttpClient's default 100 s.
+        using var languageHttp = new HttpClient { Timeout = Timeout.InfiniteTimeSpan };
+
         AppState? state = null;
         AiRuntime? ai = null;
         try
@@ -50,6 +55,11 @@ internal static class Program
                 sp.GetRequiredService<ILogger<AiRuntime>>(),
                 ModelCatalog.All,
                 settings.AiModelId));
+            builder.Services.AddSingleton(sp => new LanguageModelRuntime(
+                settings,
+                address => new OllamaChatModel(languageHttp, address),
+                TimeProvider.System,
+                sp.GetRequiredService<ILogger<LanguageModelRuntime>>()));
             builder.Services.AddTransient<IEditorInterop, TipTapInterop>();
             builder.RootComponents.Add<Shell>("#app");
 

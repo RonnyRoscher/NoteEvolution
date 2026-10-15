@@ -61,6 +61,9 @@ public abstract class UiTestContext : BunitContext
     /// <summary>The AI runtime registered by <see cref="UseAi"/>; <c>null</c> without one (the AI is off).</summary>
     protected AiRuntime? Ai { get; private set; }
 
+    /// <summary>The language model registered by <see cref="UseLanguageModel"/>; <c>null</c> without one.</summary>
+    protected LanguageModelRuntime? LanguageModel { get; private set; }
+
     /// <summary>The model folders of <see cref="Ai"/>; <c>null</c> without one.</summary>
     protected ModelStore? Store { get; private set; }
 
@@ -110,14 +113,30 @@ public abstract class UiTestContext : BunitContext
         return Ai;
     }
 
+    /// <summary>
+    /// Registers a language model runtime over <paramref name="chat"/> (call it before the first render) and switches the
+    /// language model on in <see cref="Settings"/>; its state is <see cref="LanguageModelState.Off"/> until a refresh.
+    /// Sessions opened by <see cref="OpenSessionAsync"/> use it.
+    /// </summary>
+    protected LanguageModelRuntime UseLanguageModel(FakeChatModel chat)
+    {
+        Settings.LanguageModelEnabled = true;
+        LanguageModel = new LanguageModelRuntime(Settings, _ => chat, Time, NullLogger<LanguageModelRuntime>.Instance);
+        Services.AddSingleton(LanguageModel);
+        return LanguageModel;
+    }
+
     /// <summary>Puts the editor cursor (as the editor would report it) into the text block with <paramref name="textBlockKey"/>.</summary>
     protected void SetCursorInTextBlock(Guid textBlockKey) =>
         State.Cursor = new CursorInfo(ElementKind.TextBlock, textBlockKey, textBlockKey, 0);
 
-    /// <summary>Opens <paramref name="vault"/> as the app's session (dispatching inline) and selects its first book.</summary>
+    /// <summary>
+    /// Opens <paramref name="vault"/> as the app's session (dispatching inline, with <see cref="LanguageModel"/> if one is
+    /// registered) and selects its first book.
+    /// </summary>
     protected async Task<VaultSession> OpenSessionAsync(TestVault vault, AiRuntime? ai = null)
     {
-        var session = await VaultSession.OpenAsync(vault.Root, Clock, timeProvider: Time, ai: ai);
+        var session = await VaultSession.OpenAsync(vault.Root, Clock, timeProvider: Time, ai: ai, language: LanguageModel);
         State.Session = session;
         State.CurrentBook = session.Vault.Books.FirstOrDefault();
         State.CurrentSectionKey = State.CurrentBook?.Root.Key ?? Guid.Empty;

@@ -135,6 +135,9 @@
     /// <summary>The app's AI runtime; <c>null</c> when none is registered (the AI is off).</summary>
     private AiRuntime? _ai;
 
+    /// <summary>The app's language model; <c>null</c> when none is registered.</summary>
+    private LanguageModelRuntime? _language;
+
     private bool _aiDialogOpen;
 
     /// <summary>The AI model dialog waits for the dialog shown after opening the vault (the link check) to close.</summary>
@@ -325,6 +328,10 @@
     {
         _logger = LoggerFactory.CreateLogger<Shell>();
         _ai = Services.GetService<AiRuntime>();
+        _language = Services.GetService<LanguageModelRuntime>();
+
+        // Asks the language-model server in the background; vault sessions start their work once it is ready.
+        _ = _language?.RefreshAsync(CancellationToken.None);
         State.Changed += OnStateChanged;
         State.AiModelDialogRequested += OnAiModelDialogRequested;
         // The host page's splash screen (index.html) says what the start waits for and fades out after it (the last
@@ -417,7 +424,7 @@
         try
         {
             var session = await VaultSession.OpenAsync(
-                root, Clock, LoggerFactory.CreateLogger<VaultSession>(), Time, action => InvokeAsync(action), _ai);
+                root, Clock, LoggerFactory.CreateLogger<VaultSession>(), Time, action => InvokeAsync(action), _ai, _language);
             Activate(session);
             Settings.LastVault = root;
             _hintVisible = !Settings.LogseqHintShown;

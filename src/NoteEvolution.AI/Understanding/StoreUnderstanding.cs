@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
+using Microsoft.Data.Sqlite;
 using NoteEvolution.Core.Books;
 
 namespace NoteEvolution.AI.Understanding;
@@ -9,7 +10,9 @@ namespace NoteEvolution.AI.Understanding;
 /// <c>embedModel</c> count. Headings are found by the fingerprints <see cref="UnderstandingItems.ForBook"/> gives the
 /// snapshot (computed once per <see cref="Book"/> instance), falling back to the newest entry of the same identity. Notes
 /// are found through the key→fingerprint map the session passes to <see cref="UpdateNotes"/>; they have no stale fallback,
-/// so an edited note is compared by its text alone until its new core statement is there. Safe to call from several threads.
+/// so an edited note is compared by its text alone until its new core statement is there. A store that was closed (the
+/// vault switched while a search runs) or fails to read gives no understanding instead of an exception. Safe to call from
+/// several threads.
 /// </summary>
 public sealed class StoreUnderstanding : IUnderstanding
 {
@@ -50,8 +53,8 @@ public sealed class StoreUnderstanding : IUnderstanding
             .ToDictionary(item => item.Key, item => (item.Fingerprint, item.Identity)));
         if (!headings.TryGetValue(heading.Key, out var ids)) return null;
 
-        var entry = Usable(_store.Get(ids.Fingerprint), UnderstandingKind.Heading)
-                    ?? Usable(_store.LatestByIdentity(UnderstandingKind.Heading, ids.Identity), UnderstandingKind.Heading);
+        var entry = Read(() => Usable(_store.Get(ids.Fingerprint), UnderstandingKind.Heading)
+                    ?? Usable(_store.LatestByIdentity(UnderstandingKind.Heading, ids.Identity), UnderstandingKind.Heading));
         return entry is null ? null : (entry.Text, entry.Vector!);
     }
 
@@ -69,9 +72,22 @@ public sealed class StoreUnderstanding : IUnderstanding
     private float[]? NoteVector(string fingerprint)
     {
         if (_noteVectors.TryGetValue(fingerprint, out var cached)) return cached;
-        if (Usable(_store.Get(fingerprint), UnderstandingKind.Note) is not { } entry) return null;
+        if (Read(() => Usable(_store.Get(fingerprint), UnderstandingKind.Note)) is not { } entry) return null;
         _noteVectors[fingerprint] = entry.Vector!;
         return entry.Vector;
+    }
+
+    /// <summary>Runs a store read; a closed or failing store gives null.</summary>
+    private static UnderstandingEntry? Read(Func<UnderstandingEntry?> read)
+    {
+        try
+        {
+            return read();
+        }
+        catch (Exception ex) when (ex is ObjectDisposedException or SqliteException)
+        {
+            return null;
+        }
     }
 
     /// <summary>The entry if it is of the kind and has a vector from the current embed model, else null.</summary>

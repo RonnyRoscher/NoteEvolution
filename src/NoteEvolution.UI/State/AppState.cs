@@ -13,9 +13,13 @@ public sealed class AppState
     private VaultSession? _session;
     private Book? _currentBook;
     private CursorInfo? _cursor;
+    private Guid _currentSectionKey;
     private readonly HashSet<Guid> _whereToOpenNotes = [];
 
-    /// <summary>The open vault; <c>null</c> until one is opened. Another session puts the range back to level 0.</summary>
+    /// <summary>
+    /// The open vault; <c>null</c> until one is opened. Another session puts the range back to level 0. The session is
+    /// told the current book and section (<see cref="CurrentBook"/>, <see cref="CurrentSectionKey"/>) whenever they change.
+    /// </summary>
     public VaultSession? Session
     {
         get => _session;
@@ -27,6 +31,7 @@ public sealed class AppState
             }
 
             _session = value;
+            _session?.SetFocus(_currentBook, _currentSectionKey);
         }
     }
 
@@ -45,6 +50,7 @@ public sealed class AppState
             }
 
             _currentBook = value;
+            _session?.SetFocus(_currentBook, _currentSectionKey);
         }
     }
 
@@ -52,7 +58,15 @@ public sealed class AppState
     /// The <see cref="OutlineNode.Key"/> of the current section (<see cref="Guid.Empty"/> = book root, the prologue): the
     /// heading the cursor element belongs to. Without a cursor in the book the last one stays.
     /// </summary>
-    public Guid CurrentSectionKey { get; set; }
+    public Guid CurrentSectionKey
+    {
+        get => _currentSectionKey;
+        set
+        {
+            _currentSectionKey = value;
+            _session?.SetFocus(_currentBook, _currentSectionKey);
+        }
+    }
 
     /// <summary>
     /// The element at the editor cursor as the editor reported it; <c>null</c> if the cursor is in none. Another element

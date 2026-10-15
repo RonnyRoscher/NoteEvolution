@@ -126,4 +126,23 @@ public sealed class StoreUnderstandingTests : IDisposable
 
         Assert.Equal(50, _understanding.NoteCores().Count);
     }
+
+    [Fact]
+    public void StoreUnderstanding_StoreDisposed_ReturnsNothing()
+    {
+        var book = LoadBook();
+        var item = Item(book, "Liebe");
+        var note = Guid.NewGuid();
+        _store.Put(Entry(UnderstandingKind.Heading, item.Fingerprint, item.Identity, "Über Liebe"));
+        _store.Put(Entry(UnderstandingKind.Note, "fn", "note:n", "Kern"));
+        _understanding.UpdateNotes(new Dictionary<Guid, string> { [note] = "fn" });
+
+        // The vault was switched while a relevance search still runs: no understanding, no exception.
+        _store.Dispose();
+
+        Assert.Null(_understanding.Heading(book, Section(book, "Liebe")));
+        Assert.Null(_understanding.Heading(book, Section(book, "Vertrauen")));
+        Assert.Null(_understanding.NoteCore(note));
+        Assert.Empty(_understanding.NoteCores());
+    }
 }
