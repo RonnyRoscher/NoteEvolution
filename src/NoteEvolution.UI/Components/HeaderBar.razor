@@ -218,10 +218,16 @@
 
     /// <summary>
     /// The text of the background work: "Sprachmodell 34/120 · noch ca. 1 h 10 min" (before the third answer "Restzeit
-    /// wird ermittelt"), why it waits instead of the time, or "Sprachmodell bereit" when all is done.
+    /// wird ermittelt"), why it waits instead of the time, or "Sprachmodell bereit" when all is done; "Sprachmodell prüft …"
+    /// before the worker looked at its first work (nothing is known yet).
     /// </summary>
     public static string LanguageModelText(UnderstandingProgress progress, IStringLocalizer<Strings> l)
     {
+        if (!progress.Planned)
+        {
+            return l["LlmHeaderChecking"];
+        }
+
         var away = progress.Pause is UnderstandingPause.Unreachable or UnderstandingPause.ModelMissing;
         if (progress.Done >= progress.Total && !away)
         {

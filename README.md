@@ -181,7 +181,8 @@ selbst gewählt und bestätigt hast. Ohne Modell arbeitet die App unverändert m
 Ein lokales Sprachmodell über [Ollama](https://ollama.com) verbessert „Relevant“ und „Wohin damit?“: Es schreibt im
 Hintergrund für jede Überschrift des Buchs eine Themen-Zusammenfassung (von unten nach oben, einschließlich aller
 Unterabschnitte) und für jede Notiz eine Kernaussage. Diese Texte werden mit dem lokalen KI-Modell (siehe „Lokale KI“)
-verglichen; dadurch weiß jede Überschrift, worum es in ihren Unterabschnitten geht.
+verglichen; dadurch weiß jede Überschrift, worum es in ihren Unterabschnitten geht. Es braucht deshalb die lokale KI
+(installiertes KI-Modell); ohne sie bleibt das Sprachmodell wirkungslos, die Einstellungen weisen darauf hin.
 
 - **Einrichten:** Ollama installieren und starten. Ist Ollama erreichbar, bietet die App einmal „Sprachmodell
   einrichten?“ an; sonst in den Einstellungen unter „Sprachmodell (Ollama)“: „Sprachmodell verwenden“, Adresse
@@ -190,16 +191,17 @@ verglichen; dadurch weiß jede Überschrift, worum es in ihren Unterabschnitten 
 - **„Wohin damit?“** sucht zweistufig: erst die drei passendsten Themen (eine Überschrift zählt auch mit 90 % ihres
   besten Unterabschnitts), dann die Stelle darin. Die Liste zeigt „Thema › Stelle“, der Tooltip die
   Themen-Zusammenfassung. **„Genauer prüfen“** lässt das Sprachmodell unter den besten Themen wählen und begründen
-  (auf der CPU etwa 1–2 Minuten; Anzeige „Prüfe … 0:42 von ca. 1:20“, abbrechbar); die Empfehlung steht oben in der
-  Liste.
+  (auf dem Testrechner (i5, nur CPU) im Mittel gut 1 Minute, höchstens knapp 2; Anzeige „Prüfe … 0:42 von ca. 1:20“,
+  abbrechbar); die Empfehlung steht oben in der Liste.
 - **„Relevant“** beschreibt den Abschnitt über seine Zusammenfassung (und zu einem Viertel die seines Oberabschnitts)
   und vergleicht die Notizen über Kernaussage und Text.
 - **Hintergrund:** immer nur eine Anfrage; zuerst das aktuelle Kapitel, dann das übrige Buch, dann die Notizen
   (neueste zuerst). Beim Tippen wartet die Berechnung 10 s Ruhe ab, im Akkubetrieb pausiert sie, der Schalter ⏸/▶ in
-  der Kopfzeile hält sie an. Die Kopfzeile zeigt den Fortschritt mit Balken und Restzeit („Sprachmodell 34/120 · noch
-  ca. 1 h 10 min“). Eine Anfrage darf höchstens 5 Minuten dauern; nach 3 Fehlversuchen wird ein Eintrag bis zur
-  nächsten Änderung übersprungen; scheitern mehrere Einträge hintereinander am Server, pausiert die Berechnung und
-  versucht es nach 60 s erneut.
+  der Kopfzeile hält sie an. Auf dem Testrechner braucht eine Zusammenfassung etwa 45 s, eine Kernaussage etwa 18 s je
+  Eintrag. Die Kopfzeile zeigt den Fortschritt mit Balken und Restzeit („Sprachmodell 34/120 · noch ca. 1 h 10 min“).
+  Eine Anfrage darf höchstens 5 Minuten dauern; nach 3 Fehlversuchen wird ein Eintrag bis zur nächsten Änderung
+  übersprungen; scheitern mehrere Einträge hintereinander am Server, pausiert die Berechnung und versucht es nach 60 s
+  erneut.
 - **Speicher und Datenschutz:** Ergebnisse liegen in `<vault>/.noteevolution/understanding.db` (wiederherstellbar,
   kann von der Synchronisation ausgenommen werden). Alles bleibt auf dem Rechner; eine Adresse außerhalb des eigenen
   Rechners wird nur nach einer Warnung übernommen. Das Sprachmodell schreibt keinen Buchtext und ändert keine Datei.

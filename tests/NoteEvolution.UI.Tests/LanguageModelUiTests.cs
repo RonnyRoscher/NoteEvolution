@@ -113,6 +113,28 @@ public class LanguageModelUiTests : UiTestContext
         Assert.Empty(again.FindAll(".ne-settings-llm-pull"));
     }
 
+    [Theory]
+    [InlineData(null, true)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    public async Task Settings_ReadyWithoutLocalAi_HintsThatItIsNeeded(bool? aiInstalled, bool hint)
+    {
+        if (aiInstalled is { } installed)
+        {
+            UseAi(installed, () => new FakeEmbedder());
+        }
+
+        var language = UseLanguageModel(_chat);
+        await language.RefreshAsync(CancellationToken.None);
+
+        // Without the local AI (embedding model) the understanding cannot be used: the section says so.
+        var cut = Render<SettingsDialog>();
+
+        Assert.Equal(Text("LlmStateReady", "0.5.0"), cut.Find(".ne-settings-llm-state").TextContent);
+        Assert.Equal(hint ? [Text("LlmNeedsLocalAi")] : [], cut.FindAll(".ne-settings-llm-needs-ai").Select(e => e.TextContent));
+        Assert.Equal("Braucht die lokale KI (Einstellungen › Lokale KI)", Text("LlmNeedsLocalAi"));
+    }
+
     [Fact]
     public async Task Settings_ModelMissing_ShowsState_AndPullOpensTheDialog()
     {
@@ -438,6 +460,19 @@ public class LanguageModelUiTests : UiTestContext
             Text("LlmHeaderProgress", 1, 5) + " · " + Text("LlmPauseModelMissing"),
             HeaderBar.LanguageModelText(new UnderstandingProgress(1, 5, null, UnderstandingPause.ModelMissing), l));
         Assert.Equal(Text("LlmHeaderReady"), HeaderBar.LanguageModelText(new UnderstandingProgress(5, 5, null, UnderstandingPause.User), l));
+    }
+
+    [Fact]
+    public void Header_BeforeTheFirstPlan_Checking()
+    {
+        var l = Services.GetRequiredService<IStringLocalizer<Strings>>();
+
+        // The worker has not looked at the work yet: neither a count nor "bereit".
+        Assert.Equal(Text("LlmHeaderChecking"),
+            HeaderBar.LanguageModelText(new UnderstandingProgress(0, 0, null, UnderstandingPause.None, Planned: false), l));
+        Assert.Equal("Sprachmodell prüft …", Text("LlmHeaderChecking"));
+        Assert.Equal(Text("LlmHeaderReady"),
+            HeaderBar.LanguageModelText(new UnderstandingProgress(0, 0, null, UnderstandingPause.None), l));
     }
 
     [Fact]

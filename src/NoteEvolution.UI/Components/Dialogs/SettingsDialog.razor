@@ -80,6 +80,11 @@
                 }
             </select>
             <span class="ne-settings-llm-state">@LlmStateText(language)</span>
+            @if (language.State == LanguageModelState.Ready && _ai?.Status.State != AiState.Ready)
+            {
+                @* The understanding is searched with the local AI's vectors: without it the model's work is of no use. *@
+                <p class="ne-settings-llm-needs-ai">@L["LlmNeedsLocalAi"]</p>
+            }
             @if (language.State == LanguageModelState.ModelMissing)
             {
                 <button type="button" class="ne-settings-llm-pull" @onclick="() => _pullOpen = true">@L["LlmPullButton"]</button>

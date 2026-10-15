@@ -963,6 +963,9 @@
   <data name="LlmStateModelMissing" xml:space="preserve">
     <value>Modell nicht installiert</value>
   </data>
+  <data name="LlmNeedsLocalAi" xml:space="preserve">
+    <value>Braucht die lokale KI (Einstellungen › Lokale KI)</value>
+  </data>
   <data name="LlmStatePulling" xml:space="preserve">
     <value>Modell wird geladen …</value>
   </data>
@@ -1031,6 +1034,9 @@
   </data>
   <data name="LlmHeaderReady" xml:space="preserve">
     <value>Sprachmodell bereit</value>
+  </data>
+  <data name="LlmHeaderChecking" xml:space="preserve">
+    <value>Sprachmodell prüft …</value>
   </data>
   <data name="LlmHeaderUnreachable" xml:space="preserve">
     <value>Sprachmodell nicht erreichbar</value>

@@ -217,6 +217,38 @@ public class LanguageModelTests : UiTestContext
     }
 
     [Fact]
+    public async Task Session_RapidFocusChanges_FedOnceAfterTheyStop()
+    {
+        var tv = Vault();
+        var session = await OpenReadyAsync(tv);
+        var chapters = CurrentBook(session).Root.Children.Select(c => c.Key).ToList();
+        await Task.Delay(50);
+        var feeds = session.FeedsApplied;
+
+        // The cursor wanders through the chapters: nothing is computed while it moves.
+        State.CurrentSectionKey = chapters[0];
+        Time.Advance(VaultSession.FocusFeedDelay / 2);
+        State.CurrentSectionKey = chapters[1];
+        Time.Advance(VaultSession.FocusFeedDelay / 2);
+        State.CurrentSectionKey = chapters[0];
+        Time.Advance(VaultSession.FocusFeedDelay - TimeSpan.FromMilliseconds(1));
+        await Task.Delay(50);
+        Assert.Equal(feeds, session.FeedsApplied);
+
+        // It rests: one feed.
+        Time.Advance(TimeSpan.FromMilliseconds(1));
+        await Eventually(() => session.FeedsApplied == feeds + 1, "The focus was not fed.");
+        await Task.Delay(50);
+        Assert.Equal(feeds + 1, session.FeedsApplied);
+        Assert.Equal(5, _chat.Calls.Count); // nothing changed, nothing asked
+
+        // Another book is fed at once (its headings make the count).
+        State.CurrentBook = session.Vault.Books.Single(b => b.LinkName != State.CurrentBook!.LinkName);
+        await Eventually(() => session.FeedsApplied == feeds + 2, "The other book was not fed.");
+        await Eventually(() => session.Understanding is { Done: 2, Total: 2 }, "The other book's (empty) work was not planned.");
+    }
+
+    [Fact]
     public async Task Session_Typing_ForwardedToWorker()
     {
         var tv = Vault();

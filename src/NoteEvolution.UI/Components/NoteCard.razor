@@ -171,8 +171,11 @@
     /// </summary>
     [Parameter] public int FocusRequest { get; set; }
 
-    /// <summary>"Genauer prüfen" is offered while the language model is ready (spec 5.2).</summary>
-    private bool CheckAvailable => _language?.State == LanguageModelState.Ready;
+    /// <summary>
+    /// "Genauer prüfen" is offered while the language model is ready (spec 5.2) and the open vault's background work has not
+    /// found its server unreachable or the model missing (the session raises <see cref="VaultSession.AiStatusChanged"/> then).
+    /// </summary>
+    private bool CheckAvailable => _language?.State == LanguageModelState.Ready && State.Session is not { LanguageModelAway: true };
 
     /// <summary>The button is offered while the AI is ready and there is a book to place the note in.</summary>
     private bool WhereToAvailable => State is { Session: { } session, CurrentBook: not null } && session.Relevance.IsAvailable;

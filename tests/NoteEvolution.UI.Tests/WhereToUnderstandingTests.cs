@@ -2,7 +2,9 @@ using AngleSharp.Dom;
 using Bunit;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Localization;
+using NoteEvolution.AI.Language;
 using NoteEvolution.AI.Tests;
+using NoteEvolution.AI.Understanding;
 using NoteEvolution.Core.Books;
 using NoteEvolution.TestSupport;
 using NoteEvolution.UI.Components;
@@ -171,6 +173,30 @@ public class WhereToUnderstandingTests : UiTestContext
         await language.RefreshAsync(CancellationToken.None);
         cut.WaitForAssertion(() => Assert.Single(cut.FindAll(".ne-note-whereto-results > .ne-note-whereto-check")));
         Assert.Equal(Text("CheckButton"), cut.Find(".ne-note-whereto-check").TextContent.Trim());
+    }
+
+    [Fact]
+    public async Task Check_Hidden_WhileTheWorkerFindsTheServerGone()
+    {
+        using var gate = new SemaphoreSlim(0);
+        var session = await OpenReadyAsync(gate);
+        await Eventually(() => _chat.Calls.Count == 1);
+        var cut = OpenList(session);
+        cut.WaitForAssertion(() => Assert.Single(cut.FindAll(".ne-note-whereto-check")));
+
+        // Ollama stops while the runtime still says ready: the worker pauses, the check is not offered.
+        _chat.Version = null;
+        _chat.Failure = (_, _) => new ChatModelUnavailableException("gone");
+        gate.Release(100);
+        await Eventually(() => session.Understanding?.Pause == UnderstandingPause.Unreachable);
+        Assert.Equal(LanguageModelState.Ready, LanguageModel!.State);
+        cut.WaitForAssertion(() => Assert.Empty(cut.FindAll(".ne-note-whereto-check")));
+
+        // Back after the worker's next check: offered again.
+        _chat.Version = "0.5.0";
+        _chat.Failure = (_, _) => null;
+        Time.Advance(UnderstandingWorker.RetryInterval);
+        cut.WaitForAssertion(() => Assert.Single(cut.FindAll(".ne-note-whereto-check")));
     }
 
     [Fact]
