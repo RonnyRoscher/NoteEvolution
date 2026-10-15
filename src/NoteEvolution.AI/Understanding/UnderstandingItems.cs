@@ -35,22 +35,29 @@ public static class UnderstandingItems
     }
 
     /// <summary>The note's item, or <c>null</c> when its text is shorter than <see cref="NoteMinLength"/>.</summary>
-    public static UnderstandingItem? ForNote(NoteBlock note, string chatModel)
+    public static UnderstandingItem? ForNote(NoteBlock note, string chatModel) =>
+        ForNote(note.Key, NoteText(note), note.Block.Content, note.Page.FilePath, chatModel);
+
+    /// <summary>
+    /// The same from a snapshot taken on the UI thread (the note's key, its <see cref="NoteText"/>, its block's content and
+    /// its page's file path), so it can be computed on any thread.
+    /// </summary>
+    public static UnderstandingItem? ForNote(Guid key, string noteText, string content, string filePath, string chatModel)
     {
-        var text = LimitNote(NoteText(note));
+        var text = LimitNote(noteText);
         if (text.Length < NoteMinLength)
         {
             return null;
         }
 
-        var firstLine = note.Block.Content.Split('\n', 2)[0].Trim();
+        var firstLine = content.Split('\n', 2)[0].Trim();
         if (firstLine.Length > NoteIdentityLineLimit)
         {
             firstLine = firstLine[..NoteIdentityLineLimit];
         }
 
         return new UnderstandingItem(UnderstandingKind.Note, NoteFingerprint(text, chatModel),
-            "note:" + RelativePagePath(note.Page.FilePath) + "#" + firstLine, firstLine, text, [], note.Key);
+            "note:" + RelativePagePath(filePath) + "#" + firstLine, firstLine, text, [], key);
     }
 
     /// <summary>

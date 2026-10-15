@@ -7,9 +7,11 @@ namespace NoteEvolution.AI.Understanding;
 /// <summary>
 /// State of the background computation: <paramref name="Done"/> of <paramref name="Total"/> entries of the current book and
 /// the notes (an entry skipped after too many failures counts as done), the estimated <paramref name="Remaining"/> time
-/// (null until three answers were timed) and why the worker is waiting, if it is.
+/// (null until three answers were timed) and why the worker is waiting, if it is. Not <paramref name="Planned"/> until the
+/// worker looked at the first work it was given: then nothing is known yet (the counts are 0).
 /// </summary>
-public sealed record UnderstandingProgress(int Done, int Total, TimeSpan? Remaining, UnderstandingPause Pause);
+public sealed record UnderstandingProgress(int Done, int Total, TimeSpan? Remaining, UnderstandingPause Pause,
+    bool Planned = true);
 
 /// <summary>Why the worker waits although there is work: the user's switch, typing, battery, or the language-model server.</summary>
 public enum UnderstandingPause { None, User, Typing, Battery, Unreachable, ModelMissing }
@@ -18,6 +20,8 @@ public enum UnderstandingPause { None, User, Typing, Battery, Unreachable, Model
 /// The background queue of the language model: computes heading summaries (bottom-up) and note core statements one request
 /// at a time, stores them with their meaning vectors in the <see cref="UnderstandingStore"/>, pauses for the user's switch,
 /// typing, battery and an unreachable server, retries failures and reports progress with a remaining-time estimate.
+/// Once a plan has nothing left to do, the store is pruned to the items of that work (and the newest entry of each of
+/// their identities), so it does not grow forever.
 /// It only works on the <see cref="UnderstandingItem"/> snapshots it is given and never touches the vault model.
 /// All waiting uses the injected <see cref="TimeProvider"/>. <see cref="RunAsync"/> runs the loop (once per worker);
 /// the other members may be called from any thread.
@@ -63,6 +67,7 @@ public sealed class UnderstandingWorker : IDisposable
     private TaskCompletionSource _wake = NewWake();
     private Work _work = new([], null, [], []);
     private bool _workChanged = true;
+    private bool _workSet;
     private DateTimeOffset _lastTyping = DateTimeOffset.MinValue;
     private bool _paused;
     private bool _disposed;
@@ -75,6 +80,8 @@ public sealed class UnderstandingWorker : IDisposable
     private Work _planWork = new([], null, [], []);
     private Plan? _plan;
     private bool _planStale = true;
+    private bool _planned;
+    private Plan? _prunedPlan;
     private readonly HashSet<string> _retryLater = [];
     private readonly HashSet<string> _unembeddable = [];
     private readonly Queue<TimeSpan> _durations = new();
@@ -84,7 +91,7 @@ public sealed class UnderstandingWorker : IDisposable
     private UnderstandingPause _connectionPause;
     private DateTimeOffset _nextConnectionCheck = DateTimeOffset.MinValue;
 
-    private volatile UnderstandingProgress _progress = new(0, 0, null, UnderstandingPause.None);
+    private volatile UnderstandingProgress _progress = new(0, 0, null, UnderstandingPause.None, Planned: false);
 
     /// <summary>A request (background or <see cref="RunNextAsync"/>) is with the server.</summary>
     private volatile bool _busy;
@@ -145,6 +152,7 @@ public sealed class UnderstandingWorker : IDisposable
         {
             _work = new Work(currentBook, currentSectionKey, notes, otherBooks);
             _workChanged = true;
+            _workSet = true;
         }
 
         Signal();
@@ -241,6 +249,7 @@ public sealed class UnderstandingWorker : IDisposable
             var item = plan.NextReady();
             if (item is null && plan.MissingVectors.Count == 0)
             {
+                Prune(plan, ct);
                 Report(UnderstandingPause.None);
                 await WaitAsync(wake, null, ct);
                 continue;
@@ -529,6 +538,26 @@ public sealed class UnderstandingWorker : IDisposable
         }
     }
 
+    /// <summary>
+    /// Once per completed plan of given work: deletes what no item of it needs any more (an empty work before the first
+    /// <see cref="SetWork"/> is not "everything is gone"). A failure is logged; the store is only a cache.
+    /// </summary>
+    private void Prune(Plan plan, CancellationToken ct)
+    {
+        if (!_planned || ReferenceEquals(plan, _prunedPlan)) return;
+        _prunedPlan = plan;
+        var fingerprints = new HashSet<string>(plan.Items.Keys, StringComparer.Ordinal);
+        var identities = plan.Items.Values.Select(i => i.Identity).ToHashSet(StringComparer.Ordinal);
+        try
+        {
+            Write(ct, () => _store.Prune(fingerprints, identities));
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException and not ObjectDisposedException)
+        {
+            _logger.LogWarning(ex, "Pruning the language model's store failed");
+        }
+    }
+
     private (string Title, string Summary) ChildSummary(Plan plan, string fingerprint) =>
         (plan.Items.TryGetValue(fingerprint, out var child) ? child.Title : "", _store.Get(fingerprint)?.Text ?? "");
 
@@ -545,7 +574,7 @@ public sealed class UnderstandingWorker : IDisposable
         TimeSpan? remaining = _durations.Count >= MinDurations
             ? TimeSpan.FromTicks((long)_durations.Average(d => d.Ticks) * open)
             : null;
-        var progress = new UnderstandingProgress(total - open, total, remaining, pause);
+        var progress = new UnderstandingProgress(total - open, total, remaining, pause, _planned);
         if (progress == _progress) return;
 
         _progress = progress;
@@ -569,6 +598,7 @@ public sealed class UnderstandingWorker : IDisposable
                 _workChanged = false;
                 _planStale = true;
                 _unembeddable.Clear();
+                _planned = _workSet;
             }
         }
 

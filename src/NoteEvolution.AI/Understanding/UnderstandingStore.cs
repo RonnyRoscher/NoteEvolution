@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using Microsoft.Data.Sqlite;
+using Microsoft.Extensions.Logging;
 
 namespace NoteEvolution.AI.Understanding;
 
@@ -16,9 +17,9 @@ public sealed record UnderstandingEntry(UnderstandingKind Kind, string Fingerpri
 
 /// <summary>
 /// Persistent store of the model's understanding in <c>&lt;vault&gt;/.noteevolution/understanding.db</c>, keyed by content
-/// fingerprint. It only saves recomputation, so it is disposable: an unusable file is deleted and recreated. "Newest" for
-/// <see cref="LatestByIdentity"/> is a monotonically increasing sequence number stored in each row. Safe to call from
-/// several threads.
+/// fingerprint. It only saves recomputation, so it is disposable: an unusable file is deleted and recreated (with a
+/// warning in the log, spec 8). "Newest" for <see cref="LatestByIdentity"/> is a monotonically increasing sequence number
+/// stored in each row. Safe to call from several threads.
 /// </summary>
 public sealed class UnderstandingStore : IDisposable
 {
@@ -30,7 +31,15 @@ public sealed class UnderstandingStore : IDisposable
 
     private UnderstandingStore(SqliteConnection db) => _db = db;
 
-    public static UnderstandingStore Open(string vaultRoot)
+    /// <summary>
+    /// Raised with the fingerprint after <see cref="Put"/> or <see cref="SetVector"/> stored it (on the writer's thread,
+    /// outside the store's lock), so readers that remembered a miss can look again.
+    /// </summary>
+    public event Action<string>? EntryChanged;
+
+    /// <param name="vaultRoot">The vault; the database lies in its <c>.noteevolution</c> folder.</param>
+    /// <param name="logger">Told when an unusable database is recreated.</param>
+    public static UnderstandingStore Open(string vaultRoot, ILogger? logger = null)
     {
         var folder = Path.Combine(vaultRoot, ".noteevolution");
         Directory.CreateDirectory(folder);
@@ -48,6 +57,7 @@ public sealed class UnderstandingStore : IDisposable
                 // not a usable database: fall through to recreate it
             }
 
+            logger?.LogWarning("The language model's store {Path} could not be read and is recreated", path);
             DeleteFiles(path);
         }
 
@@ -117,6 +127,8 @@ public sealed class UnderstandingStore : IDisposable
 
             tx.Commit();
         }
+
+        EntryChanged?.Invoke(entry.Fingerprint);
     }
 
     /// <summary>Sets the meaning vector (and the model that made it) of an existing entry; does nothing for an unknown fingerprint.</summary>
@@ -132,6 +144,8 @@ public sealed class UnderstandingStore : IDisposable
             command.Parameters.AddWithValue("$fp", fingerprint);
             command.ExecuteNonQuery();
         }
+
+        EntryChanged?.Invoke(fingerprint);
     }
 
     /// <summary>Fingerprints of entries that have no vector from <paramref name="embedModel"/> (none yet, or one from another model).</summary>
@@ -204,7 +218,8 @@ public sealed class UnderstandingStore : IDisposable
 
     /// <summary>
     /// Deletes every entry whose fingerprint is not live, except the newest entry of each kind for a live identity (the
-    /// stale fallback), and the failed attempts of deleted fingerprints.
+    /// stale fallback), and the failed attempts of fingerprints that are neither stored nor live (a live item that failed
+    /// too often stays skipped).
     /// </summary>
     public void Prune(IReadOnlySet<string> liveFingerprints, IReadOnlySet<string> liveIdentities)
     {
@@ -238,10 +253,29 @@ public sealed class UnderstandingStore : IDisposable
                 delete.ExecuteNonQuery();
             }
 
-            using var orphans = _db.CreateCommand();
-            orphans.Transaction = tx;
-            orphans.CommandText = "DELETE FROM attempts WHERE fingerprint NOT IN (SELECT fingerprint FROM entries)";
-            orphans.ExecuteNonQuery();
+            var orphans = new List<string>();
+            using (var select = _db.CreateCommand())
+            {
+                select.Transaction = tx;
+                select.CommandText = "SELECT fingerprint FROM attempts WHERE fingerprint NOT IN (SELECT fingerprint FROM entries)";
+                using var reader = select.ExecuteReader();
+                while (reader.Read())
+                {
+                    var fingerprint = reader.GetString(0);
+                    if (!liveFingerprints.Contains(fingerprint)) orphans.Add(fingerprint);
+                }
+            }
+
+            using var forget = _db.CreateCommand();
+            forget.Transaction = tx;
+            forget.CommandText = "DELETE FROM attempts WHERE fingerprint = $fp";
+            var orphan = forget.Parameters.Add("$fp", SqliteType.Text);
+            foreach (var fingerprint in orphans)
+            {
+                orphan.Value = fingerprint;
+                forget.ExecuteNonQuery();
+            }
+
             tx.Commit();
         }
     }

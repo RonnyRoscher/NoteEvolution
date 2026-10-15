@@ -468,7 +468,9 @@ public sealed class UnderstandingWorkerTests
         f.Chat.Gate.Release();
         await Until(() => f.Store.Get("fp-2") is not null);
         Assert.Equal("Antwort 2.", f.Store.Get("fp-2")!.Text);
-        Assert.Equal("Antwort 1.", f.Store.Get("fp-1")!.Text);
+
+        // All done: the old fingerprint is no longer live and is pruned.
+        await Until(() => f.Store.Get("fp-1") is null, "prune");
     }
 
     [Fact]
@@ -511,6 +513,44 @@ public sealed class UnderstandingWorkerTests
         Assert.Equal(Embed, f.Store.Get(h.Fingerprint)!.EmbedModel);
         Assert.Equal("Thema H", f.Store.Get(h.Fingerprint)!.Text);
         Assert.Equal([1f], f.Store.Get("fp-A")!.Vector!);
+    }
+
+    [Fact]
+    public async Task Worker_BeforeFirstWork_ProgressNotPlanned()
+    {
+        await using var f = new Fixture();
+        Assert.False(f.Worker.Progress.Planned);
+
+        // Running without work yet: nothing is known, so nothing may look done.
+        f.Start();
+        await Quiet();
+        Assert.False(f.Worker.Progress.Planned);
+
+        f.Worker.SetWork([], null, [Note("A")], []);
+        await Until(() => f.Worker.Progress is { Planned: true, Done: 1, Total: 1 });
+    }
+
+    [Fact]
+    public async Task Worker_CompletedPlan_PrunesStoreWithLiveItems()
+    {
+        await using var f = new Fixture();
+        var h = Heading("H");
+        f.Store.Put(new UnderstandingEntry(UnderstandingKind.Heading, "old-H", h.Identity, "Thema alt", Model, Embed, [1f]));
+        f.Store.Put(new UnderstandingEntry(UnderstandingKind.Note, "fp-Gone", "id-Gone", "Kern weg", Model, Embed, [1f]));
+
+        // Without work the store is left alone (an empty snapshot is not "everything is gone").
+        f.Start();
+        await Quiet();
+        Assert.NotNull(f.Store.Get("fp-Gone"));
+
+        f.Worker.SetWork([h], null, [Note("A")], []);
+        await Until(() => f.Worker.Progress is { Done: 2, Total: 2 });
+        await Until(() => f.Store.Get("fp-Gone") is null, "prune");
+
+        // The entries of the live items stay; the old entry of a live heading is replaced by its current one.
+        Assert.NotNull(f.Store.Get(h.Fingerprint));
+        Assert.NotNull(f.Store.Get("fp-A"));
+        Assert.Null(f.Store.Get("old-H"));
     }
 
     [Fact]

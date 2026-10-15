@@ -1,4 +1,5 @@
-﻿using NoteEvolution.AI.Understanding;
+﻿using Microsoft.Extensions.Logging;
+using NoteEvolution.AI.Understanding;
 using NoteEvolution.TestSupport;
 
 namespace NoteEvolution.AI.Tests.Understanding;
@@ -119,6 +120,36 @@ public sealed class UnderstandingStoreTests
     }
 
     [Fact]
+    public void Prune_KeepsFailedAttemptsOfLiveFingerprints()
+    {
+        using var dir = new TempDir();
+        using var store = UnderstandingStore.Open(dir.Path);
+        for (var i = 0; i < 3; i++) store.RecordFailure("live-failing");
+        store.RecordFailure("dead-failing");
+
+        store.Prune(new HashSet<string> { "live-failing" }, new HashSet<string>());
+
+        // A live item that failed too often stays skipped; attempts of things gone are forgotten.
+        Assert.Equal(3, store.Attempts("live-failing"));
+        Assert.Equal(0, store.Attempts("dead-failing"));
+    }
+
+    [Fact]
+    public void PutAndSetVector_RaiseEntryChanged()
+    {
+        using var dir = new TempDir();
+        using var store = UnderstandingStore.Open(dir.Path);
+        var changed = new List<string>();
+        store.EntryChanged += changed.Add;
+
+        store.Put(Entry("a"));
+        store.SetVector("a", "embed-1", [1f]);
+        store.RecordFailure("b");
+
+        Assert.Equal(["a", "a"], changed);
+    }
+
+    [Fact]
     public void Open_CorruptFile_Recreated_Empty()
     {
         using var dir = new TempDir();
@@ -126,8 +157,12 @@ public sealed class UnderstandingStoreTests
         Directory.CreateDirectory(folder);
         File.WriteAllBytes(Path.Combine(folder, "understanding.db"), Enumerable.Range(0, 4096).Select(i => (byte)(i * 31 + 7)).ToArray());
 
-        using var store = UnderstandingStore.Open(dir.Path);
+        var logger = new ListLogger();
 
+        using var store = UnderstandingStore.Open(dir.Path, logger);
+
+        // Spec 8: recreated, with a note in the log.
+        Assert.Contains(logger.Entries, e => e.Level == LogLevel.Warning && e.Message.Contains("understanding.db", StringComparison.Ordinal));
         Assert.Null(store.Get("anything"));
         store.Put(Entry("fp"));
         Assert.NotNull(store.Get("fp"));
@@ -151,5 +186,29 @@ public sealed class UnderstandingStoreTests
         Assert.Equal("third", reopened.LatestByIdentity(UnderstandingKind.Heading, "id")!.Text);
         reopened.Put(Entry("d", "id", "fourth"));
         Assert.Equal("fourth", reopened.LatestByIdentity(UnderstandingKind.Heading, "id")!.Text);
+    }
+
+    [Fact]
+    public void Open_IntactFile_LogsNothing()
+    {
+        using var dir = new TempDir();
+        UnderstandingStore.Open(dir.Path).Dispose();
+        var logger = new ListLogger();
+
+        using var store = UnderstandingStore.Open(dir.Path, logger);
+
+        Assert.Empty(logger.Entries);
+    }
+
+    private sealed class ListLogger : ILogger
+    {
+        public List<(LogLevel Level, string Message)> Entries { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+            Func<TState, Exception?, string> formatter) => Entries.Add((logLevel, formatter(state, exception)));
     }
 }

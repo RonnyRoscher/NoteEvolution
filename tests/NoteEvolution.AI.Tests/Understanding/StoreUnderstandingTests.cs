@@ -145,4 +145,49 @@ public sealed class StoreUnderstandingTests : IDisposable
         Assert.Null(_understanding.NoteCore(note));
         Assert.Empty(_understanding.NoteCores());
     }
+
+    [Fact]
+    public void Items_SameBookInstance_ComputedOnce()
+    {
+        var book = LoadBook();
+        Assert.Null(_understanding.CachedItems(book));
+
+        var items = _understanding.Items(book);
+
+        // The same snapshot gives the same list (no new ForBook); another snapshot is computed anew, with equal items.
+        Assert.Same(items, _understanding.Items(book));
+        Assert.Same(items, _understanding.CachedItems(book));
+        Assert.Equal(UnderstandingItems.ForBook(book, Chat).Select(i => i.Fingerprint), items.Select(i => i.Fingerprint));
+        var reloaded = LoadBook();
+        Assert.NotSame(items, _understanding.Items(reloaded));
+        Assert.Equal(items.Select(i => i.Fingerprint), _understanding.Items(reloaded).Select(i => i.Fingerprint));
+    }
+
+    [Fact]
+    public void NoteCore_Miss_CachedUntilTheStoreChangesForIt()
+    {
+        var a = Guid.NewGuid();
+        var b = Guid.NewGuid();
+        _understanding.UpdateNotes(new Dictionary<Guid, string> { [a] = "fa", [b] = "fb" });
+        Assert.Null(_understanding.NoteCore(a));
+        Assert.Empty(_understanding.NoteCores());
+
+        // Written behind the store's back (another connection): the misses are remembered, the store is not asked again.
+        using (var other = UnderstandingStore.Open(_dir.Path))
+        {
+            other.Put(Entry(UnderstandingKind.Note, "fa", "note:a", "Kern A", vector: [1f, 0f]));
+            other.Put(Entry(UnderstandingKind.Note, "fb", "note:b", "Kern B", vector: [0f, 1f]));
+        }
+
+        Assert.Null(_understanding.NoteCore(a));
+        Assert.Empty(_understanding.NoteCores());
+
+        // A result stored through the store (as the worker does) ends the miss of its fingerprint only.
+        _store.Put(Entry(UnderstandingKind.Note, "fa", "note:a", "Kern A", embedModel: null));
+        Assert.Null(_understanding.NoteCore(a)); // no vector yet
+        _store.SetVector("fa", Embed, [2f, 0f]);
+        Assert.Equal([2f, 0f], _understanding.NoteCore(a)!);
+        Assert.Null(_understanding.NoteCore(b));
+        Assert.Equal(a, Assert.Single(_understanding.NoteCores()).Key);
+    }
 }
