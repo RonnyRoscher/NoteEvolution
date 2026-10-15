@@ -1,0 +1,202 @@
+{
+  "Seit ich jeden Morgen um halb sieben aufstehe, auch samstags, werde ich abends schon gegen zehn Uhr von allein müde und schlafe schnell ein.": {
+    "chapter": "Schlaf",
+    "subchapter": "Schlafrhythmus",
+    "otherAspect": false
+  },
+  "Rollladen ganz herunter und die Heizung im Schlafzimmer aus: Seitdem wache ich nachts kaum noch auf.": {
+    "chapter": "Schlaf",
+    "subchapter": "Schlafumgebung",
+    "otherAspect": false
+  },
+  "Das Handy lade ich jetzt in der Küche. Ohne es neben dem Bett lese ich abends wieder ein Buch und schlafe schneller ein.": {
+    "chapter": "Schlaf",
+    "subchapter": "Abendroutine",
+    "otherAspect": false
+  },
+  "Mein Partner sägt jede Nacht ganze Wälder ab. Weiche Stöpsel aus Wachs in den Ohren haben unser Problem fürs Erste gelöst, und ich bin morgens nicht mehr gereizt.": {
+    "chapter": "Schlaf",
+    "subchapter": "Schlafumgebung",
+    "otherAspect": true
+  },
+  "Im Schichtdienst muss ich mir tagsüber die Nacht machen: Ruhezeiten mit der Familie absprechen und mich vor jeder Nachtschicht zur gleichen Uhrzeit hinlegen.": {
+    "chapter": "Schlaf",
+    "subchapter": "Schlafrhythmus",
+    "otherAspect": true
+  },
+  "Haferflocken mit Apfel und Zimt halten mich bis zum Mittag satt, das Croissant vom Bäcker dagegen nur bis zur ersten Besprechung.": {
+    "chapter": "Ernährung",
+    "subchapter": "Frühstück",
+    "otherAspect": false
+  },
+  "Ich stelle mir morgens eine große Wasserkaraffe auf den Schreibtisch und versuche, sie bis zum Feierabend leer zu trinken.": {
+    "chapter": "Ernährung",
+    "subchapter": "Trinken",
+    "otherAspect": false
+  },
+  "Gemüsesticks vorbereiten: Sonntagabend Möhren, Gurke und Paprika schneiden und in Dosen in den Kühlschrank stellen.": {
+    "chapter": "Ernährung",
+    "subchapter": "Gemüse und Obst",
+    "otherAspect": false
+  },
+  "Linsen, Kichererbsen und Bohnen sind günstig, sättigen lange und lassen sich als Vorrat jahrelang im Schrank lagern. Ein Linseneintopf ist in einer halben Stunde fertig.": {
+    "chapter": "Ernährung",
+    "subchapter": "Gemüse und Obst",
+    "otherAspect": true
+  },
+  "Meine Großmutter merkt kaum noch, wenn ihr Körper Flüssigkeit braucht. Ein Zettel am Kühlschrank erinnert sie zu festen Uhrzeiten an ein Glas.": {
+    "chapter": "Ernährung",
+    "subchapter": "Trinken",
+    "otherAspect": true
+  },
+  "Statt mit dem Bus fahre ich die drei Kilometer zur Arbeit mit dem Fahrrad und komme morgens viel wacher im Büro an.": {
+    "chapter": "Bewegung",
+    "subchapter": "Gehen und Radfahren",
+    "otherAspect": false
+  },
+  "Jeden Morgen zehn Kniebeugen beim Zähneputzen. Klingt albern, hilft aber.": {
+    "chapter": "Bewegung",
+    "subchapter": "Kraft im Alltag",
+    "otherAspect": false
+  },
+  "Nach langem Sitzen dehne ich die Hüftbeuger: Ausfallschritt, Becken nach vorn schieben und eine halbe Minute ruhig halten.": {
+    "chapter": "Bewegung",
+    "subchapter": "Dehnen",
+    "otherAspect": false
+  },
+  "Tanzen in der Küche zur Lieblingsmusik zählt für mich als Training. Nach zwanzig Minuten bin ich richtig außer Atem und gut gelaunt.": {
+    "chapter": "Bewegung",
+    "subchapter": "Gehen und Radfahren",
+    "otherAspect": true
+  },
+  "Mit Mitte fünfzig habe ich mit Gleichgewichtsübungen angefangen: auf einem Bein stehen, während der Kaffee durchläuft. Das soll Stürzen im Alter vorbeugen.": {
+    "chapter": "Bewegung",
+    "subchapter": "Kraft im Alltag",
+    "otherAspect": true
+  },
+  "Alle neunzig Minuten stehe ich auf und schaue fünf Minuten aus dem Fenster. Seitdem bin ich am Nachmittag deutlich weniger erschöpft.": {
+    "chapter": "Stress und Erholung",
+    "subchapter": "Pausen",
+    "otherAspect": false
+  },
+  "Ich habe gelernt, Nein zu sagen, ohne mich lange zu rechtfertigen. Ein freundliches „Das schaffe ich diese Woche nicht“ reicht völlig.": {
+    "chapter": "Stress und Erholung",
+    "subchapter": "Grenzen setzen",
+    "otherAspect": false
+  },
+  "Ein heißes Bad mit Lavendelduft am Sonntagabend ist meine feste Auszeit, bevor die neue Woche beginnt.": {
+    "chapter": "Stress und Erholung",
+    "subchapter": "Pausen",
+    "otherAspect": true
+  },
+  "Progressive Muskelentspannung: nacheinander Hände, Arme und Schultern fest anspannen und dann bewusst locker lassen. Danach fühlt sich der ganze Körper schwer und warm an.": {
+    "chapter": "Stress und Erholung",
+    "subchapter": "Atmung",
+    "otherAspect": true
+  },
+  "Perfektionismus kostet mich viel Kraft. Inzwischen frage ich mich bei jeder Aufgabe, ob gut genug nicht schon reicht.": {
+    "chapter": "Stress und Erholung",
+    "subchapter": "Grenzen setzen",
+    "otherAspect": true
+  },
+  "Vokabeln lerne ich mit Karteikarten: Was ich kann, wandert ein Fach weiter, was ich vergessen habe, kommt zurück nach vorn.": {
+    "chapter": "Lernen",
+    "subchapter": "Wiederholen",
+    "otherAspect": false
+  },
+  "Das Telefon liegt beim Lernen im Flur, und ich arbeite in Blöcken von fünfundzwanzig Minuten mit kurzen Pausen dazwischen.": {
+    "chapter": "Lernen",
+    "subchapter": "Konzentration",
+    "otherAspect": false
+  },
+  "Beim Vortrag schreibe ich nur Stichworte in eigenen Worten mit und zeichne kleine Pfeile zwischen die Begriffe.": {
+    "chapter": "Lernen",
+    "subchapter": "Notizen machen",
+    "otherAspect": false
+  },
+  "Etwas einem anderen zu erklären zeigt sofort, wo die eigenen Lücken sind. Meine Tochter erklärt mir deshalb abends ihren Mathestoff.": {
+    "chapter": "Lernen",
+    "subchapter": "Wiederholen",
+    "otherAspect": true
+  },
+  "Eselsbrücken und kleine Reime helfen mir, Reihenfolgen zu behalten, etwa die Planeten oder die Monate mit einunddreißig Tagen.": {
+    "chapter": "Lernen",
+    "subchapter": "Wiederholen",
+    "otherAspect": true
+  },
+  "Sonntagabends gehe ich die Woche durch: Termine in den Kalender und die drei wichtigsten Aufgaben auf einen Zettel an der Pinnwand.": {
+    "chapter": "Ordnung und Planung",
+    "subchapter": "Wochenplanung",
+    "otherAspect": false
+  },
+  "Jeden Abend räume ich zehn Minuten auf, bevor ich mich aufs Sofa setze. Der Morgen beginnt dann ohne Suchen nach dem Schlüssel.": {
+    "chapter": "Ordnung und Planung",
+    "subchapter": "Ordnung zu Hause",
+    "otherAspect": false
+  },
+  "Briefe öffne ich sofort und lege sie in drei Fächer: erledigen, ablegen, wegwerfen.": {
+    "chapter": "Ordnung und Planung",
+    "subchapter": "Papierkram",
+    "otherAspect": false
+  },
+  "Beim Ausmisten hilft mir eine Frage: Habe ich das Teil im letzten Jahr benutzt? Wenn nicht, wandert es in die Kiste für den Flohmarkt.": {
+    "chapter": "Ordnung und Planung",
+    "subchapter": "Ordnung zu Hause",
+    "otherAspect": true
+  },
+  "Pass, Zeugnisse und Geburtsurkunde habe ich eingescannt und eine Kopie bei meiner Schwester hinterlegt, falls einmal ein Feuer ausbricht.": {
+    "chapter": "Ordnung und Planung",
+    "subchapter": "Papierkram",
+    "otherAspect": true
+  },
+  "Basilikum und Schnittlauch stehen bei mir auf der Fensterbank in der Küche, im Topf mit Loch, damit die Wurzeln nicht faulen.": {
+    "chapter": "Garten und Natur",
+    "subchapter": "Balkonpflanzen",
+    "otherAspect": false
+  },
+  "Kaffeesatz und Gemüseschalen kommen in den Komposteimer, gekochte Reste in den Restmüll.": {
+    "chapter": "Garten und Natur",
+    "subchapter": "Kompost",
+    "otherAspect": false
+  },
+  "Nach einem Spaziergang im Stadtpark unter den alten Bäumen bin ich jedes Mal ruhiger.": {
+    "chapter": "Garten und Natur",
+    "subchapter": "Zeit im Grünen",
+    "otherAspect": false
+  },
+  "Ein Insektenhotel aus Bambusröhrchen hängt am Geländer vor dem Fenster. Im Mai zogen die ersten Wildbienen ein und verschlossen die Röhren mit Lehm.": {
+    "chapter": "Garten und Natur",
+    "subchapter": "Balkonpflanzen",
+    "otherAspect": true
+  },
+  "Unter dem Fallrohr steht eine Tonne, die den Regen auffängt. Damit gieße ich im Sommer, und die Wasserrechnung sinkt.": {
+    "chapter": "Garten und Natur",
+    "subchapter": "Balkonpflanzen",
+    "otherAspect": true
+  },
+  "Ich rufe meine alte Schulfreundin jetzt jeden ersten Sonntag im Monat an, damit der Kontakt nicht wieder einschläft.": {
+    "chapter": "Miteinander",
+    "subchapter": "Freundschaften pflegen",
+    "otherAspect": false
+  },
+  "Im Streit mit meinem Bruder habe ich gesagt, wie es mir geht, statt ihm Vorwürfe zu machen. Das Gespräch blieb ruhig.": {
+    "chapter": "Miteinander",
+    "subchapter": "Gespräche",
+    "otherAspect": false
+  },
+  "Zum Hoffest im Sommer haben alle etwas zu essen mitgebracht. Seitdem grüßen sich im Haus alle mit Namen.": {
+    "chapter": "Miteinander",
+    "subchapter": "Nachbarschaft",
+    "otherAspect": false
+  },
+  "Eine Werkzeugkiste für das ganze Haus im Keller: Bohrmaschine, Leiter und Schraubzwingen muss nicht jede Wohnung selbst kaufen.": {
+    "chapter": "Miteinander",
+    "subchapter": "Nachbarschaft",
+    "otherAspect": true
+  },
+  "Ehrenamtlich lese ich einmal in der Woche Kindern in der Stadtbücherei vor. Das gibt mir mehr, als ich erwartet hatte.": {
+    "chapter": "Miteinander",
+    "subchapter": "Nachbarschaft",
+    "otherAspect": true
+  }
+}

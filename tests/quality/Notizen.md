@@ -1,0 +1,40 @@
+- Seit ich jeden Morgen um halb sieben aufstehe, auch samstags, werde ich abends schon gegen zehn Uhr von allein müde und schlafe schnell ein.
+- Rollladen ganz herunter und die Heizung im Schlafzimmer aus: Seitdem wache ich nachts kaum noch auf.
+- Das Handy lade ich jetzt in der Küche. Ohne es neben dem Bett lese ich abends wieder ein Buch und schlafe schneller ein.
+- Mein Partner sägt jede Nacht ganze Wälder ab. Weiche Stöpsel aus Wachs in den Ohren haben unser Problem fürs Erste gelöst, und ich bin morgens nicht mehr gereizt.
+- Im Schichtdienst muss ich mir tagsüber die Nacht machen: Ruhezeiten mit der Familie absprechen und mich vor jeder Nachtschicht zur gleichen Uhrzeit hinlegen.
+- Haferflocken mit Apfel und Zimt halten mich bis zum Mittag satt, das Croissant vom Bäcker dagegen nur bis zur ersten Besprechung.
+- Ich stelle mir morgens eine große Wasserkaraffe auf den Schreibtisch und versuche, sie bis zum Feierabend leer zu trinken.
+- Gemüsesticks vorbereiten: Sonntagabend Möhren, Gurke und Paprika schneiden und in Dosen in den Kühlschrank stellen.
+- Linsen, Kichererbsen und Bohnen sind günstig, sättigen lange und lassen sich als Vorrat jahrelang im Schrank lagern. Ein Linseneintopf ist in einer halben Stunde fertig.
+- Meine Großmutter merkt kaum noch, wenn ihr Körper Flüssigkeit braucht. Ein Zettel am Kühlschrank erinnert sie zu festen Uhrzeiten an ein Glas.
+- Statt mit dem Bus fahre ich die drei Kilometer zur Arbeit mit dem Fahrrad und komme morgens viel wacher im Büro an.
+- Jeden Morgen zehn Kniebeugen beim Zähneputzen. Klingt albern, hilft aber.
+- Nach langem Sitzen dehne ich die Hüftbeuger: Ausfallschritt, Becken nach vorn schieben und eine halbe Minute ruhig halten.
+- Tanzen in der Küche zur Lieblingsmusik zählt für mich als Training. Nach zwanzig Minuten bin ich richtig außer Atem und gut gelaunt.
+- Mit Mitte fünfzig habe ich mit Gleichgewichtsübungen angefangen: auf einem Bein stehen, während der Kaffee durchläuft. Das soll Stürzen im Alter vorbeugen.
+- Alle neunzig Minuten stehe ich auf und schaue fünf Minuten aus dem Fenster. Seitdem bin ich am Nachmittag deutlich weniger erschöpft.
+- Ich habe gelernt, Nein zu sagen, ohne mich lange zu rechtfertigen. Ein freundliches „Das schaffe ich diese Woche nicht“ reicht völlig.
+- Ein heißes Bad mit Lavendelduft am Sonntagabend ist meine feste Auszeit, bevor die neue Woche beginnt.
+- Progressive Muskelentspannung: nacheinander Hände, Arme und Schultern fest anspannen und dann bewusst locker lassen. Danach fühlt sich der ganze Körper schwer und warm an.
+- Perfektionismus kostet mich viel Kraft. Inzwischen frage ich mich bei jeder Aufgabe, ob gut genug nicht schon reicht.
+- Vokabeln lerne ich mit Karteikarten: Was ich kann, wandert ein Fach weiter, was ich vergessen habe, kommt zurück nach vorn.
+- Das Telefon liegt beim Lernen im Flur, und ich arbeite in Blöcken von fünfundzwanzig Minuten mit kurzen Pausen dazwischen.
+- Beim Vortrag schreibe ich nur Stichworte in eigenen Worten mit und zeichne kleine Pfeile zwischen die Begriffe.
+- Etwas einem anderen zu erklären zeigt sofort, wo die eigenen Lücken sind. Meine Tochter erklärt mir deshalb abends ihren Mathestoff.
+- Eselsbrücken und kleine Reime helfen mir, Reihenfolgen zu behalten, etwa die Planeten oder die Monate mit einunddreißig Tagen.
+- Sonntagabends gehe ich die Woche durch: Termine in den Kalender und die drei wichtigsten Aufgaben auf einen Zettel an der Pinnwand.
+- Jeden Abend räume ich zehn Minuten auf, bevor ich mich aufs Sofa setze. Der Morgen beginnt dann ohne Suchen nach dem Schlüssel.
+- Briefe öffne ich sofort und lege sie in drei Fächer: erledigen, ablegen, wegwerfen.
+- Beim Ausmisten hilft mir eine Frage: Habe ich das Teil im letzten Jahr benutzt? Wenn nicht, wandert es in die Kiste für den Flohmarkt.
+- Pass, Zeugnisse und Geburtsurkunde habe ich eingescannt und eine Kopie bei meiner Schwester hinterlegt, falls einmal ein Feuer ausbricht.
+- Basilikum und Schnittlauch stehen bei mir auf der Fensterbank in der Küche, im Topf mit Loch, damit die Wurzeln nicht faulen.
+- Kaffeesatz und Gemüseschalen kommen in den Komposteimer, gekochte Reste in den Restmüll.
+- Nach einem Spaziergang im Stadtpark unter den alten Bäumen bin ich jedes Mal ruhiger.
+- Ein Insektenhotel aus Bambusröhrchen hängt am Geländer vor dem Fenster. Im Mai zogen die ersten Wildbienen ein und verschlossen die Röhren mit Lehm.
+- Unter dem Fallrohr steht eine Tonne, die den Regen auffängt. Damit gieße ich im Sommer, und die Wasserrechnung sinkt.
+- Ich rufe meine alte Schulfreundin jetzt jeden ersten Sonntag im Monat an, damit der Kontakt nicht wieder einschläft.
+- Im Streit mit meinem Bruder habe ich gesagt, wie es mir geht, statt ihm Vorwürfe zu machen. Das Gespräch blieb ruhig.
+- Zum Hoffest im Sommer haben alle etwas zu essen mitgebracht. Seitdem grüßen sich im Haus alle mit Namen.
+- Eine Werkzeugkiste für das ganze Haus im Keller: Bohrmaschine, Leiter und Schraubzwingen muss nicht jede Wohnung selbst kaufen.
+- Ehrenamtlich lese ich einmal in der Woche Kindern in der Stadtbücherei vor. Das gibt mir mehr, als ich erwartet hatte.

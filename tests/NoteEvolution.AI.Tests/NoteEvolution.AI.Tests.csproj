@@ -17,6 +17,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- The quality reference data (tests/quality), checked by Quality/ReferenceDataTests. -->
+    <None Include="..\quality\Referenzbuch.md;..\quality\Notizen.md;..\quality\expected.json"
+          Link="Quality\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\src\NoteEvolution.AI\NoteEvolution.AI.csproj" />
     <ProjectReference Include="..\NoteEvolution.TestSupport\NoteEvolution.TestSupport.csproj" />
   </ItemGroup>

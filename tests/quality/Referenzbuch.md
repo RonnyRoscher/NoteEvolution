@@ -1,0 +1,110 @@
+title:: Gut durch den Alltag
+type:: book
+
+- Dieses Buch sammelt einfache Gewohnheiten, die den Alltag leichter machen. Es geht nicht um Höchstleistungen, sondern um kleine Schritte, die sich ohne großen Aufwand umsetzen lassen.
+- # Schlaf
+	- Guter Schlaf ist die Grundlage für fast alles, was am Tag gelingt. Drei Dinge helfen besonders: ein fester Rhythmus, ein ruhiger Schlafplatz und ein sanfter Übergang in die Nacht.
+	- ## Schlafrhythmus
+		- Wer jeden Tag zur gleichen Zeit aufsteht, schläft abends leichter ein. Der Körper gewöhnt sich an feste Zeiten und stellt sich schon vorher auf Ruhe ein.
+		- Auch am Wochenende lohnt es sich, nicht viel länger liegen zu bleiben. Eine Stunde Unterschied verkraftet der Körper gut, drei Stunden fühlen sich am Montag wie eine kleine Zeitverschiebung an.
+		- Morgens helles Tageslicht zu sehen, stellt die innere Uhr. Ein kurzer Gang vor die Tür nach dem Aufstehen wirkt stärker als jede Lampe im Zimmer.
+	- ## Schlafumgebung
+		- Ein kühles, dunkles und ruhiges Schlafzimmer erleichtert das Durchschlafen. Etwa achtzehn Grad gelten für viele Menschen als angenehm.
+		- Das Bett sollte ein Ort zum Schlafen bleiben. Wer dort arbeitet oder lange am Telefon liest, verknüpft es mit Wachsein.
+		- Eine gute Matratze und ein passendes Kissen entlasten Rücken und Nacken. Beim Kauf hilft es, mehrere Modelle in Ruhe probezuliegen.
+	- ## Abendroutine
+		- Eine kleine Abfolge gleicher Handlungen am Abend signalisiert dem Körper, dass der Tag endet. Zähneputzen, Licht dimmen und ein paar Seiten lesen reichen oft schon.
+		- Bildschirme eine Stunde vor dem Schlafen beiseitezulegen, beruhigt die Gedanken. Das helle Licht und die vielen Nachrichten halten sonst wach.
+		- Schwere Mahlzeiten und Kaffee am späten Nachmittag erschweren das Einschlafen. Ein leichtes Abendessen und ein Kräutertee sind die bessere Wahl.
+- # Ernährung
+	- Essen soll satt machen, schmecken und Kraft geben. Statt strenger Regeln helfen ein paar Grundsätze, die sich leicht in den Tag einbauen lassen.
+	- ## Frühstück
+		- Ein Frühstück mit Vollkornbrot, Haferflocken oder Joghurt hält lange satt. Wer morgens keinen Hunger hat, kann auch später am Vormittag essen.
+		- Süße Backwaren am Morgen lassen den Blutzucker schnell steigen und wieder fallen. Danach kommt oft schon um zehn Uhr der Heißhunger.
+		- Ein Stück Obst oder eine Handvoll Nüsse ergänzen das Frühstück gut. So startet der Tag mit Vitaminen und gesunden Fetten.
+	- ## Trinken
+		- Über den Tag verteilt etwa anderthalb Liter Wasser oder ungesüßten Tee zu trinken, hält konzentriert. Durst ist oft schon ein spätes Zeichen.
+		- Eine Flasche Wasser sichtbar auf dem Schreibtisch erinnert ans Trinken. Wer mag, gibt eine Scheibe Zitrone oder ein paar Minzblätter hinein.
+		- Limonaden und Säfte enthalten viel Zucker. Mit Wasser verdünnt bleibt der Geschmack, und der Zucker halbiert sich.
+	- ## Gemüse und Obst
+		- Fünf Portionen Gemüse und Obst am Tag sind eine einfache Faustregel. Eine Portion entspricht ungefähr einer Handvoll.
+		- Gemüse der Saison ist frischer und meist günstiger. Im Herbst bieten sich Kürbis, Kohl und Wurzelgemüse an.
+		- Wer Gemüse schon vorbereitet im Kühlschrank hat, greift eher danach. Geschnittene Möhren und Paprika sind ein guter Snack für zwischendurch.
+- # Bewegung
+	- Bewegung muss nicht im Sportstudio stattfinden. Schon der Alltag bietet viele Gelegenheiten, den Körper zu fordern und beweglich zu halten.
+	- ## Gehen und Radfahren
+		- Kurze Wege zu Fuß oder mit dem Rad zu erledigen, bringt ohne Zusatzaufwand Bewegung in den Tag. Zehntausend Schritte sind ein bekanntes, aber kein festes Ziel.
+		- Ein Spaziergang nach dem Mittagessen hilft der Verdauung und vertreibt die Müdigkeit am frühen Nachmittag.
+		- Wer mit dem Rad zur Arbeit fährt, kommt wacher an. Gute Beleuchtung und ein Helm machen die Fahrt sicherer.
+	- ## Kraft im Alltag
+		- Treppen statt Aufzug zu nehmen, kräftigt Beine und Herz. Schon zwei Stockwerke am Tag machen auf Dauer einen Unterschied.
+		- Einfache Übungen wie Kniebeugen oder Liegestütze an der Wand brauchen keine Geräte. Zehn Wiederholungen am Morgen sind ein guter Anfang.
+		- Schwere Einkäufe gleichmäßig auf beide Hände zu verteilen, schont den Rücken. Beim Heben gehen die Knie in die Beuge, nicht der Rücken.
+	- ## Dehnen
+		- Wer lange sitzt, verkürzt Muskeln an Hüfte und Brust. Ein paar Dehnübungen jede Stunde wirken dem entgegen.
+		- Dehnen sollte langsam und ohne Schmerz geschehen. Jede Position wird etwa dreißig Sekunden gehalten, dabei wird ruhig weitergeatmet.
+- # Stress und Erholung
+	- Anspannung gehört zum Leben, solange auf sie Erholung folgt. Dieses Kapitel zeigt, wie sich beides im Gleichgewicht halten lässt.
+	- ## Pausen
+		- Kurze Pausen alle neunzig Minuten halten die Leistung über den Tag stabil. Schon fünf Minuten Abstand vom Schreibtisch genügen.
+		- Eine echte Pause heißt, etwas anderes zu tun: aufstehen, aus dem Fenster schauen, ein Glas Wasser holen. Nachrichten lesen ist keine Pause.
+		- Die Mittagspause gehört nicht an den Arbeitsplatz. Wer woanders isst, kehrt erholter zurück.
+	- ## Atmung
+		- Langsames Ausatmen beruhigt den Herzschlag. Vier Sekunden ein, sechs Sekunden aus ist eine einfache Übung für zwischendurch.
+		- Vor einem schwierigen Gespräch helfen drei tiefe Atemzüge in den Bauch. Die Schultern sinken, die Stimme wird ruhiger.
+	- ## Grenzen setzen
+		- Nein zu sagen fällt vielen schwer, schützt aber die eigene Zeit. Eine freundliche Begründung genügt, eine lange Rechtfertigung ist nicht nötig.
+		- Feste Zeiten ohne Erreichbarkeit, etwa am Abend, schaffen Ruhe. Das Diensttelefon bleibt dann in der Tasche.
+		- Wer sich zu viel vornimmt, sollte Aufgaben nach Wichtigkeit ordnen. Was heute nicht geschafft wird, bekommt einen neuen Termin statt eines schlechten Gewissens.
+- # Lernen
+	- Lernen hört mit der Schule nicht auf. Ob Sprache, Instrument oder Beruf: Wer weiß, wie das Gedächtnis arbeitet, lernt leichter.
+	- ## Wiederholen
+		- Neues Wissen verblasst schnell, wenn es nicht wiederholt wird. Wiederholungen nach einem Tag, einer Woche und einem Monat verankern es dauerhaft.
+		- Karteikarten eignen sich gut für Vokabeln und Begriffe. Karten, die sitzen, kommen seltener dran, schwierige öfter.
+		- Sich selbst abzufragen, wirkt stärker als erneutes Durchlesen. Das Erinnern selbst ist die Übung.
+	- ## Konzentration
+		- Ein aufgeräumter Arbeitsplatz lenkt weniger ab. Das Telefon liegt am besten in einem anderen Raum.
+		- Wer in festen Abschnitten von fünfundzwanzig Minuten arbeitet und dann kurz pausiert, bleibt länger bei der Sache.
+		- Mehrere Dinge gleichzeitig zu tun, kostet mehr Zeit, als es spart. Eine Aufgabe nach der anderen führt schneller zum Ziel.
+	- ## Notizen machen
+		- Eigene Worte merken sich besser als abgeschriebene Sätze. Beim Mitschreiben hilft es, nur die Kernpunkte festzuhalten.
+		- Skizzen und Pfeile zeigen Zusammenhänge oft klarer als ganze Absätze. Eine Seite mit einer einfachen Zeichnung bleibt lange im Kopf.
+- # Ordnung und Planung
+	- Wer den Überblick behält, spart Zeit und Nerven. Ordnung ist kein Selbstzweck, sondern schafft Raum für das, was wirklich zählt.
+	- ## Wochenplanung
+		- Ein fester Termin am Sonntagabend, um die kommende Woche durchzugehen, verhindert böse Überraschungen. Termine kommen in den Kalender, Aufgaben auf eine Liste.
+		- Mehr als drei wichtige Aufgaben pro Tag sind selten realistisch. Wer sie morgens zuerst erledigt, hat den Rest des Tages den Kopf frei.
+		- Zwischen zwei Terminen sollte immer etwas Luft bleiben. Ein Plan ohne Puffer gerät beim ersten Stau durcheinander.
+	- ## Ordnung zu Hause
+		- Jeder Gegenstand braucht einen festen Platz. Schlüssel, Brille und Geldbörse finden sich dann ohne Suchen.
+		- Zehn Minuten Aufräumen am Abend halten die Wohnung in einem guten Zustand. Große Putzaktionen werden so seltener nötig.
+		- Was neu ins Haus kommt, ersetzt etwas Altes. So wachsen Schränke und Regale nicht immer weiter zu.
+	- ## Papierkram
+		- Post wird am besten gleich nach dem Öffnen sortiert: erledigen, ablegen oder wegwerfen. Ein Stapel ungeöffneter Briefe macht nur ein schlechtes Gefühl.
+		- Ein Ordner mit Registern für Versicherungen, Verträge und Rechnungen erleichtert die Suche. Einmal im Jahr wird aussortiert, was nicht mehr aufbewahrt werden muss.
+- # Garten und Natur
+	- Ein Stück Natur tut gut, auch ohne eigenen Garten. Schon ein Balkon oder ein Fensterbrett reicht für den Anfang.
+	- ## Balkonpflanzen
+		- Kräuter wie Schnittlauch, Petersilie und Basilikum wachsen gut in Töpfen. Sie brauchen einen hellen Platz und regelmäßig Wasser.
+		- Auf einem Südbalkon gedeihen Tomaten und Paprika, auf einem Nordbalkon eher Salat und Farne.
+		- Töpfe brauchen ein Loch im Boden, damit überschüssiges Wasser abfließt. Staunässe lässt die Wurzeln faulen.
+	- ## Kompost
+		- Küchenabfälle wie Schalen und Kaffeesatz werden im Kompost zu wertvoller Erde. Gekochte Speisen und Fleisch gehören nicht hinein.
+		- Ein Komposthaufen braucht eine Mischung aus feuchtem Grün und trockenem Material wie Laub oder Pappe. Gelegentliches Umsetzen bringt Luft hinein.
+		- Nach etwa einem Jahr ist die Erde reif. Sie riecht nach Waldboden und lässt sich direkt in Beete und Töpfe geben.
+	- ## Zeit im Grünen
+		- Ein Spaziergang im Park senkt nachweislich die Anspannung. Das Grün der Bäume und das Rauschen der Blätter beruhigen.
+		- Wer regelmäßig draußen ist, nimmt die Jahreszeiten bewusster wahr. Knospen im Frühjahr und buntes Laub im Herbst geben dem Jahr eine Ordnung.
+- # Miteinander
+	- Menschen brauchen Menschen. Gute Beziehungen entstehen nicht von allein, sie wollen gepflegt werden.
+	- ## Gespräche
+		- Zuhören heißt, den anderen ausreden zu lassen und nachzufragen. Wer schon die Antwort plant, hört nur halb hin.
+		- Bei Streit hilft es, von sich selbst zu sprechen statt Vorwürfe zu machen. Ein Satz mit ich statt du öffnet das Gespräch.
+		- Schwierige Themen bespricht man besser in Ruhe als zwischen Tür und Angel. Ein vereinbarter Zeitpunkt nimmt Druck heraus.
+	- ## Freundschaften pflegen
+		- Freundschaften brauchen Zeit und Aufmerksamkeit. Ein kurzer Anruf zwischendurch hält den Kontakt lebendig.
+		- Feste Treffen, etwa ein Abendessen im Monat, sorgen dafür, dass man sich nicht aus den Augen verliert.
+		- Kleine Gesten wie eine Karte zum Geburtstag zeigen, dass man aneinander denkt.
+	- ## Nachbarschaft
+		- Ein Gruß im Treppenhaus ist der Anfang guter Nachbarschaft. Wer sich kennt, hilft sich eher.
+		- Ein Fest im Hof oder eine gemeinsame Aktion wie das Bepflanzen der Baumscheibe bringt Menschen zusammen.
