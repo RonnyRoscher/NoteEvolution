@@ -189,11 +189,12 @@ try
     for (var i = 0; i < cases.Count; i++)
     {
         var c = cases[i];
-        var topics = relevance.Topics(c.Note.Key, c.Text, book, 3);
+        var topics = relevance.Topics(c.Note.Key, c.Text, book, PlacementCheck.TopicLimit);
         var places = relevance.Placements(c.Note.Key, c.Text, book, int.MaxValue)
             .GroupBy(hit => hit.SectionKey)
             .ToDictionary(group => group.Key, group => (IReadOnlyList<PlacementHit>)[.. group]);
-        var prompt = PlacementCheck.Prompt(book, c.Text[EmbeddingText.PassagePrefix.Length..], topics, places);
+        var prompt = PlacementCheck.Prompt(book, c.Text[EmbeddingText.PassagePrefix.Length..], topics, places,
+            section => understanding.Heading(book, section)?.Text);
         PlacementVerdict? verdict = null;
         if (prompt.Topics.Count > 0)
         {
@@ -202,7 +203,7 @@ try
             try
             {
                 var answer = await chat.CheckAsync(options.Model, prompt.System, prompt.User,
-                    new ChatOptions(UnderstandingPrompts.CheckTokens, Json: true), timeout.Token);
+                    PlacementCheck.Options(prompt), timeout.Token);
                 verdict = PlacementCheck.Parse(answer, prompt);
                 if (verdict is null)
                 {

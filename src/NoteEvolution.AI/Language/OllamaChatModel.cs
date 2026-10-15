@@ -28,7 +28,7 @@ public sealed class OllamaChatModel(HttpClient http, Uri baseAddress) : IChatMod
         [property: JsonPropertyName("messages")] MessageDto[] Messages,
         [property: JsonPropertyName("stream")] bool Stream,
         [property: JsonPropertyName("options")] ChatOptionsDto Options,
-        [property: JsonPropertyName("format"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Format);
+        [property: JsonPropertyName("format"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] JsonElement? Format);
 
     private sealed record ChatResponseDto([property: JsonPropertyName("message")] MessageDto? Message);
 
@@ -83,12 +83,24 @@ public sealed class OllamaChatModel(HttpClient http, Uri baseAddress) : IChatMod
             [new MessageDto("system", system), new MessageDto("user", user)],
             Stream: false,
             new ChatOptionsDto(options.MaxTokens, options.Temperature),
-            options.Json ? "json" : null);
+            Format(options));
 
         var dto = await SendAsync(() => http.PostAsJsonAsync(Url("api/chat"), request, ct), "Chat request", ct,
             r => r.Content.ReadFromJsonAsync<ChatResponseDto>(ct));
         return dto?.Message?.Content
             ?? throw new ChatModelUnavailableException("Chat request returned no message.");
+    }
+
+    /// <summary>Ollama's "format": the schema (structured output) if one is given, else "json" in JSON mode, else none.</summary>
+    private static JsonElement? Format(ChatOptions options)
+    {
+        if (options.Schema is { } schema)
+        {
+            using var doc = JsonDocument.Parse(schema);
+            return doc.RootElement.Clone();
+        }
+
+        return options.Json ? JsonSerializer.SerializeToElement("json") : null;
     }
 
     public async Task PullAsync(string model, IProgress<PullProgress>? progress, CancellationToken ct)

@@ -7,7 +7,7 @@ public static class UnderstandingPrompts
     public const int CoreLimit = 300;
     public const int SummaryTokens = 220;
     public const int CoreTokens = 120;
-    public const int CheckTokens = 200;
+    public const int CheckTokens = 120;
 
     private const string SummarySystem =
         "Du fasst Abschnitte eines deutschsprachigen Buchs zusammen. Antworte nur mit der Zusammenfassung: 2 bis 4 sachliche Sätze auf Deutsch darüber, worum es in dem Abschnitt geht, einschließlich seiner Unterabschnitte. Keine Einleitung, keine Aufzählung, kein Markdown.";

@@ -384,7 +384,7 @@ public class LanguageModelTests : UiTestContext
         var tv = Vault();
         var session = await OpenReadyAsync(tv);
         var before = _chat.Calls.Count;
-        _chat.Answer = (_, _) => "{\"thema\": 1, \"stelle\": \"1.1\", \"begruendung\": \"Es geht um Konzentration.\"}";
+        _chat.Answer = (_, _) => "{\"begruendung\": \"Es geht um Konzentration.\", \"stelle\": \"1.1\"}";
 
         var (verdict, failure) = await session.CheckPlacementAsync(
             NoteKey(session, NewerNote), NoteText(session, NewerNote), CurrentBook(session), CancellationToken.None);
@@ -394,7 +394,9 @@ public class LanguageModelTests : UiTestContext
         Assert.Equal("Es geht um Konzentration.", verdict.Reason);
         Assert.NotNull(verdict.AfterTextBlockKey);
         var call = Assert.Single(_chat.Calls.Skip(before));
-        Assert.Equal(new ChatOptions(UnderstandingPrompts.CheckTokens, Json: true), call.Options);
+        Assert.Equal(UnderstandingPrompts.CheckTokens, call.Options.MaxTokens);
+        Assert.True(call.Options.Json);
+        Assert.Contains("\"stelle\"", call.Options.Schema, StringComparison.Ordinal);
         Assert.Contains(NewerNote, call.User, StringComparison.Ordinal);
         Assert.DoesNotContain(EmbeddingText.PassagePrefix, call.User, StringComparison.Ordinal);
     }

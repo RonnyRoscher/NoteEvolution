@@ -587,7 +587,7 @@
             return null;
         }
 
-        var summary = list.Hits?.FirstOrDefault(hit => hit.TopicKey == verdict.SectionKey)?.Summary;
+        var summary = verdict.Summary ?? list.Hits?.FirstOrDefault(hit => hit.TopicKey == verdict.SectionKey)?.Summary;
         if (verdict.AfterTextBlockKey is { } after && book.FindTextBlock(after) is { } textBlock)
         {
             return new WhereToRecommendation(after, TopicPath(topic), summary,

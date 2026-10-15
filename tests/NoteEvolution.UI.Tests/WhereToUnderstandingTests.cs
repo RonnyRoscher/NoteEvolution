@@ -33,7 +33,7 @@ public class WhereToUnderstandingTests : UiTestContext
     {
         // Summaries name their heading; the check answers with the first topic's first place.
         _chat.Answer = (call, n) => call.Options.Json
-            ? "{\"thema\": 1, \"stelle\": \"1.1\", \"begruendung\": \"" + Reason + "\"}"
+            ? "{\"begruendung\": \"" + Reason + "\", \"stelle\": \"1.1\"}"
             : call.User.StartsWith("Überschrift: ", StringComparison.Ordinal)
                 ? "Zusammenfassung von " + call.User.Split('\n')[0]["Überschrift: ".Length..] + "."
                 : $"Kernaussage {n}.";

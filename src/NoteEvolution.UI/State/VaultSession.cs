@@ -804,9 +804,6 @@ public sealed class VaultSession : IDisposable
 
     // ---- Language model ----
 
-    /// <summary>How many topics "Genauer prüfen" offers the model (spec 5.2).</summary>
-    private const int CheckTopics = 3;
-
     /// <summary>Called after every input in the editor: the background work waits until nothing was typed for a while (spec 4).</summary>
     public void NotifyTyping() => _understanding?.Worker.NotifyTyping();
 
@@ -843,11 +840,12 @@ public sealed class VaultSession : IDisposable
             prompt = await Task.Run(
                 () =>
                 {
-                    var topics = relevance.Topics(noteKey, noteText, book, CheckTopics);
+                    var topics = relevance.Topics(noteKey, noteText, book, PlacementCheck.TopicLimit);
                     var places = relevance.Placements(noteKey, noteText, book, int.MaxValue)
                         .GroupBy(hit => hit.SectionKey)
                         .ToDictionary(group => group.Key, group => (IReadOnlyList<PlacementHit>)[.. group]);
-                    return PlacementCheck.Prompt(book, text, topics, places);
+                    return PlacementCheck.Prompt(book, text, topics, places,
+                        section => understanding.Understanding.Heading(book, section)?.Text);
                 },
                 ct);
         }
@@ -871,7 +869,7 @@ public sealed class VaultSession : IDisposable
         try
         {
             var answer = await understanding.Worker.RunNextAsync(
-                prompt.System, prompt.User, new ChatOptions(UnderstandingPrompts.CheckTokens, Json: true), linked.Token,
+                prompt.System, prompt.User, PlacementCheck.Options(prompt), linked.Token,
                 waiting, started);
             return PlacementCheck.Parse(answer, prompt) is { } verdict
                 ? (verdict, null)
