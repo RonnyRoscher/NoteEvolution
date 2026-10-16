@@ -3,6 +3,7 @@ using Bunit;
 using Bunit.Extensions.WaitForHelpers;
 using NoteEvolution.AI.Language;
 using NoteEvolution.AI.Tests;
+using NoteEvolution.AI.Understanding;
 using NoteEvolution.TestSupport;
 using NoteEvolution.UI.Components;
 using NoteEvolution.UI.State;
@@ -180,6 +181,34 @@ public class NoteStatusUiTests : UiTestContext
     }
 
     [Fact]
+    public async Task IndexStatusChange_ReadsOnlyEmbeddings_NoStoreReads()
+    {
+        var session = await OpenReadyAsync(Vault());
+        var key = session.Notes.All().Single(n => n.Block.Content == SleepNote).Key;
+        Time.Advance(VaultSession.PageIndexDelay);
+        await Eventually(() => session.Understanding is { Total: 7, Done: 7 }, "The placement checks did not finish.");
+        Time.Advance(TimeSpan.FromSeconds(1));
+        await Eventually(() => session.NoteStatus(key) is { Placement: PlacementState.Current } && !session.NoteStatusBuilding,
+            "The status was not put together.");
+        await Task.Delay(50);
+        var reads = session.NoteStatusReads;
+        var builds = session.NoteStatusBuilds;
+        var raised = 0;
+        session.NoteStatusRaising = () => Interlocked.Increment(ref raised);
+
+        // The notes are embedded again (the index reports its status per batch): their vectors stay, nothing is read.
+        await session.Semantic!.RebuildAsync(session.Notes, CancellationToken.None);
+        Time.Advance(TimeSpan.FromSeconds(1));
+        await Eventually(() => !session.NoteStatusBuilding, "Putting the status together did not end.");
+        await Task.Delay(50);
+
+        Assert.True(session.NoteStatusBuilds > builds, "The index status change put nothing together.");
+        Assert.Equal(reads, session.NoteStatusReads);
+        Assert.Equal(0, Volatile.Read(ref raised));
+        Assert.True(session.NoteStatus(key)!.Embedded);
+    }
+
+    [Fact]
     public async Task NoteStatusChanged_With300Notes_AtMostOncePerSecond()
     {
         var notes = string.Concat(Enumerable.Range(1, 300).Select(i => $"- Notiz Nummer {i} über Schlaf und Arbeit.\n"));
@@ -189,7 +218,8 @@ public class NoteStatusUiTests : UiTestContext
         await language.RefreshAsync(CancellationToken.None);
         var session = await OpenWithAiAsync(vault);
         var raised = new List<DateTimeOffset>();
-        session.NoteStatusChanged += () =>
+        // Stamped where the build dispatches the event, so the dispatcher adds no delay.
+        session.NoteStatusRaising = () =>
         {
             lock (raised)
             {

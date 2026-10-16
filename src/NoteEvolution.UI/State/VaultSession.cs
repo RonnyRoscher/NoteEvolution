@@ -193,6 +193,19 @@ public sealed class VaultSession : IDisposable
     /// <summary>How many feeds reached the worker (stale ones are dropped); for tests.</summary>
     internal int FeedsApplied => Volatile.Read(ref _feedsApplied);
 
+    /// <summary>How many notes the status builds read from the store and the understanding; for tests.</summary>
+    internal int NoteStatusReads => Volatile.Read(ref _noteStatusReads);
+
+    private int _noteStatusReads;
+
+    /// <summary>How many status builds ended; for tests.</summary>
+    internal int NoteStatusBuilds => Volatile.Read(ref _noteStatusBuilds);
+
+    private int _noteStatusBuilds;
+
+    /// <summary>Called in the background when a status build is done, just before <see cref="NoteStatusChanged"/> is dispatched; for tests.</summary>
+    internal Action? NoteStatusRaising { get; set; }
+
     /// <summary>The notes' status is being put together now; for tests.</summary>
     internal bool NoteStatusBuilding
     {
@@ -735,7 +748,7 @@ public sealed class VaultSession : IDisposable
                     index, new HybridSearchService(_search, index, Notes), new RelevanceService(index), embedder, _ai.Model.Id);
             }
 
-            index.StatusChanged += RaiseAiStatusChanged;
+            index.StatusChanged += OnIndexStatusChanged;
             Dispatch(StartIndexing, "the start of the semantic indexing");
             Dispatch(UpdateUnderstanding, "the start of the language model");
         }
@@ -765,6 +778,14 @@ public sealed class VaultSession : IDisposable
     private void OnModelChanged()
     {
         StartAi();
+        ScheduleNoteStatus(all: true);
+        RaiseAiStatusChanged();
+    }
+
+    /// <summary>The index embedded notes (once per batch while indexing; on its thread): only the notes' embeddings changed.</summary>
+    private void OnIndexStatusChanged()
+    {
+        ScheduleNoteStatus(embeddings: true);
         RaiseAiStatusChanged();
     }
 
@@ -831,6 +852,7 @@ public sealed class VaultSession : IDisposable
             {
                 if (await parts.Index.UpdatePageAsync(Notes, fullPath, _aiLifetime.Token))
                 {
+                    ScheduleNoteStatus(embeddings: true);
                     RaiseAiStatusChanged();
                 }
             },
@@ -862,8 +884,6 @@ public sealed class VaultSession : IDisposable
             return;
         }
 
-        // Notes embedded again change their status.
-        ScheduleNoteStatus(all: true);
         Dispatch(
             () =>
             {
@@ -1572,7 +1592,7 @@ public sealed class VaultSession : IDisposable
         // next report as well) and the one whose request started.
         var current = parts.Worker.Progress.Current?.Key;
         var previous = parts.SwapLastRequest(current);
-        ScheduleNoteStatus(keys: [previous, current]);
+        ScheduleNoteStatus(keys: [previous, current], all: changed);
         RaiseUnderstandingChanged();
         if (changed)
         {
@@ -1584,9 +1604,11 @@ public sealed class VaultSession : IDisposable
     /// Puts the notes' status together <see cref="NoteStatusDelay"/> from now unless that is pending already; while a
     /// build runs, once more a delay after it ended, so <see cref="NoteStatusChanged"/> comes at most once per delay.
     /// Only the notes of the stored <paramref name="fingerprint"/> and the <paramref name="keys"/> are read again, all of
-    /// them with <paramref name="all"/> or new snapshots (see <see cref="BuildNoteStatus"/>). Any thread; never throws.
+    /// them with <paramref name="all"/> or new snapshots (see <see cref="BuildNoteStatus"/>); with
+    /// <paramref name="embeddings"/> the embeddings of all of them. Any thread; never throws.
     /// </summary>
-    private void ScheduleNoteStatus(string? fingerprint = null, IEnumerable<Guid?>? keys = null, bool all = false)
+    private void ScheduleNoteStatus(string? fingerprint = null, IEnumerable<Guid?>? keys = null, bool all = false,
+        bool embeddings = false)
     {
         lock (_gate)
         {
@@ -1609,6 +1631,7 @@ public sealed class VaultSession : IDisposable
             }
 
             _statusChanged.All |= all;
+            _statusChanged.Embeddings |= embeddings;
             switch (_statusBuild)
             {
                 case StatusBuild.Idle:
@@ -1682,12 +1705,13 @@ public sealed class VaultSession : IDisposable
                         .Select(key => source.NoteOf.GetValueOrDefault(key))
                         .OfType<NoteSnapshot>()
                         .ToList();
-                    if (notes.Count == 0)
+                    var inputs = new Dictionary<Guid, NoteStatusInput>(known.Inputs);
+                    var changed = changes.Embeddings && UpdateEmbeddings(inputs);
+                    if (notes.Count == 0 && !changed)
                     {
-                        return;
+                        return; // nothing to tell; the finally block still ends the build
                     }
 
-                    var inputs = new Dictionary<Guid, NoteStatusInput>(known.Inputs);
                     foreach (var (key, input) in NoteStatusInputs(source, notes))
                     {
                         inputs[key] = input;
@@ -1697,6 +1721,7 @@ public sealed class VaultSession : IDisposable
                 }
 
                 _noteStatuses = statuses;
+                NoteStatusRaising?.Invoke();
                 Dispatch(
                     () =>
                     {
@@ -1723,6 +1748,7 @@ public sealed class VaultSession : IDisposable
         }
         finally
         {
+            Interlocked.Increment(ref _noteStatusBuilds);
             lock (_gate)
             {
                 var again = _statusBuild == StatusBuild.BuildingAgain && !_disposed;
@@ -1735,9 +1761,32 @@ public sealed class VaultSession : IDisposable
         }
     }
 
+    /// <summary>Reads the embeddings of the known inputs again (in memory, no store reads); whether one changed.</summary>
+    private bool UpdateEmbeddings(Dictionary<Guid, NoteStatusInput> inputs)
+    {
+        if (_aiParts?.Index is not { } index)
+        {
+            return false;
+        }
+
+        var changed = false;
+        foreach (var (key, input) in inputs.ToList())
+        {
+            var embedded = index.VectorOf(key) is not null;
+            if (input.Embedded != embedded)
+            {
+                inputs[key] = input with { Embedded = embedded };
+                changed = true;
+            }
+        }
+
+        return changed;
+    }
+
     /// <summary>
     /// The status inputs of <paramref name="notes"/>: the core statement from the store by the note's item (only notes
-    /// long enough have one), the embedding from the index, the placement in the current book. Nothing is read for a used note.
+    /// long enough have one), the embedding from the index, the placement in the current book. A used note gets none (no
+    /// dot, also if it is unused by now, until the next feed brings its snapshot) and nothing is read for it.
     /// </summary>
     private Dictionary<Guid, NoteStatusInput> NoteStatusInputs(StatusSource source, IEnumerable<NoteSnapshot> notes)
     {
@@ -1748,9 +1797,10 @@ public sealed class VaultSession : IDisposable
         {
             if (note.Used)
             {
-                inputs[note.Key] = new NoteStatusInput(true, true, null, false, false, false, PlacementState.Missing, null, null);
                 continue;
             }
+
+            Interlocked.Increment(ref _noteStatusReads);
 
             var needsCore = source.CoreOf.TryGetValue(note.Key, out var fingerprint);
             var coreDone = needsCore && parts.Store.Get(fingerprint!) is { Kind: UnderstandingKind.Note };
@@ -2038,6 +2088,9 @@ public sealed class VaultSession : IDisposable
         public HashSet<Guid> Keys { get; } = [];
 
         public bool All { get; set; }
+
+        /// <summary>Notes were embedded: the known inputs' embeddings are read again.</summary>
+        public bool Embeddings { get; set; }
     }
 
     private enum StatusBuild { Idle, Waiting, Building, BuildingAgain }
