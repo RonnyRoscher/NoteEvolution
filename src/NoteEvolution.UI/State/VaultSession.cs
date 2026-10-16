@@ -238,6 +238,12 @@ public sealed class VaultSession : IDisposable
     internal Action<Book>? PlacementReadinessChecked { get; set; }
 
     /// <summary>
+    /// Test hook: false leaves the placement checks out of the background work (for tests about other work). Set it right
+    /// after opening a fresh vault, before the book's summaries are settled.
+    /// </summary>
+    internal bool BuildsPlacementChecks { get; set; } = true;
+
+    /// <summary>
     /// The note's stored placement check for the current book (current or stale, see <see cref="StoreUnderstanding.Placement"/>);
     /// null without the language model, without a current book or when there is none. Call it on the UI thread.
     /// </summary>
@@ -1363,7 +1369,11 @@ public sealed class VaultSession : IDisposable
 
         // Taken before the store is read: a summary settled after it re-feeds once the work is applied (see Apply).
         var settled = parts.Settled;
-        if (book is not null)
+        if (book is not null && !BuildsPlacementChecks)
+        {
+            ready = true;
+        }
+        else if (book is not null)
         {
             if (parts.CachedPlacements(book, notes) is { } built)
             {

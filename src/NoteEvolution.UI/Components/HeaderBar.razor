@@ -128,7 +128,7 @@
                         }
                         @foreach (var (kind, css, label) in BreakdownKinds)
                         {
-                            @if (progress.Kinds?.GetValueOrDefault(kind) is { } row)
+                            @if (progress.Kinds?.GetValueOrDefault(kind) is { Total: > 0 } row)
                             {
                                 <div class="ne-llm-row ne-llm-row-@css">
                                     <span class="ne-llm-row-label">@L[label]</span>
@@ -243,6 +243,7 @@
     {
         if (_language is null || _language.State == LanguageModelState.Off)
         {
+            _breakdownOpen = false;
             return null;
         }
 
@@ -250,6 +251,9 @@
         {
             return (LanguageModelText(progress, L), progress);
         }
+
+        // The breakdown belongs to the progress: without it the popup closes, so it does not open again by itself.
+        _breakdownOpen = false;
 
         return _language.State switch
         {
