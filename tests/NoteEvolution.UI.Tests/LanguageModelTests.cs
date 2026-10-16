@@ -853,14 +853,15 @@ public class LanguageModelTests : UiTestContext
         using var gate = new SemaphoreSlim(0);
         _chat.Gate = gate;
 
-        // The edited heading and its parent are summarized again; meanwhile the book waits and its plan completes (pruned).
+        // The edited heading and its parent are summarized again; meanwhile the book waits (the worker keeps its last
+        // checks, all answered) and its plan completes (pruned).
         Edit(session, BookPath, DreamText, "Träume ordnen das Erlebte neu.");
         Time.Advance(VaultSession.PageIndexDelay);
         await Eventually(() => _chat.Calls.Count == 9);
         gate.Release();
         await Eventually(() => _chat.Calls.Count == 10);
         gate.Release();
-        await Eventually(() => session.Understanding is { Done: 5, Total: 5 }, "The summaries were not done.");
+        await Eventually(() => session.Understanding is { Done: 8, Total: 8 }, "The summaries were not done.");
         await Task.Delay(200);
         Assert.NotNull(session.Placement(key));
 
@@ -963,6 +964,109 @@ public class LanguageModelTests : UiTestContext
         Time.Advance(VaultSession.PageIndexDelay);
         await AllDone(session, 8);
         Assert.Single(PlacementCalls(NewerNote));
+    }
+
+    /// <summary>Saves the page unchanged: the vault makes a new book instance of it, whose checks are not built yet.</summary>
+    private void SaveUnchanged(VaultSession session, string path)
+    {
+        var page = session.Vault.FindPageByPath(Path.Combine(_vaults[^1].Root, path))!;
+        Assert.True(session.TrySave(page, out var error), error?.Message);
+    }
+
+    /// <summary>Moves the cursor to another top-level section and waits until its feed (after the focus delay) is applied.</summary>
+    private async Task ChangeSection(VaultSession session, int step)
+    {
+        var sections = CurrentBook(session).Root.Children.Select(node => node.Key).ToList();
+        var feeds = session.FeedsApplied;
+        State.CurrentSectionKey = sections[step % sections.Count];
+        Time.Advance(VaultSession.FocusFeedDelay);
+        await Eventually(() => session.FeedsApplied > feeds, "The section's feed was not applied.");
+    }
+
+    [Fact]
+    public async Task Session_SectionChangedBeforeChecksBuilt_WorkerKeepsTheChecks()
+    {
+        var tv = Vault();
+        var session = await OpenWithPlacementsAsync(tv);
+        var totals = new System.Collections.Concurrent.ConcurrentQueue<int>();
+        session.UnderstandingChanged += () => totals.Enqueue(session.Understanding?.Total ?? 0);
+
+        // The section feed after the save leaves building the new book instance's checks to the page feed; meanwhile
+        // the worker keeps the last ones, so the total does not dip.
+        SaveUnchanged(session, BookPath);
+        await ChangeSection(session, 1);
+        await Task.Delay(100); // the worker plans the work it got
+
+        Assert.All(totals, total => Assert.Equal(8, total));
+        Assert.Equal(3, session.Understanding!.Kinds![UnderstandingKind.Placement].Total);
+    }
+
+    [Fact]
+    public async Task Session_SectionChangedBeforeChecksBuilt_GivenUpCheckNotPruned()
+    {
+        var tv = Vault();
+        _chat.Failure = (call, _) => call.Options.Schema is not null && PlacementCalls(ShortNote).Contains(call)
+            ? new InvalidOperationException("Kaputt.")
+            : null;
+        var session = await OpenWithPlacementsAsync(tv);
+        Assert.Equal(UnderstandingWorker.MaxAttempts, PlacementCalls(ShortNote).Count);
+
+        // The worker completes the section feed's work (and prunes the store to it) before the page feed builds the checks.
+        SaveUnchanged(session, BookPath);
+        await ChangeSection(session, 1);
+        await Task.Delay(200);
+        var feeds = session.FeedsApplied;
+        Time.Advance(VaultSession.PageIndexDelay);
+        await Eventually(() => session.FeedsApplied > feeds, "The page feed was not applied.");
+        await AllDone(session, 8);
+        await Task.Delay(100);
+
+        // The given-up check stays given up: its failed attempts were kept.
+        Assert.Equal(UnderstandingWorker.MaxAttempts, PlacementCalls(ShortNote).Count);
+    }
+
+    [Fact]
+    public async Task Session_SectionChangedEvery500ms_ChecksStillGoOut()
+    {
+        var tv = Vault();
+        AnswerPlacements();
+        var answer = _chat.Answer;
+        using var coreHeld = new ManualResetEventSlim();
+        _chat.Answer = (call, n) =>
+        {
+            if (call.Options.Schema is null && call.User.Contains(NewerNote, StringComparison.Ordinal))
+            {
+                coreHeld.Wait(Wait);
+            }
+
+            return answer(call, n);
+        };
+        var language = UseLanguageModel(_chat);
+        await language.RefreshAsync(CancellationToken.None);
+        var session = await OpenWithAiAsync(tv);
+        await Eventually(() => session.Understanding?.Kinds?[UnderstandingKind.Heading] is { Done: 3, Total: 3 },
+            "The summaries did not finish.");
+        await Eventually(() => _chat.Calls.Any(c => c.Options.Schema is null && c.User.Contains(NewerNote, StringComparison.Ordinal)),
+            "The core statement was not asked.");
+        await Task.Delay(100); // the summaries' vectors
+
+        // Only the short note gets its check while the long notes wait for their cores; then the cores settle, which
+        // schedules the feed that builds their checks.
+        var feeds = session.FeedsApplied;
+        Time.Advance(VaultSession.PageIndexDelay);
+        await Eventually(() => session.FeedsApplied > feeds, "The feed did not run.");
+        coreHeld.Set();
+        await Eventually(() => session.Understanding?.Kinds?[UnderstandingKind.Note] is { Done: 2 }, "The cores did not settle.");
+        await Task.Delay(100); // their vectors
+
+        // The user moves through the book every 500 ms for 10 s: the checks are built and asked all the same.
+        for (var step = 0; step < 20; step++)
+        {
+            await ChangeSection(session, step);
+        }
+
+        await Eventually(() => PlacementCalls(NewerNote).Count == 1 && PlacementCalls(OlderNote).Count == 1,
+            "The long notes' checks did not go out while the sections changed.");
     }
 
     // ---- Coverage (spec 6.4) ----

@@ -97,6 +97,9 @@ public sealed class VaultSession : IDisposable
     /// <summary>Feeds the worker again after page changes (debounced like the page index); guarded by <see cref="_gate"/>.</summary>
     private ITimer? _feedTimer;
 
+    /// <summary>The <see cref="_feedTimer"/> is started and has not fired yet; guarded by <see cref="_gate"/>.</summary>
+    private bool _feedPending;
+
     /// <summary>Feeds the worker after the current section changed (debounced); guarded by <see cref="_gate"/>.</summary>
     private ITimer? _focusTimer;
 
@@ -108,6 +111,9 @@ public sealed class VaultSession : IDisposable
 
     /// <summary>The number of the last feed started; only its result is applied (under <see cref="_feedGate"/>).</summary>
     private int _feedsStarted;
+
+    /// <summary>The book and notes' snapshots of the last feed started; a placement build for others is abandoned.</summary>
+    private volatile FeedInputs? _feedInputs;
     private readonly object _feedGate = new();
     private int _feedsApplied;
 
@@ -1305,12 +1311,13 @@ public sealed class VaultSession : IDisposable
             }
 
             var notes = _noteSnapshot;
+            _feedInputs = new FeedInputs(book, notes);
             var feed = Interlocked.Increment(ref _feedsStarted);
 
             // Taken when the feed starts, before the store is read (also when the background work starts late): a summary
             // or core settled after it re-feeds once the work is applied (see Apply).
             var settled = parts.Settled;
-            if (Work(parts, feed, book, books, notes, settled, debounced, cachedOnly: true) is { } known)
+            if (Work(parts, book, books, notes, settled, debounced, cachedOnly: true) is { } known)
             {
                 Apply(parts, feed, section, notes, book, known);
                 return;
@@ -1318,7 +1325,7 @@ public sealed class VaultSession : IDisposable
 
             Observe(
                 () => Task.Run(() =>
-                    Apply(parts, feed, section, notes, book, Work(parts, feed, book, books, notes, settled, debounced, cachedOnly: false)!.Value)),
+                    Apply(parts, feed, section, notes, book, Work(parts, book, books, notes, settled, debounced, cachedOnly: false)!.Value)),
                 "Feeding the language model's background work");
         }
         catch (Exception ex)
@@ -1333,7 +1340,7 @@ public sealed class VaultSession : IDisposable
     /// book's unused notes come once its summaries are settled (<see cref="PlacementsReady"/>, spec 3.1); the cached path
     /// cannot read the store, so it takes them only when they were built for these snapshots already.
     /// </summary>
-    private FeedWork? Work(UnderstandingParts parts, int feed, Book? book, IReadOnlyList<Book> books,
+    private FeedWork? Work(UnderstandingParts parts, Book? book, IReadOnlyList<Book> books,
         IReadOnlyList<NoteSnapshot> notes, int settled, bool debounced, bool cachedOnly)
     {
         var understanding = parts.Understanding;
@@ -1399,7 +1406,7 @@ public sealed class VaultSession : IDisposable
                 {
                     deferred = true;
                 }
-                else if (BuildPlacements(parts, feed, book, notes) is { } fresh)
+                else if (BuildPlacements(parts, book, notes) is { } fresh)
                 {
                     (placements, waitingForCores, withoutTopics, ready) = (fresh.Items, fresh.WaitingForCores, fresh.WithoutTopics, true);
                 }
@@ -1452,13 +1459,14 @@ public sealed class VaultSession : IDisposable
 
     /// <summary>
     /// The placement checks of the unused notes in snapshot order (in the background). A note whose check cannot be built
-    /// is logged and left out (spec 8), as is one without topics to offer; null when a later feed started meanwhile. A
+    /// is logged and left out (spec 8), as is one without topics to offer; null when a later feed started meanwhile for
+    /// another book instance or notes' snapshot (one for the same, e.g. a section change, still gets them remembered). A
     /// note whose core statement is not settled yet (see <see cref="UnderstandingParts.CoresSettled"/>) gets no check
     /// either, as its prompt would rank the topics without the core: it is listed as waiting instead (its stored placement
     /// shows as stale meanwhile). The checks are remembered for the snapshots unless a note had no topics (the embedder
     /// may have failed) or waits for its core: the next feed looks for them again.
     /// </summary>
-    private PlacementBuild? BuildPlacements(UnderstandingParts parts, int feed, Book book, IReadOnlyList<NoteSnapshot> notes)
+    private PlacementBuild? BuildPlacements(UnderstandingParts parts, Book book, IReadOnlyList<NoteSnapshot> notes)
     {
         var items = new List<UnderstandingItem>();
         var waiting = new Dictionary<Guid, string>();
@@ -1472,9 +1480,10 @@ public sealed class VaultSession : IDisposable
                 continue;
             }
 
-            if (Volatile.Read(ref _feedsStarted) != feed || IsDisposed || !ReferenceEquals(_understanding, parts))
+            if (_feedInputs is not { } latest || !ReferenceEquals(latest.Book, book) || !ReferenceEquals(latest.Notes, notes)
+                || IsDisposed || !ReferenceEquals(_understanding, parts))
             {
-                return null; // its result would be dropped anyway (a later feed, the vault closed, the model's parts replaced)
+                return null; // nobody would take them (newer snapshots, the vault closed, the model's parts replaced)
             }
 
             var identity = UnderstandingItems.NoteIdentity(note.Content, note.FilePath);
@@ -1544,16 +1553,18 @@ public sealed class VaultSession : IDisposable
 
             // The checks are taken only from a feed during which no summary or core statement settled: one that ran
             // while one did (started before, or slow) leaves them to the feed scheduled below, so they come a debounce
-            // after the last of them, as after a page change.
+            // after the last of them, as after a page change. Until then the worker keeps the checks last applied for the
+            // same book (they were built with settled summaries and cores), so its placements do not vanish meanwhile
+            // and its plan is not pruned without them; another book's are replaced by none.
             var ready = work.PlacementsReady && parts.Settled == work.Settled;
+            var otherBook = !string.Equals(parts.PlacementBook, work.Book, StringComparison.Ordinal);
             var (checks, waitingForCores, withoutTopics) = ready
                 ? (work.Placements, work.WaitingForCores, work.WithoutTopics)
-                : ([], NoNotes, NoKeys);
+                : (otherBook ? [] : parts.PlacementItems ?? [], NoNotes, NoKeys);
 
             // Until the book's summaries are settled its last placement map stays (another book's is replaced by none).
             var placementsChanged = false;
             // The same checks again (a focus change) change nothing.
-            var otherBook = !string.Equals(parts.PlacementBook, work.Book, StringComparison.Ordinal);
             if (work.Book is { } bookName
                 && (otherBook || (ready && !ReferenceEquals(parts.PlacementItems, checks))))
             {
@@ -1578,12 +1589,17 @@ public sealed class VaultSession : IDisposable
 
             // Waiting is marked first, then the summaries settled since the feed started are looked at (the handlers count
             // first, then look at waiting): one of the two sees the other, so no wake-up is lost. A feed that left building
-            // the checks to a debounced one schedules it.
+            // the checks to a debounced one schedules it, without putting off one pending already (moving through the
+            // book faster than the debounce would otherwise never build them).
             var waiting = work.Book is not null && (!ready || waitingForCores.Count > 0);
             parts.PlacementsWaiting = waiting;
-            if (waiting && (work.Deferred || parts.Settled != work.Settled))
+            if (waiting && parts.Settled != work.Settled)
             {
                 ScheduleFeedFor(parts);
+            }
+            else if (waiting && work.Deferred)
+            {
+                ScheduleFeedFor(parts, putOff: false);
             }
 
             parts.Worker.SetWork(work.Current, section, work.Notes, work.Others, checks);
@@ -1637,13 +1653,13 @@ public sealed class VaultSession : IDisposable
     }
 
     /// <summary>Schedules a feed (as after a page change) while <paramref name="parts"/> are the current ones; any thread.</summary>
-    private void ScheduleFeedFor(UnderstandingParts parts)
+    private void ScheduleFeedFor(UnderstandingParts parts, bool putOff = true)
     {
         lock (_gate)
         {
             if (!_disposed && ReferenceEquals(_understanding, parts))
             {
-                ScheduleFeed();
+                ScheduleFeed(putOff);
             }
         }
     }
@@ -1667,23 +1683,36 @@ public sealed class VaultSession : IDisposable
             "the language model's placements");
     }
 
-    /// <summary>(Re)starts the debounce of feeding the worker after a page change; call it under <see cref="_gate"/>.</summary>
-    private void ScheduleFeed()
+    /// <summary>
+    /// (Re)starts the debounce of feeding the worker after a page change; without <paramref name="putOff"/> a feed pending
+    /// already keeps its time. Call it under <see cref="_gate"/>.
+    /// </summary>
+    private void ScheduleFeed(bool putOff = true)
     {
-        if (_language is null)
+        if (_language is null || (!putOff && _feedPending))
         {
             return;
         }
 
+        _feedPending = true;
         if (_feedTimer is { } timer)
         {
             timer.Change(PageIndexDelay, Timeout.InfiniteTimeSpan);
             return;
         }
 
-        _feedTimer = _time.CreateTimer(
-            _ => Dispatch(() => Feed(notesChanged: true, debounced: true), "the language model's work"), null, PageIndexDelay,
-            Timeout.InfiniteTimeSpan);
+        _feedTimer = _time.CreateTimer(_ => OnFeedDue(), null, PageIndexDelay, Timeout.InfiniteTimeSpan);
+    }
+
+    /// <summary>Raised on a timer thread.</summary>
+    private void OnFeedDue()
+    {
+        lock (_gate)
+        {
+            _feedPending = false;
+        }
+
+        Dispatch(() => Feed(notesChanged: true, debounced: true), "the language model's work");
     }
 
     /// <summary>
@@ -2274,6 +2303,9 @@ public sealed class VaultSession : IDisposable
         IReadOnlyList<UnderstandingItem> Current, IReadOnlyList<UnderstandingItem> Notes, IReadOnlyList<UnderstandingItem> Others,
         string? Book, IReadOnlyList<UnderstandingItem> Placements, IReadOnlyDictionary<Guid, string> WaitingForCores,
         IReadOnlySet<Guid> WithoutTopics, bool PlacementsReady, int Settled, bool Deferred);
+
+    /// <summary>What a feed takes its work from: the current book's instance (if any) and the notes' snapshot.</summary>
+    private sealed record FeedInputs(Book? Book, IReadOnlyList<NoteSnapshot> Notes);
 
     /// <summary>The placement checks built for a book's unused notes, the notes waiting for their core statement, and those without topics to offer.</summary>
     private sealed record PlacementBuild(IReadOnlyList<UnderstandingItem> Items, IReadOnlyDictionary<Guid, string> WaitingForCores,
