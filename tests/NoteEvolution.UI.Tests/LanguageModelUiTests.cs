@@ -494,4 +494,145 @@ public class LanguageModelUiTests : UiTestContext
         await language.RefreshAsync(CancellationToken.None);
         cut.WaitForAssertion(() => Assert.Empty(cut.FindAll(".ne-llm")));
     }
+
+    // ---- Header breakdown ----
+
+    private static void OpenBreakdown(IRenderedComponent<HeaderBar> cut)
+    {
+        cut.WaitForElement("button.ne-llm-text").Click();
+        cut.WaitForElement(".ne-llm-breakdown");
+    }
+
+    [Fact]
+    public async Task Breakdown_OpensWithRowsPerKind_ShowingCountBarAndRemaining()
+    {
+        using var gate = new SemaphoreSlim(0);
+        var session = await OpenGatedAsync(gate);
+        var cut = RenderHeader();
+        var button = cut.WaitForElement(".ne-llm-text");
+        Assert.Equal("button", button.TagName.ToLowerInvariant());
+        Assert.Equal("false", button.GetAttribute("aria-expanded"));
+        Assert.Empty(cut.FindAll(".ne-llm-breakdown"));
+
+        button.Click();
+
+        cut.WaitForElement(".ne-llm-breakdown");
+        Assert.Equal("true", cut.Find(".ne-llm-text").GetAttribute("aria-expanded"));
+        var kinds = session.Understanding!.Kinds!;
+        var headings = cut.Find(".ne-llm-row-headings");
+        Assert.Equal(Text("LlmBreakdownCount", kinds[UnderstandingKind.Heading].Done, kinds[UnderstandingKind.Heading].Total),
+            headings.QuerySelector(".ne-llm-row-count")!.TextContent);
+        Assert.Equal(kinds[UnderstandingKind.Heading].Total.ToString(), headings.QuerySelector("progress")!.GetAttribute("max"));
+        cut.WaitForAssertion(() => Assert.Equal(Text("LlmBreakdownCount", 0, 2), cut.Find(".ne-llm-row-cores .ne-llm-row-count").TextContent));
+        Assert.NotNull(cut.Find(".ne-llm-row-cores progress"));
+
+        // Open work shows the estimate (unknown before the third answer); a skipped count only appears with failures.
+        Assert.Equal(Text("LlmHeaderRemainingUnknown"), headings.QuerySelector(".ne-llm-row-remaining")!.TextContent);
+        Assert.Empty(cut.FindAll(".ne-llm-row-failed"));
+        Assert.Empty(cut.FindAll(".ne-llm-breakdown-pause"));
+
+        // The embedding row counts the embedded top-level notes.
+        // The status is put together after a throttle delay on the fake clock.
+        await Eventually(() =>
+        {
+            if (session.EmbeddingProgress is { } e && e.Total > 0 && e.Done == e.Total) return true;
+            Time.Advance(VaultSession.NoteStatusDelay);
+            return false;
+        }, "The notes were not all embedded.");
+        cut.WaitForAssertion(() =>
+        {
+            var embedding = session.EmbeddingProgress!.Value;
+            Assert.Equal(Text("LlmBreakdownCount", embedding.Done, embedding.Total), cut.Find(".ne-llm-row-embedding .ne-llm-row-count").TextContent);
+        });
+
+        gate.Release(5);
+        cut.WaitForAssertion(() => Assert.Empty(cut.FindAll(".ne-llm-row-headings .ne-llm-row-remaining")));
+    }
+
+    [Fact]
+    public async Task Breakdown_ShowsPlacementRow_WhenTheBookIsCurrent()
+    {
+        using var gate = new SemaphoreSlim(0);
+        gate.Release(100);
+        var session = await OpenGatedAsync(gate);
+        var cut = RenderHeader();
+        await Eventually(() => session.Understanding?.Kinds?.ContainsKey(UnderstandingKind.Placement) == true, "No placement progress.");
+
+        OpenBreakdown(cut);
+
+        Assert.Single(cut.FindAll(".ne-llm-row-placements"));
+        Assert.Single(cut.FindAll(".ne-llm-row-cores"));
+    }
+
+    [Fact]
+    public async Task Breakdown_Skipped_ShowsCount()
+    {
+        using var gate = new SemaphoreSlim(0);
+        _chat.Failure = (call, _) => call.Options.Schema is null && call.User.Contains("Träume", StringComparison.Ordinal)
+            ? new InvalidOperationException("Kaputt.")
+            : null;
+        gate.Release(100);
+        var session = await OpenGatedAsync(gate);
+        var cut = RenderHeader();
+        await Eventually(() => session.Understanding?.Kinds?[UnderstandingKind.Heading].Failed > 0, "Nothing was given up.");
+        var failed = session.Understanding!.Kinds![UnderstandingKind.Heading].Failed;
+
+        OpenBreakdown(cut);
+
+        cut.WaitForAssertion(() => Assert.Equal(
+            Text("LlmBreakdownSkipped", failed), cut.Find(".ne-llm-row-headings .ne-llm-row-failed").TextContent));
+    }
+
+    [Fact]
+    public async Task Breakdown_Paused_ShowsTheReason()
+    {
+        using var gate = new SemaphoreSlim(0);
+        var session = await OpenGatedAsync(gate);
+        var cut = RenderHeader();
+        await Eventually(() => _chat.Calls.Count == 1);
+        cut.WaitForElement(".ne-llm-pause").Click();
+        gate.Release();
+        await Eventually(() => session.Understanding?.Pause == UnderstandingPause.User, "The pause did not reach the worker.");
+
+        OpenBreakdown(cut);
+
+        cut.WaitForAssertion(() => Assert.Equal(
+            Text("LlmBreakdownPaused", Text("LlmPauseUser")), cut.Find(".ne-llm-breakdown-pause").TextContent));
+    }
+
+    [Fact]
+    public async Task Breakdown_EscapeAndOutsideClick_Close()
+    {
+        using var gate = new SemaphoreSlim(0);
+        await OpenGatedAsync(gate);
+        var cut = RenderHeader();
+
+        OpenBreakdown(cut);
+        cut.Find(".ne-llm-breakdown").KeyDown(new KeyboardEventArgs { Key = "Escape" });
+        cut.WaitForAssertion(() => Assert.Empty(cut.FindAll(".ne-llm-breakdown")));
+        Assert.Equal("false", cut.Find(".ne-llm-text").GetAttribute("aria-expanded"));
+
+        OpenBreakdown(cut);
+        cut.Find(".ne-llm-breakdown").KeyDown(new KeyboardEventArgs { Key = "a" });
+        Assert.Single(cut.FindAll(".ne-llm-breakdown"));
+        cut.Find(".ne-llm-backdrop").Click();
+        cut.WaitForAssertion(() => Assert.Empty(cut.FindAll(".ne-llm-breakdown")));
+
+        // The button toggles it, too.
+        OpenBreakdown(cut);
+        cut.Find(".ne-llm-text").Click();
+        cut.WaitForAssertion(() => Assert.Empty(cut.FindAll(".ne-llm-breakdown")));
+    }
+
+    [Fact]
+    public async Task Breakdown_WithoutLocalAi_HasNoEmbeddingRow()
+    {
+        var language = UseLanguageModel(_chat);
+        await language.RefreshAsync(CancellationToken.None);
+        var session = await OpenSessionAsync(Vault());
+        var cut = RenderHeader();
+
+        Assert.Null(session.EmbeddingProgress);
+        Assert.Empty(cut.FindAll(".ne-llm-row-embedding"));
+    }
 }

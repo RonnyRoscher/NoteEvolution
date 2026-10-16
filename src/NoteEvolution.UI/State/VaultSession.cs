@@ -264,6 +264,13 @@ public sealed class VaultSession : IDisposable
     }
 
     /// <summary>
+    /// How many of the top-level notes are embedded, as of the last status build; null without a semantic index or until
+    /// the status was put together (see <see cref="NoteStatusChanged"/>). Call it on the UI thread.
+    /// </summary>
+    public (int Done, int Total)? EmbeddingProgress =>
+        _understanding is { } parts && _noteStatuses is { } statuses && ReferenceEquals(statuses.Parts, parts) ? statuses.Embedding : null;
+
+    /// <summary>
     /// <see cref="NoteStatus"/> may have changed (work was handed to the worker, something was stored, the worker's
     /// progress changed or notes were embedded again); raised on the UI thread, at most once per <see cref="NoteStatusDelay"/>.
     /// </summary>
@@ -1711,7 +1718,7 @@ public sealed class VaultSession : IDisposable
                 NoteStatuses statuses;
                 if (changes.All || known is null || !ReferenceEquals(known.Source, source))
                 {
-                    statuses = new NoteStatuses(source.Parts, source, NoteStatusInputs(source, source.Notes));
+                    statuses = new NoteStatuses(source.Parts, source, NoteStatusInputs(source, source.Notes), CountEmbeddings(source));
                 }
                 else
                 {
@@ -1733,7 +1740,7 @@ public sealed class VaultSession : IDisposable
                         inputs[key] = input;
                     }
 
-                    statuses = new NoteStatuses(source.Parts, source, inputs);
+                    statuses = new NoteStatuses(source.Parts, source, inputs, CountEmbeddings(source));
                 }
 
                 _noteStatuses = statuses;
@@ -1767,6 +1774,12 @@ public sealed class VaultSession : IDisposable
             Interlocked.Increment(ref _noteStatusBuilds);
         }
     }
+
+    /// <summary>How many of the top-level notes have an embedding (in memory, no store reads); null without a semantic index.</summary>
+    private (int Done, int Total)? CountEmbeddings(StatusSource source) =>
+        _aiParts?.Index is { } index
+            ? (source.NoteOf.Keys.Count(key => index.VectorOf(key) is not null), source.NoteOf.Count)
+            : null;
 
     /// <summary>Reads the embeddings of the known inputs again (in memory, no store reads); whether one changed.</summary>
     private bool UpdateEmbeddings(Dictionary<Guid, NoteStatusInput> inputs)
@@ -2197,7 +2210,8 @@ public sealed class VaultSession : IDisposable
     }
 
     /// <summary>The notes' status inputs by key, read with <paramref name="Parts"/> from <paramref name="Source"/>.</summary>
-    private sealed record NoteStatuses(UnderstandingParts Parts, StatusSource Source, IReadOnlyDictionary<Guid, NoteStatusInput> Inputs);
+    private sealed record NoteStatuses(UnderstandingParts Parts, StatusSource Source, IReadOnlyDictionary<Guid, NoteStatusInput> Inputs,
+        (int Done, int Total)? Embedding);
 
     /// <summary>What changed since the notes' status was last put together.</summary>
     private sealed class StatusChanges

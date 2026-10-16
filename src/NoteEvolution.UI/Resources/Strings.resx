@@ -1134,6 +1134,33 @@
   <data name="LlmPauseModelMissing" xml:space="preserve">
     <value>Modell nicht installiert</value>
   </data>
+  <data name="LlmBreakdownTitle" xml:space="preserve">
+    <value>Fortschritt des Sprachmodells</value>
+  </data>
+  <data name="LlmBreakdownEmbedding" xml:space="preserve">
+    <value>Notizen eingebettet</value>
+  </data>
+  <data name="LlmBreakdownHeadings" xml:space="preserve">
+    <value>Zusammenfassungen</value>
+  </data>
+  <data name="LlmBreakdownCores" xml:space="preserve">
+    <value>Kernaussagen</value>
+  </data>
+  <data name="LlmBreakdownPlacements" xml:space="preserve">
+    <value>Einordnungen</value>
+  </data>
+  <data name="LlmBreakdownCount" xml:space="preserve">
+    <value>{0}/{1}</value>
+    <comment>{0} = erledigt, {1} = gesamt</comment>
+  </data>
+  <data name="LlmBreakdownPaused" xml:space="preserve">
+    <value>Pausiert: {0}</value>
+    <comment>{0} = Grund der Pause</comment>
+  </data>
+  <data name="LlmBreakdownSkipped" xml:space="preserve">
+    <value>{0} übersprungen</value>
+    <comment>{0} = nach drei Versuchen aufgegebene Einträge</comment>
+  </data>
   <data name="LlmPause" xml:space="preserve">
     <value>Sprachmodell pausieren</value>
   </data>

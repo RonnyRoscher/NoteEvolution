@@ -101,10 +101,11 @@
     @if (LanguageModelNow() is { } llm)
     {
         @* The language model's background work (spec 4, 11.1): count, bar and remaining time, or why it waits. *@
-        <span class="ne-llm">
-            <span class="ne-llm-text">@llm.Text</span>
+        <span class="ne-llm" @onkeydown="OnLlmKey">
             @if (llm.Progress is { } progress)
             {
+                <button type="button" class="ne-llm-text" aria-expanded="@(_breakdownOpen ? "true" : "false")"
+                        @onclick="() => _breakdownOpen = !_breakdownOpen">@llm.Text</button>
                 @if (progress.Done < progress.Total)
                 {
                     <progress class="ne-llm-progress" max="@progress.Total" value="@progress.Done"></progress>
@@ -112,6 +113,48 @@
                 <button type="button" class="ne-llm-pause" title="@L[Settings.LanguageModelPaused ? "LlmResume" : "LlmPause"]"
                         aria-label="@L[Settings.LanguageModelPaused ? "LlmResume" : "LlmPause"]"
                         aria-pressed="@(Settings.LanguageModelPaused ? "true" : "false")" @onclick="TogglePause">@(Settings.LanguageModelPaused ? "▶" : "⏸")</button>
+                @if (_breakdownOpen)
+                {
+                    @* A click anywhere else closes the popup (the backdrop lies under the popup, over the rest of the page). *@
+                    <div class="ne-llm-backdrop" @onclick="() => _breakdownOpen = false"></div>
+                    <div class="ne-llm-breakdown" role="group" aria-label="@L["LlmBreakdownTitle"]">
+                        @if (State.Session?.EmbeddingProgress is { } embedding)
+                        {
+                            <div class="ne-llm-row ne-llm-row-embedding">
+                                <span class="ne-llm-row-label">@L["LlmBreakdownEmbedding"]</span>
+                                <span class="ne-llm-row-count">@L["LlmBreakdownCount", embedding.Done, embedding.Total]</span>
+                                <progress max="@embedding.Total" value="@embedding.Done"></progress>
+                            </div>
+                        }
+                        @foreach (var (kind, css, label) in BreakdownKinds)
+                        {
+                            @if (progress.Kinds?.GetValueOrDefault(kind) is { } row)
+                            {
+                                <div class="ne-llm-row ne-llm-row-@css">
+                                    <span class="ne-llm-row-label">@L[label]</span>
+                                    <span class="ne-llm-row-count">@L["LlmBreakdownCount", row.Done, row.Total]</span>
+                                    <progress max="@row.Total" value="@row.Done"></progress>
+                                    @if (row.Total - row.Done > 0)
+                                    {
+                                        <span class="ne-llm-row-remaining">@(row.Remaining is { } remaining ? L["LlmHeaderRemaining", Durations.Format(remaining, L)] : L["LlmHeaderRemainingUnknown"])</span>
+                                    }
+                                    @if (row.Failed > 0)
+                                    {
+                                        <span class="ne-llm-row-failed">@L["LlmBreakdownSkipped", row.Failed]</span>
+                                    }
+                                </div>
+                            }
+                        }
+                        @if (progress.Pause != UnderstandingPause.None)
+                        {
+                            <div class="ne-llm-breakdown-pause">@L["LlmBreakdownPaused", PauseText(progress.Pause, L)]</div>
+                        }
+                    </div>
+                }
+            }
+            else
+            {
+                <span class="ne-llm-text">@llm.Text</span>
             }
         </span>
     }
@@ -129,6 +172,7 @@
     private LanguageModelRuntime? _language;
     private bool _readOnlyOpen;
     private bool _assistantsOpen;
+    private bool _breakdownOpen;
     private int _selectVersion;
 
     /// <summary>Why the last undo was refused or failed; shown until the next undoable operation.</summary>
@@ -234,17 +278,36 @@
             return l["LlmHeaderReady"];
         }
 
-        string detail = progress.Pause switch
-        {
-            UnderstandingPause.User => l["LlmPauseUser"],
-            UnderstandingPause.Typing => l["LlmPauseTyping"],
-            UnderstandingPause.Battery => l["LlmPauseBattery"],
-            UnderstandingPause.Unreachable => l["LlmPauseUnreachable"],
-            UnderstandingPause.ModelMissing => l["LlmPauseModelMissing"],
-            _ when progress.Remaining is { } remaining => l["LlmHeaderRemaining", Durations.Format(remaining, l)],
-            _ => l["LlmHeaderRemainingUnknown"],
-        };
+        string detail = progress.Pause != UnderstandingPause.None ? PauseText(progress.Pause, l)
+            : progress.Remaining is { } remaining ? l["LlmHeaderRemaining", Durations.Format(remaining, l)]
+            : l["LlmHeaderRemainingUnknown"];
         return $"{l["LlmHeaderProgress", progress.Done, progress.Total]} · {detail}";
+    }
+
+    /// <summary>Why the work waits (<paramref name="pause"/> is not <see cref="UnderstandingPause.None"/>).</summary>
+    private static string PauseText(UnderstandingPause pause, IStringLocalizer<Strings> l) => pause switch
+    {
+        UnderstandingPause.User => l["LlmPauseUser"],
+        UnderstandingPause.Typing => l["LlmPauseTyping"],
+        UnderstandingPause.Battery => l["LlmPauseBattery"],
+        UnderstandingPause.Unreachable => l["LlmPauseUnreachable"],
+        _ => l["LlmPauseModelMissing"],
+    };
+
+    private static readonly (UnderstandingKind Kind, string Css, string Label)[] BreakdownKinds =
+    [
+        (UnderstandingKind.Heading, "headings", "LlmBreakdownHeadings"),
+        (UnderstandingKind.Note, "cores", "LlmBreakdownCores"),
+        (UnderstandingKind.Placement, "placements", "LlmBreakdownPlacements"),
+    ];
+
+    /// <summary>Escape closes the breakdown (like clicking outside).</summary>
+    private void OnLlmKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape")
+        {
+            _breakdownOpen = false;
+        }
     }
 
     /// <summary>The pause switch: saved, and passed to the open vault's work at once (through the runtime's change).</summary>
@@ -314,6 +377,7 @@
             _session.ConflictsChanged += OnSessionChanged;
             _session.AiStatusChanged += OnSessionChanged;
             _session.UnderstandingChanged += OnSessionChanged;
+            _session.NoteStatusChanged += OnSessionChanged;
         }
     }
 
@@ -326,6 +390,7 @@
             _session.ConflictsChanged -= OnSessionChanged;
             _session.AiStatusChanged -= OnSessionChanged;
             _session.UnderstandingChanged -= OnSessionChanged;
+            _session.NoteStatusChanged -= OnSessionChanged;
         }
     }
 
