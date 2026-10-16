@@ -10,6 +10,8 @@ Stand: 2026-10-16 · Status: Entwurf · Baut auf dem lokalen Sprachmodell (`2026
 - „Relevant“ zeigt oben die Notizen, die das Modell dem aktuellen Abschnitt zugeordnet hat.
 - Eine Abdeckungsansicht zeigt, wo das Buch Material hat, wo es fehlt und welche Notizen keinen passenden Ort haben.
 
+Dazu kommt eine aufgeschlüsselte Fortschrittsanzeige und ein Statuspunkt an jeder Notizkarte, der zeigt, wie weit die Berechnung für diese Notiz ist.
+
 Zielrechner bleibt das Notebook ohne passende Grafikkarte (i5-10210U, 16 GB RAM). Eine Prüfung dauert dort im Mittel etwa 35 s. Die Vorberechnung läuft deshalb nur in den Ruhezeiten der bestehenden Hintergrundberechnung.
 
 ### Erfolgskriterien
@@ -19,6 +21,7 @@ Zielrechner bleibt das Notebook ohne passende Grafikkarte (i5-10210U, 16 GB RAM)
 - **Nur Neues wird gerechnet:** Geänderte Notizen oder Kapitel lösen nur die Prüfungen aus, deren Anfrage sich dadurch ändert.
 - **Passung aussagekräftig:** Auf dem Referenzbuch hat jede Notiz einen richtigen Ort. Höchstens 10 % der Notizen bekommen „kaum“. Von den Notizen mit „gut“ sind mindestens 75 % richtig einsortiert, also mehr als im Durchschnitt.
 - **Rechner bleibt nutzbar:** weiterhin genau eine Anfrage gleichzeitig. Die Pausen beim Tippen und im Akkubetrieb sowie der Pause-Knopf gelten auch für Prüfungen. Die Abdeckungszahlen werden außerhalb des UI-Threads berechnet.
+- **Stand sichtbar:** Die Kopfzeile schlüsselt den Fortschritt nach Embedding, Zusammenfassungen, Kernaussagen und Zuordnungen auf. Jede unverwendete Notizkarte zeigt mit einem Punkt, ob ihre Zuordnung fehlt, gerade berechnet wird, aktuell, veraltet oder fehlgeschlagen ist.
 - **Ohne Sprachmodell wie heute:** „Relevant“ hat dann nur die heutige Liste, die Gliederung zeigt nur übernommene Notizen, der Reiter „Abdeckung“ erklärt, was fehlt.
 
 ## 2. Bausteine
@@ -35,7 +38,9 @@ Zielrechner bleibt das Notebook ohne passende Grafikkarte (i5-10210U, 16 GB RAM)
 | `OutlinePane`, `OutlineItem` | Schalter „Abdeckung“ und Balken je Überschrift. |
 | `RelevantTab` | Gruppen „Hierher eingeordnet“ und „Weitere ähnliche“. |
 | `CoverageTab` (neu) | Reiter „Abdeckung“ im Notizbereich. |
-| `NoteCard` | Zeigt die gespeicherte Empfehlung sofort, markiert veraltete. |
+| `NoteCard` | Zeigt die gespeicherte Empfehlung sofort, markiert veraltete. Statuspunkt im Kartenkopf. |
+| `NoteProgress` (neu, rein) | Bestimmt den Status einer Notiz (Embedding, Kernaussage, Zuordnung) aus Index, Store und Worker. |
+| `HeaderBar` | Klick auf die Fortschrittsanzeige öffnet die Aufschlüsselung. |
 
 ## 3. Vorberechnung
 
@@ -124,7 +129,40 @@ Neuer Reiter im Notizbereich, nach „Journal“. Der Vorgabe-Reiter bleibt „J
 - **Ablauf:** gebündelt mit 1 s Verzögerung. Die Rechnung läuft im Hintergrund auf Schnappschüssen, das Ergebnis wird über den UI-Thread übergeben. Das neueste Ergebnis gewinnt, ältere werden verworfen.
 - **Wer rechnet:** nur, wenn Balken oder Reiter sichtbar sind. Sonst wird beim nächsten Sichtbarwerden gerechnet.
 
-## 7. Fehlerbehandlung
+## 7. Fortschritt und Status je Notiz
+
+### 7.1 Aufgeschlüsselter Fortschritt
+
+- **Gesamtanzeige:** Die Fortschrittsanzeige der Kopfzeile bleibt wie heute, Gesamtzahl mit Balken und Restzeit, jetzt einschließlich der Prüfaufträge.
+- **Aufschlüsselung:** Ein Klick auf die Anzeige (oder Enter/Leertaste darauf) öffnet ein kleines Aufklappfeld unter ihr. Je Zeile stehen Name, „fertig/gesamt“, ein schmaler Balken und, falls noch Arbeit offen ist, die Restzeit dieser Art:
+  - **Embedding:** Notizen mit Bedeutungsvektor im semantischen Index im Verhältnis zu allen Notizen. Ohne lokale KI fehlt die Zeile.
+  - **Zusammenfassungen:** Überschriften aller Bücher.
+  - **Kernaussagen:** Notizen ab 120 Zeichen.
+  - **Zuordnungen:** unverwendete Notizen mit aktuellem Prüfergebnis im aktuellen Buch.
+- **Weitere Angaben:** Unter den Zeilen steht gegebenenfalls „Pausiert: …“ mit dem Grund wie in der Kopfzeile sowie die Zahl der übersprungenen Einträge (3 Fehlversuche).
+- **Schließen:** Ein Klick daneben oder Escape schließt das Feld.
+- **Zählung:** Die Zahlen liefert der Worker (`UnderstandingProgress` je Art: fertig, gesamt, fehlgeschlagen) und für das Embedding der semantische Index. Die Restzeit je Art verwendet die gemittelte Dauer dieser Art (Abschnitt 3.4).
+
+### 7.2 Statuspunkt an der Notizkarte
+
+- **Wo:** Jede Notizkarte einer unverwendeten Notiz (Journal, Relevant, Suche, Abdeckung) zeigt im Kopf einen kleinen Punkt (8 px). Verwendete Notizen haben keinen Punkt. Unterblöcke einer Karte haben keinen eigenen Punkt, da die Zuordnung zur Notiz gehört.
+- **Farben und Bedeutung** (Vorrang von oben nach unten):
+
+| Farbe | Bedeutung | Tooltip (Beispiel) |
+|---|---|---|
+| Blau, pulsierend | Für diese Notiz läuft gerade eine Anfrage (Kernaussage oder Zuordnung) | „Wird gerade berechnet: Zuordnung“ |
+| Rot | Kernaussage oder Zuordnung nach 3 Fehlversuchen übersprungen | „Zuordnung fehlgeschlagen, wird nach der nächsten Änderung erneut versucht“ |
+| Grün | Zuordnung aktuell | „Zuordnung aktuell · Passung gut“ |
+| Gelb | Zuordnung veraltet | „Zuordnung veraltet (Notiz oder Buch geändert) · wird neu berechnet“ |
+| Grau | Zuordnung fehlt noch | „Embedding fertig · Kernaussage fertig · Zuordnung ausstehend“ |
+
+- **Tooltip:** Er nennt immer alle drei Stufen. Stufen, die für die Notiz nicht gelten, entfallen, zum Beispiel die Kernaussage bei unter 120 Zeichen.
+- **Ohne Sprachmodell:** Es gibt keinen Punkt. Die Stufen ohne Sprachmodell sind kein offener Zustand.
+- **Farben:** Sie kommen aus den vorhandenen Farbwerten der App (Erfolg, Warnung, Gefahr, Akzent, gedämpft) und gelten im hellen wie im dunklen Erscheinungsbild. Der Punkt hat zusätzlich ein `aria-label` mit dem Tooltiptext, damit die Information nicht nur über die Farbe kommt. Das Pulsieren entfällt bei `prefers-reduced-motion`.
+- **Laufende Anfrage:** Der Worker meldet, für welchen Eintrag gerade eine Anfrage läuft (`UnderstandingProgress.Current`: Art und Schlüssel der Notiz bzw. Überschrift). Die Karten erfahren Änderungen über das bestehende Fortschrittsereignis.
+- **Aktualisierung:** Die Karten aktualisieren sich über das bestehende Fortschrittsereignis, gebündelt auf höchstens eine Aktualisierung pro Sekunde. Den Status bestimmt `NoteProgress` aus Schnappschüssen, ohne Datenbankzugriff pro Karte und Rendervorgang. Die Fingerabdrücke und Ergebnisse je Notiz hält die Session im Speicher, sie werden bei jeder Übergabe an den Worker aufgefrischt.
+
+## 8. Fehlerbehandlung
 
 - **Fehlerhafte gespeicherte Ergebnisse:** Unlesbares JSON gilt als fehlendes Ergebnis und wird neu berechnet.
 - **Verschwundene Stellen:** Nennt ein Ergebnis einen Abschnitt oder Block, der nicht mehr im Buch ist, wird es nicht angezeigt und nicht gezählt. Die neue Anfrage hat ohnehin einen anderen Fingerabdruck.
@@ -132,23 +170,27 @@ Neuer Reiter im Notizbereich, nach „Journal“. Der Vorgabe-Reiter bleibt „J
 - **Fehler beim Bau der Anfragen:** Wirft der Bau der Prüfanfragen im Hintergrund eine Ausnahme, wird sie protokolliert. Die übrigen Gruppen der Warteschlange laufen weiter.
 - **Fehler in der Abdeckungsrechnung:** Eine Ausnahme wird protokolliert, die Anzeige behält den letzten Stand.
 
-## 8. Tests und Messung
+## 9. Tests und Messung
 
-### 8.1 Automatische Tests
+### 9.1 Automatische Tests
 
 - **`PlacementCheck`:** Schema mit `passung`; Lesen von gut, teilweise, kaum, fehlend und ungültig; Embedding-Abschnitt (beste Platzierung, sonst bestes Thema); Regel für „unsicher“.
 - **Prüfaufträge:** nur unverwendete Notizen, neueste zuerst; erst nach allen Zusammenfassungen des Buchs; Fingerabdruck ändert sich mit Notiztext, Zusammenfassung oder Textstelle und bleibt bei unbeteiligten Kapiteln gleich; Identität je Buch.
 - **Worker:** Prüfaufträge als letzte Gruppe nach den anderen; Ergebnis gespeichert; unverwertbare Antwort ist ein Fehlversuch; ein manuelles Ergebnis wird nicht noch einmal berechnet.
 - **`StoreUnderstanding.Placement`:** aktuell, veraltet, fehlt; verschwundener Abschnitt; unlesbares JSON.
 - **`CoverageCalculator`:** übernommen mit und ohne Block-ID; zugeordnet über Abschnitt und über Textblock; Summen; leer erst nach vollständiger Prüfung; ohne Ort; unsicher.
+- **`NoteProgress`:** Vorrang der Zustände; Stufen, die nicht gelten (unter 120 Zeichen, ohne Sprachmodell, ohne lokale KI); verwendete Notiz ohne Status.
+- **Fortschritt je Art:** Zählung von Embedding, Zusammenfassungen, Kernaussagen und Zuordnungen; Fehlversuche; Restzeit je Art.
 - **UI (bUnit):**
   - „Wohin damit?“ zeigt die gespeicherte Empfehlung sofort, veraltet mit Hinweis.
   - „Relevant“ zeigt zwei Gruppen ohne Doppelte und ohne leere Gruppe.
   - Die Gliederung zeigt Balken, Tooltip und rote 0; Schalter und Einstellung bleiben erhalten.
   - Der Reiter zeigt Kennzahlen, Sortierung, „ohne Ort“ und den Hinweis ohne Sprachmodell.
   - Ein Klick wählt den Abschnitt bzw. öffnet „Relevant“.
+  - Die Kopfzeile öffnet und schließt die Aufschlüsselung (Klick, Escape) mit den Zeilen je Art.
+  - Die Notizkarte zeigt den Punkt mit der richtigen Farbe, Tooltip und `aria-label`; ohne Sprachmodell und bei verwendeten Notizen ist kein Punkt da; der Punkt wechselt auf Blau, solange die Anfrage dieser Notiz läuft.
 
-### 8.2 Messung
+### 9.2 Messung
 
 `tests/quality/measure.cs` misst zusätzlich:
 
@@ -159,9 +201,10 @@ Neuer Reiter im Notizbereich, nach „Journal“. Der Vorgabe-Reiter bleibt „J
 
 Die Ergebnisse werden mit den Zielwerten aus Abschnitt 1 berichtet, auch wenn sie verfehlt werden. Die Referenzdaten bleiben unverändert.
 
-## 9. Nicht enthalten
+## 10. Nicht enthalten
 
 - **Eigene Prüfung pro Abschnitt für „Relevant“** (Weg B aus der Besprechung): Sie wird erst nachgezogen, wenn Mehrfachtreffer fehlen.
 - **Vorberechnung für Bücher, die nicht geöffnet sind,** und für verwendete Notizen.
 - **Automatisches Einsortieren oder Übernehmen:** Das Modell schlägt nur vor.
 - **Mehrere Notizen in einer Anfrage.**
+- **Einfärben der Linie links am Notizblock:** Sie zeigt weiterhin nur die Zugehörigkeit der Unterblöcke.
