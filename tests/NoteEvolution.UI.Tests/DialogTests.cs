@@ -516,6 +516,31 @@ public class DialogTests : UiTestContext
         ("pages/Buch - Beta.md", "title:: Beta\ntype:: book\n\n- # Zwei\n\t- Musik Gitarre Klavier spielen\n"),
         (NotesPath, "- [handled] Schlaf und Träume\n- [handled] Zwei\n- Drei\n"));
 
+    /// <summary>
+    /// Waits up to <see cref="HandledWait"/> until <paramref name="assertion"/> holds for the places the assistant computes
+    /// in the background, checking again every <see cref="PlaceCheckInterval"/> as well: bUnit checks only after a render
+    /// it is told about, and a render of the places that lands just as the wait starts can go unnoticed (the wait then
+    /// times out although the places are shown).
+    /// </summary>
+    private static void WaitForPlaces(IRenderedComponent<HandledWizard> cut, Action assertion)
+    {
+        var until = DateTime.UtcNow + HandledWait;
+        while (true)
+        {
+            try
+            {
+                cut.WaitForAssertion(assertion, PlaceCheckInterval);
+                return;
+            }
+            catch (Bunit.Extensions.WaitForHelpers.WaitForFailedException) when (DateTime.UtcNow < until)
+            {
+                // Checked again with a new wait.
+            }
+        }
+    }
+
+    private static readonly TimeSpan PlaceCheckInterval = TimeSpan.FromMilliseconds(200);
+
     private static IElement Place(IRenderedComponent<HandledWizard> cut, int item) =>
         cut.FindAll(".ne-handled-item")[item].QuerySelector(".ne-handled-place")!;
 
@@ -528,7 +553,7 @@ public class DialogTests : UiTestContext
         var tv = PlacementVault();
         var session = await OpenWithAiAsync(tv);
         var cut = Render<HandledWizard>();
-        cut.WaitForAssertion(() => Assert.Equal(2, cut.FindAll(".ne-handled-place").Count), HandledWait);
+        WaitForPlaces(cut, () => Assert.Equal(2, cut.FindAll(".ne-handled-place").Count));
         var place = Place(cut, 0);
         var options = place.QuerySelectorAll("option").ToList();
         Assert.Equal(3, options.Count);
@@ -556,7 +581,7 @@ public class DialogTests : UiTestContext
         var tv = PlacementVault();
         await OpenWithAiAsync(tv);
         var cut = Render<HandledWizard>();
-        cut.WaitForAssertion(() => Assert.Equal(2, cut.FindAll(".ne-handled-place").Count), HandledWait);
+        WaitForPlaces(cut, () => Assert.Equal(2, cut.FindAll(".ne-handled-place").Count));
 
         cut.Find(".ne-handled-convert").Click();
         cut.WaitForElement(".ne-handled-yes").Click();
@@ -584,15 +609,14 @@ public class DialogTests : UiTestContext
         var tv = PlacementVault();
         await OpenWithAiAsync(tv);
         var cut = Render<HandledWizard>();
-        cut.WaitForAssertion(() => Assert.Equal(2, cut.FindAll(".ne-handled-place").Count), HandledWait);
+        WaitForPlaces(cut, () => Assert.Equal(2, cut.FindAll(".ne-handled-place").Count));
         var place = Place(cut, 0);
         place.Change(OptionFor(place, SleepText));
 
         cut.Find(".ne-handled-book-select").Change("Buch - Beta");
 
-        cut.WaitForAssertion(
-            () => Assert.Contains(Place(cut, 0).QuerySelectorAll("option"), o => o.TextContent.StartsWith("Musik Gitarre", StringComparison.Ordinal)),
-            HandledWait);
+        WaitForPlaces(
+            cut, () => Assert.Contains(Place(cut, 0).QuerySelectorAll("option"), o => o.TextContent.StartsWith("Musik Gitarre", StringComparison.Ordinal)));
         Assert.DoesNotContain(Place(cut, 0).QuerySelectorAll("option"), o => o.TextContent.StartsWith(SleepText, StringComparison.Ordinal));
         cut.Find(".ne-handled-convert").Click();
         cut.WaitForElement(".ne-handled-yes").Click();
@@ -607,7 +631,7 @@ public class DialogTests : UiTestContext
         var tv = PlacementVault();
         var session = await OpenWithAiAsync(tv);
         var cut = Render<HandledWizard>();
-        cut.WaitForAssertion(() => Assert.Equal(2, cut.FindAll(".ne-handled-place").Count), HandledWait);
+        WaitForPlaces(cut, () => Assert.Equal(2, cut.FindAll(".ne-handled-place").Count));
         var place = Place(cut, 0);
         place.Change(OptionFor(place, SleepText));
         var path = Path.Combine(tv.Root, "pages/Buch - Alpha.md");
@@ -632,7 +656,7 @@ public class DialogTests : UiTestContext
         var tv = PlacementVault();
         var session = await OpenWithAiAsync(tv);
         var cut = Render<HandledWizard>();
-        cut.WaitForAssertion(() => Assert.Equal(2, cut.FindAll(".ne-handled-place").Count), HandledWait);
+        WaitForPlaces(cut, () => Assert.Equal(2, cut.FindAll(".ne-handled-place").Count));
         var place = Place(cut, 0);
         place.Change(OptionFor(place, SleepText));
         var path = Path.Combine(tv.Root, "pages/Buch - Alpha.md");
@@ -650,12 +674,12 @@ public class DialogTests : UiTestContext
         Assert.Equal(before, tv.Read(NotesPath));
 
         // The places are suggested again for the book as it is now; the choice is back to "Stelle unbekannt".
-        cut.WaitForAssertion(() =>
+        WaitForPlaces(cut, () =>
         {
             var options = Place(cut, 0).QuerySelectorAll("option").Select(o => o.TextContent).ToList();
             Assert.DoesNotContain(options, o => o.StartsWith(SleepText, StringComparison.Ordinal));
             Assert.Contains(options, o => o.StartsWith("Etwas ganz anderes", StringComparison.Ordinal));
-        }, HandledWait);
+        });
         cut.Find(".ne-handled-convert").Click();
         cut.WaitForElement(".ne-handled-yes").Click();
 
