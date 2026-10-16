@@ -299,13 +299,16 @@ static void PrintRates(List<Case> cases, List<bool> todayWhereTo, List<bool> tod
     Console.WriteLine("Unsicher / uncertain");
     Row("Modell ≠ Embedding / model ≠ embedding", checks, i => verdicts[i] is { } v && PlacementCheck.IsUncertain(book, v));
     Console.WriteLine();
+    // Without a usable verdict a goal cannot be judged: n/a, not "met".
     var withVerdict = verdicts.Count(v => v is not null);
-    var poorShare = withVerdict == 0 ? 0 : (double)verdicts.Count(v => v?.Fit == PlacementFit.Poor) / withVerdict;
+    double? poorShare = withVerdict == 0 ? null : (double)verdicts.Count(v => v?.Fit == PlacementFit.Poor) / withVerdict;
     var goodIndices = Enumerable.Range(0, verdicts.Count).Where(i => verdicts[i]?.Fit == PlacementFit.Good).ToList();
-    var goodRate = goodIndices.Count == 0 ? 0 : (double)goodIndices.Count(i => checks[i]) / goodIndices.Count;
+    double? goodRate = goodIndices.Count == 0 ? null : (double)goodIndices.Count(i => checks[i]) / goodIndices.Count;
+    double? firstRate = withVerdict == 0 ? null : Rate(checks, _ => true);
     Console.WriteLine("Ziele / goals (spec 1)");
-    Console.WriteLine($"  kaum ≤ 10 % / poor ≤ 10 %: {poorShare:P0} {(poorShare <= 0.10 ? "erfüllt / met" : "nicht erfüllt / not met")}");
-    Console.WriteLine($"  gut richtig ≥ 75 % / good correct ≥ 75 %: {goodRate:P0} {(goodRate >= 0.75 ? "erfüllt / met" : "nicht erfüllt / not met")}");
+    Console.WriteLine($"  richtiges Unterkapitel an 1. Stelle ≥ 65 % / correct sub-chapter first ≥ 65 %: {Goal(firstRate, r => r >= 0.65)}");
+    Console.WriteLine($"  kaum ≤ 10 % / poor ≤ 10 %: {Goal(poorShare, r => r <= 0.10)}");
+    Console.WriteLine($"  gut richtig ≥ 75 % / good correct ≥ 75 %: {Goal(goodRate, r => r >= 0.75)}");
     Console.WriteLine();
     var allOk = Rate(newTopics, _ => true) >= 0.8;
     var aspectOk = deltaAspect >= 0.2;
@@ -313,6 +316,10 @@ static void PrintRates(List<Case> cases, List<bool> todayWhereTo, List<bool> tod
     Console.WriteLine($"  neu ≥ 80 % (alle) / new ≥ 80 % (all): {(allOk ? "erfüllt / met" : "nicht erfüllt / not met")}");
     Console.WriteLine($"  anderer Aspekt ≥ +20 Pp. / other aspect ≥ +20 pp: {(aspectOk ? "erfüllt / met" : "nicht erfüllt / not met")}");
     Console.WriteLine();
+
+    static string Goal(double? rate, Func<double, bool> met) => rate is not { } r
+        ? "n/a"
+        : $"{r:P0} {(met(r) ? "erfüllt / met" : "nicht erfüllt / not met")}";
 
     void Row(string label, List<bool> hits, Func<int, bool>? only = null) =>
         Console.WriteLine($"  {label,-58}{Cell(hits, i => only?.Invoke(i) ?? true),18}{Cell(hits, i => (only?.Invoke(i) ?? true) && aspect[i]),32}");
