@@ -132,6 +132,32 @@ public sealed class UnderstandingStoreTests
     }
 
     [Fact]
+    public void Prune_KeepsNewestPlacementOfEveryIdentity_LiveOrNot()
+    {
+        using var dir = new TempDir();
+        using var store = UnderstandingStore.Open(dir.Path);
+        store.Put(Entry("other-book", "placement|Beta|n1", kind: UnderstandingKind.Placement));
+        store.Put(Entry("old", "placement|Alpha|n1", kind: UnderstandingKind.Placement));
+
+        // No placement is live (another book is current, or this one waits for its summaries): the newest of each stays.
+        store.Prune(new HashSet<string>(), new HashSet<string>());
+        Assert.NotNull(store.Get("other-book"));
+        Assert.NotNull(store.Get("old"));
+
+        // A newer result of the same identity replaces the older one at the next prune; the other book's stays.
+        store.Put(Entry("new", "placement|Alpha|n1", kind: UnderstandingKind.Placement));
+        store.Prune(new HashSet<string>(), new HashSet<string>());
+        Assert.NotNull(store.Get("new"));
+        Assert.Null(store.Get("old"));
+        Assert.NotNull(store.Get("other-book"));
+
+        // Other kinds still need a live identity.
+        store.Put(Entry("heading", "book:Gone/X#0"));
+        store.Prune(new HashSet<string>(), new HashSet<string>());
+        Assert.Null(store.Get("heading"));
+    }
+
+    [Fact]
     public void Prune_KeepsFailedAttemptsOfLiveFingerprints()
     {
         using var dir = new TempDir();

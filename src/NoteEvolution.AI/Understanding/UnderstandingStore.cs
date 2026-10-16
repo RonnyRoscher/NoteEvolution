@@ -219,7 +219,7 @@ public sealed class UnderstandingStore : IDisposable
 
     /// <summary>
     /// Deletes every entry whose fingerprint is not live, except the newest entry of each kind for a live identity (the
-    /// stale fallback), and the failed attempts of fingerprints that are neither stored nor live (a live item that failed
+    /// stale fallback) and the newest placement check of every identity, live or not (spec 3.1, 3.3), and the failed attempts of fingerprints that are neither stored nor live (a live item that failed
     /// too often stays skipped).
     /// </summary>
     public void Prune(IReadOnlySet<string> liveFingerprints, IReadOnlySet<string> liveIdentities)
@@ -237,9 +237,13 @@ public sealed class UnderstandingStore : IDisposable
                 while (reader.Read())
                 {
                     var fingerprint = reader.GetString(0);
+                    var kind = reader.GetInt64(1);
                     var identity = reader.GetString(2);
-                    var newestOfLiveIdentity = liveIdentities.Contains(identity) && seen.Add((reader.GetInt64(1), identity));
-                    if (!newestOfLiveIdentity && !liveFingerprints.Contains(fingerprint)) stale.Add(fingerprint);
+                    // A placement check's newest result is kept even when its identity is not live: another book's results
+                    // count again when that book is current, and a book waiting for its summaries keeps its stale results.
+                    var keepsNewest = kind == (long)UnderstandingKind.Placement || liveIdentities.Contains(identity);
+                    var newestKept = keepsNewest && seen.Add((kind, identity));
+                    if (!newestKept && !liveFingerprints.Contains(fingerprint)) stale.Add(fingerprint);
                 }
             }
 

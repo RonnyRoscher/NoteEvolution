@@ -713,6 +713,148 @@ public class LanguageModelTests : UiTestContext
         Assert.Equal(6, session.Understanding!.Total);
     }
 
+    [Fact]
+    public async Task Session_BookSwitched_OtherBooksPlacementSurvivesPrune()
+    {
+        var tv = Vault();
+        var session = await OpenWithPlacementsAsync(tv);
+        var key = NoteKey(session, NewerNote);
+        var alpha = State.CurrentBook!;
+
+        // The other book's work completes (and is pruned) without Alpha's placement checks.
+        State.CurrentBook = session.Vault.FindBook("Buch - Leer");
+        await Eventually(() => session.Understanding is { Done: 2, Total: 2 }, "The other book's work was not planned.");
+        await Task.Delay(200);
+
+        // Back to Alpha: its results are still there, nothing is asked again.
+        State.CurrentBook = alpha;
+        await Eventually(() => session.Placement(key) is { Stale: false }, "Alpha's placement was lost.");
+        await AllDone(session, 8);
+        await Task.Delay(50);
+        Assert.Equal(8, _chat.Calls.Count);
+    }
+
+    [Fact]
+    public async Task Session_HeadingEdited_StalePlacementSurvivesPrune()
+    {
+        var tv = Vault();
+        var session = await OpenWithPlacementsAsync(tv);
+        var key = NoteKey(session, NewerNote);
+        using var gate = new SemaphoreSlim(0);
+        _chat.Gate = gate;
+
+        // The edited heading and its parent are summarized again; meanwhile the book waits and its plan completes (pruned).
+        Edit(session, BookPath, DreamText, "Träume ordnen das Erlebte neu.");
+        Time.Advance(VaultSession.PageIndexDelay);
+        await Eventually(() => _chat.Calls.Count == 9);
+        gate.Release();
+        await Eventually(() => _chat.Calls.Count == 10);
+        gate.Release();
+        await Eventually(() => session.Understanding is { Done: 5, Total: 5 }, "The summaries were not done.");
+        await Task.Delay(200);
+        Assert.NotNull(session.Placement(key));
+
+        // The new checks: the old result shows as stale until the new one is there.
+        Time.Advance(VaultSession.PageIndexDelay);
+        await Eventually(() => session.Placement(key) is { Stale: true }, "The old placement was not shown as stale.");
+        gate.Release(100);
+        await Eventually(() => session.Placement(key) is { Stale: false }, "The new placement did not arrive.");
+    }
+
+    [Fact]
+    public async Task Session_SummarySettledWhileReadinessIsRead_FeedStillScheduled()
+    {
+        var tv = TestVault.Create(
+            (BookPath, $"title:: Alpha\ntype:: book\n\n- # Schlaf\n\t- Über den Schlaf und seine Phasen.\n\t- ## Träume\n\t\t- {DreamText}\n- # Arbeit\n\t- Konzentration braucht Ruhe.\n"),
+            ("pages/Buch - Beta.md", "title:: Beta\ntype:: book\n\n- # Erholung\n\t- Pausen geben Kraft für den Tag.\n"),
+            (OlderJournal, $"- {OlderNote}\n- kurz\n"),
+            (NewerJournal, $"- {NewerNote}\n"));
+        _vaults.Add(tv);
+
+        // Beta's heading (the other book's, after Alpha's work) is held at the model.
+        using var betaHeld = new ManualResetEventSlim();
+        _chat.Answer = (call, n) =>
+        {
+            if (call.Options.Schema is not null)
+            {
+                return "{\"begruendung\":\"Passt.\",\"stelle\":\"1.1\",\"passung\":\"gut\"}";
+            }
+
+            if (call.User.Contains("Pausen geben Kraft", StringComparison.Ordinal))
+            {
+                betaHeld.Wait(Wait);
+            }
+
+            return $"Antwort {n}.";
+        };
+        var session = await OpenReadyAsync(tv);
+        var feeds = session.FeedsApplied;
+        Time.Advance(VaultSession.PageIndexDelay);
+        await Eventually(() => session.FeedsApplied > feeds, "Alpha's placement checks were not fed.");
+
+        // Beta becomes current; its feed has read the store (not settled) when Beta's summary is stored.
+        using var read = new ManualResetEventSlim();
+        using var proceed = new ManualResetEventSlim();
+        session.PlacementReadinessChecked = book =>
+        {
+            if (book.LinkName == "Buch - Beta")
+            {
+                read.Set();
+                proceed.Wait(Wait);
+            }
+        };
+        State.CurrentBook = session.Vault.FindBook("Buch - Beta");
+        Assert.True(read.Wait(Wait), "Beta's readiness was not read.");
+        betaHeld.Set();
+        await Eventually(() => session.Understanding?.Kinds?[UnderstandingKind.Heading] is { Done: 4, Total: 4 },
+            "Beta's heading was not summarized.");
+        await Task.Delay(100); // its vector
+        session.PlacementReadinessChecked = null;
+        proceed.Set();
+
+        // Applying the feed noticed the summary settled meanwhile: the debounced feed builds Beta's checks.
+        await Eventually(() => session.FeedsApplied > feeds + 1, "Beta's feed was not applied.");
+        Time.Advance(VaultSession.PageIndexDelay);
+        await Eventually(() => _chat.Calls.Any(c => c.Options.Schema is not null && c.User.Contains("Erholung", StringComparison.Ordinal)),
+            "Beta's placement checks were not built.");
+    }
+
+    [Fact]
+    public async Task Session_SummaryWithoutVector_NotReadyUntilVectorSet()
+    {
+        var tv = Vault();
+        AnswerPlacements();
+        var language = UseLanguageModel(_chat);
+        await language.RefreshAsync(CancellationToken.None);
+        using var gate = new SemaphoreSlim(0);
+        _chat.Gate = gate;
+        var embedder = new FakeEmbedder();
+        var session = await OpenWithAiAsync(tv, embedder);
+        await Eventually(() => _chat.Calls.Count == 1);
+
+        // The summaries are stored without their vectors (the embedder fails): the prompt could not use them.
+        embedder.Throws = true;
+        gate.Release(100);
+        await AllDone(session, 5);
+        await Task.Delay(50);
+
+        // The embedder works again, but the summaries have no vectors yet: the feed builds no checks.
+        embedder.Throws = false;
+        var built = 0;
+        session.PlacementPromptBuilding = (_, _) => Interlocked.Increment(ref built);
+        var feeds = session.FeedsApplied;
+        Time.Advance(VaultSession.PageIndexDelay);
+        await Eventually(() => session.FeedsApplied > feeds, "The page-change feed did not run.");
+        Assert.Equal(0, Volatile.Read(ref built));
+        Assert.DoesNotContain(_chat.Calls, c => c.Options.Schema is not null);
+
+        // The worker embeds them once its work changed (that feed), and the vectors schedule the next feed.
+        await Task.Delay(100);
+        Time.Advance(VaultSession.PageIndexDelay);
+        await AllDone(session, 8);
+        Assert.Single(PlacementCalls(NewerNote));
+    }
+
     /// <summary>Collects the session's log entries.</summary>
     private sealed class ListLogger : ILogger
     {

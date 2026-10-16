@@ -860,18 +860,21 @@ public sealed class UnderstandingWorkerTests
     }
 
     [Fact]
-    public async Task Prune_KeepsLivePlacements()
+    public async Task Prune_KeepsLivePlacementsAndNewestOfOtherIdentities()
     {
         await using var f = new Fixture();
         var live = Placement("Live");
+        f.Store.Put(new UnderstandingEntry(UnderstandingKind.Placement, "fp-older", "placement|Beta|id-weg", "{}", Model, null, null));
+        f.Store.Put(new UnderstandingEntry(UnderstandingKind.Placement, "fp-newer", "placement|Beta|id-weg", "{}", Model, null, null));
         f.Store.Put(new UnderstandingEntry(UnderstandingKind.Placement, live.Fingerprint, live.Identity, "{}", Model, null, null));
-        f.Store.Put(new UnderstandingEntry(UnderstandingKind.Placement, "fp-gone", "placement|Buch|id-weg", "{}", Model, null, null));
         f.Worker.SetWork([], null, [Note("A")], [], [live]);
 
         f.Start();
         await Until(() => f.Worker.Progress is { Done: 2, Total: 2 });
-        await Until(() => f.Store.Get("fp-gone") is null, "prune");
+        await Until(() => f.Store.Get("fp-older") is null, "prune");
 
+        // Another book's newest result stays for when that book is current again (spec 3.1).
+        Assert.NotNull(f.Store.Get("fp-newer"));
         Assert.NotNull(f.Store.Get(live.Fingerprint));
         Assert.NotNull(f.Store.Get("fp-A"));
     }

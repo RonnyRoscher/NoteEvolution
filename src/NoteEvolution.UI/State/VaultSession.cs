@@ -188,6 +188,9 @@ public sealed class VaultSession : IDisposable
     /// <summary>Called in the background before a note's placement check is built (the book and the note's key); for tests.</summary>
     internal Action<Book, Guid>? PlacementPromptBuilding { get; set; }
 
+    /// <summary>Called in the background when a feed found the book's summaries not settled yet (before it is applied); for tests.</summary>
+    internal Action<Book>? PlacementReadinessChecked { get; set; }
+
     /// <summary>
     /// The note's stored placement check for the current book (current or stale, see <see cref="StoreUnderstanding.Placement"/>);
     /// null without the language model, without a current book or when there is none. Call it on the UI thread.
@@ -891,20 +894,21 @@ public sealed class VaultSession : IDisposable
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, timeout.Token);
         try
         {
-            // Stored on the worker's thread before it plans on, so the background does not ask the same question again.
-            var answer = await understanding.Worker.RunNextAsync(
+            // Read and stored on the worker's thread before it plans on, so the background does not ask the same question
+            // again; the worker calls it before the answer is returned.
+            PlacementVerdict? verdict = null;
+            await understanding.Worker.RunNextAsync(
                 prompt.System, prompt.User, PlacementCheck.Options(prompt), linked.Token,
                 waiting, started, new UnderstandingCurrent(UnderstandingKind.Placement, noteKey),
                 answered: answer =>
                 {
-                    if (item is not null && PlacementCheck.Parse(answer, prompt) is { } stored)
+                    verdict = PlacementCheck.Parse(answer, prompt);
+                    if (item is not null && verdict is not null)
                     {
-                        StorePlacement(understanding, item, stored);
+                        StorePlacement(understanding, item, verdict);
                     }
                 });
-            return PlacementCheck.Parse(answer, prompt) is { } verdict
-                ? (verdict, null)
-                : (null, PlacementCheckFailure.Unusable);
+            return verdict is not null ? (verdict, null) : (null, PlacementCheckFailure.Unusable);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -1086,7 +1090,8 @@ public sealed class VaultSession : IDisposable
         {
             Paused = _language!.Settings.LanguageModelPaused,
         };
-        var parts = new UnderstandingParts(chat, model, store, understanding, new RelevanceService(ai.Index, understanding), worker);
+        var parts = new UnderstandingParts(
+            chat, model, ai.EmbedModel, store, understanding, new RelevanceService(ai.Index, understanding), worker);
         lock (_gate)
         {
             if (_disposed)
@@ -1224,6 +1229,9 @@ public sealed class VaultSession : IDisposable
 
         IReadOnlyList<UnderstandingItem> placements = [];
         var ready = false;
+
+        // Taken before the store is read: a summary settled after it re-feeds once the work is applied (see Apply).
+        var settled = parts.Settled;
         if (book is not null)
         {
             if (parts.CachedPlacements(book, notes) is { } built)
@@ -1234,17 +1242,25 @@ public sealed class VaultSession : IDisposable
             {
                 return null;
             }
-            else if (PlacementsReady(parts, current) && BuildPlacements(parts, feed, book, notes) is { } fresh)
+            else if (PlacementsReady(parts, current))
             {
-                (placements, ready) = (fresh, true);
+                if (BuildPlacements(parts, feed, book, notes) is { } fresh)
+                {
+                    (placements, ready) = (fresh, true);
+                }
+            }
+            else
+            {
+                PlacementReadinessChecked?.Invoke(book);
             }
         }
 
-        return new FeedWork(current, noteItems, others, book?.LinkName, placements, ready);
+        return new FeedWork(current, noteItems, others, book?.LinkName, placements, ready, settled);
     }
 
     /// <summary>
-    /// Whether every heading of the book (<paramref name="bookItems"/>, children first) has a stored summary or will not
+    /// Whether every heading of the book (<paramref name="bookItems"/>, children first) has a summary the prompt can use
+    /// (with a vector from the current embedding model, as <see cref="StoreUnderstanding.Heading"/> requires) or will not
     /// get one: it failed <see cref="UnderstandingWorker.MaxAttempts"/> times, or one of its sub-headings will not (the
     /// worker skips it then). Reads the store; a closed or failing store means no.
     /// </summary>
@@ -1255,7 +1271,8 @@ public sealed class VaultSession : IDisposable
         {
             foreach (var item in bookItems)
             {
-                if (parts.Store.Get(item.Fingerprint) is not null)
+                if (parts.Store.Get(item.Fingerprint) is { Kind: UnderstandingKind.Heading, Vector: not null } entry
+                    && entry.EmbedModel == parts.EmbedModel)
                 {
                     continue;
                 }
@@ -1279,12 +1296,15 @@ public sealed class VaultSession : IDisposable
 
     /// <summary>
     /// The placement checks of the unused notes in snapshot order (in the background). A note whose check cannot be built
-    /// is logged and left out (spec 8), as is one without topics to offer; null when a later feed started meanwhile.
+    /// is logged and left out (spec 8), as is one without topics to offer; null when a later feed started meanwhile. The
+    /// checks are remembered for the snapshots unless a note had no topics (the embedder may have failed): the next feed
+    /// looks for them again.
     /// </summary>
     private IReadOnlyList<UnderstandingItem>? BuildPlacements(UnderstandingParts parts, int feed, Book book,
         IReadOnlyList<NoteSnapshot> notes)
     {
         var items = new List<UnderstandingItem>();
+        var withoutTopics = false;
         foreach (var note in notes)
         {
             if (note.Used)
@@ -1303,6 +1323,7 @@ public sealed class VaultSession : IDisposable
                 var prompt = parts.PlacementPrompt(book, note.Key, note.Text, remember: true);
                 if (prompt.Topics.Count == 0)
                 {
+                    withoutTopics = true;
                     continue; // nothing to choose from, as for "Genauer prüfen"
                 }
 
@@ -1315,7 +1336,11 @@ public sealed class VaultSession : IDisposable
             }
         }
 
-        parts.RememberPlacements(book, notes, items);
+        if (!withoutTopics)
+        {
+            parts.RememberPlacements(book, notes, items);
+        }
+
         return items;
     }
 
@@ -1360,7 +1385,15 @@ public sealed class VaultSession : IDisposable
                 placementsChanged = true;
             }
 
-            parts.PlacementsWaiting = work.Book is not null && !work.PlacementsReady;
+            // Waiting is marked first, then the summaries settled since the store was read are looked at (the handlers
+            // count first, then look at waiting): one of the two sees the other, so no wake-up is lost.
+            var waiting = work.Book is not null && !work.PlacementsReady;
+            parts.PlacementsWaiting = waiting;
+            if (waiting && parts.Settled != work.Settled)
+            {
+                ScheduleFeedFor(parts);
+            }
+
             parts.Worker.SetWork(work.Current, section, work.Notes, work.Others, work.Placements);
             Interlocked.Increment(ref _feedsApplied);
             if (placementsChanged)
@@ -1395,7 +1428,7 @@ public sealed class VaultSession : IDisposable
         {
             RaisePlacementsChanged();
         }
-        else if (kind == UnderstandingKind.Heading && parts.PlacementsWaiting)
+        else if (kind == UnderstandingKind.Heading && parts.Settle())
         {
             ScheduleFeedFor(parts);
         }
@@ -1468,7 +1501,7 @@ public sealed class VaultSession : IDisposable
 
         // A heading given up settles the book's summaries as a stored one does, but the store reports no entry for it.
         var failed = parts.Worker.Progress.Kinds?.GetValueOrDefault(UnderstandingKind.Heading)?.Failed ?? 0;
-        if (parts.SwapHeadingFailures(failed) != failed && parts.PlacementsWaiting)
+        if (parts.SwapHeadingFailures(failed) != failed && parts.Settle())
         {
             ScheduleFeedFor(parts);
         }
@@ -1501,12 +1534,15 @@ public sealed class VaultSession : IDisposable
 
     /// <summary>The language model's parts for this vault; the relevance service uses the understanding over the store.</summary>
     private sealed class UnderstandingParts(
-        IChatModel chat, string chatModel, UnderstandingStore store, StoreUnderstanding understanding, RelevanceService relevance,
-        UnderstandingWorker worker) : IDisposable
+        IChatModel chat, string chatModel, string embedModel, UnderstandingStore store, StoreUnderstanding understanding,
+        RelevanceService relevance, UnderstandingWorker worker) : IDisposable
     {
         public IChatModel Chat { get; } = chat;
 
         public string ChatModel { get; } = chatModel;
+
+        /// <summary>The embedding model whose vectors the understanding uses.</summary>
+        public string EmbedModel { get; } = embedModel;
 
         public StoreUnderstanding Understanding { get; } = understanding;
 
@@ -1524,11 +1560,22 @@ public sealed class VaultSession : IDisposable
         /// <summary>The last work applied waits for the current book's summaries before its placement checks are built.</summary>
         public bool PlacementsWaiting
         {
-            get => Volatile.Read(ref _placementsWaiting);
-            set => Volatile.Write(ref _placementsWaiting, value);
+            get => Volatile.Read(ref _placementsWaiting) != 0;
+            set => Interlocked.Exchange(ref _placementsWaiting, value ? 1 : 0); // a full fence before Settled is read
         }
 
-        private bool _placementsWaiting;
+        /// <summary>How many times a heading was settled (stored or given up) so far.</summary>
+        public int Settled => Interlocked.CompareExchange(ref _settled, 0, 0);
+
+        /// <summary>Counts a heading settled, then tells whether the last work applied waits for the summaries.</summary>
+        public bool Settle()
+        {
+            Interlocked.Increment(ref _settled);
+            return PlacementsWaiting;
+        }
+
+        private int _placementsWaiting;
+        private int _settled;
         private int _headingFailures;
 
         /// <summary>Remembers how many headings the worker gave up and returns the number remembered before.</summary>
@@ -1654,11 +1701,12 @@ public sealed class VaultSession : IDisposable
 
     /// <summary>
     /// The worker's work of one feed: the current book's headings, the notes, the other books' headings, and the current
-    /// book (link name) with its notes' placement checks, which are only built once its summaries are settled.
+    /// book (link name) with its notes' placement checks, which are only built once its summaries are settled, and the
+    /// count of settled headings taken before the store was read.
     /// </summary>
     private readonly record struct FeedWork(
         IReadOnlyList<UnderstandingItem> Current, IReadOnlyList<UnderstandingItem> Notes, IReadOnlyList<UnderstandingItem> Others,
-        string? Book, IReadOnlyList<UnderstandingItem> Placements, bool PlacementsReady);
+        string? Book, IReadOnlyList<UnderstandingItem> Placements, bool PlacementsReady, int Settled);
 
     /// <summary>The services that exist once the semantic index does, with the embedder and model id behind it.</summary>
     private sealed record AiParts(
