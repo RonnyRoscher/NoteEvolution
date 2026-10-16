@@ -319,6 +319,26 @@ public sealed class StoreUnderstandingTests : IDisposable
     }
 
     [Fact]
+    public void Placement_CacheKeptWhenOnlyCoresOrSummariesChange()
+    {
+        var book = LoadBook();
+        var note = SetUpPlacementNote(book);
+        Assert.Null(_understanding.Placement(book, note));
+        using (var other = UnderstandingStore.Open(_dir.Path))
+            other.Put(PlacementEntry("pf", "placement|Buch|note:n", Verdict(Section(book, "Liebe").Key)));
+
+        // A core statement, a summary and a vector change no placement: the remembered miss stays.
+        _store.Put(Entry(UnderstandingKind.Note, "core", "note:n", "Kern", Embed, [1f, 0f]));
+        _store.Put(Entry(UnderstandingKind.Heading, "sum", "book:x", "Zusammenfassung", null, null));
+        _store.SetVector("sum", Embed, [0f, 1f]);
+        Assert.Null(_understanding.Placement(book, note));
+
+        // Another book's check (a fingerprint outside the map) is a placement all the same.
+        _store.Put(PlacementEntry("pf-other", "placement|Anderes|note:n", Verdict(Section(book, "Liebe").Key)));
+        Assert.Equal(Section(book, "Liebe").Key, _understanding.Placement(book, note)?.Verdict.SectionKey);
+    }
+
+    [Fact]
     public void Placement_StoreClosed_Null()
     {
         var book = LoadBook();

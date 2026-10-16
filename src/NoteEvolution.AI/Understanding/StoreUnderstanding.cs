@@ -199,14 +199,38 @@ public sealed class StoreUnderstanding : IUnderstanding
         return null;
     }
 
-    /// <summary>The store stored something for the fingerprint (on the writer's thread): its miss no longer holds.</summary>
+    /// <summary>
+    /// The store stored something for the fingerprint (on the writer's thread): its miss no longer holds, and a placement
+    /// check stored drops the parsed placements. Core statements and summaries (and their vectors) leave those alone.
+    /// </summary>
     private void OnEntryChanged(string fingerprint)
     {
         Interlocked.Increment(ref _storeChanges);
         _noteMisses.TryRemove(fingerprint, out _);
+        if (!IsPlacement(fingerprint)) return;
+
         // The event names no identity, so the latest-of-identity results cannot be told apart: both caches go.
         _placementsByFingerprint.Clear();
         _placementsByIdentity.Clear();
+    }
+
+    /// <summary>
+    /// Whether the fingerprint is a placement check's: one of the current map's or one looked up already, else as the
+    /// store says (another book's check, or "Genauer prüfen" for a note outside the map). A failing read says yes.
+    /// </summary>
+    private bool IsPlacement(string fingerprint)
+    {
+        if (_placementsByFingerprint.ContainsKey(fingerprint)
+            || Volatile.Read(ref _placementNotes).Notes.Values.Any(note => note.Fingerprint == fingerprint)) return true;
+
+        try
+        {
+            return _store.KindOf(fingerprint) is not (UnderstandingKind.Heading or UnderstandingKind.Note);
+        }
+        catch (Exception ex) when (ex is ObjectDisposedException or SqliteException)
+        {
+            return true;
+        }
     }
 
     private BookItems BookItemsOf(Book book) => _books.GetValue(book, b =>
