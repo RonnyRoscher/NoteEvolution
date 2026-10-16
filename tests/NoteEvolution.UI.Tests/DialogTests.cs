@@ -1,6 +1,7 @@
 using System.Resources;
 using System.Text;
 using AngleSharp.Dom;
+using AngleSharp.Html.Parser;
 using Bunit;
 using Microsoft.AspNetCore.Components;
 using Microsoft.Extensions.DependencyInjection;
@@ -516,6 +517,36 @@ public class DialogTests : UiTestContext
         ("pages/Buch - Beta.md", "title:: Beta\ntype:: book\n\n- # Zwei\n\t- Musik Gitarre Klavier spielen\n"),
         (NotesPath, "- [handled] Schlaf und Träume\n- [handled] Zwei\n- Drei\n"));
 
+    /// <summary>
+    /// Waits up to <see cref="HandledWait"/> until <paramref name="assertion"/> holds for the places the assistant computes
+    /// in the background. bUnit can keep the elements of an older render when the render of the places lands while it
+    /// reads them (its markup has the places, the elements the assertion finds do not, and it checks no more): every
+    /// <see cref="PlaceCheckInterval"/> the elements are compared with the markup, and the component is rendered once
+    /// more if they lag behind, so they are read again. A component that did not render the places fails all the same.
+    /// </summary>
+    private static void WaitForPlaces(IRenderedComponent<HandledWizard> cut, Action assertion)
+    {
+        var until = DateTime.UtcNow + HandledWait;
+        while (true)
+        {
+            try
+            {
+                cut.WaitForAssertion(assertion, PlaceCheckInterval);
+                return;
+            }
+            catch (Bunit.Extensions.WaitForHelpers.WaitForFailedException) when (DateTime.UtcNow < until)
+            {
+                var rendered = new HtmlParser().ParseDocument(cut.Markup).Body!.TextContent;
+                if (rendered != string.Concat(cut.Nodes.Select(node => node.TextContent)))
+                {
+                    cut.Render();
+                }
+            }
+        }
+    }
+
+    private static readonly TimeSpan PlaceCheckInterval = TimeSpan.FromMilliseconds(200);
+
     private static IElement Place(IRenderedComponent<HandledWizard> cut, int item) =>
         cut.FindAll(".ne-handled-item")[item].QuerySelector(".ne-handled-place")!;
 
@@ -528,7 +559,7 @@ public class DialogTests : UiTestContext
         var tv = PlacementVault();
         var session = await OpenWithAiAsync(tv);
         var cut = Render<HandledWizard>();
-        cut.WaitForAssertion(() => Assert.Equal(2, cut.FindAll(".ne-handled-place").Count), HandledWait);
+        WaitForPlaces(cut, () => Assert.Equal(2, cut.FindAll(".ne-handled-place").Count));
         var place = Place(cut, 0);
         var options = place.QuerySelectorAll("option").ToList();
         Assert.Equal(3, options.Count);
@@ -556,7 +587,7 @@ public class DialogTests : UiTestContext
         var tv = PlacementVault();
         await OpenWithAiAsync(tv);
         var cut = Render<HandledWizard>();
-        cut.WaitForAssertion(() => Assert.Equal(2, cut.FindAll(".ne-handled-place").Count), HandledWait);
+        WaitForPlaces(cut, () => Assert.Equal(2, cut.FindAll(".ne-handled-place").Count));
 
         cut.Find(".ne-handled-convert").Click();
         cut.WaitForElement(".ne-handled-yes").Click();
@@ -584,15 +615,14 @@ public class DialogTests : UiTestContext
         var tv = PlacementVault();
         await OpenWithAiAsync(tv);
         var cut = Render<HandledWizard>();
-        cut.WaitForAssertion(() => Assert.Equal(2, cut.FindAll(".ne-handled-place").Count), HandledWait);
+        WaitForPlaces(cut, () => Assert.Equal(2, cut.FindAll(".ne-handled-place").Count));
         var place = Place(cut, 0);
         place.Change(OptionFor(place, SleepText));
 
         cut.Find(".ne-handled-book-select").Change("Buch - Beta");
 
-        cut.WaitForAssertion(
-            () => Assert.Contains(Place(cut, 0).QuerySelectorAll("option"), o => o.TextContent.StartsWith("Musik Gitarre", StringComparison.Ordinal)),
-            HandledWait);
+        WaitForPlaces(
+            cut, () => Assert.Contains(Place(cut, 0).QuerySelectorAll("option"), o => o.TextContent.StartsWith("Musik Gitarre", StringComparison.Ordinal)));
         Assert.DoesNotContain(Place(cut, 0).QuerySelectorAll("option"), o => o.TextContent.StartsWith(SleepText, StringComparison.Ordinal));
         cut.Find(".ne-handled-convert").Click();
         cut.WaitForElement(".ne-handled-yes").Click();
@@ -607,7 +637,7 @@ public class DialogTests : UiTestContext
         var tv = PlacementVault();
         var session = await OpenWithAiAsync(tv);
         var cut = Render<HandledWizard>();
-        cut.WaitForAssertion(() => Assert.Equal(2, cut.FindAll(".ne-handled-place").Count), HandledWait);
+        WaitForPlaces(cut, () => Assert.Equal(2, cut.FindAll(".ne-handled-place").Count));
         var place = Place(cut, 0);
         place.Change(OptionFor(place, SleepText));
         var path = Path.Combine(tv.Root, "pages/Buch - Alpha.md");
@@ -632,7 +662,7 @@ public class DialogTests : UiTestContext
         var tv = PlacementVault();
         var session = await OpenWithAiAsync(tv);
         var cut = Render<HandledWizard>();
-        cut.WaitForAssertion(() => Assert.Equal(2, cut.FindAll(".ne-handled-place").Count), HandledWait);
+        WaitForPlaces(cut, () => Assert.Equal(2, cut.FindAll(".ne-handled-place").Count));
         var place = Place(cut, 0);
         place.Change(OptionFor(place, SleepText));
         var path = Path.Combine(tv.Root, "pages/Buch - Alpha.md");
@@ -650,12 +680,12 @@ public class DialogTests : UiTestContext
         Assert.Equal(before, tv.Read(NotesPath));
 
         // The places are suggested again for the book as it is now; the choice is back to "Stelle unbekannt".
-        cut.WaitForAssertion(() =>
+        WaitForPlaces(cut, () =>
         {
             var options = Place(cut, 0).QuerySelectorAll("option").Select(o => o.TextContent).ToList();
             Assert.DoesNotContain(options, o => o.StartsWith(SleepText, StringComparison.Ordinal));
             Assert.Contains(options, o => o.StartsWith("Etwas ganz anderes", StringComparison.Ordinal));
-        }, HandledWait);
+        });
         cut.Find(".ne-handled-convert").Click();
         cut.WaitForElement(".ne-handled-yes").Click();
 

@@ -41,7 +41,17 @@ public class CoverageTabTests : UiTestContext
         _chat.Gate = _gate;
         var language = UseLanguageModel(_chat);
         await language.RefreshAsync(CancellationToken.None);
-        return await OpenWithAiAsync(Vault());
+        var session = await OpenWithAiAsync(Vault());
+
+        // The language model's parts start after the index is created; the indexing can be done before they are.
+        var until = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+        while (session.Understanding is null)
+        {
+            Assert.True(DateTime.UtcNow < until, "The language model's worker did not start.");
+            await Task.Delay(10);
+        }
+
+        return session;
     }
 
     private OutlineNode Node(string title) => State.CurrentBook!.Root.Children.SelectMany(Flatten).First(n => n.Title == title);
