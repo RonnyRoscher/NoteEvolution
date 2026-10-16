@@ -309,6 +309,21 @@
   <data name="OutlineAddSub" xml:space="preserve">
     <value>Unter-Überschrift hinzufügen</value>
   </data>
+  <data name="OutlineCoverageToggle" xml:space="preserve">
+    <value>Abdeckung anzeigen</value>
+  </data>
+  <data name="OutlineCoverageUsed" xml:space="preserve">
+    <value>{0} übernommen</value>
+  </data>
+  <data name="OutlineCoverageAssigned" xml:space="preserve">
+    <value>{0} zugeordnet</value>
+  </data>
+  <data name="OutlineCoverageUncertain" xml:space="preserve">
+    <value>({0} unsicher)</value>
+  </data>
+  <data name="OutlineCoverageEmpty" xml:space="preserve">
+    <value>Keine Notiz übernommen oder zugeordnet</value>
+  </data>
   <data name="OutlineAddRoot" xml:space="preserve">
     <value>Überschrift hinzufügen</value>
   </data>
@@ -341,6 +356,45 @@
   </data>
 
   <!-- Notizbereich -->
+  <data name="NotesTabCoverage" xml:space="preserve">
+    <value>Abdeckung</value>
+  </data>
+  <data name="CoverageNeedsModel" xml:space="preserve">
+    <value>Die Abdeckung braucht das Sprachmodell (Einstellungen › Sprachmodell)</value>
+  </data>
+  <data name="CoveragePending" xml:space="preserve">
+    <value>Die Abdeckung wird berechnet …</value>
+  </data>
+  <data name="CoverageChecked" xml:space="preserve">
+    <value>geprüft</value>
+  </data>
+  <data name="CoverageRemaining" xml:space="preserve">
+    <value>noch {0}</value>
+  </data>
+  <data name="CoverageEmpty" xml:space="preserve">
+    <value>leere Abschnitte</value>
+  </data>
+  <data name="CoverageEmptyPreliminary" xml:space="preserve">
+    <value>Vorläufig: noch nicht alle Notizen sind geprüft</value>
+  </data>
+  <data name="CoverageHomeless" xml:space="preserve">
+    <value>Ohne passenden Ort</value>
+  </data>
+  <data name="CoverageUncertain" xml:space="preserve">
+    <value>unsichere Zuordnungen</value>
+  </data>
+  <data name="CoverageUncertainHeading" xml:space="preserve">
+    <value>Unsichere Zuordnungen ({0})</value>
+  </data>
+  <data name="CoverageSort" xml:space="preserve">
+    <value>Sortierung</value>
+  </data>
+  <data name="CoverageSortBook" xml:space="preserve">
+    <value>Buchreihenfolge</value>
+  </data>
+  <data name="CoverageSortFewest" xml:space="preserve">
+    <value>Wenigste zuerst</value>
+  </data>
   <data name="NotesTabRelevant" xml:space="preserve">
     <value>Relevant</value>
   </data>
@@ -435,6 +489,18 @@
   </data>
   <data name="NoteWhereToNewPlace" xml:space="preserve">
     <value>neue Stelle am Ende des Themas</value>
+  </data>
+  <data name="NoteWhereToStale" xml:space="preserve">
+    <value>veraltet</value>
+  </data>
+  <data name="NoteWhereToFitGood" xml:space="preserve">
+    <value>Passung gut</value>
+  </data>
+  <data name="NoteWhereToFitPartial" xml:space="preserve">
+    <value>Passung teilweise</value>
+  </data>
+  <data name="NoteWhereToFitPoor" xml:space="preserve">
+    <value>Passung schlecht</value>
   </data>
   <data name="CheckButton" xml:space="preserve">
     <value>Genauer prüfen</value>
@@ -921,6 +987,12 @@
   <data name="NotesRelevantFailed" xml:space="preserve">
     <value>Die KI meldet einen Fehler; „Relevant“ ist nicht verfügbar.</value>
   </data>
+  <data name="NotesRelevantPlaced" xml:space="preserve">
+    <value>Hierher eingeordnet</value>
+  </data>
+  <data name="NotesRelevantSimilar" xml:space="preserve">
+    <value>Weitere ähnliche</value>
+  </data>
   <data name="NotesRelevantNoBook" xml:space="preserve">
     <value>Kein Buch gewählt</value>
   </data>
@@ -1062,6 +1134,33 @@
   <data name="LlmPauseModelMissing" xml:space="preserve">
     <value>Modell nicht installiert</value>
   </data>
+  <data name="LlmBreakdownTitle" xml:space="preserve">
+    <value>Fortschritt des Sprachmodells</value>
+  </data>
+  <data name="LlmBreakdownEmbedding" xml:space="preserve">
+    <value>Notizen eingebettet</value>
+  </data>
+  <data name="LlmBreakdownHeadings" xml:space="preserve">
+    <value>Zusammenfassungen</value>
+  </data>
+  <data name="LlmBreakdownCores" xml:space="preserve">
+    <value>Kernaussagen</value>
+  </data>
+  <data name="LlmBreakdownPlacements" xml:space="preserve">
+    <value>Einordnungen</value>
+  </data>
+  <data name="LlmBreakdownCount" xml:space="preserve">
+    <value>{0}/{1}</value>
+    <comment>{0} = erledigt, {1} = gesamt</comment>
+  </data>
+  <data name="LlmBreakdownPaused" xml:space="preserve">
+    <value>Pausiert: {0}</value>
+    <comment>{0} = Grund der Pause</comment>
+  </data>
+  <data name="LlmBreakdownSkipped" xml:space="preserve">
+    <value>{0} übersprungen</value>
+    <comment>{0} = nach drei Versuchen aufgegebene Einträge</comment>
+  </data>
   <data name="LlmPause" xml:space="preserve">
     <value>Sprachmodell pausieren</value>
   </data>
@@ -1079,5 +1178,61 @@ NoteEvolution: CPU {2} %, RAM {3} GB</value>
   </data>
   <data name="SettingsSystemMeter" xml:space="preserve">
     <value>Systemanzeige in der Kopfzeile (CPU, Arbeitsspeicher, freier Platz)</value>
+  </data>
+  <data name="NoteDotRunning" xml:space="preserve">
+    <value>Wird gerade berechnet: {0}</value>
+    <comment>Statuspunkt der Notizkarte: {0} = NoteKindCore oder NoteKindPlacement</comment>
+  </data>
+  <data name="NoteKindCore" xml:space="preserve">
+    <value>Kernaussage</value>
+  </data>
+  <data name="NoteKindPlacement" xml:space="preserve">
+    <value>Zuordnung</value>
+  </data>
+  <data name="NoteDotCoreFailed" xml:space="preserve">
+    <value>Kernaussage fehlgeschlagen, wird nach der nächsten Änderung erneut versucht</value>
+  </data>
+  <data name="NoteDotPlacementFailed" xml:space="preserve">
+    <value>Zuordnung fehlgeschlagen, wird nach der nächsten Änderung erneut versucht</value>
+  </data>
+  <data name="NoteDotStale" xml:space="preserve">
+    <value>Zuordnung veraltet (Notiz oder Buch geändert) · wird neu berechnet</value>
+  </data>
+  <data name="NoteStageEmbeddingDone" xml:space="preserve">
+    <value>Embedding fertig</value>
+    <comment>Stufe im Tooltip des Statuspunkts; die Stufen werden mit „ · “ verbunden</comment>
+  </data>
+  <data name="NoteStageEmbeddingPending" xml:space="preserve">
+    <value>Embedding ausstehend</value>
+  </data>
+  <data name="NoteStageCoreDone" xml:space="preserve">
+    <value>Kernaussage fertig</value>
+  </data>
+  <data name="NoteStageCorePending" xml:space="preserve">
+    <value>Kernaussage ausstehend</value>
+  </data>
+  <data name="NoteStageCoreFailed" xml:space="preserve">
+    <value>Kernaussage fehlgeschlagen</value>
+  </data>
+  <data name="NoteStagePlacementCurrent" xml:space="preserve">
+    <value>Zuordnung aktuell</value>
+  </data>
+  <data name="NoteStagePlacementStale" xml:space="preserve">
+    <value>Zuordnung veraltet</value>
+  </data>
+  <data name="NoteStagePlacementFailed" xml:space="preserve">
+    <value>Zuordnung fehlgeschlagen</value>
+  </data>
+  <data name="NoteStagePlacementPending" xml:space="preserve">
+    <value>Zuordnung ausstehend</value>
+  </data>
+  <data name="NoteFitGood" xml:space="preserve">
+    <value>Passung gut</value>
+  </data>
+  <data name="NoteFitPartial" xml:space="preserve">
+    <value>Passung teilweise</value>
+  </data>
+  <data name="NoteFitPoor" xml:space="preserve">
+    <value>Passung kaum</value>
   </data>
 </root>

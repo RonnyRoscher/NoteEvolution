@@ -65,6 +65,18 @@ public sealed class UnderstandingStoreTests
     }
 
     [Fact]
+    public void WithoutVector_IgnoresPlacements()
+    {
+        using var dir = new TempDir();
+        using var store = UnderstandingStore.Open(dir.Path);
+        store.Put(Entry("note", kind: UnderstandingKind.Note));
+        store.Put(Entry("place", kind: UnderstandingKind.Placement));
+
+        Assert.Equal(["note"], store.WithoutVector("embed-1"));
+        Assert.Equal(2, (int)UnderstandingKind.Placement);
+    }
+
+    [Fact]
     public void RecordFailure_CountsUp_PutResets()
     {
         using var dir = new TempDir();
@@ -120,6 +132,32 @@ public sealed class UnderstandingStoreTests
     }
 
     [Fact]
+    public void Prune_KeepsNewestPlacementOfEveryIdentity_LiveOrNot()
+    {
+        using var dir = new TempDir();
+        using var store = UnderstandingStore.Open(dir.Path);
+        store.Put(Entry("other-book", "placement|Beta|n1", kind: UnderstandingKind.Placement));
+        store.Put(Entry("old", "placement|Alpha|n1", kind: UnderstandingKind.Placement));
+
+        // No placement is live (another book is current, or this one waits for its summaries): the newest of each stays.
+        store.Prune(new HashSet<string>(), new HashSet<string>());
+        Assert.NotNull(store.Get("other-book"));
+        Assert.NotNull(store.Get("old"));
+
+        // A newer result of the same identity replaces the older one at the next prune; the other book's stays.
+        store.Put(Entry("new", "placement|Alpha|n1", kind: UnderstandingKind.Placement));
+        store.Prune(new HashSet<string>(), new HashSet<string>());
+        Assert.NotNull(store.Get("new"));
+        Assert.Null(store.Get("old"));
+        Assert.NotNull(store.Get("other-book"));
+
+        // Other kinds still need a live identity.
+        store.Put(Entry("heading", "book:Gone/X#0"));
+        store.Prune(new HashSet<string>(), new HashSet<string>());
+        Assert.Null(store.Get("heading"));
+    }
+
+    [Fact]
     public void Prune_KeepsFailedAttemptsOfLiveFingerprints()
     {
         using var dir = new TempDir();
@@ -166,6 +204,44 @@ public sealed class UnderstandingStoreTests
         Assert.Null(store.Get("anything"));
         store.Put(Entry("fp"));
         Assert.NotNull(store.Get("fp"));
+    }
+
+    [Fact]
+    public void BulkReads_MatchTheSingleReads()
+    {
+        using var dir = new TempDir();
+        using var store = UnderstandingStore.Open(dir.Path);
+        store.Put(Entry("a", "h1"));
+        store.Put(Entry("b", "h1"));
+        store.Put(Entry("c", "n1", kind: UnderstandingKind.Note));
+        store.RecordFailure("x");
+        store.RecordFailure("x");
+        store.RecordFailure("c");
+        store.Put(Entry("c", "n1", kind: UnderstandingKind.Note)); // clears its attempts
+
+        Assert.Equal(new HashSet<string> { "a", "b", "c" }, store.Fingerprints());
+        Assert.Equal(new Dictionary<string, int> { ["x"] = 2 }, store.AllAttempts());
+        Assert.Equal(new HashSet<(UnderstandingKind, string)> { (UnderstandingKind.Heading, "h1"), (UnderstandingKind.Note, "n1") },
+            store.Identities());
+        Assert.Equal(UnderstandingKind.Note, store.KindOf("c"));
+        Assert.Null(store.KindOf("x"));
+    }
+
+    [Fact]
+    public void Open_UsesWriteAheadLog_GoneAfterDispose()
+    {
+        using var dir = new TempDir();
+        var path = Path.Combine(dir.Path, ".noteevolution", "understanding.db");
+        using (var store = UnderstandingStore.Open(dir.Path))
+        {
+            store.Put(Entry("a"));
+            Assert.True(File.Exists(path + "-wal"));
+        }
+
+        // The last connection closed: the log was written back and removed, so the folder can be deleted.
+        Assert.False(File.Exists(path + "-wal"));
+        using var reopened = UnderstandingStore.Open(dir.Path);
+        Assert.NotNull(reopened.Get("a"));
     }
 
     [Fact]

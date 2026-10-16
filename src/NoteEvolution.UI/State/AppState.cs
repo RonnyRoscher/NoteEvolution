@@ -3,6 +3,15 @@ using NoteEvolution.UI.Editor;
 
 namespace NoteEvolution.UI.State;
 
+/// <summary>The tabs of the notes pane that others can ask for (<see cref="AppState.RequestNotesTab"/>).</summary>
+public enum NotesTab
+{
+    Relevant,
+    Search,
+    Journal,
+    Coverage,
+}
+
 /// <summary>
 /// What the user is looking at, shared by all components (a DI singleton). Whoever changes it calls
 /// <see cref="Notify"/>; components subscribe to <see cref="Changed"/> (unsubscribing on dispose) and re-render via
@@ -206,6 +215,9 @@ public sealed class AppState
     /// <summary>A note is to be brought into view in the notes pane (see <see cref="RevealNote"/>).</summary>
     public event Action<Guid>? NoteRevealRequested;
 
+    /// <summary>Someone asked for a tab of the notes pane to be shown (see <see cref="RequestNotesTab"/>).</summary>
+    public event Action<NotesTab>? NotesTabRequested;
+
     /// <summary>Someone asked for the AI model dialog (e.g. the settings' download button); the shell shows it.</summary>
     public event Action? AiModelDialogRequested;
 
@@ -234,6 +246,9 @@ public sealed class AppState
     /// <c>source::</c> refers to) into view, e.g. after a click on a source of the current section.
     /// </summary>
     public void RevealNote(Guid noteId) => NoteRevealRequested?.Invoke(noteId);
+
+    /// <summary>Asks the notes pane to show <paramref name="tab"/>.</summary>
+    public void RequestNotesTab(NotesTab tab) => NotesTabRequested?.Invoke(tab);
 
     /// <summary>
     /// Asks the editor to scroll to the element of <see cref="CurrentBook"/> with <paramref name="elementKey"/> (a

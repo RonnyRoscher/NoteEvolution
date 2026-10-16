@@ -4,6 +4,8 @@
 @using NoteEvolution.Core.Storage
 @implements IDisposable
 @inject AppState State
+@inject UiSettings Settings
+@inject IPlatformServices Platform
 @inject IStringLocalizer<Strings> L
 @inject ILogger<OutlinePane> Logger
 
@@ -19,6 +21,8 @@ else
         {
             <div class="ne-outline-error" role="alert">@_error</div>
         }
+        <button type="button" class="ne-outline-coverage-toggle" aria-pressed="@(Settings.ShowCoverage ? "true" : "false")"
+                @onclick="ToggleCoverage">@L["OutlineCoverageToggle"]</button>
         <ul class="ne-outline-tree">
             @if (book.Root.TextBlocks.Any())
             {
@@ -44,6 +48,8 @@ else
     private bool _committing;
     private Guid? _draggedKey;
     private (Guid Key, bool Before)? _dropHint;
+    private bool _watching;
+    private VaultSession? _watchedSession;
 
     /// <summary>The key of the heading whose title is being edited inline.</summary>
     internal Guid? RenamingKey => _renamingKey;
@@ -70,7 +76,101 @@ else
     {
         State.Changed -= OnStateChanged;
         Unsubscribe();
+        if (_watching)
+        {
+            _watchedSession?.WatchCoverage(this, false);
+            _watching = false;
+        }
     }
+
+    /// <summary>What the outline draws for one section's coverage (spec 6.2). Widths are percentages of the bar.</summary>
+    internal sealed record CoverageBar(double UsedPercent, double AssignedPercent, int Count, string Tooltip, bool Empty);
+
+    /// <summary>
+    /// The coverage bar of <paramref name="node"/>, or null when it shows none (switched off, not computed yet, or a
+    /// section without notes that is not known to be empty). The sections are scaled to the largest total among their
+    /// siblings; the prologue counts only its own notes and is scaled together with the top-level sections.
+    /// </summary>
+    internal CoverageBar? CoverageBarOf(OutlineNode node)
+    {
+        if (!Settings.ShowCoverage || _session?.Coverage is not { } coverage || !coverage.IsFor(State.CurrentBook)
+            || !coverage.Sections.TryGetValue(node.Key, out var section))
+        {
+            return null;
+        }
+
+        var prologue = node.Block is null;
+        var used = prologue ? section.Used : section.TotalUsed;
+        var assigned = prologue ? section.Assigned : section.TotalAssigned;
+        var uncertain = prologue ? section.Uncertain : section.TotalUncertain;
+        if (used + assigned == 0)
+        {
+            return coverage.Complete && coverage.IsEmpty(node.Key)
+                ? new CoverageBar(0, 0, 0, L["OutlineCoverageEmpty"], Empty: true)
+                : null;
+        }
+
+        var siblings = prologue ? node.Children : node.Parent?.Children ?? [];
+        var scale = siblings
+            .Select(sibling => coverage.Sections.TryGetValue(sibling.Key, out var s) ? s.TotalUsed + s.TotalAssigned : 0)
+            .Append(prologue ? used + assigned : 0)
+            .Max();
+        scale = Math.Max(scale, used + assigned);
+
+        var parts = new List<string> { L["OutlineCoverageUsed", used] };
+        if (assigned > 0)
+        {
+            parts.Add(L["OutlineCoverageAssigned", assigned]);
+            if (uncertain > 0)
+            {
+                parts[^1] += " " + L["OutlineCoverageUncertain", uncertain];
+            }
+        }
+
+        return new CoverageBar(100.0 * used / scale, 100.0 * assigned / scale, used + assigned, string.Join(" · ", parts), Empty: false);
+    }
+
+    /// <summary>A click on a coverage bar: the same as a click on the title, and the notes pane shows what fits there.</summary>
+    internal void SelectFromCoverage(OutlineNode node)
+    {
+        Select(node);
+        State.RequestNotesTab(NotesTab.Relevant);
+    }
+
+    private void ToggleCoverage()
+    {
+        Settings.ShowCoverage = !Settings.ShowCoverage;
+        try
+        {
+            Settings.Save(Platform.UserDataDirectory);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Logger.LogWarning(ex, "Saving the UI settings failed");
+        }
+
+        UpdateWatch();
+    }
+
+    /// <summary>The session computes the coverage only while the bars are shown.</summary>
+    private void UpdateWatch()
+    {
+        var wanted = Settings.ShowCoverage && _session is not null;
+        if (_watching && !wanted || _watching && !ReferenceEquals(_watchedSession, _session))
+        {
+            _watchedSession?.WatchCoverage(this, false);
+            _watching = false;
+        }
+
+        if (wanted && !_watching)
+        {
+            _session!.WatchCoverage(this, true);
+            _watchedSession = _session;
+            _watching = true;
+        }
+    }
+
+    private void OnCoverageChanged() => _ = InvokeAsync(StateHasChanged);
 
     private void OnStateChanged() => _ = InvokeAsync(() =>
     {
@@ -93,7 +193,10 @@ else
         if (_session is not null)
         {
             _session.ConflictsChanged += OnConflictsChanged;
+            _session.CoverageChanged += OnCoverageChanged;
         }
+
+        UpdateWatch();
     }
 
     private void Unsubscribe()
@@ -101,6 +204,7 @@ else
         if (_session is not null)
         {
             _session.ConflictsChanged -= OnConflictsChanged;
+            _session.CoverageChanged -= OnCoverageChanged;
         }
     }
 

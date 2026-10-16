@@ -23,6 +23,8 @@ else
                         aria-selected="@(_tab == Tab.Search)" @onclick="() => SelectTab(Tab.Search)">@L["NotesTabSearch"]</button>
                 <button type="button" role="tab" class="ne-tab ne-tab-journal @(_tab == Tab.Journal ? "active" : null)"
                         aria-selected="@(_tab == Tab.Journal)" @onclick="() => SelectTab(Tab.Journal)">@L["NotesTabJournal"]</button>
+                <button type="button" role="tab" class="ne-tab ne-tab-coverage @(_tab == Tab.Coverage ? "active" : null)"
+                        aria-selected="@(_tab == Tab.Coverage)" @onclick="() => SelectTab(Tab.Coverage)">@L["NotesTabCoverage"]</button>
             </div>
             <div class="ne-notes-filters">
                 <label class="ne-filter-hide"><input type="checkbox" class="ne-hide-used" checked="@Settings.HideUsed" @onchange="OnHideUsed" /> @L["NotesHideUsed"]</label>
@@ -52,6 +54,10 @@ else
             {
                 <SearchTab Query="@_query" QueryChanged="q => _query = q" Filter="filter" Revision="_revision" />
             }
+            else if (_tab == Tab.Coverage)
+            {
+                <CoverageTab />
+            }
             else
             {
                 <JournalTab Filter="filter" Revision="_revision" RevealKey="_revealKey" RevealSequence="_revealSequence" />
@@ -66,6 +72,7 @@ else
         Relevant,
         Search,
         Journal,
+        Coverage,
     }
 
     private ILogger _logger = default!;
@@ -88,6 +95,7 @@ else
         _logger = LoggerFactory.CreateLogger<NotesPane>();
         State.Changed += OnStateChanged;
         State.NoteRevealRequested += OnNoteRevealRequested;
+        State.NotesTabRequested += OnNotesTabRequested;
         TrackSession();
     }
 
@@ -95,6 +103,7 @@ else
     {
         State.Changed -= OnStateChanged;
         State.NoteRevealRequested -= OnNoteRevealRequested;
+        State.NotesTabRequested -= OnNotesTabRequested;
         Unsubscribe();
     }
 
@@ -139,6 +148,21 @@ else
             State.FocusedNoteKey = note.Key;
             State.Notify();
         }
+    });
+
+    /// <summary>Shows the requested tab.</summary>
+    private void OnNotesTabRequested(NotesTab requested) => _ = InvokeAsync(() =>
+    {
+        var tab = requested switch
+        {
+            NotesTab.Relevant => Tab.Relevant,
+            NotesTab.Search => Tab.Search,
+            NotesTab.Journal => Tab.Journal,
+            NotesTab.Coverage => Tab.Coverage,
+            _ => throw new ArgumentOutOfRangeException(nameof(requested)),
+        };
+        SelectTab(tab);
+        StateHasChanged();
     });
 
     private void SelectTab(Tab tab)

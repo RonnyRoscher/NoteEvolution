@@ -1,0 +1,230 @@
+@using NoteEvolution.AI.Understanding
+@using NoteEvolution.Core.Books
+@implements IDisposable
+@inject AppState State
+@inject IStringLocalizer<Strings> L
+
+@* The "Abdeckung" tab (spec 6.3): how much of the current book the notes cover. It exists only while it is the active tab, so it watches the coverage for as long as it lives. *@
+<div class="ne-coverage">
+    @if (State.Session is { } session && State.CurrentBook is { } book)
+    {
+        // The previous book's coverage stays until this book's is computed; it is not shown.
+        var coverage = session.Coverage is { } computed && computed.IsFor(book) ? computed : null;
+        var model = session.Understanding is not null;
+        var leaves = LeavesOf(book);
+        if (!model)
+        {
+            <p class="ne-coverage-hint">@L["CoverageNeedsModel"]</p>
+        }
+
+        @if (coverage is null)
+        {
+            <p class="ne-coverage-pending">@L["CoveragePending"]</p>
+        }
+        else
+        {
+            var placement = session.Understanding?.Kinds?.GetValueOrDefault(UnderstandingKind.Placement);
+            var emptyCount = leaves.Count(leaf => coverage.IsEmpty(leaf.Node.Key));
+            <div class="ne-coverage-metrics">
+                @if (model)
+                {
+                    <div class="ne-coverage-metric ne-coverage-checked">
+                        <span class="ne-coverage-value">@coverage.Checked/@coverage.Unused</span>
+                        <span class="ne-coverage-label">@L["CoverageChecked"]</span>
+                        @if (placement is { } open && open.Total - open.Done > 0 && open.Remaining is { } remaining)
+                        {
+                            <span class="ne-coverage-remaining">@L["CoverageRemaining", Durations.Format(remaining, L)]</span>
+                        }
+                    </div>
+                }
+                <div class="ne-coverage-metric ne-coverage-empty" title="@(coverage.Complete ? null : L["CoverageEmptyPreliminary"].Value)">
+                    <span class="ne-coverage-value">@emptyCount</span>
+                    <span class="ne-coverage-label">@L["CoverageEmpty"]</span>
+                </div>
+                @if (model)
+                {
+                    <div class="ne-coverage-metric ne-coverage-homeless">
+                        <span class="ne-coverage-value">@coverage.Homeless.Count</span>
+                        <span class="ne-coverage-label">@L["CoverageHomeless"]</span>
+                    </div>
+                    <div class="ne-coverage-metric ne-coverage-uncertain">
+                        <span class="ne-coverage-value">@coverage.Uncertain.Count</span>
+                        <span class="ne-coverage-label">@L["CoverageUncertain"]</span>
+                    </div>
+                }
+            </div>
+
+            var rows = _fewestFirst ? [.. leaves.OrderBy(leaf => Total(coverage, leaf.Node))] : leaves;
+            var scale = Math.Max(1, rows.Select(leaf => Total(coverage, leaf.Node)).DefaultIfEmpty(0).Max());
+            <div class="ne-coverage-sections-head">
+                <label>
+                    <span>@L["CoverageSort"]</span>
+                    <select class="ne-coverage-sort" @onchange="e => _fewestFirst = e.Value?.ToString() == FewestFirst">
+                        <option value="@BookOrder" selected="@(!_fewestFirst)">@L["CoverageSortBook"]</option>
+                        <option value="@FewestFirst" selected="@_fewestFirst">@L["CoverageSortFewest"]</option>
+                    </select>
+                </label>
+            </div>
+            <ul class="ne-coverage-sections">
+                @foreach (var (node, path) in rows)
+                {
+                    var section = coverage.Sections.GetValueOrDefault(node.Key);
+                    var used = section?.TotalUsed ?? 0;
+                    var assigned = model ? section?.TotalAssigned ?? 0 : 0;
+                    <li @key="node.Key">
+                        <button type="button" class="ne-coverage-section @(State.CurrentSectionKey == node.Key ? "selected" : null)"
+                                @onclick="() => Select(node)">
+                            <span class="ne-coverage-path">@path</span>
+                            <span class="ne-coverage-bar">
+                                <span class="ne-coverage-used" style="width: @Pct(used, scale)"></span>
+                                <span class="ne-coverage-assigned" style="width: @Pct(assigned, scale)"></span>
+                            </span>
+                            <span class="ne-coverage-count">@(used + assigned)</span>
+                        </button>
+                    </li>
+                }
+            </ul>
+
+            @if (model && coverage.Homeless.Count > 0)
+            {
+                <h4 class="ne-coverage-group-heading ne-coverage-homeless-heading">@L["CoverageHomeless"]</h4>
+                <div class="ne-coverage-homeless-list">
+                    @foreach (var key in coverage.Homeless)
+                    {
+                        if (session.Notes.Get(key) is { } note)
+                        {
+                            <div @key="key" class="ne-coverage-item">
+                                @if (session.Placement(key) is { Stale: true })
+                                {
+                                    <span class="ne-coverage-stale">@L["NoteWhereToStale"]</span>
+                                }
+                                <NoteCard Note="note" />
+                            </div>
+                        }
+                    }
+                </div>
+            }
+
+            @if (model && coverage.Uncertain.Count > 0)
+            {
+                <details class="ne-coverage-uncertain-list">
+                    <summary>@L["CoverageUncertainHeading", coverage.Uncertain.Count]</summary>
+                    @foreach (var key in coverage.Uncertain)
+                    {
+                        if (session.Notes.Get(key) is { } note)
+                        {
+                            <div @key="key" class="ne-coverage-item">
+                                @if (session.Placement(key) is { } placed)
+                                {
+                                    @if (placed.Stale)
+                                    {
+                                        <span class="ne-coverage-stale">@L["NoteWhereToStale"]</span>
+                                    }
+                                    <p class="ne-coverage-reason">@placed.Verdict.Reason</p>
+                                }
+                                <NoteCard Note="note" />
+                            </div>
+                        }
+                    }
+                </details>
+            }
+        }
+    }
+</div>
+
+@code {
+    private const string BookOrder = "book";
+    private const string FewestFirst = "fewest";
+
+    private VaultSession? _session;
+    private bool _fewestFirst;
+
+    protected override void OnInitialized()
+    {
+        State.Changed += OnStateChanged;
+        TrackSession();
+    }
+
+    public void Dispose()
+    {
+        State.Changed -= OnStateChanged;
+        Unsubscribe();
+    }
+
+    private void OnStateChanged() => _ = InvokeAsync(() =>
+    {
+        TrackSession();
+        StateHasChanged();
+    });
+
+    private void OnSessionChanged() => _ = InvokeAsync(StateHasChanged);
+
+    /// <summary>Watches the coverage of the current session only (a vault switch brings a new one).</summary>
+    private void TrackSession()
+    {
+        if (ReferenceEquals(State.Session, _session))
+        {
+            return;
+        }
+
+        Unsubscribe();
+        _session = State.Session;
+        if (_session is not null)
+        {
+            _session.CoverageChanged += OnSessionChanged;
+            _session.UnderstandingChanged += OnSessionChanged;
+            _session.WatchCoverage(this, true);
+        }
+    }
+
+    private void Unsubscribe()
+    {
+        if (_session is not null)
+        {
+            _session.CoverageChanged -= OnSessionChanged;
+            _session.UnderstandingChanged -= OnSessionChanged;
+            _session.WatchCoverage(this, false);
+        }
+    }
+
+    /// <summary>The sections without sub-sections in the book's order, each with its path.</summary>
+    private List<(OutlineNode Node, string Path)> LeavesOf(Book book)
+    {
+        var leaves = new List<(OutlineNode, string)>();
+        void Visit(OutlineNode node, string parentPath)
+        {
+            var title = node.Title.Length > 0 ? node.Title : L["OutlineUntitled"].Value;
+            var path = parentPath.Length > 0 ? parentPath + " › " + title : title;
+            if (node.Children.Any())
+            {
+                foreach (var child in node.Children)
+                {
+                    Visit(child, path);
+                }
+            }
+            else
+            {
+                leaves.Add((node, path));
+            }
+        }
+
+        foreach (var child in book.Root.Children)
+        {
+            Visit(child, "");
+        }
+
+        return leaves;
+    }
+
+    private static int Total(Coverage coverage, OutlineNode node) =>
+        coverage.Sections.TryGetValue(node.Key, out var s) ? s.TotalUsed + s.TotalAssigned : 0;
+
+    private static string Pct(int count, int scale) =>
+        (100.0 * count / scale).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture) + "%";
+
+    private void Select(OutlineNode node)
+    {
+        State.RevealElement(node.Key);
+        State.Notify();
+    }
+}

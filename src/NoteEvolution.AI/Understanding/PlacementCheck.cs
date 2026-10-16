@@ -6,12 +6,18 @@ using NoteEvolution.Core.Books;
 
 namespace NoteEvolution.AI.Understanding;
 
+/// <summary>How well the note fits the offered sections, by the model's own rating.</summary>
+public enum PlacementFit { Good, Partial, Poor }
+
 /// <summary>The model's decision: the section and the place after which the note fits best.</summary>
 /// <param name="SectionKey">The chosen section.</param>
 /// <param name="AfterTextBlockKey">The text block the note goes after; null = a new place at the end of the section.</param>
 /// <param name="Reason">The model's one-sentence reason, cleaned.</param>
 /// <param name="Summary">The chosen section's summary, if the prompt had one.</param>
-public sealed record PlacementVerdict(Guid SectionKey, Guid? AfterTextBlockKey, string Reason, string? Summary = null);
+/// <param name="Fit">The model's rating of how well the note fits; <see cref="PlacementFit.Partial"/> if it gave none.</param>
+/// <param name="EmbeddingSectionKey">The offered section the embedding search ranked best; null if none was offered.</param>
+public sealed record PlacementVerdict(Guid SectionKey, Guid? AfterTextBlockKey, string Reason, string? Summary = null,
+    PlacementFit Fit = PlacementFit.Partial, Guid? EmbeddingSectionKey = null);
 
 /// <summary>Why a placement check gave no verdict.</summary>
 public enum PlacementCheckFailure { NoAnswer, Unusable, Cancelled, Unavailable }
@@ -19,8 +25,12 @@ public enum PlacementCheckFailure { NoAnswer, Unusable, Cancelled, Unavailable }
 /// <summary>A numbered section of the prompt; its places are numbered <c>Number.1</c>, <c>Number.2</c>, … in <paramref name="TextBlockKeys"/> order.</summary>
 public sealed record CheckTopic(int Number, Guid SectionKey, IReadOnlyList<Guid> TextBlockKeys, string? Summary = null);
 
-/// <summary>The prompt of a placement check, the numbering it used (needed to read the answer) and the answer's JSON schema.</summary>
-public sealed record PlacementCheckPrompt(string System, string User, IReadOnlyList<CheckTopic> Topics, string Schema);
+/// <summary>
+/// The prompt of a placement check, the numbering it used (needed to read the answer), the answer's JSON schema and the
+/// offered section the embedding search ranked best.
+/// </summary>
+public sealed record PlacementCheckPrompt(string System, string User, IReadOnlyList<CheckTopic> Topics, string Schema,
+    Guid? EmbeddingSectionKey = null);
 
 /// <summary>
 /// "Genauer prüfen": asks the language model which section of the best chapters and which place in it fits a note. The
@@ -48,7 +58,8 @@ public static class PlacementCheck
         "Wähle den Abschnitt, zu dessen Thema die Notiz inhaltlich gehört, und darin die Textstelle, nach der sie am besten passt. " +
         "Entscheide nach dem Inhalt, nicht nach einzelnen gleichen Wörtern. \"N.M\" heißt: nach Textstelle M von Abschnitt N; " +
         "\"N.0\" heißt: neu am Ende von Abschnitt N. Antworte nur mit JSON: " +
-        "{\"begruendung\": ein kurzer Satz auf Deutsch (höchstens 20 Wörter), \"stelle\": \"N.M\"}.";
+        "{\"begruendung\": ein kurzer Satz auf Deutsch (höchstens 20 Wörter), \"stelle\": \"N.M\", \"passung\": \"gut\", \"teilweise\" oder \"kaum\"}. " +
+        "\"kaum\" heißt: keiner der Abschnitte passt inhaltlich wirklich.";
 
     /// <summary>The request options of a check: a short answer constrained to <paramref name="prompt"/>'s schema.</summary>
     public static ChatOptions Options(PlacementCheckPrompt prompt) =>
@@ -86,7 +97,7 @@ public static class PlacementCheck
             }
 
             if (book.FindTextBlock(hit.TextBlockKey) is not { } block
-                || SectionOf(block, sections) is not { } section
+                || SectionOf(block.Section, sections) is not { } section
                 || placesOf[section.Key] is not { Count: < MaxPlacesPerSection } list
                 || list.Any(b => b.Key == block.Key))
             {
@@ -96,6 +107,14 @@ public static class PlacementCheck
             list.Add(block);
             taken++;
         }
+
+        // The embedding's choice: the section of its best place, else the section of its best topic.
+        var embeddingSection = places.Values.SelectMany(list => list).OrderByDescending(hit => hit.Score)
+            .Select(hit => book.FindTextBlock(hit.TextBlockKey) is { } block ? SectionOf(block.Section, sections) : null)
+            .FirstOrDefault(section => section is not null)
+            ?? topics.Select(topic => book.FindNode(topic.SectionKey))
+                .Select(node => node is null ? null : SectionOf(node, sections))
+                .FirstOrDefault(section => section is not null);
 
         var lines = new List<string> { "Notiz:", UnderstandingItems.LimitNote(noteText), "", "Abschnitte:" };
         var numbered = new List<CheckTopic>();
@@ -124,7 +143,7 @@ public static class PlacementCheck
             numbered.Add(new CheckTopic(number, section.Key, keys, string.IsNullOrWhiteSpace(summary) ? null : summary.Trim()));
         }
 
-        return new PlacementCheckPrompt(SystemPrompt, string.Join("\n", lines), numbered, Schema(choices));
+        return new PlacementCheckPrompt(SystemPrompt, string.Join("\n", lines), numbered, Schema(choices), embeddingSection?.Key);
     }
 
     /// <summary>
@@ -155,13 +174,81 @@ public static class PlacementCheck
             var reason = root.TryGetProperty("begruendung", out var r) && r.ValueKind == JsonValueKind.String
                 ? UnderstandingPrompts.Clean(r.GetString()!, ReasonLimit)
                 : "";
-            return new PlacementVerdict(place.Section.SectionKey, place.Key, reason, place.Section.Summary);
+            var fit = root.TryGetProperty("passung", out var p) && p.ValueKind == JsonValueKind.String
+                ? p.GetString()!.Trim().ToLowerInvariant() switch
+                {
+                    "gut" => PlacementFit.Good,
+                    "kaum" => PlacementFit.Poor,
+                    _ => PlacementFit.Partial,
+                }
+                : PlacementFit.Partial;
+            return new PlacementVerdict(place.Section.SectionKey, place.Key, reason, place.Section.Summary, fit, prompt.EmbeddingSectionKey);
         }
         catch (JsonException)
         {
             return null;
         }
     }
+
+    /// <summary>The verdict as JSON, for storing a precomputed check.</summary>
+    public static string Serialize(PlacementVerdict verdict) => JsonSerializer.Serialize(new
+    {
+        section = verdict.SectionKey,
+        after = verdict.AfterTextBlockKey,
+        reason = verdict.Reason,
+        summary = verdict.Summary,
+        fit = verdict.Fit.ToString(),
+        embeddingSection = verdict.EmbeddingSectionKey,
+    });
+
+    /// <summary>Reads what <see cref="Serialize"/> wrote. Null if the JSON is invalid or has no section.</summary>
+    public static PlacementVerdict? Deserialize(string json)
+    {
+        try
+        {
+            var stored = JsonSerializer.Deserialize<StoredVerdict>(json, StoredOptions);
+            return stored is { Section: { } section } && section != Guid.Empty
+                ? new PlacementVerdict(section, stored.After, stored.Reason ?? "", stored.Summary,
+                    Enum.TryParse<PlacementFit>(stored.Fit, out var fit) ? fit : PlacementFit.Partial, stored.EmbeddingSection)
+                : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Whether the model and the embedding disagree: the chosen section is neither the embedding's section nor an
+    /// ancestor or descendant of it. False if the embedding's section is unknown.
+    /// </summary>
+    public static bool IsUncertain(Book book, PlacementVerdict verdict)
+    {
+        if (verdict.EmbeddingSectionKey is not { } embedding || embedding == verdict.SectionKey)
+        {
+            return false;
+        }
+
+        return !(IsWithin(book.FindNode(verdict.SectionKey), embedding) || IsWithin(book.FindNode(embedding), verdict.SectionKey));
+    }
+
+    /// <summary>Whether <paramref name="node"/> is the node with <paramref name="key"/> or lies below it.</summary>
+    private static bool IsWithin(OutlineNode? node, Guid key)
+    {
+        for (; node is not null; node = node.Parent)
+        {
+            if (node.Key == key)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private sealed record StoredVerdict(Guid? Section, Guid? After, string? Reason, string? Summary, string? Fit, Guid? EmbeddingSection);
+
+    private static readonly JsonSerializerOptions StoredOptions = new() { PropertyNameCaseInsensitive = true };
 
     /// <summary>"N.M" (a place of section N), "N.0" or "N" (new place at the end). Null = not valid.</summary>
     private static Place? ReadPlace(JsonElement stelle, PlacementCheckPrompt prompt)
@@ -208,8 +295,9 @@ public static class PlacementCheck
         {
             begruendung = new { type = "string", maxLength = ReasonLength },
             stelle = new { type = "string", @enum = choices },
+            passung = new { type = "string", @enum = new[] { "gut", "teilweise", "kaum" } },
         },
-        required = new[] { "begruendung", "stelle" },
+        required = new[] { "begruendung", "stelle", "passung" },
     });
 
     /// <summary>The top-level heading <paramref name="node"/> lies in; the root (prologue) is its own chapter.</summary>
@@ -243,12 +331,12 @@ public static class PlacementCheck
     }
 
     /// <summary>
-    /// The section of <paramref name="sections"/> a text block belongs to: the one it lies in most deeply. A block under a
-    /// sub-heading that was left out (over the limit) belongs to none, not to its chapter.
+    /// The section of <paramref name="sections"/> a text block in <paramref name="start"/> belongs to: the one it lies in most
+    /// deeply. A block under a sub-heading that was left out (over the limit) belongs to none, not to its chapter.
     /// </summary>
-    private static OutlineNode? SectionOf(TextBlock block, IReadOnlyList<OutlineNode> sections)
+    private static OutlineNode? SectionOf(OutlineNode start, IReadOnlyList<OutlineNode> sections)
     {
-        for (var node = block.Section; node is not null; node = node.Parent)
+        for (var node = start; node is not null; node = node.Parent)
         {
             if (sections.FirstOrDefault(s => s.Key == node.Key) is { } section)
             {

@@ -1,3 +1,6 @@
+using System.Collections.Concurrent;
+using System.Data.Common;
+using System.Runtime.CompilerServices;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NoteEvolution.AI.Embeddings;
@@ -44,6 +47,12 @@ public sealed class VaultSession : IDisposable
 
     /// <summary>How long the current section must stay before the worker is fed with it (debounced).</summary>
     public static readonly TimeSpan FocusFeedDelay = TimeSpan.FromMilliseconds(500);
+
+    /// <summary>How long after a change the notes' status (the note cards' dots, spec 7.2) is put together again.</summary>
+    public static readonly TimeSpan NoteStatusDelay = TimeSpan.FromSeconds(1);
+
+    /// <summary>How long after a change the coverage (spec 6.4) is computed again.</summary>
+    public static readonly TimeSpan CoverageDelay = TimeSpan.FromSeconds(1);
 
     /// <summary>How long the battery state read from the <see cref="ISystemMonitor"/> is used before it is read again.</summary>
     public static readonly TimeSpan BatteryReadInterval = TimeSpan.FromSeconds(30);
@@ -102,6 +111,23 @@ public sealed class VaultSession : IDisposable
     private readonly object _feedGate = new();
     private int _feedsApplied;
 
+    /// <summary>The snapshots of the last work applied, which the notes' status is put together from.</summary>
+    private volatile StatusSource? _statusSource;
+
+    /// <summary>The notes' status inputs (without the running request) and the parts they were read with; null until put together.</summary>
+    private volatile NoteStatuses? _noteStatuses;
+
+    // Putting the notes' status together at most once per NoteStatusDelay, with what changed since (under _gate).
+    private readonly Throttle _statusThrottle;
+    private StatusChanges _statusChanged = new();
+
+    // The coverage: computed at most once per CoverageDelay while an owner watches it (the owners and whether it is out
+    // of date under _gate). While nobody watches, a change only marks it as out of date.
+    private readonly Throttle _coverageThrottle;
+    private readonly HashSet<object> _coverageWatchers = new(ReferenceEqualityComparer.Instance);
+    private bool _coverageOutdated = true;
+    private int _coverageComputations;
+
     private VaultSession(
         string root, IClock clock, ILogger logger, TimeProvider timeProvider, Func<Action, Task> dispatch, AiRuntime? ai,
         LanguageModelRuntime? language, ISystemMonitor? monitor)
@@ -112,6 +138,9 @@ public sealed class VaultSession : IDisposable
         _ai = ai;
         _language = language;
         _time = timeProvider;
+        _statusThrottle = new Throttle(timeProvider, NoteStatusDelay, () => Task.Run(BuildNoteStatus), logger,
+            "Putting the notes' status together");
+        _coverageThrottle = new Throttle(timeProvider, CoverageDelay, ComputeCoverageAsync, logger, "Computing the coverage");
         var vault = Core.Vaults.Vault.Open(root);
         var registry = new SelfWriteRegistry();
         _backups = new BackupService(vault.Root, clock);
@@ -137,6 +166,10 @@ public sealed class VaultSession : IDisposable
         {
             _language.Changed += OnLanguageChanged;
         }
+
+        vault.PageReplaced += OnPageReplacedForCoverage;
+        PagesChanged += _ => ScheduleCoverage();
+        PlacementsChanged += ScheduleCoverage;
     }
 
     public IVault Vault { get; }
@@ -176,8 +209,115 @@ public sealed class VaultSession : IDisposable
     /// <summary>How many feeds reached the worker (stale ones are dropped); for tests.</summary>
     internal int FeedsApplied => Volatile.Read(ref _feedsApplied);
 
+    /// <summary>How many notes the status builds read from the store and the understanding; for tests.</summary>
+    internal int NoteStatusReads => Volatile.Read(ref _noteStatusReads);
+
+    private int _noteStatusReads;
+
+    /// <summary>How many status builds ended; for tests.</summary>
+    internal int NoteStatusBuilds => Volatile.Read(ref _noteStatusBuilds);
+
+    private int _noteStatusBuilds;
+
+    /// <summary>Called in the background when a status build is done, just before <see cref="NoteStatusChanged"/> is dispatched; for tests.</summary>
+    internal Action? NoteStatusRaising { get; set; }
+
+    /// <summary>The notes' status is being put together now; for tests.</summary>
+    internal bool NoteStatusBuilding => _statusThrottle.Running;
+
     /// <summary><see cref="Understanding"/> may have changed (also from or to <c>null</c>); raised on the UI thread.</summary>
     public event Action? UnderstandingChanged;
+
+    /// <summary>A placement was stored or the current book's notes got new placement checks (<see cref="Placement"/>); raised on the UI thread.</summary>
+    public event Action? PlacementsChanged;
+
+    /// <summary>Called in the background before a note's placement check is built (the book and the note's key); for tests.</summary>
+    internal Action<Book, Guid>? PlacementPromptBuilding { get; set; }
+
+    /// <summary>Called in the background when a feed found the book's summaries not settled yet (before it is applied); for tests.</summary>
+    internal Action<Book>? PlacementReadinessChecked { get; set; }
+
+    /// <summary>
+    /// Test hook: false leaves the placement checks out of the background work (for tests about other work). Set it right
+    /// after opening a fresh vault, before the book's summaries are settled.
+    /// </summary>
+    internal bool BuildsPlacementChecks { get; set; } = true;
+
+    /// <summary>
+    /// The note's stored placement check for the current book (current or stale, see <see cref="StoreUnderstanding.Placement"/>);
+    /// null without the language model, without a current book or when there is none. Call it on the UI thread.
+    /// </summary>
+    public NotePlacement? Placement(Guid noteKey) =>
+        _understanding is { } parts && _focusBook is { } name && Vault.FindBook(name) is { } book
+            ? parts.Understanding.Placement(book, noteKey)
+            : null;
+
+    /// <summary>
+    /// What the note's status dot is decided from (<see cref="NoteProgress"/>), with the request running for it now; null
+    /// without the language model or until the status was put together (see <see cref="NoteStatusChanged"/>). The
+    /// placement is the one for the current book, as <see cref="Placement"/> gives it. Call it on the UI thread.
+    /// </summary>
+    public NoteStatusInput? NoteStatus(Guid noteKey)
+    {
+        if (_understanding is not { } parts || _noteStatuses is not { } statuses || !ReferenceEquals(statuses.Parts, parts)
+            || !statuses.Inputs.TryGetValue(noteKey, out var input))
+        {
+            return null;
+        }
+
+        var running = parts.Worker.Progress.Current is { } current && current.Key == noteKey ? current.Kind : (UnderstandingKind?)null;
+        return input with { LanguageModel = !parts.ServerAway, Running = running };
+    }
+
+    /// <summary>
+    /// How many of the top-level notes are embedded, as of the last status build; null without a semantic index or until
+    /// the status was put together (see <see cref="NoteStatusChanged"/>). Call it on the UI thread.
+    /// </summary>
+    public (int Done, int Total)? EmbeddingProgress =>
+        _understanding is { } parts && _noteStatuses is { } statuses && ReferenceEquals(statuses.Parts, parts) ? statuses.Embedding : null;
+
+    /// <summary>
+    /// <see cref="NoteStatus"/> may have changed (work was handed to the worker, something was stored, the worker's
+    /// progress changed or notes were embedded again); raised on the UI thread, at most once per <see cref="NoteStatusDelay"/>.
+    /// </summary>
+    public event Action? NoteStatusChanged;
+
+    /// <summary>
+    /// The current book's coverage (spec 6.1) as last computed; null before the first computation and without a current
+    /// book. It is computed only while an owner watches it (<see cref="WatchCoverage"/>). Call it on the UI thread.
+    /// </summary>
+    public Coverage? Coverage { get; internal set; }
+
+    /// <summary><see cref="Coverage"/> changed; raised on the UI thread, at most once per <see cref="CoverageDelay"/>.</summary>
+    public event Action? CoverageChanged;
+
+    /// <summary>How many coverage computations started; for tests.</summary>
+    internal int CoverageComputations => Volatile.Read(ref _coverageComputations);
+
+    /// <summary>Called in the background just before the coverage is computed; for tests.</summary>
+    internal Action? CoverageComputing { get; set; }
+
+    /// <summary>The coverage is being computed now; for tests.</summary>
+    internal bool CoverageRunning => _coverageThrottle.Running;
+
+    /// <summary>
+    /// The <paramref name="owner"/> (a view showing the coverage) is <paramref name="visible"/> or no longer. While any
+    /// owner is, the coverage is computed <see cref="CoverageDelay"/> after a change (book switch, pages, placements);
+    /// a change while nobody watches is computed once someone does again. Call it on the UI thread.
+    /// </summary>
+    public void WatchCoverage(object owner, bool visible)
+    {
+        lock (_gate)
+        {
+            if (!(visible ? _coverageWatchers.Add(owner) : _coverageWatchers.Remove(owner)) || _disposed || !_coverageOutdated
+                || _coverageWatchers.Count == 0)
+            {
+                return;
+            }
+
+            _coverageThrottle.Request();
+        }
+    }
 
     /// <summary>The AI's state for this vault: the runtime's (model missing, downloading, load failed) or the index's.</summary>
     public AiStatus AiStatus
@@ -473,7 +613,11 @@ public sealed class VaultSession : IDisposable
             _pageIndexTimers.Clear();
             _feedTimer?.Dispose();
             _focusTimer?.Dispose();
+            _statusThrottle.Dispose();
+            _coverageThrottle.Dispose();
         }
+
+        Vault.PageReplaced -= OnPageReplacedForCoverage;
 
         if (_ai is not null)
         {
@@ -664,7 +808,7 @@ public sealed class VaultSession : IDisposable
                     index, new HybridSearchService(_search, index, Notes), new RelevanceService(index), embedder, _ai.Model.Id);
             }
 
-            index.StatusChanged += RaiseAiStatusChanged;
+            index.StatusChanged += OnIndexStatusChanged;
             Dispatch(StartIndexing, "the start of the semantic indexing");
             Dispatch(UpdateUnderstanding, "the start of the language model");
         }
@@ -694,6 +838,14 @@ public sealed class VaultSession : IDisposable
     private void OnModelChanged()
     {
         StartAi();
+        ScheduleNoteStatus(all: true);
+        RaiseAiStatusChanged();
+    }
+
+    /// <summary>The index embedded notes (once per batch while indexing; on its thread): only the notes' embeddings changed.</summary>
+    private void OnIndexStatusChanged()
+    {
+        ScheduleNoteStatus(embeddings: true);
         RaiseAiStatusChanged();
     }
 
@@ -760,6 +912,7 @@ public sealed class VaultSession : IDisposable
             {
                 if (await parts.Index.UpdatePageAsync(Notes, fullPath, _aiLifetime.Token))
                 {
+                    ScheduleNoteStatus(embeddings: true);
                     RaiseAiStatusChanged();
                 }
             },
@@ -810,7 +963,9 @@ public sealed class VaultSession : IDisposable
     /// <summary>
     /// "Genauer prüfen" (spec 5.2): asks the language model which of the note's best topics and places fits, as the
     /// worker's next request (after a running background request), within <see cref="UnderstandingWorker.RequestTimeout"/>.
-    /// Call it on the UI thread; topics and places are computed in the background from the given snapshots.
+    /// Call it on the UI thread; topics and places are computed in the background from the given snapshots. The prompt is
+    /// the one the background builds for the note (spec 3.4), and a verdict is stored under its fingerprint, so the
+    /// background does not ask again.
     /// </summary>
     /// <param name="noteText"><c>EmbeddingText.ForNote(note)</c>, as for <see cref="IRelevanceService.Placements"/>.</param>
     /// <param name="waiting">Called when the request has to wait behind a running background request (spec 5.2).</param>
@@ -829,24 +984,25 @@ public sealed class VaultSession : IDisposable
             return (null, PlacementCheckFailure.Unavailable);
         }
 
-        var relevance = Relevance;
         var text = noteText.StartsWith(EmbeddingText.PassagePrefix, StringComparison.Ordinal)
             ? noteText[EmbeddingText.PassagePrefix.Length..]
             : noteText;
+
+        // Read here, on the UI thread: the identity the verdict is stored under (none for a note not in the vault), and
+        // the note's core statement item (none for a short note).
+        var note = Notes.Get(noteKey);
+        var identity = note is null ? null : UnderstandingItems.NoteIdentity(note.Block.Content, note.Page.FilePath);
+        var core = note is null ? null : UnderstandingItems.ForNote(note, understanding.ChatModel);
         PlacementCheckPrompt prompt;
         try
         {
-            // Only snapshots (the book, the note's text and key) go to the background.
+            // Only snapshots (the book, the note's text and key) go to the background. The prompt is the background's
+            // (same builder and cache), so the verdict is stored under the fingerprint the background asks for; one built
+            // before the book's summaries or the note's core statement are there is not remembered for the background.
             prompt = await Task.Run(
-                () =>
-                {
-                    var topics = relevance.Topics(noteKey, noteText, book, PlacementCheck.TopicLimit);
-                    var places = relevance.Placements(noteKey, noteText, book, int.MaxValue)
-                        .GroupBy(hit => hit.SectionKey)
-                        .ToDictionary(group => group.Key, group => (IReadOnlyList<PlacementHit>)[.. group]);
-                    return PlacementCheck.Prompt(book, text, topics, places,
-                        section => understanding.Understanding.Heading(book, section)?.Text);
-                },
+                () => understanding.PlacementPrompt(book, noteKey, text,
+                    remember: PlacementsReady(understanding, understanding.Understanding.Items(book))
+                        && understanding.CoresSettled()(core)),
                 ct);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -864,16 +1020,29 @@ public sealed class VaultSession : IDisposable
             return (null, PlacementCheckFailure.Unusable);
         }
 
+        var item = identity is null
+            ? null
+            : UnderstandingItems.ForPlacement(noteKey, identity, book.LinkName, prompt, understanding.ChatModel);
+
         using var timeout = new CancellationTokenSource(UnderstandingWorker.RequestTimeout, _time);
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, timeout.Token);
         try
         {
-            var answer = await understanding.Worker.RunNextAsync(
+            // Read and stored on the worker's thread before it plans on, so the background does not ask the same question
+            // again; the worker calls it before the answer is returned.
+            PlacementVerdict? verdict = null;
+            await understanding.Worker.RunNextAsync(
                 prompt.System, prompt.User, PlacementCheck.Options(prompt), linked.Token,
-                waiting, started);
-            return PlacementCheck.Parse(answer, prompt) is { } verdict
-                ? (verdict, null)
-                : (null, PlacementCheckFailure.Unusable);
+                waiting, started, new UnderstandingCurrent(UnderstandingKind.Placement, noteKey),
+                answered: answer =>
+                {
+                    verdict = PlacementCheck.Parse(answer, prompt);
+                    if (item is not null && verdict is not null)
+                    {
+                        StorePlacement(understanding, item, verdict);
+                    }
+                });
+            return verdict is not null ? (verdict, null) : (null, PlacementCheckFailure.Unusable);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -894,6 +1063,20 @@ public sealed class VaultSession : IDisposable
         {
             _logger.LogWarning(ex, "The placement check failed");
             return (null, PlacementCheckFailure.NoAnswer);
+        }
+    }
+
+    /// <summary>Stores a verdict of "Genauer prüfen" as the worker stores its own; a closed or failing store keeps nothing.</summary>
+    private void StorePlacement(UnderstandingParts parts, UnderstandingItem item, PlacementVerdict verdict)
+    {
+        try
+        {
+            parts.Store.Put(new UnderstandingEntry(UnderstandingKind.Placement, item.Fingerprint, item.Identity,
+                PlacementCheck.Serialize(verdict), parts.ChatModel, null, null));
+        }
+        catch (Exception ex) when (ex is ObjectDisposedException or DbException)
+        {
+            _logger.LogWarning(ex, "Storing the placement check failed");
         }
     }
 
@@ -928,6 +1111,11 @@ public sealed class VaultSession : IDisposable
         var bookChanged = !string.Equals(name, _focusBook, StringComparison.OrdinalIgnoreCase);
         _focusBook = name;
         _focusSection = sectionKey;
+        if (bookChanged)
+        {
+            ScheduleCoverage();
+        }
+
         lock (_gate)
         {
             // Under the lock: starting the language model's parts (which sets them under it) feeds the focus as it is then.
@@ -1041,7 +1229,8 @@ public sealed class VaultSession : IDisposable
         {
             Paused = _language!.Settings.LanguageModelPaused,
         };
-        var parts = new UnderstandingParts(chat, model, store, understanding, new RelevanceService(ai.Index, understanding), worker);
+        var parts = new UnderstandingParts(
+            chat, model, ai.EmbedModel, store, understanding, new RelevanceService(ai.Index, understanding), worker);
         lock (_gate)
         {
             if (_disposed)
@@ -1054,6 +1243,7 @@ public sealed class VaultSession : IDisposable
         }
 
         worker.ProgressChanged += () => OnUnderstandingProgress(parts);
+        store.EntryChanged += fingerprint => OnEntryChanged(parts, fingerprint);
         Feed(notesChanged: true);
         Observe(() => Task.Run(() => worker.RunAsync(_aiLifetime.Token)), "The language model's background work");
         RaiseUnderstandingChanged();
@@ -1086,8 +1276,9 @@ public sealed class VaultSession : IDisposable
     /// the other books' headings) and the understanding the notes' fingerprints. The items are computed in the background
     /// (headings once per book instance, notes once per snapshot); when all of them are known already (a focus change),
     /// they are handed over at once. A result is dropped when a later feed started meanwhile (its snapshots are newer).
+    /// Only a <paramref name="debounced"/> feed (after a page change or a settled summary) builds placement checks.
     /// </summary>
-    private void Feed(bool notesChanged)
+    private void Feed(bool notesChanged, bool debounced = false)
     {
         if (IsDisposed || _understanding is not { } parts)
         {
@@ -1108,20 +1299,26 @@ public sealed class VaultSession : IDisposable
                         .Where(note => note.Block.Parent is null)
                         .OrderByDescending(note => note.Date ?? DateOnly.MinValue)
                         .Select(note => new NoteSnapshot(
-                            note.Key, UnderstandingItems.NoteText(note), note.Block.Content, note.Page.FilePath)),
+                            note.Key, UnderstandingItems.NoteText(note), note.Block.Content, note.Page.FilePath,
+                            note.IsUsed, note.Usages)),
                 ];
             }
 
             var notes = _noteSnapshot;
             var feed = Interlocked.Increment(ref _feedsStarted);
-            if (Work(parts, book, books, notes, cachedOnly: true) is { } known)
+
+            // Taken when the feed starts, before the store is read (also when the background work starts late): a summary
+            // or core settled after it re-feeds once the work is applied (see Apply).
+            var settled = parts.Settled;
+            if (Work(parts, feed, book, books, notes, settled, debounced, cachedOnly: true) is { } known)
             {
-                Apply(parts, feed, section, notes, known);
+                Apply(parts, feed, section, notes, book, known);
                 return;
             }
 
             Observe(
-                () => Task.Run(() => Apply(parts, feed, section, notes, Work(parts, book, books, notes, cachedOnly: false)!.Value)),
+                () => Task.Run(() =>
+                    Apply(parts, feed, section, notes, book, Work(parts, feed, book, books, notes, settled, debounced, cachedOnly: false)!.Value)),
                 "Feeding the language model's background work");
         }
         catch (Exception ex)
@@ -1132,10 +1329,12 @@ public sealed class VaultSession : IDisposable
 
     /// <summary>
     /// The worker's work from the snapshots; with <paramref name="cachedOnly"/> only from items computed before (null if
-    /// any is missing), otherwise computing what is missing (in the background).
+    /// any is missing), otherwise computing what is missing (in the background). The placement checks of the current
+    /// book's unused notes come once its summaries are settled (<see cref="PlacementsReady"/>, spec 3.1); the cached path
+    /// cannot read the store, so it takes them only when they were built for these snapshots already.
     /// </summary>
-    private static FeedWork? Work(UnderstandingParts parts, Book? book, IReadOnlyList<Book> books,
-        IReadOnlyList<NoteSnapshot> notes, bool cachedOnly)
+    private FeedWork? Work(UnderstandingParts parts, int feed, Book? book, IReadOnlyList<Book> books,
+        IReadOnlyList<NoteSnapshot> notes, int settled, bool debounced, bool cachedOnly)
     {
         var understanding = parts.Understanding;
         IReadOnlyList<UnderstandingItem>? Items(Book b) => cachedOnly ? understanding.CachedItems(b) : understanding.Items(b);
@@ -1172,11 +1371,156 @@ public sealed class VaultSession : IDisposable
             others.AddRange(items);
         }
 
-        return new FeedWork(current, noteItems, others);
+        IReadOnlyList<UnderstandingItem> placements = [];
+        IReadOnlyDictionary<Guid, string> waitingForCores = NoNotes;
+        var withoutTopics = NoKeys;
+        var ready = false;
+        var deferred = false;
+
+        if (book is not null && !BuildsPlacementChecks)
+        {
+            ready = true;
+        }
+        else if (book is not null)
+        {
+            if (parts.CachedPlacements(book, notes) is { } built)
+            {
+                (placements, ready) = (built, true);
+            }
+            else if (cachedOnly)
+            {
+                return null;
+            }
+            else if (PlacementsReady(parts, current))
+            {
+                // A feed at once (opening, a book or section switch) leaves building them to a debounced one: so they
+                // always start a debounce after the summaries are there, also when those were done before the switch.
+                if (!debounced)
+                {
+                    deferred = true;
+                }
+                else if (BuildPlacements(parts, feed, book, notes) is { } fresh)
+                {
+                    (placements, waitingForCores, withoutTopics, ready) = (fresh.Items, fresh.WaitingForCores, fresh.WithoutTopics, true);
+                }
+            }
+            else
+            {
+                PlacementReadinessChecked?.Invoke(book);
+            }
+        }
+
+        return new FeedWork(current, noteItems, others, book?.LinkName, placements, waitingForCores, withoutTopics, ready, settled,
+            deferred);
     }
 
+    /// <summary>
+    /// Whether every heading of the book (<paramref name="bookItems"/>, children first) has a summary the prompt can use
+    /// (with a vector from the current embedding model, as <see cref="StoreUnderstanding.Heading"/> requires) or will not
+    /// get one: it failed <see cref="UnderstandingWorker.MaxAttempts"/> times, or one of its sub-headings will not (the
+    /// worker skips it then). Reads the store; a closed or failing store means no.
+    /// </summary>
+    private static bool PlacementsReady(UnderstandingParts parts, IReadOnlyList<UnderstandingItem> bookItems)
+    {
+        var skipped = new HashSet<string>(StringComparer.Ordinal);
+        try
+        {
+            foreach (var item in bookItems)
+            {
+                if (parts.Store.Get(item.Fingerprint) is { Kind: UnderstandingKind.Heading, Vector: not null } entry
+                    && entry.EmbedModel == parts.EmbedModel)
+                {
+                    continue;
+                }
+
+                if (parts.Store.Attempts(item.Fingerprint) < UnderstandingWorker.MaxAttempts
+                    && !item.ChildFingerprints.Any(skipped.Contains))
+                {
+                    return false;
+                }
+
+                skipped.Add(item.Fingerprint);
+            }
+        }
+        catch (Exception ex) when (ex is ObjectDisposedException or DbException)
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// The placement checks of the unused notes in snapshot order (in the background). A note whose check cannot be built
+    /// is logged and left out (spec 8), as is one without topics to offer; null when a later feed started meanwhile. A
+    /// note whose core statement is not settled yet (see <see cref="UnderstandingParts.CoresSettled"/>) gets no check
+    /// either, as its prompt would rank the topics without the core: it is listed as waiting instead (its stored placement
+    /// shows as stale meanwhile). The checks are remembered for the snapshots unless a note had no topics (the embedder
+    /// may have failed) or waits for its core: the next feed looks for them again.
+    /// </summary>
+    private PlacementBuild? BuildPlacements(UnderstandingParts parts, int feed, Book book, IReadOnlyList<NoteSnapshot> notes)
+    {
+        var items = new List<UnderstandingItem>();
+        var waiting = new Dictionary<Guid, string>();
+        var withoutTopics = new HashSet<Guid>();
+        var cores = parts.NoteItems(notes).ToDictionary(item => item.Key);
+        var coreSettled = parts.CoresSettled();
+        foreach (var note in notes)
+        {
+            if (note.Used)
+            {
+                continue;
+            }
+
+            if (Volatile.Read(ref _feedsStarted) != feed || IsDisposed || !ReferenceEquals(_understanding, parts))
+            {
+                return null; // its result would be dropped anyway (a later feed, the vault closed, the model's parts replaced)
+            }
+
+            var identity = UnderstandingItems.NoteIdentity(note.Content, note.FilePath);
+            if (!coreSettled(cores.GetValueOrDefault(note.Key)))
+            {
+                waiting[note.Key] = identity;
+                continue;
+            }
+
+            try
+            {
+                PlacementPromptBuilding?.Invoke(book, note.Key);
+                var prompt = parts.PlacementPrompt(book, note.Key, note.Text, remember: true);
+                if (prompt.Topics.Count == 0)
+                {
+                    withoutTopics.Add(note.Key);
+                    continue; // nothing to choose from, as for "Genauer prüfen"
+                }
+
+                items.Add(UnderstandingItems.ForPlacement(note.Key, identity, book.LinkName, prompt, parts.ChatModel));
+            }
+            catch (Exception ex)
+            {
+                if (IsDisposed || !ReferenceEquals(_understanding, parts))
+                {
+                    return null; // the vault closed or the model's parts were replaced meanwhile: nothing to warn about
+                }
+
+                _logger.LogWarning(ex, "Building the placement check of a note failed");
+            }
+        }
+
+        if (withoutTopics.Count == 0 && waiting.Count == 0)
+        {
+            parts.RememberPlacements(book, notes, items);
+        }
+
+        return new PlacementBuild(items, waiting, withoutTopics);
+    }
+
+    private static readonly IReadOnlyDictionary<Guid, string> NoNotes = new Dictionary<Guid, string>();
+    private static readonly IReadOnlySet<Guid> NoKeys = new HashSet<Guid>();
+
     /// <summary>Hands the work to the worker and the notes' fingerprints to the understanding, unless a later feed started.</summary>
-    private void Apply(UnderstandingParts parts, int feed, Guid? section, IReadOnlyList<NoteSnapshot> notes, FeedWork work)
+    private void Apply(UnderstandingParts parts, int feed, Guid? section, IReadOnlyList<NoteSnapshot> notes, Book? book,
+        FeedWork work)
     {
         lock (_feedGate)
         {
@@ -1197,9 +1541,130 @@ public sealed class VaultSession : IDisposable
                 parts.Understanding.UpdateNotes(map);
             }
 
-            parts.Worker.SetWork(work.Current, section, work.Notes, work.Others);
+
+            // The checks are taken only from a feed during which no summary or core statement settled: one that ran
+            // while one did (started before, or slow) leaves them to the feed scheduled below, so they come a debounce
+            // after the last of them, as after a page change.
+            var ready = work.PlacementsReady && parts.Settled == work.Settled;
+            var (checks, waitingForCores, withoutTopics) = ready
+                ? (work.Placements, work.WaitingForCores, work.WithoutTopics)
+                : ([], NoNotes, NoKeys);
+
+            // Until the book's summaries are settled its last placement map stays (another book's is replaced by none).
+            var placementsChanged = false;
+            // The same checks again (a focus change) change nothing.
+            var otherBook = !string.Equals(parts.PlacementBook, work.Book, StringComparison.Ordinal);
+            if (work.Book is { } bookName
+                && (otherBook || (ready && !ReferenceEquals(parts.PlacementItems, checks))))
+            {
+                var placements = new Dictionary<Guid, (string Fingerprint, string Identity)>();
+                foreach (var item in checks)
+                {
+                    placements[item.Key] = (item.Fingerprint, item.Identity);
+                }
+
+                // A note waiting for its core statement has no check yet (no fingerprint): its last result shows as stale.
+                foreach (var (key, identity) in waitingForCores)
+                {
+                    placements[key] = (string.Empty, UnderstandingItems.PlacementIdentity(bookName, identity));
+                }
+
+                parts.Understanding.UpdatePlacements(bookName, placements);
+                parts.PlacementBook = bookName;
+                parts.PlacementItems = checks;
+                parts.WithoutTopics = withoutTopics;
+                placementsChanged = true;
+            }
+
+            // Waiting is marked first, then the summaries settled since the feed started are looked at (the handlers count
+            // first, then look at waiting): one of the two sees the other, so no wake-up is lost. A feed that left building
+            // the checks to a debounced one schedules it.
+            var waiting = work.Book is not null && (!ready || waitingForCores.Count > 0);
+            parts.PlacementsWaiting = waiting;
+            if (waiting && (work.Deferred || parts.Settled != work.Settled))
+            {
+                ScheduleFeedFor(parts);
+            }
+
+            parts.Worker.SetWork(work.Current, section, work.Notes, work.Others, checks);
             Interlocked.Increment(ref _feedsApplied);
+            // The same snapshots again (a focus change) keep the source, so only what changed is read again.
+            var placementItems = parts.PlacementItems ?? [];
+            if (_statusSource is not { } source || !source.Of(parts, notes, book, work.Notes, placementItems))
+            {
+                _statusSource = new StatusSource(parts, notes, book, work.Notes, placementItems);
+            }
+
+            ScheduleNoteStatus();
+            if (placementsChanged)
+            {
+                RaisePlacementsChanged();
+            }
         }
+    }
+
+    /// <summary>
+    /// The store stored something (on the writer's thread; never throws): a placement is shown, and a summary of the
+    /// current book may settle its summaries, or a core statement (or its vector) a note's, so the placement checks are
+    /// built (debounced like a page change).
+    /// </summary>
+    private void OnEntryChanged(UnderstandingParts parts, string fingerprint)
+    {
+        if (IsDisposed || !ReferenceEquals(_understanding, parts))
+        {
+            return;
+        }
+
+        UnderstandingKind? kind;
+        try
+        {
+            kind = parts.Store.KindOf(fingerprint);
+        }
+        catch (Exception ex) when (ex is ObjectDisposedException or DbException)
+        {
+            return;
+        }
+
+        ScheduleNoteStatus(fingerprint);
+        if (kind == UnderstandingKind.Placement)
+        {
+            RaisePlacementsChanged();
+        }
+        else if (kind is UnderstandingKind.Heading or UnderstandingKind.Note && parts.Settle())
+        {
+            ScheduleFeedFor(parts);
+        }
+    }
+
+    /// <summary>Schedules a feed (as after a page change) while <paramref name="parts"/> are the current ones; any thread.</summary>
+    private void ScheduleFeedFor(UnderstandingParts parts)
+    {
+        lock (_gate)
+        {
+            if (!_disposed && ReferenceEquals(_understanding, parts))
+            {
+                ScheduleFeed();
+            }
+        }
+    }
+
+    /// <summary>Called on any thread; never throws.</summary>
+    private void RaisePlacementsChanged()
+    {
+        if (IsDisposed)
+        {
+            return;
+        }
+
+        Dispatch(
+            () =>
+            {
+                if (!IsDisposed)
+                {
+                    PlacementsChanged?.Invoke();
+                }
+            },
+            "the language model's placements");
     }
 
     /// <summary>(Re)starts the debounce of feeding the worker after a page change; call it under <see cref="_gate"/>.</summary>
@@ -1217,7 +1682,8 @@ public sealed class VaultSession : IDisposable
         }
 
         _feedTimer = _time.CreateTimer(
-            _ => Dispatch(() => Feed(notesChanged: true), "the language model's work"), null, PageIndexDelay, Timeout.InfiniteTimeSpan);
+            _ => Dispatch(() => Feed(notesChanged: true, debounced: true), "the language model's work"), null, PageIndexDelay,
+            Timeout.InfiniteTimeSpan);
     }
 
     /// <summary>
@@ -1235,11 +1701,326 @@ public sealed class VaultSession : IDisposable
         };
         var changed = away != parts.ServerAway;
         parts.ServerAway = away;
+
+        // A heading or core statement given up settles as a stored one does, but the store reports no entry for it.
+        var kinds = parts.Worker.Progress.Kinds;
+        var failed = (kinds?.GetValueOrDefault(UnderstandingKind.Heading)?.Failed ?? 0)
+            + (kinds?.GetValueOrDefault(UnderstandingKind.Note)?.Failed ?? 0);
+        if (parts.SwapFailures(failed) != failed && parts.Settle())
+        {
+            ScheduleFeedFor(parts);
+        }
+
+        // The note whose request ended (its attempt is recorded after the request ends, so it is looked at again with the
+        // next report as well) and the one whose request started.
+        var current = parts.Worker.Progress.Current?.Key;
+        var previous = parts.SwapLastRequest(current);
+        ScheduleNoteStatus(keys: [previous, current], all: changed);
         RaiseUnderstandingChanged();
         if (changed)
         {
             RaiseAiStatusChanged();
         }
+    }
+
+    /// <summary>
+    /// Puts the notes' status together <see cref="NoteStatusDelay"/> from now unless that is pending already; while a
+    /// build runs, once more a delay after it ended, so <see cref="NoteStatusChanged"/> comes at most once per delay.
+    /// Only the notes of the stored <paramref name="fingerprint"/> and the <paramref name="keys"/> are read again, all of
+    /// them with <paramref name="all"/> or new snapshots (see <see cref="BuildNoteStatus"/>); with
+    /// <paramref name="embeddings"/> the embeddings of all of them. Any thread; never throws.
+    /// </summary>
+    private void ScheduleNoteStatus(string? fingerprint = null, IEnumerable<Guid?>? keys = null, bool all = false,
+        bool embeddings = false)
+    {
+        lock (_gate)
+        {
+            if (_disposed || _language is null)
+            {
+                return;
+            }
+
+            if (fingerprint is not null)
+            {
+                _statusChanged.Fingerprints.Add(fingerprint);
+            }
+
+            foreach (var key in keys ?? [])
+            {
+                if (key is { } k)
+                {
+                    _statusChanged.Keys.Add(k);
+                }
+            }
+
+            _statusChanged.All |= all;
+            _statusChanged.Embeddings |= embeddings;
+            _statusThrottle.Request();
+        }
+    }
+
+    /// <summary>
+    /// In the background, from the last snapshots: the notes' status, then the event, then the next build if one was asked
+    /// for. New snapshots (another feed) or <see cref="StatusChanges.All"/> read every note; otherwise only the notes whose
+    /// entries were stored or whose request started or ended are read again (the store forgets its cached placements at
+    /// every change, so reading all notes each time would cost a query or three per note).
+    /// </summary>
+    private void BuildNoteStatus()
+    {
+        try
+        {
+            StatusChanges changes;
+            lock (_gate)
+            {
+                changes = _statusChanged;
+                _statusChanged = new StatusChanges();
+            }
+
+            if (_statusSource is { } source && ReferenceEquals(_understanding, source.Parts))
+            {
+                var known = _noteStatuses;
+                NoteStatuses statuses;
+                if (changes.All || known is null || !ReferenceEquals(known.Source, source))
+                {
+                    statuses = new NoteStatuses(source.Parts, source, NoteStatusInputs(source, source.Notes), CountEmbeddings(source));
+                }
+                else
+                {
+                    var notes = changes.Keys
+                        .Concat(changes.Fingerprints.SelectMany(fingerprint => source.KeysOf.GetValueOrDefault(fingerprint) ?? []))
+                        .Distinct()
+                        .Select(key => source.NoteOf.GetValueOrDefault(key))
+                        .OfType<NoteSnapshot>()
+                        .ToList();
+                    var inputs = new Dictionary<Guid, NoteStatusInput>(known.Inputs);
+                    var changed = changes.Embeddings && UpdateEmbeddings(inputs);
+                    if (notes.Count == 0 && !changed)
+                    {
+                        return; // nothing to tell
+                    }
+
+                    foreach (var (key, input) in NoteStatusInputs(source, notes))
+                    {
+                        inputs[key] = input;
+                    }
+
+                    statuses = new NoteStatuses(source.Parts, source, inputs, CountEmbeddings(source));
+                }
+
+                _noteStatuses = statuses;
+                NoteStatusRaising?.Invoke();
+                Dispatch(
+                    () =>
+                    {
+                        if (!IsDisposed)
+                        {
+                            NoteStatusChanged?.Invoke();
+                        }
+                    },
+                    "the notes' status");
+            }
+        }
+        catch (Exception ex)
+        {
+            // The store was closed or failed: the last status stays, and the next change reads every note again.
+            if (ex is not (ObjectDisposedException or DbException))
+            {
+                _logger.LogError(ex, "Putting the notes' status together failed");
+            }
+
+            lock (_gate)
+            {
+                _statusChanged.All = true;
+            }
+        }
+        finally
+        {
+            Interlocked.Increment(ref _noteStatusBuilds);
+        }
+    }
+
+    /// <summary>How many of the top-level notes have an embedding (in memory, no store reads); null without a semantic index.</summary>
+    private (int Done, int Total)? CountEmbeddings(StatusSource source) =>
+        _aiParts?.Index is { } index
+            ? (source.NoteOf.Keys.Count(key => index.VectorOf(key) is not null), source.NoteOf.Count)
+            : null;
+
+    /// <summary>Reads the embeddings of the known inputs again (in memory, no store reads); whether one changed.</summary>
+    private bool UpdateEmbeddings(Dictionary<Guid, NoteStatusInput> inputs)
+    {
+        if (_aiParts?.Index is not { } index)
+        {
+            return false;
+        }
+
+        var changed = false;
+        foreach (var (key, input) in inputs.ToList())
+        {
+            var embedded = index.VectorOf(key) is not null;
+            if (input.Embedded != embedded)
+            {
+                inputs[key] = input with { Embedded = embedded };
+                changed = true;
+            }
+        }
+
+        return changed;
+    }
+
+    /// <summary>
+    /// The status inputs of <paramref name="notes"/>: the core statement from the store by the note's item (only notes
+    /// long enough have one), the embedding from the index, the placement in the current book. A used note gets none (no
+    /// dot, also if it is unused by now, until the next feed brings its snapshot) and nothing is read for it.
+    /// </summary>
+    private Dictionary<Guid, NoteStatusInput> NoteStatusInputs(StatusSource source, IEnumerable<NoteSnapshot> notes)
+    {
+        var parts = source.Parts;
+        var index = _aiParts?.Index;
+        var inputs = new Dictionary<Guid, NoteStatusInput>();
+        foreach (var note in notes)
+        {
+            if (note.Used)
+            {
+                continue;
+            }
+
+            Interlocked.Increment(ref _noteStatusReads);
+
+            var needsCore = source.CoreOf.TryGetValue(note.Key, out var fingerprint);
+            var coreDone = needsCore && parts.Store.Get(fingerprint!) is { Kind: UnderstandingKind.Note };
+            var coreFailed = needsCore && !coreDone && parts.Store.Attempts(fingerprint!) >= UnderstandingWorker.MaxAttempts;
+
+            // Current and stale from the placement still usable in the book; given up only for the current fingerprint.
+            var placement = source.Book is { } book ? parts.Understanding.Placement(book, note.Key) : null;
+            var state = source.Book is null ? PlacementState.Missing
+                : placement is not { Stale: false } && parts.Understanding.PlacementStateOf(note.Key) == PlacementState.Failed
+                    ? PlacementState.Failed
+                : placement is null ? PlacementState.Missing
+                : placement.Stale ? PlacementState.Stale
+                : PlacementState.Current;
+            var fit = state == PlacementState.Current ? placement!.Verdict.Fit : (PlacementFit?)null;
+            bool? embedded = index is null ? null : index.VectorOf(note.Key) is not null;
+            inputs[note.Key] = new NoteStatusInput(false, true, embedded, needsCore, coreDone, coreFailed, state, null, fit);
+        }
+
+        return inputs;
+    }
+
+    /// <summary>Raised on the thread that replaced the page (the UI thread, or the opening's thread).</summary>
+    private void OnPageReplacedForCoverage(Page page) => ScheduleCoverage();
+
+    /// <summary>Something the coverage is computed from changed. Any thread; never throws.</summary>
+    private void ScheduleCoverage()
+    {
+        lock (_gate)
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            _coverageOutdated = true;
+            if (_coverageWatchers.Count > 0)
+            {
+                _coverageThrottle.Request();
+            }
+        }
+    }
+
+    /// <summary>
+    /// Takes the current book and its notes on the UI thread, reads their placements and computes the coverage in the
+    /// background, and applies it on the UI thread unless the book changed meanwhile (which computes it again). Only one
+    /// computation runs at a time, so the last one applied is the newest. A failure is logged and the last coverage stays.
+    /// </summary>
+    private async Task ComputeCoverageAsync()
+    {
+        CoverageSource? source = null;
+        Coverage coverage;
+        try
+        {
+            await _dispatch(() => source = TakeCoverageSource());
+            if (source is not { } taken)
+            {
+                return;
+            }
+
+            coverage = await Task.Run(() =>
+            {
+                Interlocked.Increment(ref _coverageComputations);
+                CoverageComputing?.Invoke();
+
+                // The store's placements are read here, not on the UI thread (a query or more per note). No check comes for
+                // a note the background gave up, or one without topics to offer (with the map of this book).
+                var understanding = taken.Parts?.Understanding;
+                var sameBook = taken.Parts?.PlacementBook == taken.Book.LinkName;
+                var withoutTopics = sameBook ? taken.Parts!.WithoutTopics : NoKeys;
+                var notes = taken.Notes
+                    .Select(note => note.Used ? note : note with
+                    {
+                        Placement = understanding?.Placement(taken.Book, note.Key),
+                        NoCheckComing = sameBook && (withoutTopics.Contains(note.Key)
+                            || understanding?.PlacementStateOf(note.Key) == PlacementState.Failed),
+                    })
+                    .ToList();
+                return CoverageCalculator.Compute(taken.Book, notes);
+            });
+        }
+        catch (Exception ex)
+        {
+            // A closed or failing store ends the computation as well; it is not worth an error then.
+            if (ex is not (ObjectDisposedException or DbException))
+            {
+                _logger.LogError(ex, "Computing the coverage failed");
+            }
+
+            lock (_gate)
+            {
+                _coverageOutdated = true;
+            }
+
+            return;
+        }
+
+        await _dispatch(() =>
+        {
+            if (!IsDisposed && string.Equals(_focusBook, source.Book.LinkName, StringComparison.OrdinalIgnoreCase))
+            {
+                Coverage = coverage;
+                CoverageChanged?.Invoke();
+            }
+        });
+    }
+
+    /// <summary>On the UI thread: what the coverage is computed from, or null if nobody watches or there is no book.</summary>
+    private CoverageSource? TakeCoverageSource()
+    {
+        lock (_gate)
+        {
+            if (_disposed || _coverageWatchers.Count == 0)
+            {
+                return null; // still out of date: computed once someone watches
+            }
+
+            _coverageOutdated = false;
+        }
+
+        if ((_focusBook is { } name ? Vault.FindBook(name) : null) is not { } book)
+        {
+            if (Coverage is not null)
+            {
+                Coverage = null;
+                CoverageChanged?.Invoke();
+            }
+
+            return null;
+        }
+
+        // The placements are read in the background (see ComputeCoverageAsync).
+        var notes = Notes.All()
+            .Where(note => note.Block.Parent is null)
+            .Select(note => new CoverageNote(note.Key, note.Date, note.IsUsed, note.Usages, null))
+            .ToList();
+        return new CoverageSource(book, _understanding, notes);
     }
 
     /// <summary>Called on any thread; never throws.</summary>
@@ -1263,18 +2044,149 @@ public sealed class VaultSession : IDisposable
 
     /// <summary>The language model's parts for this vault; the relevance service uses the understanding over the store.</summary>
     private sealed class UnderstandingParts(
-        IChatModel chat, string chatModel, UnderstandingStore store, StoreUnderstanding understanding, RelevanceService relevance,
-        UnderstandingWorker worker) : IDisposable
+        IChatModel chat, string chatModel, string embedModel, UnderstandingStore store, StoreUnderstanding understanding,
+        RelevanceService relevance, UnderstandingWorker worker) : IDisposable
     {
         public IChatModel Chat { get; } = chat;
 
         public string ChatModel { get; } = chatModel;
+
+        /// <summary>The embedding model whose vectors the understanding uses.</summary>
+        public string EmbedModel { get; } = embedModel;
 
         public StoreUnderstanding Understanding { get; } = understanding;
 
         public RelevanceService Relevance { get; } = relevance;
 
         public UnderstandingWorker Worker { get; } = worker;
+
+        public UnderstandingStore Store { get; } = store;
+
+        /// <summary>The book (link name) the understanding's placement map was last given for, and from which checks; under the session's feed gate.</summary>
+        public string? PlacementBook { get; set; }
+
+        public IReadOnlyList<UnderstandingItem>? PlacementItems { get; set; }
+
+        /// <summary>
+        /// The unused notes of the placement map's book that got no check as there was no topic to offer them; read by the
+        /// coverage in the background.
+        /// </summary>
+        public IReadOnlySet<Guid> WithoutTopics
+        {
+            get => Volatile.Read(ref _withoutTopics);
+            set => Volatile.Write(ref _withoutTopics, value);
+        }
+
+        private IReadOnlySet<Guid> _withoutTopics = new HashSet<Guid>();
+
+        /// <summary>The last work applied waits for the current book's summaries before its placement checks are built.</summary>
+        public bool PlacementsWaiting
+        {
+            get => Volatile.Read(ref _placementsWaiting) != 0;
+            set => Interlocked.Exchange(ref _placementsWaiting, value ? 1 : 0); // a full fence before Settled is read
+        }
+
+        /// <summary>How many times a heading or core statement was settled (stored, embedded or given up) so far.</summary>
+        public int Settled => Interlocked.CompareExchange(ref _settled, 0, 0);
+
+        /// <summary>Counts a heading or core settled, then tells whether the last work applied waits for summaries or cores.</summary>
+        public bool Settle()
+        {
+            Interlocked.Increment(ref _settled);
+            return PlacementsWaiting;
+        }
+
+        private int _placementsWaiting;
+        private int _settled;
+        private int _failures;
+
+        /// <summary>
+        /// Remembers the key of the request with the server unless there is none, and returns the key remembered before:
+        /// the request that ended (also after the next one started).
+        /// </summary>
+        public Guid? SwapLastRequest(Guid? current)
+        {
+            lock (_notesGate)
+            {
+                var last = _lastRequest;
+                _lastRequest = current ?? last;
+                return last;
+            }
+        }
+
+        private Guid? _lastRequest;
+
+        /// <summary>Remembers how many headings and core statements the worker gave up and returns the number remembered before.</summary>
+        public int SwapFailures(int failed) => Interlocked.Exchange(ref _failures, failed);
+
+        /// <summary>
+        /// Tells of a note's core statement item (null for a note too short to get one) whether it is settled: stored with a
+        /// vector from the current embedding model (as <see cref="StoreUnderstanding.NoteCore"/> needs it), given up after
+        /// <see cref="UnderstandingWorker.MaxAttempts"/>, or not needed. Reads the store once for all notes; a closed or
+        /// failing store settles none.
+        /// </summary>
+        public Func<UnderstandingItem?, bool> CoresSettled()
+        {
+            try
+            {
+                var stored = Store.Fingerprints();
+                var withoutVector = Store.WithoutVector(EmbedModel).ToHashSet(StringComparer.Ordinal);
+                var attempts = Store.AllAttempts();
+                return core => core is null
+                    || (stored.Contains(core.Fingerprint) && !withoutVector.Contains(core.Fingerprint))
+                    || attempts.GetValueOrDefault(core.Fingerprint) >= UnderstandingWorker.MaxAttempts;
+            }
+            catch (Exception ex) when (ex is ObjectDisposedException or DbException)
+            {
+                return core => core is null;
+            }
+        }
+
+        // The placement prompts per book instance and note text, and the placement checks last built (for which book and
+        // snapshot; under _notesGate).
+        private readonly ConditionalWeakTable<Book, ConcurrentDictionary<string, PlacementCheckPrompt>> _prompts = new();
+        private (Book Book, IReadOnlyList<NoteSnapshot> Notes, IReadOnlyList<UnderstandingItem> Items)? _placements;
+
+        /// <summary>
+        /// The placement check's prompt for the note (its <see cref="UnderstandingItems.NoteText"/>) in the book snapshot, as
+        /// "Genauer prüfen" asks it: built once per book instance and text if <paramref name="remember"/>ed (a prompt
+        /// without topics is not, the embedder may have failed). Reads the semantic index and the store; any thread.
+        /// </summary>
+        public PlacementCheckPrompt PlacementPrompt(Book book, Guid noteKey, string noteText, bool remember)
+        {
+            var prompts = _prompts.GetValue(book, _ => new ConcurrentDictionary<string, PlacementCheckPrompt>(StringComparer.Ordinal));
+            if (prompts.TryGetValue(noteText, out var known))
+            {
+                return known;
+            }
+
+            var passage = EmbeddingText.PassagePrefix + noteText;
+            var topics = Relevance.Topics(noteKey, passage, book, PlacementCheck.TopicLimit);
+            var places = Relevance.Placements(noteKey, passage, book, int.MaxValue)
+                .GroupBy(hit => hit.SectionKey)
+                .ToDictionary(group => group.Key, group => (IReadOnlyList<PlacementHit>)[.. group]);
+            var prompt = PlacementCheck.Prompt(book, noteText, topics, places, section => Understanding.Heading(book, section)?.Text);
+            return remember && prompt.Topics.Count > 0 ? prompts.GetOrAdd(noteText, prompt) : prompt;
+        }
+
+        /// <summary>The placement checks built for this book instance and snapshot, else null.</summary>
+        public IReadOnlyList<UnderstandingItem>? CachedPlacements(Book book, IReadOnlyList<NoteSnapshot> snapshot)
+        {
+            lock (_notesGate)
+            {
+                return _placements is { } known && ReferenceEquals(known.Book, book) && ReferenceEquals(known.Notes, snapshot)
+                    ? known.Items
+                    : null;
+            }
+        }
+
+        public void RememberPlacements(Book book, IReadOnlyList<NoteSnapshot> snapshot, IReadOnlyList<UnderstandingItem> items)
+        {
+            lock (_notesGate)
+            {
+                _placements = (book, snapshot, items);
+            }
+        }
 
         // The notes' items of the last snapshot computed, and the snapshot last given to the understanding; under _notesGate.
         private readonly Lock _notesGate = new();
@@ -1340,16 +2252,93 @@ public sealed class VaultSession : IDisposable
         public void Dispose()
         {
             Worker.Dispose();
-            store.Dispose();
+            Store.Dispose();
         }
     }
 
-    /// <summary>What a note's understanding item is computed from, read on the UI thread.</summary>
-    private sealed record NoteSnapshot(Guid Key, string Text, string Content, string FilePath);
+    /// <summary>What the coverage is computed from: the current book, the language model's parts (if any) and the notes (without placements), taken on the UI thread.</summary>
+    private sealed record CoverageSource(Book Book, UnderstandingParts? Parts, IReadOnlyList<CoverageNote> Notes);
 
-    /// <summary>The worker's work of one feed: the current book's headings, the notes, the other books' headings.</summary>
+    /// <summary>What a note's understanding items are computed from (and whether it is used, and where), read on the UI thread.</summary>
+    private sealed record NoteSnapshot(Guid Key, string Text, string Content, string FilePath, bool Used,
+        IReadOnlyList<UsedInEntry> Usages);
+
+    /// <summary>
+    /// The worker's work of one feed: the current book's headings, the notes, the other books' headings, and the current
+    /// book (link name) with its notes' placement checks, which are only built once its summaries are settled (and a
+    /// note's once its core statement is: the notes still waiting for theirs, by key with their note identity), and the
+    /// count of settled headings and cores taken when the feed started, and whether it left building the checks (they
+    /// could be) to a debounced feed.
+    /// </summary>
     private readonly record struct FeedWork(
-        IReadOnlyList<UnderstandingItem> Current, IReadOnlyList<UnderstandingItem> Notes, IReadOnlyList<UnderstandingItem> Others);
+        IReadOnlyList<UnderstandingItem> Current, IReadOnlyList<UnderstandingItem> Notes, IReadOnlyList<UnderstandingItem> Others,
+        string? Book, IReadOnlyList<UnderstandingItem> Placements, IReadOnlyDictionary<Guid, string> WaitingForCores,
+        IReadOnlySet<Guid> WithoutTopics, bool PlacementsReady, int Settled, bool Deferred);
+
+    /// <summary>The placement checks built for a book's unused notes, the notes waiting for their core statement, and those without topics to offer.</summary>
+    private sealed record PlacementBuild(IReadOnlyList<UnderstandingItem> Items, IReadOnlyDictionary<Guid, string> WaitingForCores,
+        IReadOnlySet<Guid> WithoutTopics);
+
+    /// <summary>What the notes' status is put together from: the parts, the notes' snapshot and items, and the current book.</summary>
+    private sealed class StatusSource
+    {
+        /// <param name="noteItems">The notes' core-statement items.</param>
+        /// <param name="placementItems">The placement checks the understanding was given for the book.</param>
+        public StatusSource(UnderstandingParts parts, IReadOnlyList<NoteSnapshot> notes, Book? book,
+            IReadOnlyList<UnderstandingItem> noteItems, IReadOnlyList<UnderstandingItem> placementItems)
+        {
+            Parts = parts;
+            Notes = notes;
+            Book = book;
+            _noteItems = noteItems;
+            _placementItems = placementItems;
+            NoteOf = notes.DistinctBy(note => note.Key).ToDictionary(note => note.Key);
+            CoreOf = noteItems.DistinctBy(item => item.Key).ToDictionary(item => item.Key, item => item.Fingerprint);
+            KeysOf = noteItems.Concat(placementItems)
+                .GroupBy(item => item.Fingerprint, StringComparer.Ordinal)
+                .ToDictionary(group => group.Key, group => (IReadOnlyList<Guid>)[.. group.Select(item => item.Key)], StringComparer.Ordinal);
+        }
+
+        public UnderstandingParts Parts { get; }
+
+        public IReadOnlyList<NoteSnapshot> Notes { get; }
+
+        public Book? Book { get; }
+
+        public IReadOnlyDictionary<Guid, NoteSnapshot> NoteOf { get; }
+
+        /// <summary>The fingerprint of the note's core statement, for notes long enough to have one.</summary>
+        public IReadOnlyDictionary<Guid, string> CoreOf { get; }
+
+        /// <summary>The notes whose core statement or placement check has the fingerprint.</summary>
+        public IReadOnlyDictionary<string, IReadOnlyList<Guid>> KeysOf { get; }
+
+        private readonly IReadOnlyList<UnderstandingItem> _noteItems;
+        private readonly IReadOnlyList<UnderstandingItem> _placementItems;
+
+        /// <summary>Whether this source is made of these very snapshots.</summary>
+        public bool Of(UnderstandingParts parts, IReadOnlyList<NoteSnapshot> notes, Book? book,
+            IReadOnlyList<UnderstandingItem> noteItems, IReadOnlyList<UnderstandingItem> placementItems) =>
+            ReferenceEquals(Parts, parts) && ReferenceEquals(Notes, notes) && ReferenceEquals(Book, book)
+            && ReferenceEquals(_noteItems, noteItems) && ReferenceEquals(_placementItems, placementItems);
+    }
+
+    /// <summary>The notes' status inputs by key, read with <paramref name="Parts"/> from <paramref name="Source"/>.</summary>
+    private sealed record NoteStatuses(UnderstandingParts Parts, StatusSource Source, IReadOnlyDictionary<Guid, NoteStatusInput> Inputs,
+        (int Done, int Total)? Embedding);
+
+    /// <summary>What changed since the notes' status was last put together.</summary>
+    private sealed class StatusChanges
+    {
+        public HashSet<string> Fingerprints { get; } = new(StringComparer.Ordinal);
+
+        public HashSet<Guid> Keys { get; } = [];
+
+        public bool All { get; set; }
+
+        /// <summary>Notes were embedded: the known inputs' embeddings are read again.</summary>
+        public bool Embeddings { get; set; }
+    }
 
     /// <summary>The services that exist once the semantic index does, with the embedder and model id behind it.</summary>
     private sealed record AiParts(

@@ -193,14 +193,32 @@ verglichen; dadurch weiß jede Überschrift, worum es in ihren Unterabschnitten 
   Themen-Zusammenfassung. **„Genauer prüfen“** zeigt dem Sprachmodell die Unterkapitel der (bis zu) drei passendsten Kapitel
   (mit dem ersten Satz ihrer Zusammenfassung und den besten Textstellen); es wählt das Unterkapitel und die Stelle und
   begründet die Wahl. Die Antwort ist per JSON-Schema auf die angebotenen Stellen beschränkt. Auf dem Testrechner (i5,
-  nur CPU) dauert das im Mittel gut eine halbe Minute, höchstens 1 Minute (Anzeige „Prüfe … 0:22 von ca. 0:35“,
-  abbrechbar); die Empfehlung steht oben in der Liste.
+  nur CPU) dauert das im Mittel knapp eine Minute, höchstens etwa 1½ Minuten (Anzeige „Prüfe … 0:42 von ca. 1:00“,
+  abbrechbar); die Empfehlung steht oben in der Liste. Das Modell sagt dazu, wie gut die Notiz passt (gut, teilweise,
+  kaum).
+- **Vorberechnete Zuordnung:** Für jede noch nicht verwendete Notiz läuft „Genauer prüfen“ im Hintergrund für das
+  aktuelle Buch, sobald alle Zusammenfassungen des Buchs und die Kernaussage der Notiz fertig sind. „Wohin damit?“
+  zeigt die Empfehlung dann sofort; „veraltet“ heißt, Notiz oder Buch haben sich seitdem geändert (sie wird neu
+  berechnet). Neu gerechnet wird nur, wenn sich die Anfrage an das Modell ändert. „Genauer prüfen“ erscheint nur noch,
+  wenn eine Empfehlung fehlt oder veraltet ist.
 - **„Relevant“** beschreibt den Abschnitt über seine Zusammenfassung (und zu einem Viertel die seines Oberabschnitts)
-  und vergleicht die Notizen über Kernaussage und Text.
+  und vergleicht die Notizen über Kernaussage und Text. Oben stehen unter „Hierher eingeordnet“ die Notizen, die das
+  Modell diesem Abschnitt (oder einem Unterabschnitt) zugeordnet hat, darunter „Weitere ähnliche“.
+- **Abdeckung:** Der Schalter „Abdeckung“ in der Gliederung zeigt je Überschrift einen Balken: grün übernommene,
+  orange zugeordnete offene Notizen (Tooltip mit „unsicher“, wenn Embedding und Modell uneins sind); ein Klick öffnet
+  „Relevant“ des Abschnitts. Eine rote 0 markiert einen untersten Abschnitt ohne Notizen, sobald alle Notizen geprüft
+  sind. Der Reiter „Abdeckung“ im Notizbereich zeigt Kennzahlen (geprüft, leere Abschnitte, ohne passenden Ort,
+  unsicher), alle untersten Abschnitte (Buchreihenfolge oder „Wenigste zuerst“), die Notizen ohne passenden Ort
+  (Passung „kaum“) und eingeklappt die unsicheren Zuordnungen.
+- **Status je Notiz:** Ein Punkt im Kopf jeder unverwendeten Notizkarte zeigt den Stand: blau pulsierend = wird
+  berechnet, rot = fehlgeschlagen, grün = Zuordnung aktuell, gelb = veraltet, grau = steht noch aus (Tooltip mit allen
+  Stufen).
 - **Hintergrund:** immer nur eine Anfrage; zuerst das aktuelle Kapitel, dann das übrige Buch, dann die Notizen
   (neueste zuerst). Beim Tippen wartet die Berechnung 10 s Ruhe ab, im Akkubetrieb pausiert sie, der Schalter ⏸/▶ in
   der Kopfzeile hält sie an. Auf dem Testrechner braucht eine Zusammenfassung etwa 45 s, eine Kernaussage etwa 18 s je
-  Eintrag. Die Kopfzeile zeigt den Fortschritt mit Balken und Restzeit („Sprachmodell 34/120 · noch ca. 1 h 10 min“).
+  Eintrag, eine Zuordnung knapp eine Minute. Die Kopfzeile zeigt den Fortschritt mit Balken und Restzeit („Sprachmodell
+  34/120 · noch ca. 1 h 10 min“); ein Klick darauf schlüsselt ihn nach Embedding, Zusammenfassungen, Kernaussagen und
+  Zuordnungen auf (je mit Balken und Restzeit, dazu Pausengrund und übersprungene Einträge).
   Eine Anfrage darf höchstens 5 Minuten dauern; nach 3 Fehlversuchen wird ein Eintrag bis zur nächsten Änderung
   übersprungen; scheitern mehrere Einträge hintereinander am Server, pausiert die Berechnung und versucht es nach 60 s
   erneut.
@@ -333,6 +351,13 @@ Sprachmodell (Ollama, Modell `qwen2.5:7b` geladen)
       und die Empfehlung mit Begründung oben; „Abbrechen“ beendet die Prüfung.
 - [ ] Einstellungen: eine Adresse auf einem anderen Rechner verlangt die Bestätigung der Warnung.
 - [ ] Systemanzeige: Werte plausibel (Task-Manager), Warnfarbe bei Volllast, abschaltbar.
+- [ ] Nach den Zusammenfassungen und Kernaussagen laufen die Zuordnungen: Statuspunkte wechseln von grau über blau
+      auf grün; „Wohin damit?“ zeigt die Empfehlung sofort, nach einer Textänderung „veraltet“.
+- [ ] „Relevant“ zeigt „Hierher eingeordnet“ über „Weitere ähnliche“, ohne doppelte Notizen.
+- [ ] Gliederung: „Abdeckung“ an/aus bleibt nach Neustart erhalten; Balken, Tooltip und rote 0 plausibel; Klick öffnet
+      „Relevant“.
+- [ ] Reiter „Abdeckung“: Kennzahlen, Sortierung „Wenigste zuerst“, Notizen ohne passenden Ort.
+- [ ] Klick auf den Fortschritt in der Kopfzeile öffnet die Aufschlüsselung; Escape schließt sie.
 - [ ] Nach einer Berechnung sind alle Buch- und Notizdateien unverändert (`git diff`).
 
 PDF

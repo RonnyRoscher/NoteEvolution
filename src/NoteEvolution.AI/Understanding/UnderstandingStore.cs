@@ -5,7 +5,7 @@ using Microsoft.Extensions.Logging;
 namespace NoteEvolution.AI.Understanding;
 
 /// <summary>What an understanding entry describes: a heading's topic summary or a note's core statement.</summary>
-public enum UnderstandingKind { Heading, Note }
+public enum UnderstandingKind { Heading, Note, Placement }
 
 /// <summary>
 /// One piece of the model's understanding: <paramref name="Text"/> produced by <paramref name="ChatModel"/> for the content
@@ -76,6 +76,64 @@ public sealed class UnderstandingStore : IDisposable
             command.Parameters.AddWithValue("$fp", fingerprint);
             using var reader = command.ExecuteReader();
             return reader.Read() ? ReadEntry(reader) : null;
+        }
+    }
+
+    /// <summary>The kind of the entry stored for the fingerprint (without reading the rest of it), or null.</summary>
+    public UnderstandingKind? KindOf(string fingerprint)
+    {
+        lock (_gate)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            using var command = _db.CreateCommand();
+            command.CommandText = "SELECT kind FROM entries WHERE fingerprint = $fp";
+            command.Parameters.AddWithValue("$fp", fingerprint);
+            return command.ExecuteScalar() is long kind ? (UnderstandingKind)kind : null;
+        }
+    }
+
+    /// <summary>The fingerprints of all stored entries (one read for a whole plan instead of one per item).</summary>
+    public IReadOnlySet<string> Fingerprints()
+    {
+        lock (_gate)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            using var command = _db.CreateCommand();
+            command.CommandText = "SELECT fingerprint FROM entries";
+            var result = new HashSet<string>(StringComparer.Ordinal);
+            using var reader = command.ExecuteReader();
+            while (reader.Read()) result.Add(reader.GetString(0));
+            return result;
+        }
+    }
+
+    /// <summary>The failed attempts of every fingerprint that has any (see <see cref="Attempts"/>).</summary>
+    public IReadOnlyDictionary<string, int> AllAttempts()
+    {
+        lock (_gate)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            using var command = _db.CreateCommand();
+            command.CommandText = "SELECT fingerprint, count FROM attempts";
+            var result = new Dictionary<string, int>(StringComparer.Ordinal);
+            using var reader = command.ExecuteReader();
+            while (reader.Read()) result[reader.GetString(0)] = (int)reader.GetInt64(1);
+            return result;
+        }
+    }
+
+    /// <summary>Every (kind, identity) that has a stored entry, i.e. for which <see cref="LatestByIdentity"/> finds one.</summary>
+    public IReadOnlySet<(UnderstandingKind Kind, string Identity)> Identities()
+    {
+        lock (_gate)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            using var command = _db.CreateCommand();
+            command.CommandText = "SELECT DISTINCT kind, identity FROM entries";
+            var result = new HashSet<(UnderstandingKind, string)>();
+            using var reader = command.ExecuteReader();
+            while (reader.Read()) result.Add(((UnderstandingKind)reader.GetInt32(0), reader.GetString(1)));
+            return result;
         }
     }
 
@@ -155,7 +213,8 @@ public sealed class UnderstandingStore : IDisposable
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
             using var command = _db.CreateCommand();
-            command.CommandText = "SELECT fingerprint FROM entries WHERE vector IS NULL OR embed_model IS NULL OR embed_model <> $embed ORDER BY updated";
+            // kind <> 2: placement results (UnderstandingKind.Placement, stored as INTEGER) are never embedded.
+            command.CommandText = "SELECT fingerprint FROM entries WHERE kind <> 2 AND (vector IS NULL OR embed_model IS NULL OR embed_model <> $embed) ORDER BY updated";
             command.Parameters.AddWithValue("$embed", embedModel);
             var result = new List<string>();
             using var reader = command.ExecuteReader();
@@ -218,7 +277,7 @@ public sealed class UnderstandingStore : IDisposable
 
     /// <summary>
     /// Deletes every entry whose fingerprint is not live, except the newest entry of each kind for a live identity (the
-    /// stale fallback), and the failed attempts of fingerprints that are neither stored nor live (a live item that failed
+    /// stale fallback) and the newest placement check of every identity, live or not (spec 3.1, 3.3), and the failed attempts of fingerprints that are neither stored nor live (a live item that failed
     /// too often stays skipped).
     /// </summary>
     public void Prune(IReadOnlySet<string> liveFingerprints, IReadOnlySet<string> liveIdentities)
@@ -236,9 +295,13 @@ public sealed class UnderstandingStore : IDisposable
                 while (reader.Read())
                 {
                     var fingerprint = reader.GetString(0);
+                    var kind = reader.GetInt64(1);
                     var identity = reader.GetString(2);
-                    var newestOfLiveIdentity = liveIdentities.Contains(identity) && seen.Add((reader.GetInt64(1), identity));
-                    if (!newestOfLiveIdentity && !liveFingerprints.Contains(fingerprint)) stale.Add(fingerprint);
+                    // A placement check's newest result is kept even when its identity is not live: another book's results
+                    // count again when that book is current, and a book waiting for its summaries keeps its stale results.
+                    var keepsNewest = kind == (long)UnderstandingKind.Placement || liveIdentities.Contains(identity);
+                    var newestKept = keepsNewest && seen.Add((kind, identity));
+                    if (!newestKept && !liveFingerprints.Contains(fingerprint)) stale.Add(fingerprint);
                 }
             }
 
@@ -312,6 +375,10 @@ public sealed class UnderstandingStore : IDisposable
                 return null;
             }
 
+            // A disposable cache: the write-ahead log lets readers go on while the worker writes, and a lost last
+            // write after a crash costs only its recomputation.
+            Run(db, "PRAGMA journal_mode=WAL");
+            Run(db, "PRAGMA synchronous=NORMAL");
             Run(db, "CREATE TABLE IF NOT EXISTS entries(fingerprint TEXT PRIMARY KEY, kind INTEGER NOT NULL, identity TEXT NOT NULL, " +
                     "text TEXT NOT NULL, chat_model TEXT NOT NULL, embed_model TEXT, vector BLOB, updated INTEGER NOT NULL)");
             Run(db, "CREATE INDEX IF NOT EXISTS entries_identity ON entries(kind, identity, updated)");

@@ -650,4 +650,232 @@ public sealed class UnderstandingWorkerTests
         lock (events) Assert.Equal(["started"], events);
         Assert.False(f.Worker.Busy);
     }
+
+    private const string PlacementSystem = "System Zuordnung";
+    private const string Verdict = """{"begruendung":"passt","stelle":"1.1","passung":"gut"}""";
+
+    private static UnderstandingItem Placement(string title, Guid? noteKey = null, string? identity = null)
+    {
+        var prompt = new PlacementCheckPrompt(PlacementSystem, "Prüfe " + title,
+            [new CheckTopic(1, Guid.NewGuid(), [Guid.NewGuid()])], "{\"schema\":\"" + title + "\"}");
+        return UnderstandingItems.ForPlacement(noteKey ?? Guid.NewGuid(), identity ?? "id-" + title, "Buch", prompt, Model);
+    }
+
+    private static bool IsPlacement(ChatCall call) => call.System == PlacementSystem;
+
+    /// <summary>A placement call gets a valid verdict, every other call the default answer.</summary>
+    private static void AnswerPlacements(Fixture f) =>
+        f.Chat.Answer = (call, n) => IsPlacement(call) ? Verdict : $"Antwort {n}.";
+
+    [Fact]
+    public async Task RunNext_Answered_StoredBeforeTheNextPlan_NotAskedAgain()
+    {
+        await using var f = new Fixture();
+        f.Chat.Gate = new SemaphoreSlim(0);
+        AnswerPlacements(f);
+        var first = Placement("Eins");
+        var second = Placement("Zwei");
+        f.Worker.SetWork([], null, [], [], [first, second]);
+        f.Start();
+        await Until(() => f.Chat.Calls.Count == 1);
+
+        // The second check is asked by hand behind the first; its answer is stored before the worker plans on.
+        var check = f.Worker.RunNextAsync(second.Check!.System, second.Check.User, PlacementCheck.Options(second.Check),
+            CancellationToken.None,
+            answered: answer => f.Store.Put(new UnderstandingEntry(UnderstandingKind.Placement, second.Fingerprint,
+                second.Identity, answer, Model, null, null)));
+        f.Chat.Gate.Release(10);
+        Assert.Equal(Verdict, await check.WaitAsync(TimeSpan.FromSeconds(10)));
+
+        await Until(() => f.Worker.Progress is { Done: 2, Total: 2 }, "both checks done");
+        await Quiet();
+        Assert.Equal(2, f.Chat.Calls.Count);
+    }
+
+    [Fact]
+    public async Task Placements_LastGroup_AfterOtherBooks()
+    {
+        await using var f = new Fixture();
+        AnswerPlacements(f);
+        var p = Placement("P");
+        f.Worker.SetWork([Heading("H")], null, [Note("N")], [Heading("O")], [p]);
+
+        f.Start();
+        await Until(() => f.Store.Get(p.Fingerprint) is not null);
+
+        Assert.Equal(["H", "N", "O", p.Check!.User], f.Subjects);
+        var call = f.Chat.Calls[3];
+        Assert.Equal(p.Check.System, call.System);
+        Assert.Equal(p.Check.User, call.User);
+        Assert.Equal(p.Check.Schema, call.Options.Schema);
+        Assert.True(call.Options.Json);
+    }
+
+    [Fact]
+    public async Task Placement_StoredAsJson_NoVector()
+    {
+        await using var f = new Fixture();
+        AnswerPlacements(f);
+        var p = Placement("P");
+        f.Worker.SetWork([], null, [], [], [p]);
+
+        f.Start();
+        await Until(() => f.Store.Get(p.Fingerprint) is not null);
+        await Until(() => f.Worker.Progress is { Done: 1, Total: 1 });
+        await Quiet();
+
+        var entry = f.Store.Get(p.Fingerprint)!;
+        Assert.Equal(UnderstandingKind.Placement, entry.Kind);
+        Assert.Equal(p.Identity, entry.Identity);
+        Assert.Equal(PlacementCheck.Parse(Verdict, p.Check!), PlacementCheck.Deserialize(entry.Text));
+        Assert.Null(entry.Vector);
+        Assert.Empty(f.Embedded);
+    }
+
+    [Fact]
+    public async Task Placement_Unusable_IsFailedAttempt()
+    {
+        await using var f = new Fixture();
+        f.Chat.Gate = new SemaphoreSlim(0);
+        f.Chat.Answer = (_, _) => "{}";
+        var p = Placement("P");
+        f.Worker.SetWork([], null, [], [], [p]);
+
+        f.Start();
+        await Until(() => f.Chat.Calls.Count == 1);
+        f.Chat.Gate.Release();
+        await Until(() => f.Store.Attempts(p.Fingerprint) == 1);
+        Assert.Null(f.Store.Get(p.Fingerprint));
+
+        f.Chat.Gate.Release(2);
+        await Until(() => f.Store.Attempts(p.Fingerprint) == 3);
+        await Until(() => f.Worker.Progress.Kinds?[UnderstandingKind.Placement] is { Done: 1, Total: 1, Failed: 1 });
+        await Quiet();
+        Assert.Equal(3, f.Chat.Calls.Count);
+    }
+
+    [Fact]
+    public async Task Progress_Kinds_CountEachKind()
+    {
+        await using var f = new Fixture();
+        f.Chat.Gate = new SemaphoreSlim(0);
+        f.Worker.SetWork([Heading("H1"), Heading("H2")], null, [Note("N")], [Heading("O")], [Placement("P1"), Placement("P2")]);
+
+        f.Start();
+        await Until(() => f.Chat.Calls.Count == 1);
+
+        var progress = f.Worker.Progress;
+        Assert.Equal(new KindProgress(0, 3, 0, null), progress.Kinds![UnderstandingKind.Heading]);
+        Assert.Equal(new KindProgress(0, 1, 0, null), progress.Kinds[UnderstandingKind.Note]);
+        Assert.Equal(new KindProgress(0, 2, 0, null), progress.Kinds[UnderstandingKind.Placement]);
+        Assert.Equal(5, progress.Total); // the other book's heading is not counted overall
+        Assert.Equal(0, progress.Done);
+    }
+
+    [Fact]
+    public async Task Progress_Remaining_PerKindMean()
+    {
+        await using var f = new Fixture();
+        f.Chat.Gate = new SemaphoreSlim(0);
+        AnswerPlacements(f);
+        List<UnderstandingItem> notes = [Note("N1"), Note("N2"), Note("N3")];
+        var placements = Enumerable.Range(1, 5).Select(i => Placement("P" + i)).ToList();
+        f.Worker.SetWork([], null, notes, [], placements);
+
+        f.Start();
+        for (var i = 1; i <= 6; i++)
+        {
+            await Until(() => f.Chat.Calls.Count == i, "call " + i);
+            if (i == 6)
+            {
+                // A new note arrives while the third placement runs: it is queued before the remaining placements.
+                f.Worker.SetWork([], null, [.. notes, Note("N4")], [], placements);
+            }
+
+            f.Time.Advance(TimeSpan.FromSeconds(i <= 3 ? 10 : 30));
+            f.Chat.Gate.Release();
+        }
+
+        await Until(() => f.Chat.Calls.Count == 7);
+        Assert.Equal("N4", Subject(f.Chat.Calls[6]));
+        var progress = f.Worker.Progress;
+        Assert.Equal(new KindProgress(3, 5, 0, TimeSpan.FromSeconds(60)), progress.Kinds![UnderstandingKind.Placement]);
+        Assert.Equal(new KindProgress(3, 4, 0, TimeSpan.FromSeconds(10)), progress.Kinds[UnderstandingKind.Note]);
+        Assert.Equal(TimeSpan.FromSeconds(70), progress.Remaining);
+        f.Chat.Gate.Release(3);
+    }
+
+    [Fact]
+    public async Task Progress_Current_WhileRequestRuns()
+    {
+        await using var f = new Fixture();
+        f.Chat.Gate = new SemaphoreSlim(0);
+        AnswerPlacements(f);
+        var noteKey = Guid.NewGuid();
+        var p = Placement("P", noteKey);
+        f.Worker.SetWork([], null, [], [], [p]);
+
+        f.Start();
+        await Until(() => f.Chat.Calls.Count == 1);
+        Assert.Equal(new UnderstandingCurrent(UnderstandingKind.Placement, noteKey), f.Worker.Progress.Current);
+
+        f.Chat.Gate.Release();
+        await Until(() => f.Store.Get(p.Fingerprint) is not null);
+        await Until(() => f.Worker.Progress.Current is null, "current cleared");
+
+        var manual = new UnderstandingCurrent(UnderstandingKind.Placement, Guid.NewGuid());
+        var check = f.Worker.RunNextAsync("System", "Frage", new ChatOptions(10), CancellationToken.None, current: manual);
+        await Until(() => f.Chat.Calls.Count == 2);
+        Assert.Equal(manual, f.Worker.Progress.Current);
+
+        f.Chat.Gate.Release();
+        await check.WaitAsync(TimeSpan.FromSeconds(10));
+        await Until(() => f.Worker.Progress.Current is null, "current cleared after the manual check");
+    }
+
+    [Fact]
+    public async Task Placement_NoteEditedDuringRequest_StoredUnderOldFingerprint()
+    {
+        await using var f = new Fixture();
+        f.Chat.Gate = new SemaphoreSlim(0);
+        AnswerPlacements(f);
+        var noteKey = Guid.NewGuid();
+        var old = Placement("Alt", noteKey, "id-N");
+        var edited = Placement("Neu", noteKey, "id-N");
+        f.Worker.SetWork([], null, [], [], [old]);
+
+        f.Start();
+        await Until(() => f.Chat.Calls.Count == 1);
+        f.Worker.SetWork([], null, [], [], [edited]);
+        f.Chat.Gate.Release();
+
+        await Until(() => f.Chat.Calls.Count == 2);
+        Assert.NotNull(f.Store.Get(old.Fingerprint));
+        Assert.Null(f.Store.Get(edited.Fingerprint));
+        Assert.Equal(edited.Check!.User, f.Chat.Calls[1].User);
+
+        f.Chat.Gate.Release();
+        await Until(() => f.Store.Get(edited.Fingerprint) is not null);
+        Assert.False(f.Run.IsFaulted);
+    }
+
+    [Fact]
+    public async Task Prune_KeepsLivePlacementsAndNewestOfOtherIdentities()
+    {
+        await using var f = new Fixture();
+        var live = Placement("Live");
+        f.Store.Put(new UnderstandingEntry(UnderstandingKind.Placement, "fp-older", "placement|Beta|id-weg", "{}", Model, null, null));
+        f.Store.Put(new UnderstandingEntry(UnderstandingKind.Placement, "fp-newer", "placement|Beta|id-weg", "{}", Model, null, null));
+        f.Store.Put(new UnderstandingEntry(UnderstandingKind.Placement, live.Fingerprint, live.Identity, "{}", Model, null, null));
+        f.Worker.SetWork([], null, [Note("A")], [], [live]);
+
+        f.Start();
+        await Until(() => f.Worker.Progress is { Done: 2, Total: 2 });
+        await Until(() => f.Store.Get("fp-older") is null, "prune");
+
+        // Another book's newest result stays for when that book is current again (spec 3.1).
+        Assert.NotNull(f.Store.Get("fp-newer"));
+        Assert.NotNull(f.Store.Get(live.Fingerprint));
+        Assert.NotNull(f.Store.Get("fp-A"));
+    }
 }

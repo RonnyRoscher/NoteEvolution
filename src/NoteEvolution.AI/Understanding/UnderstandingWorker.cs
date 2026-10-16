@@ -5,21 +5,34 @@ using NoteEvolution.AI.Language;
 namespace NoteEvolution.AI.Understanding;
 
 /// <summary>
-/// State of the background computation: <paramref name="Done"/> of <paramref name="Total"/> entries of the current book and
-/// the notes (an entry skipped after too many failures counts as done), the estimated <paramref name="Remaining"/> time
-/// (null until three answers were timed) and why the worker is waiting, if it is. Not <paramref name="Planned"/> until the
-/// worker looked at the first work it was given: then nothing is known yet (the counts are 0).
+/// State of the background computation: <paramref name="Done"/> of <paramref name="Total"/> entries of the current book,
+/// the notes and the placement checks (an entry skipped after too many failures counts as done), the estimated
+/// <paramref name="Remaining"/> time (null until three answers were timed) and why the worker is waiting, if it is. Not
+/// <paramref name="Planned"/> until the worker looked at the first work it was given: then nothing is known yet (the counts
+/// are 0). <paramref name="Kinds"/> breaks the work down by kind (headings of all books); <paramref name="Current"/> is the
+/// request with the server, if any.
 /// </summary>
 public sealed record UnderstandingProgress(int Done, int Total, TimeSpan? Remaining, UnderstandingPause Pause,
-    bool Planned = true);
+    bool Planned = true, IReadOnlyDictionary<UnderstandingKind, KindProgress>? Kinds = null,
+    UnderstandingCurrent? Current = null);
+
+/// <summary>
+/// The work of one kind: <paramref name="Done"/> of <paramref name="Total"/> (skipped ones count as done and as
+/// <paramref name="Failed"/>) and the estimated <paramref name="Remaining"/> time from this kind's mean answer time.
+/// </summary>
+public sealed record KindProgress(int Done, int Total, int Failed, TimeSpan? Remaining);
+
+/// <summary>The request with the server: what kind of entry it computes and for which heading or note (session key).</summary>
+public sealed record UnderstandingCurrent(UnderstandingKind Kind, Guid Key);
 
 /// <summary>Why the worker waits although there is work: the user's switch, typing, battery, or the language-model server.</summary>
 public enum UnderstandingPause { None, User, Typing, Battery, Unreachable, ModelMissing }
 
 /// <summary>
-/// The background queue of the language model: computes heading summaries (bottom-up) and note core statements one request
-/// at a time, stores them with their meaning vectors in the <see cref="UnderstandingStore"/>, pauses for the user's switch,
-/// typing, battery and an unreachable server, retries failures and reports progress with a remaining-time estimate.
+/// The background queue of the language model: computes heading summaries (bottom-up), note core statements and, last,
+/// placement checks one request at a time, stores them in the <see cref="UnderstandingStore"/> (summaries and core
+/// statements with their meaning vectors), pauses for the user's switch, typing, battery and an unreachable server, retries
+/// failures and reports progress per kind with a remaining-time estimate and the running request.
 /// Once a plan has nothing left to do, the store is pruned to the items of that work (and the newest entry of each of
 /// their identities), so it does not grow forever.
 /// It only works on the <see cref="UnderstandingItem"/> snapshots it is given and never touches the vault model.
@@ -65,7 +78,7 @@ public sealed class UnderstandingWorker : IDisposable
     private readonly Lock _gate = new();
     private readonly Queue<PendingCall> _calls = new();
     private TaskCompletionSource _wake = NewWake();
-    private Work _work = new([], null, [], []);
+    private Work _work = new([], null, [], [], []);
     private bool _workChanged = true;
     private bool _workSet;
     private DateTimeOffset _lastTyping = DateTimeOffset.MinValue;
@@ -77,7 +90,7 @@ public sealed class UnderstandingWorker : IDisposable
     private readonly CancellationTokenSource _dispose = new();
 
     // Only touched by the loop.
-    private Work _planWork = new([], null, [], []);
+    private Work _planWork = new([], null, [], [], []);
     private Plan? _plan;
     private bool _planStale = true;
     private bool _planned;
@@ -85,6 +98,8 @@ public sealed class UnderstandingWorker : IDisposable
     private readonly HashSet<string> _retryLater = [];
     private readonly HashSet<string> _unembeddable = [];
     private readonly Queue<TimeSpan> _durations = new();
+    private readonly Dictionary<UnderstandingKind, Queue<TimeSpan>> _kindDurations = [];
+    private UnderstandingCurrent? _current;
     private readonly List<string> _serverErrorStreak = [];
     private bool _serverTrouble;
     private bool _connected;
@@ -142,15 +157,17 @@ public sealed class UnderstandingWorker : IDisposable
     /// <summary>
     /// Replaces the queue (spec 4 order): headings of the current book (each list children before parents, as
     /// <see cref="UnderstandingItems.ForBook"/> builds it) with the current section, its sub-sections and its ancestors
-    /// first, then the notes in the given order (the caller sorts them newest first), then the headings of other books.
-    /// Within each group, items whose content changed (an older entry of the same identity exists) come first.
+    /// first, then the notes in the given order (the caller sorts them newest first), then the headings of other books, then
+    /// the placement checks. Within each group, items whose content changed (an older entry of the same identity exists)
+    /// come first.
     /// </summary>
     public void SetWork(IReadOnlyList<UnderstandingItem> currentBook, Guid? currentSectionKey,
-        IReadOnlyList<UnderstandingItem> notes, IReadOnlyList<UnderstandingItem> otherBooks)
+        IReadOnlyList<UnderstandingItem> notes, IReadOnlyList<UnderstandingItem> otherBooks,
+        IReadOnlyList<UnderstandingItem>? placements = null)
     {
         lock (_gate)
         {
-            _work = new Work(currentBook, currentSectionKey, notes, otherBooks);
+            _work = new Work(currentBook, currentSectionKey, notes, otherBooks, placements ?? []);
             _workChanged = true;
             _workSet = true;
         }
@@ -172,10 +189,15 @@ public sealed class UnderstandingWorker : IDisposable
     /// </summary>
     /// <param name="waiting">Called at once (on the caller's thread) when another request is with the server, so this one waits.</param>
     /// <param name="started">Called on the worker's thread when this request goes to the server.</param>
+    /// <param name="current">Reported as <see cref="UnderstandingProgress.Current"/> while this request is with the server.</param>
+    /// <param name="answered">
+    /// Called with the answer on the worker's thread before the next background request is planned, so what it stores
+    /// (e.g. a placement check under its item's fingerprint) is not asked for again; an exception is logged.
+    /// </param>
     public async Task<string> RunNextAsync(string system, string user, ChatOptions options, CancellationToken ct,
-        Action? waiting = null, Action? started = null)
+        Action? waiting = null, Action? started = null, UnderstandingCurrent? current = null, Action<string>? answered = null)
     {
-        var call = new PendingCall(system, user, options, ct, started);
+        var call = new PendingCall(system, user, options, ct, started, current, answered);
         if (_busy)
         {
             waiting?.Invoke(); // before the call is queued, so it always comes before started
@@ -290,10 +312,14 @@ public sealed class UnderstandingWorker : IDisposable
     private async Task ProcessAsync(Plan plan, UnderstandingItem item, CancellationToken ct)
     {
         var heading = item.Kind == UnderstandingKind.Heading;
-        var (system, user) = heading
-            ? UnderstandingPrompts.Summary(item, [.. item.ChildFingerprints.Select(c => ChildSummary(plan, c))])
-            : UnderstandingPrompts.Core(item);
-        var options = new ChatOptions(heading ? UnderstandingPrompts.SummaryTokens : UnderstandingPrompts.CoreTokens);
+        var (system, user, options) = item.Kind switch
+        {
+            UnderstandingKind.Placement => (item.Check!.System, item.Check.User, PlacementCheck.Options(item.Check)),
+            UnderstandingKind.Heading => Request(
+                UnderstandingPrompts.Summary(item, [.. item.ChildFingerprints.Select(c => ChildSummary(plan, c))]),
+                UnderstandingPrompts.SummaryTokens),
+            _ => Request(UnderstandingPrompts.Core(item), UnderstandingPrompts.CoreTokens),
+        };
 
         var started = _time.GetTimestamp();
         string answer;
@@ -302,6 +328,7 @@ public sealed class UnderstandingWorker : IDisposable
             using var timeout = new CancellationTokenSource(RequestTimeout, _time);
             using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, timeout.Token);
             _busy = true;
+            SetCurrent(new UnderstandingCurrent(item.Kind, item.Key));
             try
             {
                 answer = await _chat.ChatAsync(_chatModel, system, user, options, linked.Token);
@@ -309,6 +336,7 @@ public sealed class UnderstandingWorker : IDisposable
             finally
             {
                 _busy = false;
+                SetCurrent(null);
             }
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
@@ -337,7 +365,13 @@ public sealed class UnderstandingWorker : IDisposable
         // The server answered: whatever failed before was not a server-wide problem.
         _serverErrorStreak.Clear();
         _serverTrouble = false;
-        RecordDuration(_time.GetElapsedTime(started));
+        RecordDuration(item.Kind, _time.GetElapsedTime(started));
+        if (item.Kind == UnderstandingKind.Placement)
+        {
+            StorePlacement(item, answer, ct);
+            return;
+        }
+
         var text = UnderstandingPrompts.Clean(answer, heading ? UnderstandingPrompts.SummaryLimit : UnderstandingPrompts.CoreLimit);
         if (text.Length == 0)
         {
@@ -356,6 +390,26 @@ public sealed class UnderstandingWorker : IDisposable
         }
     }
 
+    private static (string System, string User, ChatOptions Options) Request((string System, string User) prompt, int tokens) =>
+        (prompt.System, prompt.User, new ChatOptions(tokens));
+
+    /// <summary>A usable verdict is stored as JSON without a vector; an unusable answer is a failed attempt.</summary>
+    private void StorePlacement(UnderstandingItem item, string answer, CancellationToken ct)
+    {
+        if (PlacementCheck.Parse(answer, item.Check!) is not { } verdict)
+        {
+            _logger.LogWarning("Language model gave an unusable placement answer for {Identity}", item.Identity);
+            Fail(item, ct);
+            return;
+        }
+
+        // Like the other kinds: stored under the fingerprint it was requested for.
+        Write(ct, () => _store.Put(new UnderstandingEntry(item.Kind, item.Fingerprint, item.Identity,
+            PlacementCheck.Serialize(verdict), _chatModel, null, null)));
+        _retryLater.Remove(item.Fingerprint);
+        _planStale = true;
+    }
+
     private async Task ServeAsync(PendingCall call, CancellationToken ct)
     {
         try
@@ -363,9 +417,25 @@ public sealed class UnderstandingWorker : IDisposable
             if (call.Result.Task.IsCompleted) return; // withdrawn while waiting
             using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, call.Ct);
             _busy = true;
+            SetCurrent(call.Current);
             call.Started?.Invoke();
             var answer = await _chat.ChatAsync(_chatModel, call.System, call.User, call.Options, linked.Token);
             _busy = false; // before the caller continues
+            SetCurrent(null);
+            if (call.Answered is { } answered)
+            {
+                try
+                {
+                    answered(answer);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Handling the answer of a request failed");
+                }
+
+                _planStale = true; // it may have stored an item's entry
+            }
+
             call.Result.TrySetResult(answer);
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
@@ -380,6 +450,7 @@ public sealed class UnderstandingWorker : IDisposable
         finally
         {
             _busy = false;
+            if (_current is not null) SetCurrent(null);
             call.Result.TrySetCanceled(); // the worker stopped
         }
     }
@@ -561,21 +632,49 @@ public sealed class UnderstandingWorker : IDisposable
     private (string Title, string Summary) ChildSummary(Plan plan, string fingerprint) =>
         (plan.Items.TryGetValue(fingerprint, out var child) ? child.Title : "", _store.Get(fingerprint)?.Text ?? "");
 
-    private void RecordDuration(TimeSpan duration)
+    /// <summary>Keeps the last <see cref="DurationWindow"/> answer times overall and of the item's kind.</summary>
+    private void RecordDuration(UnderstandingKind kind, TimeSpan duration)
     {
-        _durations.Enqueue(duration);
-        while (_durations.Count > DurationWindow) _durations.Dequeue();
+        if (!_kindDurations.TryGetValue(kind, out var ofKind)) _kindDurations[kind] = ofKind = new Queue<TimeSpan>();
+        foreach (var window in new[] { _durations, ofKind })
+        {
+            window.Enqueue(duration);
+            while (window.Count > DurationWindow) window.Dequeue();
+        }
+    }
+
+    /// <summary>The mean answer time of a kind, else of all kinds; null until <see cref="MinDurations"/> answers were timed.</summary>
+    private TimeSpan? MeanDuration(UnderstandingKind kind)
+    {
+        var window = _kindDurations.GetValueOrDefault(kind) is { Count: >= MinDurations } ofKind ? ofKind
+            : _durations.Count >= MinDurations ? _durations
+            : null;
+        return window is null ? null : TimeSpan.FromTicks((long)window.Average(d => d.Ticks));
+    }
+
+    /// <summary>Sets and reports the request with the server, keeping the reported pause.</summary>
+    private void SetCurrent(UnderstandingCurrent? current)
+    {
+        _current = current;
+        Report(_progress.Pause);
     }
 
     private void Report(UnderstandingPause pause)
     {
         var open = _plan?.Open ?? 0;
         var total = _plan?.Total ?? 0;
-        TimeSpan? remaining = _durations.Count >= MinDurations
-            ? TimeSpan.FromTicks((long)_durations.Average(d => d.Ticks) * open)
-            : null;
-        var progress = new UnderstandingProgress(total - open, total, remaining, pause, _planned);
-        if (progress == _progress) return;
+
+        // Overall: the counted open items of each kind times that kind's mean; null if one of them has no estimate.
+        TimeSpan? remaining = _durations.Count >= MinDurations ? TimeSpan.Zero : null;
+        foreach (var (kind, countedOpen) in _plan?.CountedOpen ?? [])
+        {
+            remaining = remaining is { } sum && MeanDuration(kind) is { } mean ? sum + mean * countedOpen : null;
+        }
+
+        var kinds = _plan?.Kinds.ToDictionary(k => k.Key, k => new KindProgress(k.Value.Done, k.Value.Total, k.Value.Failed,
+            MeanDuration(k.Key) * (k.Value.Total - k.Value.Done)));
+        var progress = new UnderstandingProgress(total - open, total, remaining, pause, _planned, kinds, _current);
+        if (progress with { Kinds = _progress.Kinds } == _progress && SameKinds(kinds, _progress.Kinds)) return;
 
         _progress = progress;
         try
@@ -587,6 +686,12 @@ public sealed class UnderstandingWorker : IDisposable
             _logger.LogWarning(ex, "Understanding progress handler failed");
         }
     }
+
+    private static bool SameKinds(IReadOnlyDictionary<UnderstandingKind, KindProgress>? a,
+        IReadOnlyDictionary<UnderstandingKind, KindProgress>? b) =>
+        a is null || b is null
+            ? a == b
+            : a.Count == b.Count && a.All(k => b.TryGetValue(k.Key, out var other) && other == k.Value);
 
     private Plan CurrentPlan()
     {
@@ -614,14 +719,20 @@ public sealed class UnderstandingWorker : IDisposable
     private Plan BuildPlan(Work work)
     {
         var items = new Dictionary<string, UnderstandingItem>(StringComparer.Ordinal);
-        foreach (var item in work.Book.Concat(work.Notes).Concat(work.OtherBooks)) items.TryAdd(item.Fingerprint, item);
+        foreach (var item in work.Book.Concat(work.Notes).Concat(work.OtherBooks).Concat(work.Placements))
+            items.TryAdd(item.Fingerprint, item);
+
+        // One read each of the stored fingerprints, the failed attempts and the stored identities for the whole plan.
+        var stored = _store.Fingerprints();
+        var attempts = _store.AllAttempts();
+        var identities = _store.Identities();
 
         // Done: has a current entry; Skipped: failed too often, or a sub-heading can never get an entry.
         var states = new Dictionary<string, ItemState>(StringComparer.Ordinal);
         foreach (var item in items.Values)
         {
-            states[item.Fingerprint] = _store.Get(item.Fingerprint) is not null ? ItemState.Done
-                : _store.Attempts(item.Fingerprint) >= MaxAttempts ? ItemState.Skipped
+            states[item.Fingerprint] = stored.Contains(item.Fingerprint) ? ItemState.Done
+                : attempts.GetValueOrDefault(item.Fingerprint) >= MaxAttempts ? ItemState.Skipped
                 : ItemState.Pending;
         }
 
@@ -630,7 +741,7 @@ public sealed class UnderstandingWorker : IDisposable
             foreach (var child in item.ChildFingerprints)
             {
                 if (!states.ContainsKey(child))
-                    states[child] = _store.Get(child) is not null ? ItemState.Done : ItemState.Skipped;
+                    states[child] = stored.Contains(child) ? ItemState.Done : ItemState.Skipped;
             }
 
             if (states[item.Fingerprint] == ItemState.Pending && item.ChildFingerprints.Any(c => states[c] == ItemState.Skipped))
@@ -646,6 +757,7 @@ public sealed class UnderstandingWorker : IDisposable
             work.Book.Where(i => !chapter.Contains(i.Fingerprint)),
             work.Notes,
             work.OtherBooks,
+            work.Placements,
         };
 
         var seen = new HashSet<string>(StringComparer.Ordinal);
@@ -653,7 +765,7 @@ public sealed class UnderstandingWorker : IDisposable
         foreach (var group in groups)
         {
             var members = group.Where(i => seen.Add(i.Fingerprint) && states[i.Fingerprint] == ItemState.Pending).ToList();
-            var changed = members.Where(i => _store.LatestByIdentity(i.Kind, i.Identity) is not null).ToList();
+            var changed = members.Where(i => identities.Contains((i.Kind, i.Identity))).ToList();
             order.AddRange(changed);
             order.AddRange(members.Except(changed));
         }
@@ -661,10 +773,18 @@ public sealed class UnderstandingWorker : IDisposable
         // A failed item is tried again after the rest.
         order = [.. order.Where(i => !_retryLater.Contains(i.Fingerprint)), .. order.Where(i => _retryLater.Contains(i.Fingerprint))];
 
-        var counted = work.Book.Concat(work.Notes).Select(i => i.Fingerprint).ToHashSet(StringComparer.Ordinal);
-        var open = counted.Count(fp => states[fp] == ItemState.Pending);
+        var counted = work.Book.Concat(work.Notes).Concat(work.Placements).Select(i => i.Fingerprint)
+            .ToHashSet(StringComparer.Ordinal);
+        var countedOpen = counted.Where(fp => states[fp] == ItemState.Pending)
+            .GroupBy(fp => items[fp].Kind)
+            .ToDictionary(g => g.Key, g => g.Count());
+        var kinds = Enum.GetValues<UnderstandingKind>().ToDictionary(kind => kind, kind =>
+        {
+            var ofKind = items.Values.Where(i => i.Kind == kind).Select(i => states[i.Fingerprint]).ToList();
+            return new KindCount(ofKind.Count(s => s != ItemState.Pending), ofKind.Count, ofKind.Count(s => s == ItemState.Skipped));
+        });
         var missing = _store.WithoutVector(_embedModel).Where(fp => !_unembeddable.Contains(fp)).ToList();
-        return new Plan(order, states, items, counted.Count, open, missing);
+        return new Plan(order, states, items, counted.Count, countedOpen.Values.Sum(), countedOpen, kinds, missing);
     }
 
     /// <summary>
@@ -751,16 +871,24 @@ public sealed class UnderstandingWorker : IDisposable
     private enum ItemState { Pending, Done, Skipped }
 
     private sealed record Work(IReadOnlyList<UnderstandingItem> Book, Guid? SectionKey, IReadOnlyList<UnderstandingItem> Notes,
-        IReadOnlyList<UnderstandingItem> OtherBooks);
+        IReadOnlyList<UnderstandingItem> OtherBooks, IReadOnlyList<UnderstandingItem> Placements);
 
-    private sealed record PendingCall(string System, string User, ChatOptions Options, CancellationToken Ct, Action? Started)
+    private sealed record PendingCall(string System, string User, ChatOptions Options, CancellationToken Ct, Action? Started,
+        UnderstandingCurrent? Current, Action<string>? Answered)
     {
         public TaskCompletionSource<string> Result { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
     }
 
-    /// <summary>The queue as computed from the work and the store: pending items in order, every item's state, the counts.</summary>
+    /// <summary>The items of one kind in a plan: done (or skipped), all, skipped.</summary>
+    private sealed record KindCount(int Done, int Total, int Failed);
+
+    /// <summary>
+    /// The queue as computed from the work and the store: pending items in order, every item's state, the counted items
+    /// (<c>Total</c>, <c>Open</c>, open ones per kind) and per kind over all items.
+    /// </summary>
     private sealed record Plan(List<UnderstandingItem> Order, Dictionary<string, ItemState> States,
-        Dictionary<string, UnderstandingItem> Items, int Total, int Open, List<string> MissingVectors)
+        Dictionary<string, UnderstandingItem> Items, int Total, int Open, Dictionary<UnderstandingKind, int> CountedOpen,
+        Dictionary<UnderstandingKind, KindCount> Kinds, List<string> MissingVectors)
     {
         /// <summary>The first pending item whose sub-headings all have a current entry.</summary>
         public UnderstandingItem? NextReady() =>
