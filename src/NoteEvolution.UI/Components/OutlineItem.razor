@@ -51,7 +51,7 @@
             }
             @if (coverage is not null)
             {
-                <button type="button" class="ne-outline-coverage" title="@coverage.Tooltip"
+                <button type="button" class="ne-outline-coverage" title="@coverage.Tooltip" aria-label="@coverage.Tooltip"
                         @onclick="() => Pane.SelectFromCoverage(Node)" @onclick:stopPropagation @ondblclick:stopPropagation>
                     @if (coverage.Empty)
                     {

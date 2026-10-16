@@ -93,7 +93,8 @@ else
     /// </summary>
     internal CoverageBar? CoverageBarOf(OutlineNode node)
     {
-        if (!Settings.ShowCoverage || _session?.Coverage is not { } coverage || !coverage.Sections.TryGetValue(node.Key, out var section))
+        if (!Settings.ShowCoverage || _session?.Coverage is not { } coverage || !coverage.IsFor(State.CurrentBook)
+            || !coverage.Sections.TryGetValue(node.Key, out var section))
         {
             return null;
         }

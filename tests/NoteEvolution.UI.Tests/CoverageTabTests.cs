@@ -53,9 +53,9 @@ public class CoverageTabTests : UiTestContext
     private static SectionCoverage Section(OutlineNode node, int used, int assigned) =>
         new(node.Key, used, assigned, 0, used, assigned, 0, true);
 
-    private static Coverage CoverageOf(IReadOnlyList<Guid> homeless, IReadOnlyList<Guid> uncertain, int done, int total,
+    private Coverage CoverageOf(IReadOnlyList<Guid> homeless, IReadOnlyList<Guid> uncertain, int done, int total,
         params SectionCoverage[] sections) =>
-        new(sections.ToDictionary(s => s.SectionKey), 0, homeless, uncertain, done, total);
+        new(sections.ToDictionary(s => s.SectionKey), 0, homeless, uncertain, done, total, done, State.CurrentBook!.LinkName);
 
     private IRenderedComponent<NotesPane> OpenTab(VaultSession session, Coverage coverage)
     {
@@ -158,6 +158,18 @@ public class CoverageTabTests : UiTestContext
         Time.Advance(VaultSession.CoverageDelay);
 
         Assert.Equal(after, session.CoverageComputations);
+    }
+
+    [Fact]
+    public async Task Tab_OtherBooksCoverage_ShowsPending()
+    {
+        var session = await OpenSessionAsync(Vault());
+        var coverage = CoverageOf([], [], 0, 3, Section(Node("Zwei"), 1, 0)) with { BookLinkName = "Buch - Beta" };
+
+        var cut = OpenTab(session, coverage);
+
+        Assert.Single(cut.FindAll(".ne-coverage-pending"));
+        Assert.Empty(cut.FindAll(".ne-coverage-metrics"));
     }
 
     [Fact]

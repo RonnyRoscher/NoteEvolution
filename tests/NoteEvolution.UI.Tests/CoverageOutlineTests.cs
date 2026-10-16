@@ -39,8 +39,9 @@ public class CoverageOutlineTests : UiTestContext
     private static SectionCoverage Section(OutlineNode node, int used, int assigned, int uncertain = 0, bool leaf = true) =>
         new(node.Key, used, assigned, uncertain, used, assigned, uncertain, leaf);
 
-    private static Coverage CoverageOf(bool complete, params SectionCoverage[] sections) =>
-        new(sections.ToDictionary(s => s.SectionKey), 0, [], [], Checked: complete ? 0 : 1, Unused: 0);
+    private Coverage CoverageOf(bool complete, params SectionCoverage[] sections) =>
+        new(sections.ToDictionary(s => s.SectionKey), 0, [], [], Checked: 0, Unused: complete ? 0 : 1, Settled: 0,
+            State.CurrentBook!.LinkName);
 
     private AngleSharp.Dom.IElement Row(IRenderedComponent<OutlinePane> cut, string title) =>
         cut.FindAll(".ne-outline-row").First(r => r.QuerySelector(".ne-outline-title")?.TextContent == title);
@@ -87,6 +88,7 @@ public class CoverageOutlineTests : UiTestContext
         var zwei = Row(cut, "Zwei").QuerySelector(".ne-outline-coverage")!;
         Assert.Equal("width: 40%", zwei.QuerySelector(".ne-outline-coverage-used")!.GetAttribute("style")!.TrimEnd(';'));
         Assert.Equal("2 übernommen", zwei.GetAttribute("title"));
+        Assert.Equal(zwei.GetAttribute("title"), zwei.GetAttribute("aria-label"));
     }
 
     [Fact]
@@ -101,6 +103,19 @@ public class CoverageOutlineTests : UiTestContext
         session.Coverage = CoverageOf(false, Section(Node("Zwei"), 0, 0));
         cut.Render();
         Assert.Empty(cut.FindAll(".ne-outline-coverage-empty"));
+        Assert.Empty(cut.FindAll(".ne-outline-coverage"));
+    }
+
+    [Fact]
+    public async Task OtherBooksCoverage_NotShown()
+    {
+        var session = await OpenAsync();
+        Settings.ShowCoverage = true;
+
+        // Left from the book shown before a switch, until this book's is computed.
+        session.Coverage = CoverageOf(true, Section(Node("Zwei"), 1, 1)) with { BookLinkName = "Buch - Beta" };
+        var cut = Render<OutlinePane>();
+
         Assert.Empty(cut.FindAll(".ne-outline-coverage"));
     }
 

@@ -741,6 +741,40 @@ public class LanguageModelTests : UiTestContext
     }
 
     [Fact]
+    public async Task Session_DisposedWhileBuilding_StopsWithoutWarnings()
+    {
+        var tv = Vault();
+        AnswerPlacements();
+        var language = UseLanguageModel(_chat);
+        await language.RefreshAsync(CancellationToken.None);
+        var logger = new ListLogger();
+        var session = await OpenWithAiAsync(tv, logger: logger);
+        await AllDone(session, 5);
+
+        // The first note's check is being built when the vault closes.
+        using var building = new ManualResetEventSlim();
+        using var release = new ManualResetEventSlim();
+        var built = 0;
+        session.PlacementPromptBuilding = (_, _) =>
+        {
+            if (Interlocked.Increment(ref built) == 1)
+            {
+                building.Set();
+                release.Wait(Wait);
+            }
+        };
+        Time.Advance(VaultSession.PageIndexDelay);
+        Assert.True(building.Wait(Wait), "No check was being built.");
+        session.Dispose();
+        release.Set();
+        await Task.Delay(200);
+
+        // The loop stopped: no further note was looked at, nothing was logged for them.
+        Assert.Equal(1, Volatile.Read(ref built));
+        Assert.DoesNotContain(logger.Entries, e => e.Level >= LogLevel.Warning);
+    }
+
+    [Fact]
     public async Task Session_BookSwitchedWhileBuilding_OldResultDropped()
     {
         var tv = TestVault.Create(
@@ -969,6 +1003,26 @@ public class LanguageModelTests : UiTestContext
         Time.Advance(VaultSession.CoverageDelay);
         await Eventually(() => session.CoverageComputations >= 2 && !session.CoverageRunning, "The coverage was not computed again.");
         Assert.NotSame(coverage, session.Coverage);
+    }
+
+    [Fact]
+    public async Task Coverage_CheckGivenUp_CountsAsSettled()
+    {
+        var tv = Vault();
+        _chat.Failure = (call, _) => call.Options.Schema is not null && PlacementCalls(ShortNote).Contains(call)
+            ? new InvalidOperationException("Kaputt.")
+            : null;
+
+        // The short note's check fails every time and is given up; the other two are checked.
+        var session = await OpenWithPlacementsAsync(tv);
+        Assert.Equal(UnderstandingWorker.MaxAttempts, PlacementCalls(ShortNote).Count);
+        session.WatchCoverage(this, visible: true);
+        Time.Advance(VaultSession.CoverageDelay);
+        await Eventually(() => session.Coverage is not null, "The coverage was not computed.");
+
+        var coverage = session.Coverage!;
+        Assert.Equal((2, 3, 3), (coverage.Checked, coverage.Unused, coverage.Settled));
+        Assert.True(coverage.Complete);
     }
 
     [Fact]

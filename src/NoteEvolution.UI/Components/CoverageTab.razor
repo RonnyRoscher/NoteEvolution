@@ -8,7 +8,8 @@
 <div class="ne-coverage">
     @if (State.Session is { } session && State.CurrentBook is { } book)
     {
-        var coverage = session.Coverage;
+        // The previous book's coverage stays until this book's is computed; it is not shown.
+        var coverage = session.Coverage is { } computed && computed.IsFor(book) ? computed : null;
         var model = session.Understanding is not null;
         var leaves = LeavesOf(book);
         if (!model)

@@ -153,6 +153,34 @@ public class CoverageTests
     }
 
     [Fact]
+    public void Complete_CountsGivenUpAndImpossibleChecksAsSettled()
+    {
+        var s = Load();
+        var givenUp = Unchecked() with { NoCheckComing = true };
+        var staleGivenUp = Placed(s.Arbeit.Key, stale: true) with { NoCheckComing = true };
+
+        // One note's check was given up (or it has no topic to offer), another's new check too: no check will come.
+        var coverage = CoverageCalculator.Compute(s.Book, [Placed(s.Arbeit.Key), givenUp, staleGivenUp]);
+
+        Assert.Equal(1, coverage.Checked);
+        Assert.Equal(3, coverage.Unused);
+        Assert.Equal(3, coverage.Settled);
+        Assert.True(coverage.Complete);
+        Assert.False(CoverageCalculator.Compute(s.Book, [Placed(s.Arbeit.Key), givenUp, Unchecked()]).Complete);
+    }
+
+    [Fact]
+    public void BookLinkName_TellsWhichBook()
+    {
+        var s = Load();
+        var coverage = CoverageCalculator.Compute(s.Book, []);
+
+        Assert.Equal(LinkName, coverage.BookLinkName);
+        Assert.True(coverage.IsFor(s.Book));
+        Assert.False(coverage.IsFor(null));
+    }
+
+    [Fact]
     public void IsEmpty_LeafWithoutNotes()
     {
         var s = Load();

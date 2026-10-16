@@ -5,8 +5,12 @@ using NoteEvolution.Core.Model;
 
 namespace NoteEvolution.UI.State;
 
-/// <summary>What the coverage needs of a note (a top-level block): its date, usage and placement check in the current book.</summary>
-public sealed record CoverageNote(Guid Key, DateOnly? Date, bool Used, IReadOnlyList<UsedInEntry> Usages, NotePlacement? Placement);
+/// <summary>
+/// What the coverage needs of a note (a top-level block): its date, usage and placement check in the current book, and
+/// whether no (further) check of it will come: the background gave it up, or there is no topic to offer it.
+/// </summary>
+public sealed record CoverageNote(Guid Key, DateOnly? Date, bool Used, IReadOnlyList<UsedInEntry> Usages, NotePlacement? Placement,
+    bool NoCheckComing = false);
 
 /// <summary>
 /// The numbers of one section (heading, or the book's root): its own used and assigned notes (and how many of the assigned
@@ -18,13 +22,19 @@ public sealed record SectionCoverage(Guid SectionKey, int Used, int Assigned, in
 /// <summary>
 /// The coverage of a book (spec 6.1): the numbers per section (by heading key, the root under <see cref="Guid.Empty"/>),
 /// the used notes without a known place, the unused notes without a fitting place and those whose placement is
-/// uncertain (both newest first), and how many unused notes have a current placement check of how many there are.
+/// uncertain (both newest first), how many unused notes have a current placement check of how many there are, and how
+/// many are settled: checked, or no check will come. It belongs to the book <see cref="BookLinkName"/>.
 /// </summary>
 public sealed record Coverage(IReadOnlyDictionary<Guid, SectionCoverage> Sections, int UsedWithoutPlace,
-    IReadOnlyList<Guid> Homeless, IReadOnlyList<Guid> Uncertain, int Checked, int Unused)
+    IReadOnlyList<Guid> Homeless, IReadOnlyList<Guid> Uncertain, int Checked, int Unused, int Settled, string BookLinkName)
 {
-    /// <summary>Every unused note has a current placement check, so an empty section is not just empty for now.</summary>
-    public bool Complete => Checked == Unused;
+    /// <summary>
+    /// Every unused note is settled (a current check, or none will come), so an empty section is not just empty for now.
+    /// </summary>
+    public bool Complete => Settled == Unused;
+
+    /// <summary>Whether this is the coverage of <paramref name="book"/> (not of the book shown before a switch).</summary>
+    public bool IsFor(Book? book) => string.Equals(book?.LinkName, BookLinkName, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>The section has no sub-sections and neither used nor assigned notes.</summary>
     public bool IsEmpty(Guid sectionKey) =>
@@ -54,6 +64,7 @@ public static class CoverageCalculator
         var homeless = new List<CoverageNote>();
         var uncertainNotes = new List<CoverageNote>();
         var checkedCount = 0;
+        var settled = 0;
         var unused = 0;
         foreach (var note in notes)
         {
@@ -95,6 +106,7 @@ public static class CoverageCalculator
             unused++;
             if (note.Placement is not { } placement || SectionOf(book, placement.Verdict) is not { } placed)
             {
+                settled += note.NoCheckComing ? 1 : 0;
                 continue; // no check yet, or it names a place that is no longer in the book (spec 8)
             }
 
@@ -114,11 +126,17 @@ public static class CoverageCalculator
             {
                 checkedCount++;
             }
+
+            if (!placement.Stale || note.NoCheckComing)
+            {
+                settled++;
+            }
         }
 
         var sections = new Dictionary<Guid, SectionCoverage>();
         AddSections(sections, counts, book.Root);
-        return new Coverage(sections, usedWithoutPlace, NewestFirst(homeless), NewestFirst(uncertainNotes), checkedCount, unused);
+        return new Coverage(sections, usedWithoutPlace, NewestFirst(homeless), NewestFirst(uncertainNotes), checkedCount, unused,
+            settled, book.LinkName);
     }
 
     /// <summary>The section the verdict names: the one of its text block if it names one; null if that is gone.</summary>

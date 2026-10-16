@@ -1373,6 +1373,7 @@ public sealed class VaultSession : IDisposable
 
         IReadOnlyList<UnderstandingItem> placements = [];
         IReadOnlyDictionary<Guid, string> waitingForCores = NoNotes;
+        var withoutTopics = NoKeys;
         var ready = false;
         var deferred = false;
 
@@ -1400,7 +1401,7 @@ public sealed class VaultSession : IDisposable
                 }
                 else if (BuildPlacements(parts, feed, book, notes) is { } fresh)
                 {
-                    (placements, waitingForCores, ready) = (fresh.Items, fresh.WaitingForCores, true);
+                    (placements, waitingForCores, withoutTopics, ready) = (fresh.Items, fresh.WaitingForCores, fresh.WithoutTopics, true);
                 }
             }
             else
@@ -1409,7 +1410,8 @@ public sealed class VaultSession : IDisposable
             }
         }
 
-        return new FeedWork(current, noteItems, others, book?.LinkName, placements, waitingForCores, ready, settled, deferred);
+        return new FeedWork(current, noteItems, others, book?.LinkName, placements, waitingForCores, withoutTopics, ready, settled,
+            deferred);
     }
 
     /// <summary>
@@ -1456,12 +1458,11 @@ public sealed class VaultSession : IDisposable
     /// shows as stale meanwhile). The checks are remembered for the snapshots unless a note had no topics (the embedder
     /// may have failed) or waits for its core: the next feed looks for them again.
     /// </summary>
-    private (IReadOnlyList<UnderstandingItem> Items, IReadOnlyDictionary<Guid, string> WaitingForCores)? BuildPlacements(
-        UnderstandingParts parts, int feed, Book book, IReadOnlyList<NoteSnapshot> notes)
+    private PlacementBuild? BuildPlacements(UnderstandingParts parts, int feed, Book book, IReadOnlyList<NoteSnapshot> notes)
     {
         var items = new List<UnderstandingItem>();
         var waiting = new Dictionary<Guid, string>();
-        var withoutTopics = false;
+        var withoutTopics = new HashSet<Guid>();
         var cores = parts.NoteItems(notes).ToDictionary(item => item.Key);
         var coreSettled = parts.CoresSettled();
         foreach (var note in notes)
@@ -1471,9 +1472,9 @@ public sealed class VaultSession : IDisposable
                 continue;
             }
 
-            if (Volatile.Read(ref _feedsStarted) != feed)
+            if (Volatile.Read(ref _feedsStarted) != feed || IsDisposed || !ReferenceEquals(_understanding, parts))
             {
-                return null; // its result would be dropped anyway
+                return null; // its result would be dropped anyway (a later feed, the vault closed, the model's parts replaced)
             }
 
             var identity = UnderstandingItems.NoteIdentity(note.Content, note.FilePath);
@@ -1489,7 +1490,7 @@ public sealed class VaultSession : IDisposable
                 var prompt = parts.PlacementPrompt(book, note.Key, note.Text, remember: true);
                 if (prompt.Topics.Count == 0)
                 {
-                    withoutTopics = true;
+                    withoutTopics.Add(note.Key);
                     continue; // nothing to choose from, as for "Genauer prüfen"
                 }
 
@@ -1497,19 +1498,25 @@ public sealed class VaultSession : IDisposable
             }
             catch (Exception ex)
             {
+                if (IsDisposed || !ReferenceEquals(_understanding, parts))
+                {
+                    return null; // the vault closed or the model's parts were replaced meanwhile: nothing to warn about
+                }
+
                 _logger.LogWarning(ex, "Building the placement check of a note failed");
             }
         }
 
-        if (!withoutTopics && waiting.Count == 0)
+        if (withoutTopics.Count == 0 && waiting.Count == 0)
         {
             parts.RememberPlacements(book, notes, items);
         }
 
-        return (items, waiting);
+        return new PlacementBuild(items, waiting, withoutTopics);
     }
 
     private static readonly IReadOnlyDictionary<Guid, string> NoNotes = new Dictionary<Guid, string>();
+    private static readonly IReadOnlySet<Guid> NoKeys = new HashSet<Guid>();
 
     /// <summary>Hands the work to the worker and the notes' fingerprints to the understanding, unless a later feed started.</summary>
     private void Apply(UnderstandingParts parts, int feed, Guid? section, IReadOnlyList<NoteSnapshot> notes, Book? book,
@@ -1539,7 +1546,9 @@ public sealed class VaultSession : IDisposable
             // while one did (started before, or slow) leaves them to the feed scheduled below, so they come a debounce
             // after the last of them, as after a page change.
             var ready = work.PlacementsReady && parts.Settled == work.Settled;
-            var (checks, waitingForCores) = ready ? (work.Placements, work.WaitingForCores) : ([], NoNotes);
+            var (checks, waitingForCores, withoutTopics) = ready
+                ? (work.Placements, work.WaitingForCores, work.WithoutTopics)
+                : ([], NoNotes, NoKeys);
 
             // Until the book's summaries are settled its last placement map stays (another book's is replaced by none).
             var placementsChanged = false;
@@ -1563,6 +1572,7 @@ public sealed class VaultSession : IDisposable
                 parts.Understanding.UpdatePlacements(bookName, placements);
                 parts.PlacementBook = bookName;
                 parts.PlacementItems = checks;
+                parts.WithoutTopics = withoutTopics;
                 placementsChanged = true;
             }
 
@@ -1939,10 +1949,18 @@ public sealed class VaultSession : IDisposable
                 Interlocked.Increment(ref _coverageComputations);
                 CoverageComputing?.Invoke();
 
-                // The store's placements are read here, not on the UI thread (a query or more per note).
+                // The store's placements are read here, not on the UI thread (a query or more per note). No check comes for
+                // a note the background gave up, or one without topics to offer (with the map of this book).
                 var understanding = taken.Parts?.Understanding;
+                var sameBook = taken.Parts?.PlacementBook == taken.Book.LinkName;
+                var withoutTopics = sameBook ? taken.Parts!.WithoutTopics : NoKeys;
                 var notes = taken.Notes
-                    .Select(note => note with { Placement = note.Used ? null : understanding?.Placement(taken.Book, note.Key) })
+                    .Select(note => note.Used ? note : note with
+                    {
+                        Placement = understanding?.Placement(taken.Book, note.Key),
+                        NoCheckComing = sameBook && (withoutTopics.Contains(note.Key)
+                            || understanding?.PlacementStateOf(note.Key) == PlacementState.Failed),
+                    })
                     .ToList();
                 return CoverageCalculator.Compute(taken.Book, notes);
             });
@@ -2048,6 +2066,18 @@ public sealed class VaultSession : IDisposable
         public string? PlacementBook { get; set; }
 
         public IReadOnlyList<UnderstandingItem>? PlacementItems { get; set; }
+
+        /// <summary>
+        /// The unused notes of the placement map's book that got no check as there was no topic to offer them; read by the
+        /// coverage in the background.
+        /// </summary>
+        public IReadOnlySet<Guid> WithoutTopics
+        {
+            get => Volatile.Read(ref _withoutTopics);
+            set => Volatile.Write(ref _withoutTopics, value);
+        }
+
+        private IReadOnlySet<Guid> _withoutTopics = new HashSet<Guid>();
 
         /// <summary>The last work applied waits for the current book's summaries before its placement checks are built.</summary>
         public bool PlacementsWaiting
@@ -2243,7 +2273,11 @@ public sealed class VaultSession : IDisposable
     private readonly record struct FeedWork(
         IReadOnlyList<UnderstandingItem> Current, IReadOnlyList<UnderstandingItem> Notes, IReadOnlyList<UnderstandingItem> Others,
         string? Book, IReadOnlyList<UnderstandingItem> Placements, IReadOnlyDictionary<Guid, string> WaitingForCores,
-        bool PlacementsReady, int Settled, bool Deferred);
+        IReadOnlySet<Guid> WithoutTopics, bool PlacementsReady, int Settled, bool Deferred);
+
+    /// <summary>The placement checks built for a book's unused notes, the notes waiting for their core statement, and those without topics to offer.</summary>
+    private sealed record PlacementBuild(IReadOnlyList<UnderstandingItem> Items, IReadOnlyDictionary<Guid, string> WaitingForCores,
+        IReadOnlySet<Guid> WithoutTopics);
 
     /// <summary>What the notes' status is put together from: the parts, the notes' snapshot and items, and the current book.</summary>
     private sealed class StatusSource
