@@ -168,6 +168,31 @@ public abstract class UiTestContext : BunitContext
     }
 
     /// <summary>
+    /// Advances the fake time by <paramref name="step"/> at a time (15 times at most) until <paramref name="assertion"/>
+    /// holds: work in the background (a status put together, a debounce restarted by an event) may finish only after an
+    /// advance, so a single advance can race it.
+    /// </summary>
+    protected void AdvanceUntil<TComponent>(IRenderedComponent<TComponent> cut, Action assertion, TimeSpan step)
+        where TComponent : Microsoft.AspNetCore.Components.IComponent
+    {
+        for (var i = 0; i < 15; i++)
+        {
+            Time.Advance(step);
+            try
+            {
+                cut.WaitForAssertion(assertion, TimeSpan.FromMilliseconds(500));
+                return;
+            }
+            catch (Bunit.Extensions.WaitForHelpers.WaitForFailedException)
+            {
+                // Not yet: another step.
+            }
+        }
+
+        assertion();
+    }
+
+    /// <summary>
     /// Waits until the shell has finished opening a vault (other than <paramref name="previous"/>): the session is set
     /// before the opening ends, so the test waits for the editor to be shown again as well. It waits up to
     /// <paramref name="timeout"/> (bUnit's default if <c>null</c>).

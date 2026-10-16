@@ -1,6 +1,7 @@
 using Bunit;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Localization;
+using NoteEvolution.AI.Embeddings;
 using NoteEvolution.AI.Language;
 using NoteEvolution.AI.Search;
 using NoteEvolution.AI.Tests;
@@ -674,11 +675,35 @@ public class RelevantTabPlacedTests : UiTestContext
         Assert.True(session.TrySave(page, out var error), error?.Message);
         Time.Advance(VaultSession.PageIndexDelay);
         await Eventually(() => session.Placement(Note(session, edited).Key) is { Stale: true }, "The placement was not shown as stale.");
-        Time.Advance(TimeSpan.FromMilliseconds(1500));
 
-        cut.WaitForAssertion(() => Assert.Equal("veraltet", cut.Find(".ne-relevant-stale").TextContent.Trim()));
+        // The page change recomputes the list after the debounce, which the placements' change does not restart.
+        AdvanceUntil(cut, () => Assert.Equal("veraltet", cut.Find(".ne-relevant-stale").TextContent.Trim()), RelevantTab.Debounce);
         Assert.Single(cut.FindAll(".ne-relevant-stale"));
         gate.Release(100);
+    }
+
+    [Fact]
+    public async Task Relevant_PlacementStoredDuringDebounce_DoesNotRestartIt()
+    {
+        var session = await OpenPlacedAsync();
+        var cut = OpenTab();
+        cut.WaitForAssertion(() => Assert.Equal(2, PlacedTexts(cut).Count));
+
+        // Arbeit has no placed notes; its list is due one debounce after the switch (once the pane rendered it).
+        var rendered = cut.RenderCount;
+        Select("Arbeit");
+        cut.WaitForState(() => cut.RenderCount > rendered);
+        Time.Advance(RelevantTab.Debounce - TimeSpan.FromMilliseconds(500));
+
+        // A placement stored meanwhile ("Genauer prüfen" again) changes the placements but not the search's schedule.
+        var sleep = Note(session, SleepNote);
+        var (verdict, _) = await session.CheckPlacementAsync(sleep.Key, EmbeddingText.ForNote(sleep), State.CurrentBook!, CancellationToken.None);
+        Assert.NotNull(verdict);
+        cut.WaitForAssertion(() => Assert.Empty(PlacedTexts(cut)));
+        Time.Advance(TimeSpan.FromMilliseconds(500));
+
+        cut.WaitForAssertion(() => Assert.Equal(3, SimilarTexts(cut).Count));
+        Assert.Empty(cut.FindAll(".ne-relevant-group-heading"));
     }
 
     [Fact]
@@ -690,9 +715,8 @@ public class RelevantTabPlacedTests : UiTestContext
 
         // Only notes from 2 March on.
         cut.Find(".ne-filter-from").Change("2026-03-02");
-        Time.Advance(TimeSpan.FromMilliseconds(1500));
 
-        cut.WaitForAssertion(() => Assert.Equal([DreamNote], PlacedTexts(cut)));
+        AdvanceUntil(cut, () => Assert.Equal([DreamNote], PlacedTexts(cut)), RelevantTab.Debounce);
     }
 
     [Fact]

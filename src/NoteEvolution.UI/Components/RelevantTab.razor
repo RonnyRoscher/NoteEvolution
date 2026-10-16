@@ -103,16 +103,13 @@
     /// </summary>
     private int _indexVersion;
 
-    private (VaultSession?, Book?, Guid, Guid?, bool, int, NoteFilter, int, AiState, bool, int, int)? _last;
+    private (VaultSession?, Book?, Guid, Guid?, bool, int, NoteFilter, int, AiState, bool, int)? _last;
     private List<(Guid Key, int Percent)> _hits = [];
 
     /// <summary>The notes the model placed into the current section (newest first); they are not in <see cref="_hits"/>.</summary>
     private List<PlacedNote> _placed = [];
 
     private sealed record PlacedNote(Guid Key, string Reason, PlacementFit Fit, bool Stale);
-
-    /// <summary>Counts the changes of the stored placements (<see cref="VaultSession.PlacementsChanged"/>): the list is computed again then.</summary>
-    private int _placementVersion;
 
     /// <summary>The notes in <see cref="_hits"/> only because their "Wohin damit?" list is open (see <see cref="WhereToPins"/>).</summary>
     private HashSet<Guid> _keptOnly = [];
@@ -177,15 +174,22 @@
         }
     }
 
+    /// <summary>
+    /// The stored placements changed: only the placed group is put together again, at once (it is read on the UI thread
+    /// anyway); the similar notes stay, without the ones placed here now, and a search in flight goes on (its result is
+    /// sorted the same way when it arrives). Nothing while the list is frozen or before the first computation.
+    /// </summary>
     private void OnPlacementsChanged() => _ = InvokeAsync(() =>
     {
-        if (_disposed)
+        if (_disposed || _last is null || Frozen
+            || State is not { Session: { Relevance.IsAvailable: true } session, CurrentBook: { } book })
         {
             return;
         }
 
-        _placementVersion++;
-        Refresh();
+        _placed = PlacedHere(session, book, Filter);
+        var placedKeys = _placed.Select(p => p.Key).ToHashSet();
+        _hits.RemoveAll(hit => placedKeys.Contains(hit.Key));
         StateHasChanged();
     });
 
@@ -230,7 +234,7 @@
         var status = session?.AiStatus;
         var available = session?.Relevance.IsAvailable == true;
         var current = (session, State.CurrentBook, State.CurrentSectionKey, State.CursorTextBlockKey, State.CursorTextBlockKey is not null,
-            State.RangeLevel, Filter, Revision, status?.State ?? AiState.Off, available, _indexVersion, _placementVersion);
+            State.RangeLevel, Filter, Revision, status?.State ?? AiState.Off, available, _indexVersion);
         if (_last == current && !_heldWhileFrozen)
         {
             return;
@@ -266,19 +270,16 @@
             }
 
             // The vault model belongs to the UI thread: everything the background work needs is read here.
-            (VaultSession Session, TopicRequest Topic, HashSet<Guid> Allowed, List<PlacedNote> Placed)? snapshot = null;
+            (VaultSession Session, Book Book, TopicRequest Topic, HashSet<Guid> Allowed)? snapshot = null;
             await InvokeAsync(() => snapshot = TakeSnapshot());
             if (snapshot is null)
             {
                 return;
             }
 
-            var (session, topic, allowed, placed) = snapshot.Value;
+            var (session, book, topic, allowed) = snapshot.Value;
             var found = await Task.Run(() => session.Relevance.Relevant(topic, allowed.Contains, Limit), cancel);
             var best = found.Count > 0 ? found.Max(hit => hit.Score) : 0;
-            var placedKeys = placed.Select(p => p.Key).ToHashSet();
-            var hits = found.Where(hit => !placedKeys.Contains(hit.NoteBlockKey))
-                .Select(hit => (Key: hit.NoteBlockKey, Percent: SearchTab.Percent(hit.Score, best))).ToList();
             await InvokeAsync(() =>
             {
                 if (_disposed || generation != _generation)
@@ -292,6 +293,12 @@
                     _heldWhileFrozen = true;
                     return;
                 }
+
+                // The placed group as the placements are now (they may have changed while the search ran).
+                var placed = PlacedHere(session, book, Filter);
+                var placedKeys = placed.Select(p => p.Key).ToHashSet();
+                var hits = found.Where(hit => !placedKeys.Contains(hit.NoteBlockKey))
+                    .Select(hit => (Key: hit.NoteBlockKey, Percent: SearchTab.Percent(hit.Score, best))).ToList();
 
                 // The pins of package B (a card with an open "Wohin damit?" list stays where it is) have nothing to keep
                 // here, as such a card freezes the list; they are kept as the common way of the tabs.
@@ -313,7 +320,7 @@
         }
     }
 
-    private (VaultSession, TopicRequest, HashSet<Guid>, List<PlacedNote>)? TakeSnapshot()
+    private (VaultSession, Book, TopicRequest, HashSet<Guid>)? TakeSnapshot()
     {
         if (_disposed || State is not { Session: { } session, CurrentBook: { } book })
         {
@@ -326,7 +333,7 @@
             .Where(note => session.Notes.Matches(note, filter))
             .Select(note => note.Key)
             .ToHashSet();
-        return (session, topic, allowed, PlacedHere(session, book, filter));
+        return (session, book, topic, allowed);
     }
 
     /// <summary>
