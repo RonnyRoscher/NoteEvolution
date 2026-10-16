@@ -55,7 +55,7 @@ public class PlacementCheckTests
     }
 
     [Fact]
-    public void Prompt_SectionsOfTheThreeBestChapters_InBookOrder()
+    public void Prompt_SectionsOfTheThreeBestChapters_ByChapterRank()
     {
         var s = Load();
         var prompt = Build(s);
@@ -99,6 +99,83 @@ public class PlacementCheckTests
         Assert.Contains("3. Kapitel A › Unter A2 – Zwei, z. B. Schlaf.\n", prompt.User);
         Assert.Contains("2. Kapitel A › Unter A1 – A1 handelt von Eins.\n", prompt.User);
         Assert.Equal("Zwei, z. B. Schlaf. Rest.", prompt.Topics[2].Summary);
+    }
+
+    [Theory]
+    [InlineData("Es geht ums Essen, bzw. ums Kochen. Rest.", "Es geht ums Essen, bzw. ums Kochen.")]
+    [InlineData("Kurz: so ist es. Rest.", "Kurz: so ist es.")]
+    [InlineData("Wirklich? Ja.", "Wirklich?")]
+    [InlineData("   ", null)]
+    public void Prompt_FirstSentenceOfSummary(string summary, string? expected)
+    {
+        var s = Load();
+        var prompt = Build(s, summaryOf: node => node.Key == s.A2.Key ? summary : null);
+
+        var line = prompt.User.Split('\n').Single(l => l.StartsWith("3. ", StringComparison.Ordinal));
+        Assert.Equal(expected is null ? "3. Kapitel A › Unter A2" : "3. Kapitel A › Unter A2 – " + expected, line);
+    }
+
+    [Fact]
+    public void Prompt_WhitespaceSummary_FallsBackToTopicSummary()
+    {
+        var s = Load();
+        var prompt = Build(s, summaryOf: _ => " ");
+
+        Assert.Contains("2. Kapitel A › Unter A1 – A1 handelt von Eins.\n", prompt.User);
+    }
+
+    [Fact]
+    public void Prompt_LargeChapter_LeavesRoomForTheOthers_AndNoPlacesOfLeftOutSections()
+    {
+        var body = "- # Groß\n\t- Eigener Text.\n" +
+                   string.Concat(Enumerable.Range(1, 8).Select(i => $"\t- ## Teil {i}\n\t\t- Text in Teil {i}.\n")) +
+                   "- # Klein\n\t- Text in Klein.\n";
+        var tv = TestVault.Create(("pages/Buch.md", "title:: Buch\ntype:: book\n\n" + body));
+        var book = tv.Open().Books.Single();
+        var big = book.Root.Children.Single(n => n.Title == "Groß");
+        var small = book.Root.Children.Single(n => n.Title == "Klein");
+        var lastPart = big.Children.Last();
+        var hit = new PlacementHit(lastPart.TextBlocks.Single().Key, 0.9, lastPart.Key);
+
+        var prompt = PlacementCheck.Prompt(book, "x", [new TopicHit(lastPart.Key, 0.9, null), new TopicHit(small.Key, 0.5, null)],
+            new Dictionary<Guid, IReadOnlyList<PlacementHit>> { [lastPart.Key] = [hit] });
+
+        // Groß itself and its first 5 parts (6 per chapter), then Klein; Teil 8 is left out, and so is its place.
+        Assert.Equal(7, prompt.Topics.Count);
+        Assert.Equal(small.Key, prompt.Topics[^1].SectionKey);
+        Assert.All(prompt.Topics, t => Assert.Empty(t.TextBlockKeys));
+        Assert.DoesNotContain("Text in Teil 8.", prompt.User);
+    }
+
+    [Fact]
+    public void Prompt_PlaceDeeperThanASubHeading_BelongsToIt()
+    {
+        var tv = TestVault.Create(("pages/Buch.md",
+            "title:: Buch\ntype:: book\n\n- # K\n\t- ## U\n\t\t- ### Tief\n\t\t\t- Tiefer Text.\n"));
+        var book = tv.Open().Books.Single();
+        var u = book.Root.Children.Single().Children.Single();
+        var deep = u.Children.Single();
+        var hit = new PlacementHit(deep.TextBlocks.Single().Key, 0.9, deep.Key);
+
+        var prompt = PlacementCheck.Prompt(book, "x", [new TopicHit(deep.Key, 0.9, null)],
+            new Dictionary<Guid, IReadOnlyList<PlacementHit>> { [deep.Key] = [hit, hit] });
+
+        var section = Assert.Single(prompt.Topics);
+        Assert.Equal(u.Key, section.SectionKey);
+        Assert.Equal([hit.TextBlockKey], section.TextBlockKeys);
+    }
+
+    [Fact]
+    public void Prompt_PrologueOnly_RootIsTheSection()
+    {
+        var tv = TestVault.Create(("pages/Buch.md", "title:: Buch\ntype:: book\n\n- Vorwort.\n"));
+        var book = tv.Open().Books.Single();
+
+        var prompt = PlacementCheck.Prompt(book, "x", [new TopicHit(book.Root.Key, 0.9, null)],
+            new Dictionary<Guid, IReadOnlyList<PlacementHit>>());
+
+        Assert.Equal([book.Root.Key], prompt.Topics.Select(t => t.SectionKey));
+        Assert.Contains("1. Buch", prompt.User);
     }
 
     [Fact]

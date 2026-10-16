@@ -33,6 +33,7 @@ public static class PlacementCheck
     public const int TopicLimit = 9;
 
     private const int MaxChapters = 3;
+    private const int MaxSectionsPerChapter = 6;
     private const int MaxSections = 14;
     private const int MaxPlacesPerSection = 2;
     private const int MaxPlaces = 6;
@@ -56,7 +57,7 @@ public static class PlacementCheck
     /// <summary>
     /// The prompt for the chapters of the best <paramref name="topics"/> (at most 3, best first): each chapter's sections
     /// (the chapter itself if it has own text blocks, then its sub-headings; a chapter without sub-headings stands alone),
-    /// at most 14 in all, each with the first sentence of its summary (<paramref name="summaryOf"/>, else the topic's) and
+    /// at most 6 per chapter and 14 in all, each with the first sentence of its summary (<paramref name="summaryOf"/>, else the topic's) and
     /// up to 2 of the best <paramref name="places"/> (at most 6 in all). Topics that are not in the book are left out.
     /// </summary>
     public static PlacementCheckPrompt Prompt(Book book, string noteText, IReadOnlyList<TopicHit> topics,
@@ -69,7 +70,7 @@ public static class PlacementCheck
             .Distinct()
             .Take(MaxChapters)
             .ToList();
-        var sections = chapters.SelectMany(SectionsOf).Take(MaxSections).ToList();
+        var sections = chapters.SelectMany(chapter => SectionsOf(chapter).Take(MaxSectionsPerChapter)).Take(MaxSections).ToList();
         var topicSummaries = topics.Where(t => !string.IsNullOrWhiteSpace(t.Summary))
             .GroupBy(t => t.SectionKey)
             .ToDictionary(g => g.Key, g => g.First().Summary!);
@@ -102,7 +103,8 @@ public static class PlacementCheck
         foreach (var section in sections)
         {
             var number = numbered.Count + 1;
-            var summary = summaryOf?.Invoke(section) is { Length: > 0 } own ? own : topicSummaries.GetValueOrDefault(section.Key);
+            var own = summaryOf?.Invoke(section);
+            var summary = string.IsNullOrWhiteSpace(own) ? topicSummaries.GetValueOrDefault(section.Key) : own;
             var line = $"{number}. {HeadingPath(book, section)}";
             if (!string.IsNullOrWhiteSpace(summary))
             {
@@ -240,7 +242,10 @@ public static class PlacementCheck
         }
     }
 
-    /// <summary>The section of <paramref name="sections"/> a text block belongs to: the one it lies in most deeply.</summary>
+    /// <summary>
+    /// The section of <paramref name="sections"/> a text block belongs to: the one it lies in most deeply. A block under a
+    /// sub-heading that was left out (over the limit) belongs to none, not to its chapter.
+    /// </summary>
     private static OutlineNode? SectionOf(TextBlock block, IReadOnlyList<OutlineNode> sections)
     {
         for (var node = block.Section; node is not null; node = node.Parent)
@@ -248,6 +253,11 @@ public static class PlacementCheck
             if (sections.FirstOrDefault(s => s.Key == node.Key) is { } section)
             {
                 return section;
+            }
+
+            if (node.Parent?.Parent?.Parent is null) // a chapter or sub-heading that is not offered
+            {
+                return null;
             }
         }
 
@@ -269,14 +279,15 @@ public static class PlacementCheck
     /// <summary>The first sentence of a summary, at most <see cref="SummaryLength"/> characters.</summary>
     private static string FirstSentence(string summary)
     {
-        // A sentence ends at ".", "!" or "?" before a space, unless the word before it is an abbreviation like "z." or "B.".
+        // A sentence ends at ".", "!" or "?" before a space, unless the word before the "." is an abbreviation like "z.",
+        // "B." or "bzw.".
         var text = summary.Trim();
         for (var i = 0; i < text.Length - 1; i++)
         {
             if (text[i] is '.' or '!' or '?' && text[i + 1] == ' ')
             {
-                var word = i - text.LastIndexOf(' ', i);
-                if (word > 3)
+                var word = text[(text.LastIndexOf(' ', i) + 1)..i];
+                if (text[i] != '.' || (word.Length > 1 && !Abbreviations.Contains(word)))
                 {
                     text = text[..(i + 1)];
                     break;
@@ -286,6 +297,9 @@ public static class PlacementCheck
 
         return text.Length <= SummaryLength ? text : text[..(SummaryLength - 1)] + "…";
     }
+
+    private static readonly HashSet<string> Abbreviations = new(
+        ["bzw", "ca", "d.h", "etc", "evtl", "ggf", "inkl", "insb", "Nr", "S", "u.a", "usw", "vgl", "z.B"], StringComparer.OrdinalIgnoreCase);
 
     private static string FirstLine(string content)
     {

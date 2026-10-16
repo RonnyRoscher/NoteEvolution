@@ -190,7 +190,7 @@ verglichen; dadurch weiß jede Überschrift, worum es in ihren Unterabschnitten 
   „Modell laden“ es über Ollama (Bestätigung, Fortschritt mit Restzeit, abbrechbar). Die Werte stehen in `ui.json`.
 - **„Wohin damit?“** sucht zweistufig: erst die drei passendsten Themen (eine Überschrift zählt auch mit 90 % ihres
   besten Unterabschnitts), dann die Stelle darin. Die Liste zeigt „Thema › Stelle“, der Tooltip die
-  Themen-Zusammenfassung. **„Genauer prüfen“** zeigt dem Sprachmodell alle Unterkapitel der drei passendsten Kapitel
+  Themen-Zusammenfassung. **„Genauer prüfen“** zeigt dem Sprachmodell die Unterkapitel der (bis zu) drei passendsten Kapitel
   (mit dem ersten Satz ihrer Zusammenfassung und den besten Textstellen); es wählt das Unterkapitel und die Stelle und
   begründet die Wahl. Die Antwort ist per JSON-Schema auf die angebotenen Stellen beschränkt. Auf dem Testrechner (i5,
   nur CPU) dauert das im Mittel gut eine halbe Minute, höchstens 1 Minute (Anzeige „Prüfe … 0:22 von ca. 0:35“,
