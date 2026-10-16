@@ -418,6 +418,50 @@ html, body {
     color: inherit;
 }
 
+.ne-outline-coverage-toggle {
+    align-self: flex-start;
+    margin: 4px 0;
+}
+
+.ne-outline-coverage-toggle[aria-pressed="true"] {
+    background: var(--accent);
+    color: var(--accent-fg);
+}
+
+.ne-outline-coverage {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+}
+
+.ne-outline-coverage-bar {
+    display: inline-flex;
+    width: 48px;
+    height: 6px;
+    border-radius: 3px;
+    background: color-mix(in srgb, currentColor 18%, transparent);
+    overflow: hidden;
+}
+
+.ne-outline-coverage-used {
+    background: var(--success);
+}
+
+.ne-outline-coverage-assigned {
+    background: var(--accent);
+}
+
+.ne-outline-coverage-empty {
+    color: var(--danger);
+    font-weight: 600;
+}
+
 .ne-outline-warning {
     color: var(--warning);
     cursor: help;

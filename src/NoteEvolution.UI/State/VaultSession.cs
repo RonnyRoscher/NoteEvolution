@@ -273,7 +273,7 @@ public sealed class VaultSession : IDisposable
     /// The current book's coverage (spec 6.1) as last computed; null before the first computation and without a current
     /// book. It is computed only while an owner watches it (<see cref="WatchCoverage"/>). Call it on the UI thread.
     /// </summary>
-    public Coverage? Coverage { get; private set; }
+    public Coverage? Coverage { get; internal set; }
 
     /// <summary><see cref="Coverage"/> changed; raised on the UI thread, at most once per <see cref="CoverageDelay"/>.</summary>
     public event Action? CoverageChanged;

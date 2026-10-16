@@ -88,6 +88,7 @@ else
         _logger = LoggerFactory.CreateLogger<NotesPane>();
         State.Changed += OnStateChanged;
         State.NoteRevealRequested += OnNoteRevealRequested;
+        State.NotesTabRequested += OnNotesTabRequested;
         TrackSession();
     }
 
@@ -95,6 +96,7 @@ else
     {
         State.Changed -= OnStateChanged;
         State.NoteRevealRequested -= OnNoteRevealRequested;
+        State.NotesTabRequested -= OnNotesTabRequested;
         Unsubscribe();
     }
 
@@ -138,6 +140,23 @@ else
         {
             State.FocusedNoteKey = note.Key;
             State.Notify();
+        }
+    });
+
+    /// <summary>Shows the requested tab. The Coverage tab does not exist yet, so that request changes nothing.</summary>
+    private void OnNotesTabRequested(NotesTab requested) => _ = InvokeAsync(() =>
+    {
+        var tab = requested switch
+        {
+            NotesTab.Relevant => Tab.Relevant,
+            NotesTab.Search => Tab.Search,
+            NotesTab.Journal => Tab.Journal,
+            _ => (Tab?)null,
+        };
+        if (tab is { } shown)
+        {
+            SelectTab(shown);
+            StateHasChanged();
         }
     });
 

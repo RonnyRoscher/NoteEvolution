@@ -9,6 +9,7 @@
     var words = isPrologue ? Node.WordCount - Node.Children.Sum(child => child.WordCount) : Node.WordCount;
     var sources = isPrologue ? Node.TextBlocks.SelectMany(text => text.Sources).Distinct().Count() : Node.SourceCount;
     var warnings = Pane.WarningsFor(Node.Key);
+    var coverage = Pane.CoverageBarOf(Node);
 }
 
 <li class="ne-outline-item">
@@ -47,6 +48,24 @@
             @if (sources > 0)
             {
                 <span class="ne-outline-sources" title="@L["OutlineSourcesLong", sources]">@L["OutlineSources", sources]</span>
+            }
+            @if (coverage is not null)
+            {
+                <button type="button" class="ne-outline-coverage" title="@coverage.Tooltip"
+                        @onclick="() => Pane.SelectFromCoverage(Node)" @onclick:stopPropagation @ondblclick:stopPropagation>
+                    @if (coverage.Empty)
+                    {
+                        <span class="ne-outline-coverage-empty">0</span>
+                    }
+                    else
+                    {
+                        <span class="ne-outline-coverage-bar">
+                            <span class="ne-outline-coverage-used" style="width: @Pct(coverage.UsedPercent)"></span>
+                            <span class="ne-outline-coverage-assigned" style="width: @Pct(coverage.AssignedPercent)"></span>
+                        </span>
+                        <span class="ne-outline-coverage-count">@coverage.Count</span>
+                    }
+                </button>
             }
             @if (!isPrologue)
             {
@@ -91,6 +110,8 @@
             await _renameInput.FocusAsync();
         }
     }
+
+    private static string Pct(double percent) => percent.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) + "%";
 
     private async Task OnRenameKey(KeyboardEventArgs e)
     {
