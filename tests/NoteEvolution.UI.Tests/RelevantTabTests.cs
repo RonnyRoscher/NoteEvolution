@@ -415,7 +415,7 @@ public class RelevantTabTests : UiTestContext
     }
 
     [Fact]
-    public async Task Tabs_Order_RelevantSearchJournal_JournalIsTheDefaultAlsoWithTheAi()
+    public async Task Tabs_Order_RelevantSearchJournalCoverage_JournalIsTheDefaultAlsoWithTheAi()
     {
         var tv = Vault();
         using var gate = new ManualResetEventSlim();
@@ -428,7 +428,7 @@ public class RelevantTabTests : UiTestContext
             var cut = Render<NotesPane>();
 
             // The model is installed and the notes are being indexed: the start tab is Journal all the same.
-            Assert.Equal([Text("NotesTabRelevant"), Text("NotesTabSearch"), Text("NotesTabJournal")], Tabs(cut));
+            Assert.Equal([Text("NotesTabRelevant"), Text("NotesTabSearch"), Text("NotesTabJournal"), Text("NotesTabCoverage")], Tabs(cut));
             Assert.Equal([Text("NotesTabJournal")], ActiveTabs(cut));
 
             // Once the AI is ready the tab stays where it is, and so does a choice of the user.
@@ -478,7 +478,7 @@ public class RelevantTabTests : UiTestContext
 
         var cut = Render<NotesPane>();
 
-        Assert.Equal([Text("NotesTabRelevant"), Text("NotesTabSearch"), Text("NotesTabJournal")], Tabs(cut));
+        Assert.Equal([Text("NotesTabRelevant"), Text("NotesTabSearch"), Text("NotesTabJournal"), Text("NotesTabCoverage")], Tabs(cut));
         Assert.Equal([Text("NotesTabJournal")], ActiveTabs(cut));
     }
 

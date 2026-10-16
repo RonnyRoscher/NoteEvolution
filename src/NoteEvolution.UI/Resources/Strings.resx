@@ -356,6 +356,45 @@
   </data>
 
   <!-- Notizbereich -->
+  <data name="NotesTabCoverage" xml:space="preserve">
+    <value>Abdeckung</value>
+  </data>
+  <data name="CoverageNeedsModel" xml:space="preserve">
+    <value>Die Abdeckung braucht das Sprachmodell (Einstellungen › Sprachmodell)</value>
+  </data>
+  <data name="CoveragePending" xml:space="preserve">
+    <value>Die Abdeckung wird berechnet …</value>
+  </data>
+  <data name="CoverageChecked" xml:space="preserve">
+    <value>geprüft</value>
+  </data>
+  <data name="CoverageRemaining" xml:space="preserve">
+    <value>noch {0}</value>
+  </data>
+  <data name="CoverageEmpty" xml:space="preserve">
+    <value>leere Abschnitte</value>
+  </data>
+  <data name="CoverageEmptyPreliminary" xml:space="preserve">
+    <value>Vorläufig: noch nicht alle Notizen sind geprüft</value>
+  </data>
+  <data name="CoverageHomeless" xml:space="preserve">
+    <value>Ohne passenden Ort</value>
+  </data>
+  <data name="CoverageUncertain" xml:space="preserve">
+    <value>unsichere Zuordnungen</value>
+  </data>
+  <data name="CoverageUncertainHeading" xml:space="preserve">
+    <value>Unsichere Zuordnungen ({0})</value>
+  </data>
+  <data name="CoverageSort" xml:space="preserve">
+    <value>Sortierung</value>
+  </data>
+  <data name="CoverageSortBook" xml:space="preserve">
+    <value>Buchreihenfolge</value>
+  </data>
+  <data name="CoverageSortFewest" xml:space="preserve">
+    <value>Wenigste zuerst</value>
+  </data>
   <data name="NotesTabRelevant" xml:space="preserve">
     <value>Relevant</value>
   </data>

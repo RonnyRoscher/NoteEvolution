@@ -454,7 +454,7 @@ html, body {
 }
 
 .ne-outline-coverage-assigned {
-    background: var(--accent);
+    background: var(--warning);
 }
 
 .ne-outline-coverage-empty {
@@ -1873,4 +1873,100 @@ html, body {
     display: block;
     font-size: 11px;
     color: var(--warning);
+}
+
+.ne-coverage-metrics {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 16px;
+    margin-bottom: 8px;
+}
+
+.ne-coverage-metric {
+    display: flex;
+    flex-direction: column;
+}
+
+.ne-coverage-value {
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.ne-coverage-label,
+.ne-coverage-remaining,
+.ne-coverage-pending,
+.ne-coverage-reason {
+    font-size: 11px;
+    color: var(--fg-muted);
+}
+
+.ne-coverage-hint {
+    padding: 6px 8px;
+    border-left: 3px solid var(--warning);
+}
+
+.ne-coverage-sections {
+    margin: 4px 0 12px;
+    padding: 0;
+    list-style: none;
+}
+
+.ne-coverage-section {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 3px 4px;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.ne-coverage-section.selected {
+    background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.ne-coverage-path {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ne-coverage-bar {
+    display: inline-flex;
+    flex: none;
+    width: 64px;
+    height: 6px;
+    border-radius: 3px;
+    background: color-mix(in srgb, currentColor 18%, transparent);
+    overflow: hidden;
+}
+
+.ne-coverage-used {
+    background: var(--success);
+}
+
+.ne-coverage-assigned {
+    background: var(--warning);
+}
+
+.ne-coverage-count {
+    flex: none;
+    min-width: 2ch;
+    text-align: right;
+}
+
+.ne-coverage-stale {
+    display: block;
+    font-size: 11px;
+    color: var(--warning);
+}
+
+.ne-coverage-uncertain-list {
+    margin-top: 8px;
 }
