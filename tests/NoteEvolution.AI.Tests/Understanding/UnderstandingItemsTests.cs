@@ -160,4 +160,16 @@ public class UnderstandingItemsTests
         Assert.Equal(item.Identity, UnderstandingItems.NoteIdentity(note.Block.Content, note.Page.FilePath));
         Assert.False(string.IsNullOrEmpty(UnderstandingItems.NoteIdentity("Kurz", note.Page.FilePath)));
     }
+
+    [Fact]
+    public void ForNote_PagePathWithHash_TitleIsFirstLine()
+    {
+        using var tv = TestVault.Create(("pages/C#.md", "- Idee " + new string('d', 300) + "\n"));
+        var note = Note(tv, "Idee");
+
+        var item = UnderstandingItems.ForNote(note, Model)!;
+
+        Assert.Equal("Idee " + new string('d', 75), item.Title);
+        Assert.StartsWith("note:pages/C#.md#Idee ", item.Identity);
+    }
 }

@@ -9,7 +9,8 @@ namespace NoteEvolution.AI.Understanding;
 
 /// <summary>
 /// One unit of work for the language model: a heading (summary of its own text and its sub-headings' summaries) or a note
-/// (core statement) or a placement check of a note against a book (<paramref name="Check"/> carries its prompt). <paramref name="Fingerprint"/> covers everything the answer depends on, <paramref name="Identity"/>
+/// (core statement) or a placement check of a note against a book (<paramref name="Check"/> carries its prompt).
+/// <paramref name="Fingerprint"/> covers everything the answer depends on, <paramref name="Identity"/>
 /// names the thing across edits, <paramref name="Key"/> is the session key (<c>OutlineNode.Key</c> / <c>NoteBlock.Key</c>).
 /// </summary>
 public sealed record UnderstandingItem(UnderstandingKind Kind, string Fingerprint, string Identity, string Title,
@@ -50,21 +51,18 @@ public static class UnderstandingItems
             return null;
         }
 
-        var identity = NoteIdentity(content, filePath);
-        var title = identity[(identity.IndexOf('#') + 1)..];
-        return new UnderstandingItem(UnderstandingKind.Note, NoteFingerprint(text, chatModel), identity, title, text, [], key);
+        return new UnderstandingItem(UnderstandingKind.Note, NoteFingerprint(text, chatModel),
+            NoteIdentity(content, filePath), FirstLine(content), text, [], key);
     }
 
     /// <summary>The note's identity across edits: <c>note:</c>, its page's folder and file, <c>#</c> and the first line of its content (at most 80 characters).</summary>
-    public static string NoteIdentity(string content, string filePath)
+    public static string NoteIdentity(string content, string filePath) =>
+        "note:" + RelativePagePath(filePath) + "#" + FirstLine(content);
+
+    private static string FirstLine(string content)
     {
         var firstLine = content.Split('\n', 2)[0].Trim();
-        if (firstLine.Length > NoteIdentityLineLimit)
-        {
-            firstLine = firstLine[..NoteIdentityLineLimit];
-        }
-
-        return "note:" + RelativePagePath(filePath) + "#" + firstLine;
+        return firstLine.Length > NoteIdentityLineLimit ? firstLine[..NoteIdentityLineLimit] : firstLine;
     }
 
     /// <summary>
@@ -75,7 +73,7 @@ public static class UnderstandingItems
         PlacementCheckPrompt prompt, string chatModel) =>
         new(UnderstandingKind.Placement,
             Hash([PromptVersion.ToString(), chatModel, "placement", prompt.System, prompt.User, prompt.Schema]),
-            $"placement|{bookLinkName}|{noteIdentity}", noteIdentity[(noteIdentity.IndexOf('#') + 1)..], prompt.User, [],
+            $"placement|{bookLinkName}|{noteIdentity}", noteIdentity, prompt.User, [],
             noteKey, prompt);
 
     /// <summary>
