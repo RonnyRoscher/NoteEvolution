@@ -1,8 +1,11 @@
 using Bunit;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Localization;
+using NoteEvolution.AI.Language;
 using NoteEvolution.AI.Search;
 using NoteEvolution.AI.Tests;
+using NoteEvolution.Core.Books;
+using NoteEvolution.Core.Vaults;
 using NoteEvolution.TestSupport;
 using NoteEvolution.UI.Components;
 using NoteEvolution.UI.Resources;
@@ -499,5 +502,209 @@ public class RelevantTabTests : UiTestContext
         Assert.Contains(Music, texts[0]);
         Assert.True(texts.Count > 15);
         Assert.Contains(texts, t => t.StartsWith("Schlaf", StringComparison.Ordinal) || t.StartsWith("Suppe", StringComparison.Ordinal));
+    }
+}
+
+/// <summary>The "Relevant" tab's two groups: the notes the model placed into the section, then the similar ones (spec 5).</summary>
+public class RelevantTabPlacedTests : UiTestContext
+{
+    private const string SleepNote =
+        "Wer zu wenig schläft, verliert zuerst die Geduld und dann die Fähigkeit, Wichtiges von Unwichtigem zu trennen; das merkt man selbst erst spät.";
+
+    private const string DreamNote =
+        "Träume ordnen das Erlebte der Nacht und sortieren, was am Tag wichtig war, in das Gedächtnis ein, still und ohne Anstrengung.";
+
+    private const string OtherNote = "Suppe kochen mit Gemüse braucht Zeit und eine gute Brühe, die lange ziehen darf, bevor man sie salzt.";
+
+    private const string Reason = "Es geht um Schlaf und Träume.";
+
+    private readonly List<TestVault> _vaults = [];
+    private readonly FakeChatModel _chat = new();
+
+    public RelevantTabPlacedTests()
+    {
+        // Summaries name their heading; a check answers with the first place, except for the soup note (no usable answer).
+        _chat.Answer = (call, n) => call.Options.Json
+            ? call.User.Contains("Suppe kochen", StringComparison.Ordinal)
+                ? "kein JSON"
+                : "{\"begruendung\": \"" + Reason + "\", \"stelle\": \"" + PlaceOf(call.User) + "\"}"
+            : call.User.StartsWith("Überschrift: ", StringComparison.Ordinal)
+                ? "Zusammenfassung von " + call.User.Split('\n')[0]["Überschrift: ".Length..] + "."
+                : $"Kernaussage {n}.";
+    }
+
+    /// <summary>The number of the offered place after the dream paragraph (in the section Träume), or "1.1" if it is not offered.</summary>
+    private static string PlaceOf(string prompt) =>
+        prompt.Split('\n').Select(l => l.TrimStart()).FirstOrDefault(l => l.Contains(" nach: Träume ordnen das Erlebte.", StringComparison.Ordinal))
+            ?.Split(' ')[0] ?? "1.1";
+
+    protected override void Dispose(bool disposing)
+    {
+        base.Dispose(disposing);
+        if (disposing)
+        {
+            _vaults.ForEach(v => v.Dispose());
+        }
+    }
+
+    private string Text(string key, params object[] args) =>
+        Services.GetRequiredService<IStringLocalizer<Strings>>()[key, args].Value;
+
+    private static async Task Eventually(Func<bool> condition, string because)
+    {
+        var until = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+        while (!condition())
+        {
+            Assert.True(DateTime.UtcNow < until, because);
+            await Task.Delay(10);
+        }
+    }
+
+    /// <summary>A book with the sections Schlaf (with the sub-section Träume) and Arbeit, and three journal notes.</summary>
+    private TestVault Vault()
+    {
+        var vault = TestVault.Create(
+            ("pages/Buch - Alpha.md",
+                "title:: Alpha\ntype:: book\n\n- # Schlaf\n\t- Über den Schlaf und seine Phasen.\n\t- ## Träume\n\t\t- Träume ordnen das Erlebte.\n\t\t- Wer schlecht schläft, träumt wirr.\n- # Arbeit\n\t- Konzentration braucht Ruhe.\n"),
+            ("journals/2026_03_01.md", $"- {SleepNote}\n"),
+            ("journals/2026_03_02.md", $"- {DreamNote}\n"),
+            ("journals/2026_03_03.md", $"- {OtherNote}\n"));
+        _vaults.Add(vault);
+        return vault;
+    }
+
+    private static NoteBlock Note(VaultSession session, string text) => session.Notes.All().Single(n => n.Block.Content == text);
+
+    /// <summary>Opens the vault with the language model, lets the background place the sleep and dream notes and selects the section <paramref name="title"/>.</summary>
+    private async Task<VaultSession> OpenPlacedAsync(string title = "Schlaf")
+    {
+        var language = UseLanguageModel(_chat);
+        await language.RefreshAsync(CancellationToken.None);
+        Assert.Equal(LanguageModelState.Ready, language.State);
+        var session = await OpenWithAiAsync(Vault());
+        await Eventually(() => session.Understanding is { Total: 5, Done: 5 }, "The background work did not finish.");
+        Time.Advance(VaultSession.PageIndexDelay);
+        foreach (var text in new[] { SleepNote, DreamNote })
+        {
+            var key = Note(session, text).Key;
+            await Eventually(() => session.Placement(key) is not null, "The placement was not stored.");
+        }
+
+        Select(title);
+        return session;
+    }
+
+    private void Select(string title)
+    {
+        State.CurrentSectionKey = State.CurrentBook!.Root.Children.Single(n => n.Title == title).Key;
+        State.Notify();
+    }
+
+    private IRenderedComponent<NotesPane> OpenTab()
+    {
+        var cut = Render<NotesPane>();
+        cut.Find(".ne-tab-relevant").Click();
+        return cut;
+    }
+
+    private static List<string> PlacedTexts(IRenderedComponent<NotesPane> cut) =>
+        [.. cut.FindAll(".ne-relevant-placed-item .ne-note-card > .ne-note-body > .ne-note-text").Select(e => e.TextContent.Trim())];
+
+    private static List<string> SimilarTexts(IRenderedComponent<NotesPane> cut) =>
+        [.. cut.FindAll(".ne-relevant-list > .ne-note-card > .ne-note-body > .ne-note-text").Select(e => e.TextContent.Trim())];
+
+    [Fact]
+    public async Task Relevant_PlacedHere_FirstGroup_NewestFirst()
+    {
+        var session = await OpenPlacedAsync();
+        var dreams = State.CurrentBook!.Root.Children.Single(n => n.Title == "Schlaf").Children.Single();
+        Assert.Equal(dreams.Key, session.Placement(Note(session, SleepNote).Key)!.Verdict.SectionKey);
+
+        // Both notes sit in the sub-section Träume of the current section Schlaf.
+        var cut = OpenTab();
+
+        cut.WaitForAssertion(() => Assert.Equal([DreamNote, SleepNote], PlacedTexts(cut)));
+        Assert.Equal("Hierher eingeordnet", Text("NotesRelevantPlaced"));
+        Assert.Equal(Text("NotesRelevantPlaced"), cut.Find(".ne-relevant-group-placed").TextContent.Trim());
+    }
+
+    [Fact]
+    public async Task Relevant_Similar_SecondGroup_WithoutDuplicates()
+    {
+        await OpenPlacedAsync();
+
+        var cut = OpenTab();
+
+        cut.WaitForAssertion(() => Assert.Equal([OtherNote], SimilarTexts(cut)));
+        Assert.Equal("Weitere ähnliche", Text("NotesRelevantSimilar"));
+        Assert.Equal(Text("NotesRelevantSimilar"), cut.Find(".ne-relevant-group-similar").TextContent.Trim());
+        Assert.Equal(2, PlacedTexts(cut).Count);
+        Assert.Equal(3, cut.FindAll(".ne-relevant-list .ne-note-card").Count);
+        var order = cut.FindAll(".ne-relevant-list > h4, .ne-relevant-list > .ne-relevant-placed-item, .ne-relevant-list > .ne-note-card")
+            .Select(e => e.ClassList.Contains("ne-relevant-group-placed") ? "P" : e.ClassList.Contains("ne-relevant-group-similar") ? "S" : "c");
+        Assert.Equal("PccSc", string.Concat(order));
+    }
+
+    [Fact]
+    public async Task Relevant_NoPlaced_NoGroupHeadings()
+    {
+        await OpenPlacedAsync("Arbeit");
+
+        var cut = OpenTab();
+
+        cut.WaitForAssertion(() => Assert.Equal(3, cut.FindAll(".ne-relevant-list .ne-note-card").Count));
+        Assert.Empty(cut.FindAll(".ne-relevant-group-heading"));
+        Assert.Empty(cut.FindAll(".ne-relevant-placed-item"));
+    }
+
+    [Fact]
+    public async Task Relevant_PlacedStale_Marked()
+    {
+        var session = await OpenPlacedAsync();
+        var cut = OpenTab();
+        cut.WaitForAssertion(() => Assert.Equal(2, PlacedTexts(cut).Count));
+        Assert.Empty(cut.FindAll(".ne-relevant-stale"));
+
+        // The edit keeps the note's first 80 characters, so its identity: the stored placement is stale, the new check waits.
+        using var gate = new SemaphoreSlim(0);
+        _chat.Gate = gate;
+        const string edited = SleepNote + " Auch das.";
+        var page = session.Vault.FindPageByPath(Path.Combine(_vaults[^1].Root, "journals", "2026_03_01.md"))!;
+        page.AllBlocks().Single(b => b.Content == SleepNote).SetContent(edited);
+        Assert.True(session.TrySave(page, out var error), error?.Message);
+        Time.Advance(VaultSession.PageIndexDelay);
+        await Eventually(() => session.Placement(Note(session, edited).Key) is { Stale: true }, "The placement was not shown as stale.");
+        Time.Advance(TimeSpan.FromMilliseconds(1500));
+
+        cut.WaitForAssertion(() => Assert.Equal("veraltet", cut.Find(".ne-relevant-stale").TextContent.Trim()));
+        Assert.Single(cut.FindAll(".ne-relevant-stale"));
+        gate.Release(100);
+    }
+
+    [Fact]
+    public async Task Relevant_Filters_ApplyToPlacedGroup()
+    {
+        await OpenPlacedAsync();
+        var cut = OpenTab();
+        cut.WaitForAssertion(() => Assert.Equal(2, PlacedTexts(cut).Count));
+
+        // Only notes from 2 March on.
+        cut.Find(".ne-filter-from").Change("2026-03-02");
+        Time.Advance(TimeSpan.FromMilliseconds(1500));
+
+        cut.WaitForAssertion(() => Assert.Equal([DreamNote], PlacedTexts(cut)));
+    }
+
+    [Fact]
+    public async Task Relevant_PlacedTooltip_ReasonAndFit()
+    {
+        await OpenPlacedAsync();
+
+        var cut = OpenTab();
+
+        cut.WaitForAssertion(() => Assert.NotEmpty(cut.FindAll(".ne-relevant-placed-item")));
+        Assert.All(cut.FindAll(".ne-relevant-placed-item"),
+            item => Assert.Equal($"{Reason} ({Text("NoteFitPartial")})", item.GetAttribute("title")));
+        Assert.Equal("Passung teilweise", Text("NoteFitPartial"));
     }
 }

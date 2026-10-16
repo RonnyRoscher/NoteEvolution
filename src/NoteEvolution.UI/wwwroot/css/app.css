@@ -1816,3 +1816,17 @@ html, body {
     color: var(--fg);
     background: var(--bg-raised);
 }
+
+/* The "Relevant" tab's groups: the notes the model placed into the section, then the similar ones. */
+.ne-relevant-group-heading {
+    margin: 8px 0 4px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--fg-muted);
+}
+
+.ne-relevant-stale {
+    display: block;
+    font-size: 11px;
+    color: var(--warning);
+}

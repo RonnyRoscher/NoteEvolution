@@ -1,4 +1,5 @@
 @using NoteEvolution.AI.Relevance
+@using NoteEvolution.AI.Understanding
 @using NoteEvolution.Core.Books
 @using NoteEvolution.Core.Vaults
 @implements IDisposable
@@ -37,12 +38,35 @@
         }
         else
         {
-            if (_computed && _hits.Count == 0)
+            if (_computed && _hits.Count == 0 && _placed.Count == 0)
             {
                 <div class="ne-search-empty">@L["NotesSearchEmpty"]</div>
             }
 
             <div class="ne-relevant-list">
+                @if (_placed.Count > 0)
+                {
+                    <h4 class="ne-relevant-group-heading ne-relevant-group-placed">@L["NotesRelevantPlaced"]</h4>
+                    @foreach (var placed in _placed)
+                    {
+                        if (session.Notes.Get(placed.Key) is { } placedNote)
+                        {
+                            <div @key="placed.Key" class="ne-relevant-placed-item" title="@PlacedTitle(placed)">
+                                @if (placed.Stale)
+                                {
+                                    <span class="ne-relevant-stale">@L["NoteWhereToStale"]</span>
+                                }
+                                <NoteCard Note="placedNote" />
+                            </div>
+                        }
+                    }
+
+                    @if (_hits.Count > 0)
+                    {
+                        <h4 class="ne-relevant-group-heading ne-relevant-group-similar">@L["NotesRelevantSimilar"]</h4>
+                    }
+                }
+
                 @foreach (var hit in _hits)
                 {
                     // Read live (not kept): a page replaced after an external change gives new views; keys may be stale.
@@ -79,8 +103,16 @@
     /// </summary>
     private int _indexVersion;
 
-    private (VaultSession?, Book?, Guid, Guid?, bool, int, NoteFilter, int, AiState, bool, int)? _last;
+    private (VaultSession?, Book?, Guid, Guid?, bool, int, NoteFilter, int, AiState, bool, int, int)? _last;
     private List<(Guid Key, int Percent)> _hits = [];
+
+    /// <summary>The notes the model placed into the current section (newest first); they are not in <see cref="_hits"/>.</summary>
+    private List<PlacedNote> _placed = [];
+
+    private sealed record PlacedNote(Guid Key, string Reason, PlacementFit Fit, bool Stale);
+
+    /// <summary>Counts the changes of the stored placements (<see cref="VaultSession.PlacementsChanged"/>): the list is computed again then.</summary>
+    private int _placementVersion;
 
     /// <summary>The notes in <see cref="_hits"/> only because their "Wohin damit?" list is open (see <see cref="WhereToPins"/>).</summary>
     private HashSet<Guid> _keptOnly = [];
@@ -132,6 +164,7 @@
         if (_session is not null)
         {
             _session.AiStatusChanged += OnAiStatusChanged;
+            _session.PlacementsChanged += OnPlacementsChanged;
         }
     }
 
@@ -140,8 +173,21 @@
         if (_session is not null)
         {
             _session.AiStatusChanged -= OnAiStatusChanged;
+            _session.PlacementsChanged -= OnPlacementsChanged;
         }
     }
+
+    private void OnPlacementsChanged() => _ = InvokeAsync(() =>
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _placementVersion++;
+        Refresh();
+        StateHasChanged();
+    });
 
     private void OnAiStatusChanged() => _ = InvokeAsync(() =>
     {
@@ -165,7 +211,8 @@
     /// was read again, another session) no longer holds it.
     /// </summary>
     private bool Frozen =>
-        _hits.Any(hit => State.WhereToOpenNotes.Contains(hit.Key) && State.Session?.Notes.Get(hit.Key) is not null);
+        _hits.Select(hit => hit.Key).Concat(_placed.Select(placed => placed.Key))
+            .Any(key => State.WhereToOpenNotes.Contains(key) && State.Session?.Notes.Get(key) is not null);
 
     /// <summary>
     /// Starts a new computation if something the list depends on has changed since the last one; nothing while the list
@@ -183,7 +230,7 @@
         var status = session?.AiStatus;
         var available = session?.Relevance.IsAvailable == true;
         var current = (session, State.CurrentBook, State.CurrentSectionKey, State.CursorTextBlockKey, State.CursorTextBlockKey is not null,
-            State.RangeLevel, Filter, Revision, status?.State ?? AiState.Off, available, _indexVersion);
+            State.RangeLevel, Filter, Revision, status?.State ?? AiState.Off, available, _indexVersion, _placementVersion);
         if (_last == current && !_heldWhileFrozen)
         {
             return;
@@ -200,6 +247,7 @@
         if (!available || State.CurrentBook is null)
         {
             _hits = [];
+            _placed = [];
             _keptOnly = [];
             return;
         }
@@ -218,17 +266,19 @@
             }
 
             // The vault model belongs to the UI thread: everything the background work needs is read here.
-            (VaultSession Session, TopicRequest Topic, HashSet<Guid> Allowed)? snapshot = null;
+            (VaultSession Session, TopicRequest Topic, HashSet<Guid> Allowed, List<PlacedNote> Placed)? snapshot = null;
             await InvokeAsync(() => snapshot = TakeSnapshot());
             if (snapshot is null)
             {
                 return;
             }
 
-            var (session, topic, allowed) = snapshot.Value;
+            var (session, topic, allowed, placed) = snapshot.Value;
             var found = await Task.Run(() => session.Relevance.Relevant(topic, allowed.Contains, Limit), cancel);
             var best = found.Count > 0 ? found.Max(hit => hit.Score) : 0;
-            var hits = found.Select(hit => (Key: hit.NoteBlockKey, Percent: SearchTab.Percent(hit.Score, best))).ToList();
+            var placedKeys = placed.Select(p => p.Key).ToHashSet();
+            var hits = found.Where(hit => !placedKeys.Contains(hit.NoteBlockKey))
+                .Select(hit => (Key: hit.NoteBlockKey, Percent: SearchTab.Percent(hit.Score, best))).ToList();
             await InvokeAsync(() =>
             {
                 if (_disposed || generation != _generation)
@@ -246,6 +296,7 @@
                 // The pins of package B (a card with an open "Wohin damit?" list stays where it is) have nothing to keep
                 // here, as such a card freezes the list; they are kept as the common way of the tabs.
                 (_hits, _keptOnly) = WhereToPins.Merge(_hits, hits, hit => hit.Key, State.WhereToOpenNotes);
+                _placed = placed;
                 _computed = true;
                 StateHasChanged();
             });
@@ -262,7 +313,7 @@
         }
     }
 
-    private (VaultSession, TopicRequest, HashSet<Guid>)? TakeSnapshot()
+    private (VaultSession, TopicRequest, HashSet<Guid>, List<PlacedNote>)? TakeSnapshot()
     {
         if (_disposed || State is not { Session: { } session, CurrentBook: { } book })
         {
@@ -275,8 +326,55 @@
             .Where(note => session.Notes.Matches(note, filter))
             .Select(note => note.Key)
             .ToHashSet();
-        return (session, topic, allowed);
+        return (session, topic, allowed, PlacedHere(session, book, filter));
     }
+
+    /// <summary>
+    /// The unused top-level notes that match the filter and that the model placed into the current section or one of its
+    /// sub-sections (by the verdict's section, or the section holding its "after" text block), newest first. UI thread only.
+    /// </summary>
+    private List<PlacedNote> PlacedHere(VaultSession session, Book book, NoteFilter filter)
+    {
+        if (book.FindNode(State.CurrentSectionKey) is not { } section)
+        {
+            return [];
+        }
+
+        var sections = new HashSet<Guid>();
+        var textBlocks = new HashSet<Guid>();
+        void Collect(OutlineNode node)
+        {
+            sections.Add(node.Key);
+            textBlocks.UnionWith(node.TextBlocks.Select(tb => tb.Key));
+            foreach (var child in node.Children)
+            {
+                Collect(child);
+            }
+        }
+
+        Collect(section);
+        var placed = new List<(NoteBlock Note, PlacedNote Entry)>();
+        foreach (var note in session.Notes.All())
+        {
+            if (note.Block.Parent is not null || note.IsUsed || !session.Notes.Matches(note, filter)
+                || session.Placement(note.Key) is not { } placement)
+            {
+                continue;
+            }
+
+            var verdict = placement.Verdict;
+            if (sections.Contains(verdict.SectionKey) || (verdict.AfterTextBlockKey is { } after && textBlocks.Contains(after)))
+            {
+                placed.Add((note, new PlacedNote(note.Key, verdict.Reason, verdict.Fit, placement.Stale)));
+            }
+        }
+
+        // Newest first (stable: file order within a day); undated notes last.
+        return [.. placed.OrderByDescending(p => p.Note.Date ?? DateOnly.MinValue).Select(p => p.Entry)];
+    }
+
+    /// <summary>The tooltip of a placed note: the model's reason and how well it fits.</summary>
+    private string PlacedTitle(PlacedNote placed) => $"{placed.Reason} ({L["NoteFit" + placed.Fit]})";
 
     /// <summary>
     /// What the list is about (package B, spec 2): at level 0 in a text block or detail (and without a range) that text

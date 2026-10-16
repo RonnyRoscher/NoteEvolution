@@ -933,6 +933,12 @@
   <data name="NotesRelevantFailed" xml:space="preserve">
     <value>Die KI meldet einen Fehler; „Relevant“ ist nicht verfügbar.</value>
   </data>
+  <data name="NotesRelevantPlaced" xml:space="preserve">
+    <value>Hierher eingeordnet</value>
+  </data>
+  <data name="NotesRelevantSimilar" xml:space="preserve">
+    <value>Weitere ähnliche</value>
+  </data>
   <data name="NotesRelevantNoBook" xml:space="preserve">
     <value>Kein Buch gewählt</value>
   </data>
