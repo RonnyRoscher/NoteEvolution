@@ -207,6 +207,44 @@ public sealed class UnderstandingStoreTests
     }
 
     [Fact]
+    public void BulkReads_MatchTheSingleReads()
+    {
+        using var dir = new TempDir();
+        using var store = UnderstandingStore.Open(dir.Path);
+        store.Put(Entry("a", "h1"));
+        store.Put(Entry("b", "h1"));
+        store.Put(Entry("c", "n1", kind: UnderstandingKind.Note));
+        store.RecordFailure("x");
+        store.RecordFailure("x");
+        store.RecordFailure("c");
+        store.Put(Entry("c", "n1", kind: UnderstandingKind.Note)); // clears its attempts
+
+        Assert.Equal(new HashSet<string> { "a", "b", "c" }, store.Fingerprints());
+        Assert.Equal(new Dictionary<string, int> { ["x"] = 2 }, store.AllAttempts());
+        Assert.Equal(new HashSet<(UnderstandingKind, string)> { (UnderstandingKind.Heading, "h1"), (UnderstandingKind.Note, "n1") },
+            store.Identities());
+        Assert.Equal(UnderstandingKind.Note, store.KindOf("c"));
+        Assert.Null(store.KindOf("x"));
+    }
+
+    [Fact]
+    public void Open_UsesWriteAheadLog_GoneAfterDispose()
+    {
+        using var dir = new TempDir();
+        var path = Path.Combine(dir.Path, ".noteevolution", "understanding.db");
+        using (var store = UnderstandingStore.Open(dir.Path))
+        {
+            store.Put(Entry("a"));
+            Assert.True(File.Exists(path + "-wal"));
+        }
+
+        // The last connection closed: the log was written back and removed, so the folder can be deleted.
+        Assert.False(File.Exists(path + "-wal"));
+        using var reopened = UnderstandingStore.Open(dir.Path);
+        Assert.NotNull(reopened.Get("a"));
+    }
+
+    [Fact]
     public void Survives_Reopen()
     {
         using var dir = new TempDir();

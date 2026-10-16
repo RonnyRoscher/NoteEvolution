@@ -722,12 +722,17 @@ public sealed class UnderstandingWorker : IDisposable
         foreach (var item in work.Book.Concat(work.Notes).Concat(work.OtherBooks).Concat(work.Placements))
             items.TryAdd(item.Fingerprint, item);
 
+        // One read each of the stored fingerprints, the failed attempts and the stored identities for the whole plan.
+        var stored = _store.Fingerprints();
+        var attempts = _store.AllAttempts();
+        var identities = _store.Identities();
+
         // Done: has a current entry; Skipped: failed too often, or a sub-heading can never get an entry.
         var states = new Dictionary<string, ItemState>(StringComparer.Ordinal);
         foreach (var item in items.Values)
         {
-            states[item.Fingerprint] = _store.Get(item.Fingerprint) is not null ? ItemState.Done
-                : _store.Attempts(item.Fingerprint) >= MaxAttempts ? ItemState.Skipped
+            states[item.Fingerprint] = stored.Contains(item.Fingerprint) ? ItemState.Done
+                : attempts.GetValueOrDefault(item.Fingerprint) >= MaxAttempts ? ItemState.Skipped
                 : ItemState.Pending;
         }
 
@@ -736,7 +741,7 @@ public sealed class UnderstandingWorker : IDisposable
             foreach (var child in item.ChildFingerprints)
             {
                 if (!states.ContainsKey(child))
-                    states[child] = _store.Get(child) is not null ? ItemState.Done : ItemState.Skipped;
+                    states[child] = stored.Contains(child) ? ItemState.Done : ItemState.Skipped;
             }
 
             if (states[item.Fingerprint] == ItemState.Pending && item.ChildFingerprints.Any(c => states[c] == ItemState.Skipped))
@@ -760,7 +765,7 @@ public sealed class UnderstandingWorker : IDisposable
         foreach (var group in groups)
         {
             var members = group.Where(i => seen.Add(i.Fingerprint) && states[i.Fingerprint] == ItemState.Pending).ToList();
-            var changed = members.Where(i => _store.LatestByIdentity(i.Kind, i.Identity) is not null).ToList();
+            var changed = members.Where(i => identities.Contains((i.Kind, i.Identity))).ToList();
             order.AddRange(changed);
             order.AddRange(members.Except(changed));
         }

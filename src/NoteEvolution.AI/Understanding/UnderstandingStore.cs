@@ -79,6 +79,64 @@ public sealed class UnderstandingStore : IDisposable
         }
     }
 
+    /// <summary>The kind of the entry stored for the fingerprint (without reading the rest of it), or null.</summary>
+    public UnderstandingKind? KindOf(string fingerprint)
+    {
+        lock (_gate)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            using var command = _db.CreateCommand();
+            command.CommandText = "SELECT kind FROM entries WHERE fingerprint = $fp";
+            command.Parameters.AddWithValue("$fp", fingerprint);
+            return command.ExecuteScalar() is long kind ? (UnderstandingKind)kind : null;
+        }
+    }
+
+    /// <summary>The fingerprints of all stored entries (one read for a whole plan instead of one per item).</summary>
+    public IReadOnlySet<string> Fingerprints()
+    {
+        lock (_gate)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            using var command = _db.CreateCommand();
+            command.CommandText = "SELECT fingerprint FROM entries";
+            var result = new HashSet<string>(StringComparer.Ordinal);
+            using var reader = command.ExecuteReader();
+            while (reader.Read()) result.Add(reader.GetString(0));
+            return result;
+        }
+    }
+
+    /// <summary>The failed attempts of every fingerprint that has any (see <see cref="Attempts"/>).</summary>
+    public IReadOnlyDictionary<string, int> AllAttempts()
+    {
+        lock (_gate)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            using var command = _db.CreateCommand();
+            command.CommandText = "SELECT fingerprint, count FROM attempts";
+            var result = new Dictionary<string, int>(StringComparer.Ordinal);
+            using var reader = command.ExecuteReader();
+            while (reader.Read()) result[reader.GetString(0)] = (int)reader.GetInt64(1);
+            return result;
+        }
+    }
+
+    /// <summary>Every (kind, identity) that has a stored entry, i.e. for which <see cref="LatestByIdentity"/> finds one.</summary>
+    public IReadOnlySet<(UnderstandingKind Kind, string Identity)> Identities()
+    {
+        lock (_gate)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            using var command = _db.CreateCommand();
+            command.CommandText = "SELECT DISTINCT kind, identity FROM entries";
+            var result = new HashSet<(UnderstandingKind, string)>();
+            using var reader = command.ExecuteReader();
+            while (reader.Read()) result.Add(((UnderstandingKind)reader.GetInt32(0), reader.GetString(1)));
+            return result;
+        }
+    }
+
     /// <summary>The most recently stored entry of that kind and identity (the stale fallback), or null.</summary>
     public UnderstandingEntry? LatestByIdentity(UnderstandingKind kind, string identity)
     {
@@ -317,6 +375,10 @@ public sealed class UnderstandingStore : IDisposable
                 return null;
             }
 
+            // A disposable cache: the write-ahead log lets readers go on while the worker writes, and a lost last
+            // write after a crash costs only its recomputation.
+            Run(db, "PRAGMA journal_mode=WAL");
+            Run(db, "PRAGMA synchronous=NORMAL");
             Run(db, "CREATE TABLE IF NOT EXISTS entries(fingerprint TEXT PRIMARY KEY, kind INTEGER NOT NULL, identity TEXT NOT NULL, " +
                     "text TEXT NOT NULL, chat_model TEXT NOT NULL, embed_model TEXT, vector BLOB, updated INTEGER NOT NULL)");
             Run(db, "CREATE INDEX IF NOT EXISTS entries_identity ON entries(kind, identity, updated)");
