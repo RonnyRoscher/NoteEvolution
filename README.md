@@ -193,7 +193,7 @@ verglichen; dadurch weiß jede Überschrift, worum es in ihren Unterabschnitten 
   Themen-Zusammenfassung. **„Genauer prüfen“** zeigt dem Sprachmodell die Unterkapitel der (bis zu) drei passendsten Kapitel
   (mit dem ersten Satz ihrer Zusammenfassung und den besten Textstellen); es wählt das Unterkapitel und die Stelle und
   begründet die Wahl. Die Antwort ist per JSON-Schema auf die angebotenen Stellen beschränkt. Auf dem Testrechner (i5,
-  nur CPU) dauert das im Mittel gut eine halbe Minute, höchstens 1 Minute (Anzeige „Prüfe … 0:22 von ca. 0:35“,
+  nur CPU) dauert das im Mittel knapp eine Minute, höchstens etwa 1½ Minuten (Anzeige „Prüfe … 0:42 von ca. 1:00“,
   abbrechbar); die Empfehlung steht oben in der Liste. Das Modell sagt dazu, wie gut die Notiz passt (gut, teilweise,
   kaum).
 - **Vorberechnete Zuordnung:** Für jede noch nicht verwendete Notiz läuft „Genauer prüfen“ im Hintergrund für das
@@ -216,7 +216,7 @@ verglichen; dadurch weiß jede Überschrift, worum es in ihren Unterabschnitten 
 - **Hintergrund:** immer nur eine Anfrage; zuerst das aktuelle Kapitel, dann das übrige Buch, dann die Notizen
   (neueste zuerst). Beim Tippen wartet die Berechnung 10 s Ruhe ab, im Akkubetrieb pausiert sie, der Schalter ⏸/▶ in
   der Kopfzeile hält sie an. Auf dem Testrechner braucht eine Zusammenfassung etwa 45 s, eine Kernaussage etwa 18 s je
-  Eintrag, eine Zuordnung etwa 35 s. Die Kopfzeile zeigt den Fortschritt mit Balken und Restzeit („Sprachmodell
+  Eintrag, eine Zuordnung knapp eine Minute. Die Kopfzeile zeigt den Fortschritt mit Balken und Restzeit („Sprachmodell
   34/120 · noch ca. 1 h 10 min“); ein Klick darauf schlüsselt ihn nach Embedding, Zusammenfassungen, Kernaussagen und
   Zuordnungen auf (je mit Balken und Restzeit, dazu Pausengrund und übersprungene Einträge).
   Eine Anfrage darf höchstens 5 Minuten dauern; nach 3 Fehlversuchen wird ein Eintrag bis zur nächsten Änderung
