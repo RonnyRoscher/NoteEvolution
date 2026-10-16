@@ -30,6 +30,7 @@
             {
                 <span class="ne-note-score" title="@L["NoteScoreTitle"]">@percent %</span>
             }
+            @StatusDot()
             @UsedMark(usageCount)
         </header>
     }
@@ -43,6 +44,7 @@
         {
             @* In a day the buttons stand stacked at the right of the text, as for sub-bullets (a grid, see app.css). *@
             <div class="ne-adopt-column">
+                @StatusDot()
                 @UsedMark(usageCount)
                 @AdoptSplit(Note.Block, "ne-note-adopt")
                 @WhereToButton()
@@ -302,6 +304,7 @@
         if (_session is not null)
         {
             _session.AiStatusChanged += OnAiStatusChanged;
+            _session.NoteStatusChanged += OnAiStatusChanged;
         }
 
         return true;
@@ -312,6 +315,7 @@
         if (_session is not null)
         {
             _session.AiStatusChanged -= OnAiStatusChanged;
+            _session.NoteStatusChanged -= OnAiStatusChanged;
         }
     }
 
@@ -334,6 +338,20 @@
             Platform.OpenExternal(LogseqLink.For(session.Vault.Root, Note.Block.Id, Note.Page.Name));
         }
     }
+
+    /// <summary>
+    /// The status dot of an unused note while the language model works for the vault (spec 7.2): its colour, and its
+    /// stages as tooltip and label. Whether the note is used is read from the card's note, which is newer than the status.
+    /// </summary>
+    private RenderFragment StatusDot() =>
+        @<text>
+            @if (State.Session?.NoteStatus(Note.Key) is { } status
+                 && NoteProgress.Of(status with { Used = Note.IsUsed }, L) is { Dot: not NoteDot.None } dot)
+            {
+                <span class="ne-note-dot ne-note-dot-@dot.Dot.ToString().ToLowerInvariant()" role="img"
+                      title="@dot.Tooltip" aria-label="@dot.Tooltip"></span>
+            }
+        </text>;
 
     /// <summary>The mark of a used note (how often, a click goes to the usage); nothing for an unused one.</summary>
     private RenderFragment UsedMark(int usageCount) =>

@@ -1080,4 +1080,60 @@ NoteEvolution: CPU {2} %, RAM {3} GB</value>
   <data name="SettingsSystemMeter" xml:space="preserve">
     <value>Systemanzeige in der Kopfzeile (CPU, Arbeitsspeicher, freier Platz)</value>
   </data>
+  <data name="NoteDotRunning" xml:space="preserve">
+    <value>Wird gerade berechnet: {0}</value>
+    <comment>Statuspunkt der Notizkarte: {0} = NoteKindCore oder NoteKindPlacement</comment>
+  </data>
+  <data name="NoteKindCore" xml:space="preserve">
+    <value>Kernaussage</value>
+  </data>
+  <data name="NoteKindPlacement" xml:space="preserve">
+    <value>Zuordnung</value>
+  </data>
+  <data name="NoteDotCoreFailed" xml:space="preserve">
+    <value>Kernaussage fehlgeschlagen, wird nach der nächsten Änderung erneut versucht</value>
+  </data>
+  <data name="NoteDotPlacementFailed" xml:space="preserve">
+    <value>Zuordnung fehlgeschlagen, wird nach der nächsten Änderung erneut versucht</value>
+  </data>
+  <data name="NoteDotStale" xml:space="preserve">
+    <value>Zuordnung veraltet (Notiz oder Buch geändert) · wird neu berechnet</value>
+  </data>
+  <data name="NoteStageEmbeddingDone" xml:space="preserve">
+    <value>Embedding fertig</value>
+    <comment>Stufe im Tooltip des Statuspunkts; die Stufen werden mit „ · “ verbunden</comment>
+  </data>
+  <data name="NoteStageEmbeddingPending" xml:space="preserve">
+    <value>Embedding ausstehend</value>
+  </data>
+  <data name="NoteStageCoreDone" xml:space="preserve">
+    <value>Kernaussage fertig</value>
+  </data>
+  <data name="NoteStageCorePending" xml:space="preserve">
+    <value>Kernaussage ausstehend</value>
+  </data>
+  <data name="NoteStageCoreFailed" xml:space="preserve">
+    <value>Kernaussage fehlgeschlagen</value>
+  </data>
+  <data name="NoteStagePlacementCurrent" xml:space="preserve">
+    <value>Zuordnung aktuell</value>
+  </data>
+  <data name="NoteStagePlacementStale" xml:space="preserve">
+    <value>Zuordnung veraltet</value>
+  </data>
+  <data name="NoteStagePlacementFailed" xml:space="preserve">
+    <value>Zuordnung fehlgeschlagen</value>
+  </data>
+  <data name="NoteStagePlacementPending" xml:space="preserve">
+    <value>Zuordnung ausstehend</value>
+  </data>
+  <data name="NoteFitGood" xml:space="preserve">
+    <value>Passung gut</value>
+  </data>
+  <data name="NoteFitPartial" xml:space="preserve">
+    <value>Passung teilweise</value>
+  </data>
+  <data name="NoteFitPoor" xml:space="preserve">
+    <value>Passung kaum</value>
+  </data>
 </root>

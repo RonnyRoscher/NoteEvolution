@@ -9,6 +9,7 @@
     --border: #dcd8cf;
     --accent: #3d6fb6;
     --accent-fg: #ffffff;
+    --success: #2e7d32;
     --warning: #b4690e;
     --danger: #b3261e;
     --hint-bg: #fff4d6;
@@ -28,6 +29,7 @@
         --border: #3b3934;
         --accent: #7aa7e8;
         --accent-fg: #10151d;
+        --success: #7cc47f;
         --warning: #e5a446;
         --danger: #f2827a;
         --hint-bg: #3a3222;
@@ -45,6 +47,7 @@
     --border: #3b3934;
     --accent: #7aa7e8;
     --accent-fg: #10151d;
+    --success: #7cc47f;
     --warning: #e5a446;
     --danger: #f2827a;
     --hint-bg: #3a3222;
@@ -692,6 +695,49 @@ html, body {
     gap: 8px;
     font-size: 11px;
     color: var(--fg-muted);
+}
+
+/* The status dot of an unused note (spec 7.2); its meaning is in its tooltip and label as well. */
+.ne-note-dot {
+    flex: none;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--fg-muted);
+}
+
+.ne-note-dot-running {
+    background: var(--accent);
+    animation: ne-note-dot-pulse 1.2s ease-in-out infinite;
+}
+
+.ne-note-dot-failed {
+    background: var(--danger);
+}
+
+.ne-note-dot-current {
+    background: var(--success);
+}
+
+.ne-note-dot-stale {
+    background: var(--warning);
+}
+
+.ne-note-in-day > .ne-note-body > .ne-adopt-column > .ne-note-dot {
+    align-self: flex-end;
+    margin: 2px 4px;
+}
+
+@keyframes ne-note-dot-pulse {
+    50% {
+        opacity: 0.35;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .ne-note-dot-running {
+        animation: none;
+    }
 }
 
 .ne-note-origin {
