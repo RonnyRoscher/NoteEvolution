@@ -668,6 +668,31 @@ public sealed class UnderstandingWorkerTests
         f.Chat.Answer = (call, n) => IsPlacement(call) ? Verdict : $"Antwort {n}.";
 
     [Fact]
+    public async Task RunNext_Answered_StoredBeforeTheNextPlan_NotAskedAgain()
+    {
+        await using var f = new Fixture();
+        f.Chat.Gate = new SemaphoreSlim(0);
+        AnswerPlacements(f);
+        var first = Placement("Eins");
+        var second = Placement("Zwei");
+        f.Worker.SetWork([], null, [], [], [first, second]);
+        f.Start();
+        await Until(() => f.Chat.Calls.Count == 1);
+
+        // The second check is asked by hand behind the first; its answer is stored before the worker plans on.
+        var check = f.Worker.RunNextAsync(second.Check!.System, second.Check.User, PlacementCheck.Options(second.Check),
+            CancellationToken.None,
+            answered: answer => f.Store.Put(new UnderstandingEntry(UnderstandingKind.Placement, second.Fingerprint,
+                second.Identity, answer, Model, null, null)));
+        f.Chat.Gate.Release(10);
+        Assert.Equal(Verdict, await check.WaitAsync(TimeSpan.FromSeconds(10)));
+
+        await Until(() => f.Worker.Progress is { Done: 2, Total: 2 }, "both checks done");
+        await Quiet();
+        Assert.Equal(2, f.Chat.Calls.Count);
+    }
+
+    [Fact]
     public async Task Placements_LastGroup_AfterOtherBooks()
     {
         await using var f = new Fixture();

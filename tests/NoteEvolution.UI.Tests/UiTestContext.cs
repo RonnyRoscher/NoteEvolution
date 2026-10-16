@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using Bunit;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
 using NoteEvolution.AI.Embeddings;
@@ -138,9 +139,10 @@ public abstract class UiTestContext : BunitContext
     /// Opens <paramref name="vault"/> as the app's session (dispatching inline, with <see cref="LanguageModel"/> if one is
     /// registered, and <see cref="SystemMonitor"/>) and selects its first book.
     /// </summary>
-    protected async Task<VaultSession> OpenSessionAsync(TestVault vault, AiRuntime? ai = null)
+    protected async Task<VaultSession> OpenSessionAsync(TestVault vault, AiRuntime? ai = null, ILogger? logger = null)
     {
-        var session = await VaultSession.OpenAsync(vault.Root, Clock, timeProvider: Time, ai: ai, language: LanguageModel, monitor: SystemMonitor);
+        var session = await VaultSession.OpenAsync(
+            vault.Root, Clock, logger, timeProvider: Time, ai: ai, language: LanguageModel, monitor: SystemMonitor);
         State.Session = session;
         State.CurrentBook = session.Vault.Books.FirstOrDefault();
         State.CurrentSectionKey = State.CurrentBook?.Root.Key ?? Guid.Empty;
@@ -151,10 +153,10 @@ public abstract class UiTestContext : BunitContext
     /// Opens <paramref name="vault"/> with an installed test model and a working <paramref name="embedder"/> (a
     /// <see cref="FakeEmbedder"/> by default), and waits until the notes are indexed (the AI is ready).
     /// </summary>
-    protected async Task<VaultSession> OpenWithAiAsync(TestVault vault, FakeEmbedder? embedder = null)
+    protected async Task<VaultSession> OpenWithAiAsync(TestVault vault, FakeEmbedder? embedder = null, ILogger? logger = null)
     {
         embedder ??= new FakeEmbedder();
-        var session = await OpenSessionAsync(vault, UseAi(installed: true, () => embedder));
+        var session = await OpenSessionAsync(vault, UseAi(installed: true, () => embedder), logger);
         var until = DateTime.UtcNow + TimeSpan.FromSeconds(10);
         while (session.AiStatus.State != AiState.Ready)
         {

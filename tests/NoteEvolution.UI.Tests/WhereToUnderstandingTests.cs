@@ -203,16 +203,21 @@ public class WhereToUnderstandingTests : UiTestContext
     public async Task Check_ShowsElapsedOfExpected_ThenRecommendationFirst()
     {
         var session = await OpenReadyAsync();
+
+        // The time advanced below would let the background build its placement checks; they are done first.
+        Time.Advance(VaultSession.PageIndexDelay);
+        await Eventually(() => session.Understanding is { Total: 7, Done: 7 }, "The placement checks did not finish.");
         var cut = OpenList(session);
         var count = cut.FindAll(".ne-note-whereto-item").Count;
         using var gate = new SemaphoreSlim(0);
         _chat.Gate = gate;
+        var before = _chat.Calls.Count;
 
         cut.Find(".ne-note-whereto-check").Click();
 
         // Before the first check 90 s are expected; the elapsed time ticks every second.
         cut.WaitForAssertion(() => Assert.Equal(Text("CheckRunning", Duration(0), Duration(90)), cut.Find(".ne-note-whereto-checking-text").TextContent.Trim()));
-        await Eventually(() => _chat.Calls.Any(c => c.Options.Json));
+        await Eventually(() => _chat.Calls.Skip(before).Any(c => c.Options.Json));
         Assert.Empty(cut.FindAll(".ne-note-whereto-check"));
         Time.Advance(TimeSpan.FromSeconds(42));
         cut.WaitForAssertion(() => Assert.Equal(Text("CheckRunning", Duration(42), Duration(90)), cut.Find(".ne-note-whereto-checking-text").TextContent.Trim()));

@@ -190,10 +190,14 @@ public sealed class UnderstandingWorker : IDisposable
     /// <param name="waiting">Called at once (on the caller's thread) when another request is with the server, so this one waits.</param>
     /// <param name="started">Called on the worker's thread when this request goes to the server.</param>
     /// <param name="current">Reported as <see cref="UnderstandingProgress.Current"/> while this request is with the server.</param>
+    /// <param name="answered">
+    /// Called with the answer on the worker's thread before the next background request is planned, so what it stores
+    /// (e.g. a placement check under its item's fingerprint) is not asked for again; an exception is logged.
+    /// </param>
     public async Task<string> RunNextAsync(string system, string user, ChatOptions options, CancellationToken ct,
-        Action? waiting = null, Action? started = null, UnderstandingCurrent? current = null)
+        Action? waiting = null, Action? started = null, UnderstandingCurrent? current = null, Action<string>? answered = null)
     {
-        var call = new PendingCall(system, user, options, ct, started, current);
+        var call = new PendingCall(system, user, options, ct, started, current, answered);
         if (_busy)
         {
             waiting?.Invoke(); // before the call is queued, so it always comes before started
@@ -418,6 +422,20 @@ public sealed class UnderstandingWorker : IDisposable
             var answer = await _chat.ChatAsync(_chatModel, call.System, call.User, call.Options, linked.Token);
             _busy = false; // before the caller continues
             SetCurrent(null);
+            if (call.Answered is { } answered)
+            {
+                try
+                {
+                    answered(answer);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Handling the answer of a request failed");
+                }
+
+                _planStale = true; // it may have stored an item's entry
+            }
+
             call.Result.TrySetResult(answer);
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
@@ -851,7 +869,7 @@ public sealed class UnderstandingWorker : IDisposable
         IReadOnlyList<UnderstandingItem> OtherBooks, IReadOnlyList<UnderstandingItem> Placements);
 
     private sealed record PendingCall(string System, string User, ChatOptions Options, CancellationToken Ct, Action? Started,
-        UnderstandingCurrent? Current)
+        UnderstandingCurrent? Current, Action<string>? Answered)
     {
         public TaskCompletionSource<string> Result { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
     }

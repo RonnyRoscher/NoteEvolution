@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NoteEvolution.AI.Embeddings;
 using NoteEvolution.AI.Language;
@@ -240,7 +241,8 @@ public class LanguageModelTests : UiTestContext
         await Eventually(() => session.FeedsApplied == feeds + 1, "The focus was not fed.");
         await Task.Delay(50);
         Assert.Equal(feeds + 1, session.FeedsApplied);
-        Assert.Equal(5, _chat.Calls.Count); // nothing changed, nothing asked
+        // Nothing changed, nothing asked again; the summaries are settled, so the feed brought the placement checks.
+        Assert.Equal(5, _chat.Calls.Count(c => c.Options.Schema is null));
 
         // Another book is fed at once (its headings make the count).
         State.CurrentBook = session.Vault.Books.Single(b => b.LinkName != State.CurrentBook!.LinkName);
@@ -298,6 +300,7 @@ public class LanguageModelTests : UiTestContext
     public async Task Session_OllamaGoesAway_FallsBackAndRetriesAfter60s()
     {
         var tv = Vault();
+        AnswerPlacements();
         var session = await OpenReadyAsync(tv);
         Assert.Contains(Topics(session), t => t.Summary is not null);
 
@@ -321,7 +324,8 @@ public class LanguageModelTests : UiTestContext
         _chat.Version = "0.5.0";
         _chat.Failure = (_, _) => null;
         Time.Advance(TimeSpan.FromSeconds(1));
-        await Eventually(() => session.Understanding is { Pause: UnderstandingPause.None, Done: 5, Total: 5 });
+        // The page-change feed found the summaries settled: 3 placement checks came with it.
+        await Eventually(() => session.Understanding is { Pause: UnderstandingPause.None, Done: 8, Total: 8 });
         Assert.True(_chat.VersionCalls > checks);
         Assert.Contains(Topics(session), t => t.Summary is not null);
     }
@@ -452,5 +456,275 @@ public class LanguageModelTests : UiTestContext
         await Eventually(() => _chat.Calls.Count == 7);
         Time.Advance(UnderstandingWorker.RequestTimeout);
         Assert.Equal((null, PlacementCheckFailure.NoAnswer), await timedOut);
+    }
+
+    // ---- Precomputed placements ----
+
+    private const string ShortNote = "kurz";
+
+    /// <summary>Placement checks (they have a schema) get a verdict for the first place; everything else the default answer.</summary>
+    private void AnswerPlacements() =>
+        _chat.Answer = (call, n) => call.Options.Schema is not null
+            ? "{\"begruendung\":\"Passt zum Abschnitt.\",\"stelle\":\"1.1\",\"passung\":\"gut\"}"
+            : $"Antwort {n}.";
+
+    /// <summary>The placement checks of the note (its text, after the journal date, ends with the content).</summary>
+    private IReadOnlyList<ChatCall> PlacementCalls(string noteContent) =>
+        [.. _chat.Calls.Where(c => c.Options.Schema is not null
+            && c.User[..c.User.IndexOf("\n\nAbschnitte:", StringComparison.Ordinal)].EndsWith("\n" + noteContent, StringComparison.Ordinal))];
+
+    /// <summary>The 5 items of <see cref="OpenReadyAsync"/>, then (after the debounce) one placement check per unused note.</summary>
+    private async Task<VaultSession> OpenWithPlacementsAsync(TestVault vault, int total = 8)
+    {
+        AnswerPlacements();
+        var session = await OpenReadyAsync(vault);
+        Time.Advance(VaultSession.PageIndexDelay);
+        await AllDone(session, total);
+        return session;
+    }
+
+    [Fact]
+    public async Task Session_Placements_AfterAllSummaries()
+    {
+        var tv = Vault();
+        AnswerPlacements();
+        var language = UseLanguageModel(_chat);
+        await language.RefreshAsync(CancellationToken.None);
+        using var gate = new SemaphoreSlim(0);
+        _chat.Gate = gate;
+        var session = await OpenWithAiAsync(tv);
+        await Eventually(() => _chat.Calls.Count == 1);
+
+        // A feed while a summary is still missing builds no placement checks.
+        gate.Release();
+        await Eventually(() => _chat.Calls.Count == 2);
+        var feeds = session.FeedsApplied;
+        Time.Advance(VaultSession.PageIndexDelay);
+        await Eventually(() => session.FeedsApplied > feeds, "The page-change feed did not run.");
+        gate.Release(100);
+        await AllDone(session, 5);
+        await Task.Delay(50);
+        Assert.DoesNotContain(_chat.Calls, c => c.Options.Schema is not null);
+        Assert.Null(session.Placement(NoteKey(session, NewerNote)));
+
+        // The last summary scheduled the feed that builds them: one check per unused note, newest first, short ones too.
+        var placementsChanged = 0;
+        session.PlacementsChanged += () => placementsChanged++;
+        Time.Advance(VaultSession.PageIndexDelay);
+        await AllDone(session, 8);
+        foreach (var content in new[] { NewerNote, OlderNote, ShortNote })
+        {
+            Assert.Single(PlacementCalls(content));
+            Assert.False(Assert.IsType<NotePlacement>(session.Placement(NoteKey(session, content))).Stale);
+        }
+
+        Assert.True(_chat.Calls.Skip(5).First().User.Contains(NewerNote, StringComparison.Ordinal));
+        Assert.True(placementsChanged > 0);
+        await Task.Delay(50);
+        Assert.Equal(8, _chat.Calls.Count);
+    }
+
+    [Fact]
+    public async Task Session_Placements_FailedSubHeadingDoesNotBlock()
+    {
+        var tv = Vault();
+        _chat.Failure = (call, _) => call.Options.Schema is null && call.User.Contains(DreamText, StringComparison.Ordinal)
+            ? new InvalidOperationException("Kaputt.")
+            : null;
+
+        // "Träume" fails three times, so "Schlaf" is skipped as well; the book's summaries are settled all the same.
+        var session = await OpenWithPlacementsAsync(tv);
+
+        Assert.Equal(3, _chat.Calls.Count(c => c.User.Contains(DreamText, StringComparison.Ordinal) && c.Options.Schema is null));
+        Assert.Single(PlacementCalls(NewerNote));
+        Assert.NotNull(session.Placement(NoteKey(session, NewerNote)));
+    }
+
+    [Fact]
+    public async Task Session_Placements_HeadingGivenUpWithoutAnyStored_SchedulesTheFeed()
+    {
+        // The book's only heading fails: no summary is ever stored, so only the given-up heading can schedule the feed.
+        var tv = TestVault.Create(
+            (BookPath, $"title:: Alpha\ntype:: book\n\n- # Träume\n\t- {DreamText}\n"),
+            (NewerJournal, $"- {NewerNote}\n"));
+        _vaults.Add(tv);
+        AnswerPlacements();
+        _chat.Failure = (call, _) => call.Options.Schema is null && call.User.Contains(DreamText, StringComparison.Ordinal)
+            ? new InvalidOperationException("Kaputt.")
+            : null;
+        var language = UseLanguageModel(_chat);
+        await language.RefreshAsync(CancellationToken.None);
+        var session = await OpenWithAiAsync(tv);
+        await AllDone(session, 2);
+        Assert.Empty(PlacementCalls(NewerNote));
+
+        Time.Advance(VaultSession.PageIndexDelay);
+        await AllDone(session, 3);
+        Assert.Single(PlacementCalls(NewerNote));
+    }
+
+    [Fact]
+    public async Task Session_Placements_OnlyUnusedNotes()
+    {
+        var tv = TestVault.Create(
+            (BookPath, $"title:: Alpha\ntype:: book\n\n- # Schlaf\n\t- Über den Schlaf und seine Phasen.\n\t- ## Träume\n\t\t- {DreamText}\n- # Arbeit\n\t- Konzentration braucht Ruhe.\n"),
+            (OlderJournal, $"- {OlderNote}\n- kurz\n  used-in:: [[Buch - Alpha]]\n"),
+            (NewerJournal, $"- {NewerNote}\n"));
+        _vaults.Add(tv);
+
+        var session = await OpenWithPlacementsAsync(tv, total: 7);
+        await Task.Delay(50);
+
+        // The used note gets no check (it would have been one of 3) and no placement.
+        Assert.Equal(7, _chat.Calls.Count);
+        Assert.Empty(PlacementCalls(ShortNote));
+        Assert.Null(session.Placement(NoteKey(session, ShortNote)));
+        Assert.NotNull(session.Placement(NoteKey(session, OlderNote)));
+    }
+
+    [Fact]
+    public async Task Session_ManualCheck_StoredAndNotRecomputed()
+    {
+        var tv = Vault();
+        AnswerPlacements();
+        var session = await OpenReadyAsync(tv);
+        using var gate = new SemaphoreSlim(0);
+        _chat.Gate = gate;
+
+        // The background asks for the newest note first; meanwhile the older one is checked by hand.
+        Time.Advance(VaultSession.PageIndexDelay);
+        await Eventually(() => _chat.Calls.Count == 6);
+        var waiting = false;
+        var check = session.CheckPlacementAsync(
+            NoteKey(session, OlderNote), NoteText(session, OlderNote), CurrentBook(session), CancellationToken.None,
+            waiting: () => waiting = true);
+        await Eventually(() => waiting, "The check did not wait behind the running request.");
+        await Task.Delay(50); // queued right after waiting is reported
+        gate.Release();
+        await Eventually(() => _chat.Calls.Count == 7);
+        Assert.Single(PlacementCalls(OlderNote));
+        gate.Release();
+        var (verdict, failure) = await check;
+        Assert.Null(failure);
+        Assert.Equal("Passt zum Abschnitt.", verdict!.Reason);
+
+        // Stored under the background's fingerprint: the background does not ask again.
+        gate.Release(100);
+        await AllDone(session, 8);
+        await Task.Delay(50);
+        Assert.Single(PlacementCalls(OlderNote));
+        Assert.Equal(8, _chat.Calls.Count);
+        Assert.Equal(verdict, session.Placement(NoteKey(session, OlderNote))?.Verdict);
+        Assert.False(session.Placement(NoteKey(session, OlderNote))!.Stale);
+    }
+
+    [Fact]
+    public async Task Session_NoteEdited_PlacementStaleThenCurrent()
+    {
+        var tv = Vault();
+        var session = await OpenWithPlacementsAsync(tv);
+        using var gate = new SemaphoreSlim(0);
+        _chat.Gate = gate;
+
+        // The edit keeps the note's first 80 characters, so its identity: the old placement shows as stale.
+        const string edited = OlderNote + " Auch das.";
+        Edit(session, OlderJournal, OlderNote, edited);
+        Time.Advance(VaultSession.PageIndexDelay);
+        var key = NoteKey(session, edited);
+        await Eventually(() => session.Placement(key) is { Stale: true }, "The old placement was not shown as stale.");
+
+        // The core statement, then the new check.
+        gate.Release(100);
+        await Eventually(() => session.Placement(key) is { Stale: false }, "The new placement did not arrive.");
+        Assert.Single(PlacementCalls(edited));
+    }
+
+    [Fact]
+    public async Task Session_PromptBuildThrows_LoggedOtherWorkContinues()
+    {
+        var tv = Vault();
+        AnswerPlacements();
+        var language = UseLanguageModel(_chat);
+        await language.RefreshAsync(CancellationToken.None);
+        var logger = new ListLogger();
+        var session = await OpenWithAiAsync(tv, logger: logger);
+        var newer = NoteKey(session, NewerNote);
+        session.PlacementPromptBuilding = (_, key) =>
+        {
+            if (key == newer)
+            {
+                throw new InvalidOperationException("Topics failed.");
+            }
+        };
+        await AllDone(session, 5);
+
+        // The other notes are checked; the note whose prompt failed is logged and left out.
+        Time.Advance(VaultSession.PageIndexDelay);
+        await AllDone(session, 7);
+        Assert.Empty(PlacementCalls(NewerNote));
+        Assert.Single(PlacementCalls(OlderNote));
+        Assert.Contains(logger.Entries, e => e.Level == LogLevel.Warning && e.Exception?.Message == "Topics failed.");
+
+        // Headings and core statements are still with the worker: a changed note is asked for again.
+        Edit(session, NewerJournal, NewerNote, NewerNote + " Neu.");
+        Time.Advance(VaultSession.PageIndexDelay);
+        await Eventually(() => _chat.Calls.Any(c => c.Options.Schema is null && c.User.Contains(NewerNote + " Neu.", StringComparison.Ordinal)));
+    }
+
+    [Fact]
+    public async Task Session_BookSwitchedWhileBuilding_OldResultDropped()
+    {
+        var tv = TestVault.Create(
+            (BookPath, $"title:: Alpha\ntype:: book\n\n- # Schlaf\n\t- Über den Schlaf und seine Phasen.\n\t- ## Träume\n\t\t- {DreamText}\n- # Arbeit\n\t- Konzentration braucht Ruhe.\n"),
+            ("pages/Buch - Beta.md", "title:: Beta\ntype:: book\n\n- # Erholung\n\t- Pausen geben Kraft für den Tag.\n"),
+            (OlderJournal, $"- {OlderNote}\n- kurz\n"),
+            (NewerJournal, $"- {NewerNote}\n"));
+        _vaults.Add(tv);
+        AnswerPlacements();
+        var session = await OpenReadyAsync(tv);
+        var alpha = State.CurrentBook!.LinkName;
+        Assert.Equal("Buch - Alpha", alpha);
+        await Eventually(() => session.Understanding?.Kinds?[UnderstandingKind.Heading] is { Done: 4, Total: 4 },
+            "The other book's heading was not summarized.");
+
+        // Alpha's checks are being built (held at the first note) when the book changes to Beta.
+        using var building = new ManualResetEventSlim();
+        using var release = new ManualResetEventSlim();
+        session.PlacementPromptBuilding = (book, _) =>
+        {
+            if (book.LinkName == alpha)
+            {
+                building.Set();
+                release.Wait(Wait);
+            }
+        };
+        Time.Advance(VaultSession.PageIndexDelay);
+        Assert.True(building.Wait(Wait), "Alpha's checks were not built.");
+        State.CurrentBook = session.Vault.FindBook("Buch - Beta");
+        await AllDone(session, 1 + 2 + 3);
+        release.Set();
+        await Task.Delay(100);
+
+        // Only Beta's checks reached the worker.
+        var checks = _chat.Calls.Where(c => c.Options.Schema is not null).ToList();
+        Assert.Equal(3, checks.Count);
+        Assert.All(checks, c => Assert.Contains("Erholung", c.User, StringComparison.Ordinal));
+        Assert.All(checks, c => Assert.DoesNotContain("Schlaf", c.User, StringComparison.Ordinal));
+        Assert.Equal(6, session.Understanding!.Total);
+    }
+
+    /// <summary>Collects the session's log entries.</summary>
+    private sealed class ListLogger : ILogger
+    {
+        public System.Collections.Concurrent.ConcurrentQueue<(LogLevel Level, string Message, Exception? Exception)> Entries { get; } = new();
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+            Func<TState, Exception?, string> formatter) =>
+            Entries.Enqueue((logLevel, formatter(state, exception), exception));
     }
 }

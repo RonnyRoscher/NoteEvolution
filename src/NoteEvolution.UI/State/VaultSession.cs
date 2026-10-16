@@ -1,3 +1,6 @@
+using System.Collections.Concurrent;
+using System.Data.Common;
+using System.Runtime.CompilerServices;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NoteEvolution.AI.Embeddings;
@@ -178,6 +181,21 @@ public sealed class VaultSession : IDisposable
 
     /// <summary><see cref="Understanding"/> may have changed (also from or to <c>null</c>); raised on the UI thread.</summary>
     public event Action? UnderstandingChanged;
+
+    /// <summary>A placement was stored or the current book's notes got new placement checks (<see cref="Placement"/>); raised on the UI thread.</summary>
+    public event Action? PlacementsChanged;
+
+    /// <summary>Called in the background before a note's placement check is built (the book and the note's key); for tests.</summary>
+    internal Action<Book, Guid>? PlacementPromptBuilding { get; set; }
+
+    /// <summary>
+    /// The note's stored placement check for the current book (current or stale, see <see cref="StoreUnderstanding.Placement"/>);
+    /// null without the language model, without a current book or when there is none. Call it on the UI thread.
+    /// </summary>
+    public NotePlacement? Placement(Guid noteKey) =>
+        _understanding is { } parts && _focusBook is { } name && Vault.FindBook(name) is { } book
+            ? parts.Understanding.Placement(book, noteKey)
+            : null;
 
     /// <summary>The AI's state for this vault: the runtime's (model missing, downloading, load failed) or the index's.</summary>
     public AiStatus AiStatus
@@ -810,7 +828,9 @@ public sealed class VaultSession : IDisposable
     /// <summary>
     /// "Genauer prüfen" (spec 5.2): asks the language model which of the note's best topics and places fits, as the
     /// worker's next request (after a running background request), within <see cref="UnderstandingWorker.RequestTimeout"/>.
-    /// Call it on the UI thread; topics and places are computed in the background from the given snapshots.
+    /// Call it on the UI thread; topics and places are computed in the background from the given snapshots. The prompt is
+    /// the one the background builds for the note (spec 3.4), and a verdict is stored under its fingerprint, so the
+    /// background does not ask again.
     /// </summary>
     /// <param name="noteText"><c>EmbeddingText.ForNote(note)</c>, as for <see cref="IRelevanceService.Placements"/>.</param>
     /// <param name="waiting">Called when the request has to wait behind a running background request (spec 5.2).</param>
@@ -829,24 +849,23 @@ public sealed class VaultSession : IDisposable
             return (null, PlacementCheckFailure.Unavailable);
         }
 
-        var relevance = Relevance;
         var text = noteText.StartsWith(EmbeddingText.PassagePrefix, StringComparison.Ordinal)
             ? noteText[EmbeddingText.PassagePrefix.Length..]
             : noteText;
+
+        // Read here, on the UI thread: the identity the verdict is stored under (none for a note not in the vault).
+        var identity = Notes.Get(noteKey) is { } note
+            ? UnderstandingItems.NoteIdentity(note.Block.Content, note.Page.FilePath)
+            : null;
         PlacementCheckPrompt prompt;
         try
         {
-            // Only snapshots (the book, the note's text and key) go to the background.
+            // Only snapshots (the book, the note's text and key) go to the background. The prompt is the background's
+            // (same builder and cache), so the verdict is stored under the fingerprint the background asks for; one built
+            // before the book's summaries are all there is not remembered for the background.
             prompt = await Task.Run(
-                () =>
-                {
-                    var topics = relevance.Topics(noteKey, noteText, book, PlacementCheck.TopicLimit);
-                    var places = relevance.Placements(noteKey, noteText, book, int.MaxValue)
-                        .GroupBy(hit => hit.SectionKey)
-                        .ToDictionary(group => group.Key, group => (IReadOnlyList<PlacementHit>)[.. group]);
-                    return PlacementCheck.Prompt(book, text, topics, places,
-                        section => understanding.Understanding.Heading(book, section)?.Text);
-                },
+                () => understanding.PlacementPrompt(book, noteKey, text,
+                    remember: PlacementsReady(understanding, understanding.Understanding.Items(book))),
                 ct);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -864,13 +883,25 @@ public sealed class VaultSession : IDisposable
             return (null, PlacementCheckFailure.Unusable);
         }
 
+        var item = identity is null
+            ? null
+            : UnderstandingItems.ForPlacement(noteKey, identity, book.LinkName, prompt, understanding.ChatModel);
+
         using var timeout = new CancellationTokenSource(UnderstandingWorker.RequestTimeout, _time);
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, timeout.Token);
         try
         {
+            // Stored on the worker's thread before it plans on, so the background does not ask the same question again.
             var answer = await understanding.Worker.RunNextAsync(
                 prompt.System, prompt.User, PlacementCheck.Options(prompt), linked.Token,
-                waiting, started);
+                waiting, started, new UnderstandingCurrent(UnderstandingKind.Placement, noteKey),
+                answered: answer =>
+                {
+                    if (item is not null && PlacementCheck.Parse(answer, prompt) is { } stored)
+                    {
+                        StorePlacement(understanding, item, stored);
+                    }
+                });
             return PlacementCheck.Parse(answer, prompt) is { } verdict
                 ? (verdict, null)
                 : (null, PlacementCheckFailure.Unusable);
@@ -894,6 +925,20 @@ public sealed class VaultSession : IDisposable
         {
             _logger.LogWarning(ex, "The placement check failed");
             return (null, PlacementCheckFailure.NoAnswer);
+        }
+    }
+
+    /// <summary>Stores a verdict of "Genauer prüfen" as the worker stores its own; a closed or failing store keeps nothing.</summary>
+    private void StorePlacement(UnderstandingParts parts, UnderstandingItem item, PlacementVerdict verdict)
+    {
+        try
+        {
+            parts.Store.Put(new UnderstandingEntry(UnderstandingKind.Placement, item.Fingerprint, item.Identity,
+                PlacementCheck.Serialize(verdict), parts.ChatModel, null, null));
+        }
+        catch (Exception ex) when (ex is ObjectDisposedException or DbException)
+        {
+            _logger.LogWarning(ex, "Storing the placement check failed");
         }
     }
 
@@ -1054,6 +1099,7 @@ public sealed class VaultSession : IDisposable
         }
 
         worker.ProgressChanged += () => OnUnderstandingProgress(parts);
+        store.EntryChanged += fingerprint => OnEntryChanged(parts, fingerprint);
         Feed(notesChanged: true);
         Observe(() => Task.Run(() => worker.RunAsync(_aiLifetime.Token)), "The language model's background work");
         RaiseUnderstandingChanged();
@@ -1108,20 +1154,22 @@ public sealed class VaultSession : IDisposable
                         .Where(note => note.Block.Parent is null)
                         .OrderByDescending(note => note.Date ?? DateOnly.MinValue)
                         .Select(note => new NoteSnapshot(
-                            note.Key, UnderstandingItems.NoteText(note), note.Block.Content, note.Page.FilePath)),
+                            note.Key, UnderstandingItems.NoteText(note), note.Block.Content, note.Page.FilePath,
+                            note.IsUsed, note.Usages)),
                 ];
             }
 
             var notes = _noteSnapshot;
             var feed = Interlocked.Increment(ref _feedsStarted);
-            if (Work(parts, book, books, notes, cachedOnly: true) is { } known)
+            if (Work(parts, feed, book, books, notes, cachedOnly: true) is { } known)
             {
                 Apply(parts, feed, section, notes, known);
                 return;
             }
 
             Observe(
-                () => Task.Run(() => Apply(parts, feed, section, notes, Work(parts, book, books, notes, cachedOnly: false)!.Value)),
+                () => Task.Run(() =>
+                    Apply(parts, feed, section, notes, Work(parts, feed, book, books, notes, cachedOnly: false)!.Value)),
                 "Feeding the language model's background work");
         }
         catch (Exception ex)
@@ -1132,9 +1180,11 @@ public sealed class VaultSession : IDisposable
 
     /// <summary>
     /// The worker's work from the snapshots; with <paramref name="cachedOnly"/> only from items computed before (null if
-    /// any is missing), otherwise computing what is missing (in the background).
+    /// any is missing), otherwise computing what is missing (in the background). The placement checks of the current
+    /// book's unused notes come once its summaries are settled (<see cref="PlacementsReady"/>, spec 3.1); the cached path
+    /// cannot read the store, so it takes them only when they were built for these snapshots already.
     /// </summary>
-    private static FeedWork? Work(UnderstandingParts parts, Book? book, IReadOnlyList<Book> books,
+    private FeedWork? Work(UnderstandingParts parts, int feed, Book? book, IReadOnlyList<Book> books,
         IReadOnlyList<NoteSnapshot> notes, bool cachedOnly)
     {
         var understanding = parts.Understanding;
@@ -1172,7 +1222,101 @@ public sealed class VaultSession : IDisposable
             others.AddRange(items);
         }
 
-        return new FeedWork(current, noteItems, others);
+        IReadOnlyList<UnderstandingItem> placements = [];
+        var ready = false;
+        if (book is not null)
+        {
+            if (parts.CachedPlacements(book, notes) is { } built)
+            {
+                (placements, ready) = (built, true);
+            }
+            else if (cachedOnly)
+            {
+                return null;
+            }
+            else if (PlacementsReady(parts, current) && BuildPlacements(parts, feed, book, notes) is { } fresh)
+            {
+                (placements, ready) = (fresh, true);
+            }
+        }
+
+        return new FeedWork(current, noteItems, others, book?.LinkName, placements, ready);
+    }
+
+    /// <summary>
+    /// Whether every heading of the book (<paramref name="bookItems"/>, children first) has a stored summary or will not
+    /// get one: it failed <see cref="UnderstandingWorker.MaxAttempts"/> times, or one of its sub-headings will not (the
+    /// worker skips it then). Reads the store; a closed or failing store means no.
+    /// </summary>
+    private static bool PlacementsReady(UnderstandingParts parts, IReadOnlyList<UnderstandingItem> bookItems)
+    {
+        var skipped = new HashSet<string>(StringComparer.Ordinal);
+        try
+        {
+            foreach (var item in bookItems)
+            {
+                if (parts.Store.Get(item.Fingerprint) is not null)
+                {
+                    continue;
+                }
+
+                if (parts.Store.Attempts(item.Fingerprint) < UnderstandingWorker.MaxAttempts
+                    && !item.ChildFingerprints.Any(skipped.Contains))
+                {
+                    return false;
+                }
+
+                skipped.Add(item.Fingerprint);
+            }
+        }
+        catch (Exception ex) when (ex is ObjectDisposedException or DbException)
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// The placement checks of the unused notes in snapshot order (in the background). A note whose check cannot be built
+    /// is logged and left out (spec 8), as is one without topics to offer; null when a later feed started meanwhile.
+    /// </summary>
+    private IReadOnlyList<UnderstandingItem>? BuildPlacements(UnderstandingParts parts, int feed, Book book,
+        IReadOnlyList<NoteSnapshot> notes)
+    {
+        var items = new List<UnderstandingItem>();
+        foreach (var note in notes)
+        {
+            if (note.Used)
+            {
+                continue;
+            }
+
+            if (Volatile.Read(ref _feedsStarted) != feed)
+            {
+                return null; // its result would be dropped anyway
+            }
+
+            try
+            {
+                PlacementPromptBuilding?.Invoke(book, note.Key);
+                var prompt = parts.PlacementPrompt(book, note.Key, note.Text, remember: true);
+                if (prompt.Topics.Count == 0)
+                {
+                    continue; // nothing to choose from, as for "Genauer prüfen"
+                }
+
+                items.Add(UnderstandingItems.ForPlacement(note.Key, UnderstandingItems.NoteIdentity(note.Content, note.FilePath),
+                    book.LinkName, prompt, parts.ChatModel));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Building the placement check of a note failed");
+            }
+        }
+
+        parts.RememberPlacements(book, notes, items);
+        return items;
     }
 
     /// <summary>Hands the work to the worker and the notes' fingerprints to the understanding, unless a later feed started.</summary>
@@ -1197,9 +1341,95 @@ public sealed class VaultSession : IDisposable
                 parts.Understanding.UpdateNotes(map);
             }
 
-            parts.Worker.SetWork(work.Current, section, work.Notes, work.Others);
+            // Until the book's summaries are settled its last placement map stays (another book's is replaced by none).
+            var placementsChanged = false;
+            // The same checks again (a focus change) change nothing.
+            var otherBook = !string.Equals(parts.PlacementBook, work.Book, StringComparison.Ordinal);
+            if (work.Book is { } bookName
+                && (otherBook || (work.PlacementsReady && !ReferenceEquals(parts.PlacementItems, work.Placements))))
+            {
+                var placements = new Dictionary<Guid, (string Fingerprint, string Identity)>();
+                foreach (var item in work.Placements)
+                {
+                    placements[item.Key] = (item.Fingerprint, item.Identity);
+                }
+
+                parts.Understanding.UpdatePlacements(bookName, placements);
+                parts.PlacementBook = bookName;
+                parts.PlacementItems = work.Placements;
+                placementsChanged = true;
+            }
+
+            parts.PlacementsWaiting = work.Book is not null && !work.PlacementsReady;
+            parts.Worker.SetWork(work.Current, section, work.Notes, work.Others, work.Placements);
             Interlocked.Increment(ref _feedsApplied);
+            if (placementsChanged)
+            {
+                RaisePlacementsChanged();
+            }
         }
+    }
+
+    /// <summary>
+    /// The store stored something (on the writer's thread; never throws): a placement is shown, and a summary of the
+    /// current book may settle its summaries, so the placement checks are built (debounced like a page change).
+    /// </summary>
+    private void OnEntryChanged(UnderstandingParts parts, string fingerprint)
+    {
+        if (IsDisposed || !ReferenceEquals(_understanding, parts))
+        {
+            return;
+        }
+
+        UnderstandingKind? kind;
+        try
+        {
+            kind = parts.Store.Get(fingerprint)?.Kind;
+        }
+        catch (Exception ex) when (ex is ObjectDisposedException or DbException)
+        {
+            return;
+        }
+
+        if (kind == UnderstandingKind.Placement)
+        {
+            RaisePlacementsChanged();
+        }
+        else if (kind == UnderstandingKind.Heading && parts.PlacementsWaiting)
+        {
+            ScheduleFeedFor(parts);
+        }
+    }
+
+    /// <summary>Schedules a feed (as after a page change) while <paramref name="parts"/> are the current ones; any thread.</summary>
+    private void ScheduleFeedFor(UnderstandingParts parts)
+    {
+        lock (_gate)
+        {
+            if (!_disposed && ReferenceEquals(_understanding, parts))
+            {
+                ScheduleFeed();
+            }
+        }
+    }
+
+    /// <summary>Called on any thread; never throws.</summary>
+    private void RaisePlacementsChanged()
+    {
+        if (IsDisposed)
+        {
+            return;
+        }
+
+        Dispatch(
+            () =>
+            {
+                if (!IsDisposed)
+                {
+                    PlacementsChanged?.Invoke();
+                }
+            },
+            "the language model's placements");
     }
 
     /// <summary>(Re)starts the debounce of feeding the worker after a page change; call it under <see cref="_gate"/>.</summary>
@@ -1235,6 +1465,14 @@ public sealed class VaultSession : IDisposable
         };
         var changed = away != parts.ServerAway;
         parts.ServerAway = away;
+
+        // A heading given up settles the book's summaries as a stored one does, but the store reports no entry for it.
+        var failed = parts.Worker.Progress.Kinds?.GetValueOrDefault(UnderstandingKind.Heading)?.Failed ?? 0;
+        if (parts.SwapHeadingFailures(failed) != failed && parts.PlacementsWaiting)
+        {
+            ScheduleFeedFor(parts);
+        }
+
         RaiseUnderstandingChanged();
         if (changed)
         {
@@ -1275,6 +1513,72 @@ public sealed class VaultSession : IDisposable
         public RelevanceService Relevance { get; } = relevance;
 
         public UnderstandingWorker Worker { get; } = worker;
+
+        public UnderstandingStore Store { get; } = store;
+
+        /// <summary>The book (link name) the understanding's placement map was last given for, and from which checks; under the session's feed gate.</summary>
+        public string? PlacementBook { get; set; }
+
+        public IReadOnlyList<UnderstandingItem>? PlacementItems { get; set; }
+
+        /// <summary>The last work applied waits for the current book's summaries before its placement checks are built.</summary>
+        public bool PlacementsWaiting
+        {
+            get => Volatile.Read(ref _placementsWaiting);
+            set => Volatile.Write(ref _placementsWaiting, value);
+        }
+
+        private bool _placementsWaiting;
+        private int _headingFailures;
+
+        /// <summary>Remembers how many headings the worker gave up and returns the number remembered before.</summary>
+        public int SwapHeadingFailures(int failed) => Interlocked.Exchange(ref _headingFailures, failed);
+
+        // The placement prompts per book instance and note text, and the placement checks last built (for which book and
+        // snapshot; under _notesGate).
+        private readonly ConditionalWeakTable<Book, ConcurrentDictionary<string, PlacementCheckPrompt>> _prompts = new();
+        private (Book Book, IReadOnlyList<NoteSnapshot> Notes, IReadOnlyList<UnderstandingItem> Items)? _placements;
+
+        /// <summary>
+        /// The placement check's prompt for the note (its <see cref="UnderstandingItems.NoteText"/>) in the book snapshot, as
+        /// "Genauer prüfen" asks it: built once per book instance and text if <paramref name="remember"/>ed (a prompt
+        /// without topics is not, the embedder may have failed). Reads the semantic index and the store; any thread.
+        /// </summary>
+        public PlacementCheckPrompt PlacementPrompt(Book book, Guid noteKey, string noteText, bool remember)
+        {
+            var prompts = _prompts.GetValue(book, _ => new ConcurrentDictionary<string, PlacementCheckPrompt>(StringComparer.Ordinal));
+            if (prompts.TryGetValue(noteText, out var known))
+            {
+                return known;
+            }
+
+            var passage = EmbeddingText.PassagePrefix + noteText;
+            var topics = Relevance.Topics(noteKey, passage, book, PlacementCheck.TopicLimit);
+            var places = Relevance.Placements(noteKey, passage, book, int.MaxValue)
+                .GroupBy(hit => hit.SectionKey)
+                .ToDictionary(group => group.Key, group => (IReadOnlyList<PlacementHit>)[.. group]);
+            var prompt = PlacementCheck.Prompt(book, noteText, topics, places, section => Understanding.Heading(book, section)?.Text);
+            return remember && prompt.Topics.Count > 0 ? prompts.GetOrAdd(noteText, prompt) : prompt;
+        }
+
+        /// <summary>The placement checks built for this book instance and snapshot, else null.</summary>
+        public IReadOnlyList<UnderstandingItem>? CachedPlacements(Book book, IReadOnlyList<NoteSnapshot> snapshot)
+        {
+            lock (_notesGate)
+            {
+                return _placements is { } known && ReferenceEquals(known.Book, book) && ReferenceEquals(known.Notes, snapshot)
+                    ? known.Items
+                    : null;
+            }
+        }
+
+        public void RememberPlacements(Book book, IReadOnlyList<NoteSnapshot> snapshot, IReadOnlyList<UnderstandingItem> items)
+        {
+            lock (_notesGate)
+            {
+                _placements = (book, snapshot, items);
+            }
+        }
 
         // The notes' items of the last snapshot computed, and the snapshot last given to the understanding; under _notesGate.
         private readonly Lock _notesGate = new();
@@ -1340,16 +1644,21 @@ public sealed class VaultSession : IDisposable
         public void Dispose()
         {
             Worker.Dispose();
-            store.Dispose();
+            Store.Dispose();
         }
     }
 
-    /// <summary>What a note's understanding item is computed from, read on the UI thread.</summary>
-    private sealed record NoteSnapshot(Guid Key, string Text, string Content, string FilePath);
+    /// <summary>What a note's understanding items are computed from (and whether it is used, and where), read on the UI thread.</summary>
+    private sealed record NoteSnapshot(Guid Key, string Text, string Content, string FilePath, bool Used,
+        IReadOnlyList<UsedInEntry> Usages);
 
-    /// <summary>The worker's work of one feed: the current book's headings, the notes, the other books' headings.</summary>
+    /// <summary>
+    /// The worker's work of one feed: the current book's headings, the notes, the other books' headings, and the current
+    /// book (link name) with its notes' placement checks, which are only built once its summaries are settled.
+    /// </summary>
     private readonly record struct FeedWork(
-        IReadOnlyList<UnderstandingItem> Current, IReadOnlyList<UnderstandingItem> Notes, IReadOnlyList<UnderstandingItem> Others);
+        IReadOnlyList<UnderstandingItem> Current, IReadOnlyList<UnderstandingItem> Notes, IReadOnlyList<UnderstandingItem> Others,
+        string? Book, IReadOnlyList<UnderstandingItem> Placements, bool PlacementsReady);
 
     /// <summary>The services that exist once the semantic index does, with the embedder and model id behind it.</summary>
     private sealed record AiParts(
