@@ -99,6 +99,21 @@ public class OllamaChatModelTests
     }
 
     [Fact]
+    public async Task Chat_Schema_SentAsFormatObject()
+    {
+        var handler = new FakeHttpHandler(_ => Json("""{"message":{"role":"assistant","content":"{}"}}"""));
+
+        await Model(handler).ChatAsync("m", "s", "u",
+            new ChatOptions(10, Json: true, Schema: """{"type":"object","properties":{"stelle":{"type":"string","enum":["1.0"]}}}"""),
+            CancellationToken.None);
+
+        using var doc = JsonDocument.Parse(handler.Requests.Single().Body);
+        var format = doc.RootElement.GetProperty("format");
+        Assert.Equal(JsonValueKind.Object, format.ValueKind);
+        Assert.Equal("1.0", format.GetProperty("properties").GetProperty("stelle").GetProperty("enum")[0].GetString());
+    }
+
+    [Fact]
     public async Task Chat_ServerError_ThrowsChatModelUnavailable()
     {
         var handler = new FakeHttpHandler(_ => Json("""{"error":"boom"}""", HttpStatusCode.InternalServerError));

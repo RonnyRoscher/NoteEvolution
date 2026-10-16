@@ -1,94 +1,136 @@
 ﻿using System.Globalization;
 using System.Text.Json;
+using NoteEvolution.AI.Language;
 using NoteEvolution.AI.Relevance;
 using NoteEvolution.Core.Books;
 
 namespace NoteEvolution.AI.Understanding;
 
-/// <summary>The model's decision: the topic and the place after which the note fits best.</summary>
-/// <param name="SectionKey">The chosen topic.</param>
-/// <param name="AfterTextBlockKey">The text block the note goes after; null = a new place at the end of the topic.</param>
+/// <summary>The model's decision: the section and the place after which the note fits best.</summary>
+/// <param name="SectionKey">The chosen section.</param>
+/// <param name="AfterTextBlockKey">The text block the note goes after; null = a new place at the end of the section.</param>
 /// <param name="Reason">The model's one-sentence reason, cleaned.</param>
-public sealed record PlacementVerdict(Guid SectionKey, Guid? AfterTextBlockKey, string Reason);
+/// <param name="Summary">The chosen section's summary, if the prompt had one.</param>
+public sealed record PlacementVerdict(Guid SectionKey, Guid? AfterTextBlockKey, string Reason, string? Summary = null);
 
 /// <summary>Why a placement check gave no verdict.</summary>
 public enum PlacementCheckFailure { NoAnswer, Unusable, Cancelled, Unavailable }
 
-/// <summary>A numbered topic of the prompt; its places are numbered <c>Number.1</c>, <c>Number.2</c>, … in <paramref name="TextBlockKeys"/> order.</summary>
-public sealed record CheckTopic(int Number, Guid SectionKey, IReadOnlyList<Guid> TextBlockKeys);
+/// <summary>A numbered section of the prompt; its places are numbered <c>Number.1</c>, <c>Number.2</c>, … in <paramref name="TextBlockKeys"/> order.</summary>
+public sealed record CheckTopic(int Number, Guid SectionKey, IReadOnlyList<Guid> TextBlockKeys, string? Summary = null);
 
-/// <summary>The prompt of a placement check and the numbering it used (needed to read the answer).</summary>
-public sealed record PlacementCheckPrompt(string System, string User, IReadOnlyList<CheckTopic> Topics);
+/// <summary>The prompt of a placement check, the numbering it used (needed to read the answer) and the answer's JSON schema.</summary>
+public sealed record PlacementCheckPrompt(string System, string User, IReadOnlyList<CheckTopic> Topics, string Schema);
 
-/// <summary>"Genauer prüfen": asks the language model which of the best topics and places fits a note. Pure.</summary>
+/// <summary>
+/// "Genauer prüfen": asks the language model which section of the best chapters and which place in it fits a note. The
+/// best topics only pick the chapters; the model then sees every section of them, so it chooses the sub-chapter itself.
+/// Pure.
+/// </summary>
 public static class PlacementCheck
 {
-    private const int MaxTopics = 3;
-    private const int MaxPlaces = 3;
-    private const int PlaceLength = 120;
+    /// <summary>How many of the best topics the caller passes: enough to find three different chapters.</summary>
+    public const int TopicLimit = 9;
+
+    private const int MaxChapters = 3;
+    private const int MaxSectionsPerChapter = 6;
+    private const int MaxSections = 14;
+    private const int MaxPlacesPerSection = 2;
+    private const int MaxPlaces = 6;
+    private const int PlaceLength = 100;
+    private const int SummaryLength = 160;
+    private const int ReasonLength = 200;
     private const int ReasonLimit = 300;
     private const string PathSeparator = " › ";
 
     private const string SystemPrompt =
-        "Du ordnest eine Notiz in ein Buch ein. Wähle aus den nummerierten Themen das passendste und darin die Stelle, nach der die Notiz am besten passt. Antworte nur mit JSON: {\"thema\": Nummer, \"stelle\": \"Nummer.Nummer\" oder \"0\", \"begruendung\": ein Satz auf Deutsch}.";
+        "Du ordnest eine Notiz in ein Buch ein. Du bekommst nummerierte Abschnitte mit ihrem Inhalt und einzelnen Textstellen darin. " +
+        "Wähle den Abschnitt, zu dessen Thema die Notiz inhaltlich gehört, und darin die Textstelle, nach der sie am besten passt. " +
+        "Entscheide nach dem Inhalt, nicht nach einzelnen gleichen Wörtern. \"N.M\" heißt: nach Textstelle M von Abschnitt N; " +
+        "\"N.0\" heißt: neu am Ende von Abschnitt N. Antworte nur mit JSON: " +
+        "{\"begruendung\": ein kurzer Satz auf Deutsch (höchstens 20 Wörter), \"stelle\": \"N.M\"}.";
+
+    /// <summary>The request options of a check: a short answer constrained to <paramref name="prompt"/>'s schema.</summary>
+    public static ChatOptions Options(PlacementCheckPrompt prompt) =>
+        new(UnderstandingPrompts.CheckTokens, Json: true, Schema: prompt.Schema);
 
     /// <summary>
-    /// The prompt for the best <paramref name="topics"/> (at most 3) with their <paramref name="places"/> (at most 3 each,
-    /// keyed by section). Topics that are not in the book are left out.
+    /// The prompt for the chapters of the best <paramref name="topics"/> (at most 3, best first): each chapter's sections
+    /// (the chapter itself if it has own text blocks, then its sub-headings; a chapter without sub-headings stands alone),
+    /// at most 6 per chapter and 14 in all, each with the first sentence of its summary (<paramref name="summaryOf"/>, else the topic's) and
+    /// up to 2 of the best <paramref name="places"/> (at most 6 in all). Topics that are not in the book are left out.
     /// </summary>
     public static PlacementCheckPrompt Prompt(Book book, string noteText, IReadOnlyList<TopicHit> topics,
-        IReadOnlyDictionary<Guid, IReadOnlyList<PlacementHit>> places)
+        IReadOnlyDictionary<Guid, IReadOnlyList<PlacementHit>> places, Func<OutlineNode, string?>? summaryOf = null)
     {
-        var lines = new List<string> { "Notiz:", UnderstandingItems.LimitNote(noteText), "", "Themen:" };
-        var numbered = new List<CheckTopic>();
-        foreach (var topic in topics)
+        var chapters = topics
+            .Select(topic => book.FindNode(topic.SectionKey))
+            .OfType<OutlineNode>()
+            .Select(ChapterOf)
+            .Distinct()
+            .Take(MaxChapters)
+            .ToList();
+        var sections = chapters.SelectMany(chapter => SectionsOf(chapter).Take(MaxSectionsPerChapter)).Take(MaxSections).ToList();
+        var topicSummaries = topics.Where(t => !string.IsNullOrWhiteSpace(t.Summary))
+            .GroupBy(t => t.SectionKey)
+            .ToDictionary(g => g.Key, g => g.First().Summary!);
+
+        // The best places overall, each with the section it belongs to.
+        var placesOf = sections.ToDictionary(s => s.Key, _ => new List<TextBlock>());
+        var taken = 0;
+        foreach (var hit in places.Values.SelectMany(list => list).OrderByDescending(hit => hit.Score))
         {
-            if (numbered.Count == MaxTopics)
+            if (taken == MaxPlaces)
             {
                 break;
             }
 
-            var node = book.FindNode(topic.SectionKey);
-            if (node is null)
+            if (book.FindTextBlock(hit.TextBlockKey) is not { } block
+                || SectionOf(block, sections) is not { } section
+                || placesOf[section.Key] is not { Count: < MaxPlacesPerSection } list
+                || list.Any(b => b.Key == block.Key))
             {
                 continue;
             }
 
-            var number = numbered.Count + 1;
-            lines.Add($"{number}. {HeadingPath(book, node)}");
-            if (!string.IsNullOrWhiteSpace(topic.Summary))
-            {
-                lines.Add("   Inhalt: " + topic.Summary.Trim());
-            }
-
-            var keys = new List<Guid>();
-            foreach (var hit in places.GetValueOrDefault(topic.SectionKey) ?? [])
-            {
-                if (keys.Count == MaxPlaces)
-                {
-                    break;
-                }
-
-                var block = book.FindTextBlock(hit.TextBlockKey);
-                if (block is null)
-                {
-                    continue;
-                }
-
-                keys.Add(block.Key);
-                lines.Add($"   {number}.{keys.Count} nach: {FirstLine(block.Text)}");
-            }
-
-            lines.Add($"   {number}.0 = neue Stelle am Ende des Themas (Stelle \"0\")");
-            numbered.Add(new CheckTopic(number, topic.SectionKey, keys));
+            list.Add(block);
+            taken++;
         }
 
-        return new PlacementCheckPrompt(SystemPrompt, string.Join("\n", lines), numbered);
+        var lines = new List<string> { "Notiz:", UnderstandingItems.LimitNote(noteText), "", "Abschnitte:" };
+        var numbered = new List<CheckTopic>();
+        var choices = new List<string>();
+        foreach (var section in sections)
+        {
+            var number = numbered.Count + 1;
+            var own = summaryOf?.Invoke(section);
+            var summary = string.IsNullOrWhiteSpace(own) ? topicSummaries.GetValueOrDefault(section.Key) : own;
+            var line = $"{number}. {HeadingPath(book, section)}";
+            if (!string.IsNullOrWhiteSpace(summary))
+            {
+                line += " – " + FirstSentence(summary);
+            }
+
+            lines.Add(line);
+            choices.Add($"{number}.0");
+            var keys = new List<Guid>();
+            foreach (var block in placesOf[section.Key])
+            {
+                keys.Add(block.Key);
+                lines.Add($"   {number}.{keys.Count} nach: {FirstLine(block.Text)}");
+                choices.Add($"{number}.{keys.Count}");
+            }
+
+            numbered.Add(new CheckTopic(number, section.Key, keys, string.IsNullOrWhiteSpace(summary) ? null : summary.Trim()));
+        }
+
+        return new PlacementCheckPrompt(SystemPrompt, string.Join("\n", lines), numbered, Schema(choices));
     }
 
     /// <summary>
-    /// Reads the model's JSON answer: "thema" as number or numeric string, "stelle" as "N.M" or "0" (new place at the end).
-    /// Null if the JSON is invalid or names a topic or place that is not in <paramref name="prompt"/>.
+    /// Reads the model's JSON answer: "stelle" as "N.M" (a place of section N), "N.0" or "N" (new place at the end of
+    /// section N), as string or number. Null if the JSON is invalid or names a section or place that is not in
+    /// <paramref name="prompt"/>.
     /// </summary>
     public static PlacementVerdict? Parse(string json, PlacementCheckPrompt prompt)
     {
@@ -104,11 +146,8 @@ public static class PlacementCheck
             using var doc = JsonDocument.Parse(json[start..(end + 1)]);
             var root = doc.RootElement;
             if (root.ValueKind != JsonValueKind.Object
-                || !root.TryGetProperty("thema", out var themaElement)
-                || ReadInt(themaElement) is not { } thema
-                || prompt.Topics.FirstOrDefault(t => t.Number == thema) is not { } topic
                 || !root.TryGetProperty("stelle", out var stelleElement)
-                || ReadPlace(stelleElement, thema, topic) is not { } after)
+                || ReadPlace(stelleElement, prompt) is not { } place)
             {
                 return null;
             }
@@ -116,7 +155,7 @@ public static class PlacementCheck
             var reason = root.TryGetProperty("begruendung", out var r) && r.ValueKind == JsonValueKind.String
                 ? UnderstandingPrompts.Clean(r.GetString()!, ReasonLimit)
                 : "";
-            return new PlacementVerdict(topic.SectionKey, after.Key, reason);
+            return new PlacementVerdict(place.Section.SectionKey, place.Key, reason, place.Section.Summary);
         }
         catch (JsonException)
         {
@@ -124,8 +163,8 @@ public static class PlacementCheck
         }
     }
 
-    /// <summary>"N.M" (a place of the topic), "0" or "N.0" (new place at the end). Null = not valid.</summary>
-    private static Place? ReadPlace(JsonElement stelle, int thema, CheckTopic topic)
+    /// <summary>"N.M" (a place of section N), "N.0" or "N" (new place at the end). Null = not valid.</summary>
+    private static Place? ReadPlace(JsonElement stelle, PlacementCheckPrompt prompt)
     {
         var text = stelle.ValueKind switch
         {
@@ -138,37 +177,92 @@ public static class PlacementCheck
             return null;
         }
 
-        if (text == "0")
-        {
-            return new Place(null);
-        }
-
         var parts = text.Split('.');
-        if (parts.Length != 2 || ReadInt(parts[0]) != thema || ReadInt(parts[1]) is not { } index)
+        if (parts.Length > 2
+            || ReadInt(parts[0]) is not { } number
+            || prompt.Topics.FirstOrDefault(t => t.Number == number) is not { } section)
         {
             return null;
         }
 
-        if (index == 0)
+        var index = parts.Length == 2 ? ReadInt(parts[1]) : 0;
+        return index switch
         {
-            return new Place(null);
-        }
-
-        return index <= topic.TextBlockKeys.Count ? new Place(topic.TextBlockKeys[index - 1]) : null;
+            0 => new Place(section, null),
+            { } i when i <= section.TextBlockKeys.Count => new Place(section, section.TextBlockKeys[i - 1]),
+            _ => null,
+        };
     }
 
-    /// <summary>A valid place; a null Key is a new place at the end of the topic.</summary>
-    private readonly record struct Place(Guid? Key);
-
-    private static int? ReadInt(JsonElement e) => e.ValueKind switch
-    {
-        JsonValueKind.Number when e.TryGetInt32(out var n) => n,
-        JsonValueKind.String => ReadInt(e.GetString()!),
-        _ => null,
-    };
+    /// <summary>A valid place in a section; a null Key is a new place at the end of the section.</summary>
+    private readonly record struct Place(CheckTopic Section, Guid? Key);
 
     private static int? ReadInt(string s) =>
         int.TryParse(s.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out var n) ? n : null;
+
+    /// <summary>The answer's JSON schema: a short reason first (the model thinks before it chooses), then one of <paramref name="choices"/>.</summary>
+    private static string Schema(IReadOnlyList<string> choices) => JsonSerializer.Serialize(new
+    {
+        type = "object",
+        properties = new
+        {
+            begruendung = new { type = "string", maxLength = ReasonLength },
+            stelle = new { type = "string", @enum = choices },
+        },
+        required = new[] { "begruendung", "stelle" },
+    });
+
+    /// <summary>The top-level heading <paramref name="node"/> lies in; the root (prologue) is its own chapter.</summary>
+    private static OutlineNode ChapterOf(OutlineNode node)
+    {
+        while (node.Parent is { Parent: not null } parent)
+        {
+            node = parent;
+        }
+
+        return node;
+    }
+
+    /// <summary>The sections of a chapter to choose from: the chapter itself if it has own text blocks or no sub-headings, then its sub-headings.</summary>
+    private static IEnumerable<OutlineNode> SectionsOf(OutlineNode chapter)
+    {
+        if (chapter.Parent is null || !chapter.Children.Any() || chapter.TextBlocks.Any())
+        {
+            yield return chapter;
+        }
+
+        if (chapter.Parent is null)
+        {
+            yield break;
+        }
+
+        foreach (var child in chapter.Children)
+        {
+            yield return child;
+        }
+    }
+
+    /// <summary>
+    /// The section of <paramref name="sections"/> a text block belongs to: the one it lies in most deeply. A block under a
+    /// sub-heading that was left out (over the limit) belongs to none, not to its chapter.
+    /// </summary>
+    private static OutlineNode? SectionOf(TextBlock block, IReadOnlyList<OutlineNode> sections)
+    {
+        for (var node = block.Section; node is not null; node = node.Parent)
+        {
+            if (sections.FirstOrDefault(s => s.Key == node.Key) is { } section)
+            {
+                return section;
+            }
+
+            if (node.Parent?.Parent?.Parent is null) // a chapter or sub-heading that is not offered
+            {
+                return null;
+            }
+        }
+
+        return null;
+    }
 
     /// <summary>The titles from the top level down, joined with " › "; the root (no heading) is the book's title.</summary>
     private static string HeadingPath(Book book, OutlineNode node)
@@ -182,6 +276,31 @@ public static class PlacementCheck
         return titles.Count == 0 ? book.Title : string.Join(PathSeparator, titles);
     }
 
+    /// <summary>The first sentence of a summary, at most <see cref="SummaryLength"/> characters.</summary>
+    private static string FirstSentence(string summary)
+    {
+        // A sentence ends at ".", "!" or "?" before a space, unless the word before the "." is an abbreviation like "z.",
+        // "B." or "bzw.".
+        var text = summary.Trim();
+        for (var i = 0; i < text.Length - 1; i++)
+        {
+            if (text[i] is '.' or '!' or '?' && text[i + 1] == ' ')
+            {
+                var word = text[(text.LastIndexOf(' ', i) + 1)..i];
+                if (text[i] != '.' || (word.Length > 1 && !Abbreviations.Contains(word)))
+                {
+                    text = text[..(i + 1)];
+                    break;
+                }
+            }
+        }
+
+        return text.Length <= SummaryLength ? text : text[..(SummaryLength - 1)] + "…";
+    }
+
+    private static readonly HashSet<string> Abbreviations = new(
+        ["bzw", "ca", "d.h", "etc", "evtl", "ggf", "inkl", "insb", "Nr", "S", "u.a", "usw", "vgl", "z.B"], StringComparer.OrdinalIgnoreCase);
+
     private static string FirstLine(string content)
     {
         var end = content.IndexOf('\n');
@@ -189,4 +308,3 @@ public static class PlacementCheck
         return line.Length <= PlaceLength ? line : line[..(PlaceLength - 1)] + "…";
     }
 }
-

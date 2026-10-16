@@ -1,4 +1,5 @@
-﻿using NoteEvolution.AI.Relevance;
+﻿using System.Text.Json;
+using NoteEvolution.AI.Relevance;
 using NoteEvolution.AI.Understanding;
 using NoteEvolution.Core.Books;
 using NoteEvolution.TestSupport;
@@ -9,10 +10,18 @@ public class PlacementCheckTests
 {
     private const string BookBody =
         "- # Kapitel A\n\t- Erster Absatz in A.\n\t- Zweiter Absatz in A.\n" +
-        "\t- ## Unter A\n\t\t- Text unter A.\n" +
-        "- # Kapitel B\n\t- Text in B.\n";
+        "\t- ## Unter A1\n\t\t- Text unter A1.\n\t\t- Mehr unter A1.\n\t\t- Noch mehr unter A1.\n" +
+        "\t- ## Unter A2\n\t\t- Text unter A2.\n" +
+        "- # Kapitel B\n\t- ## Unter B\n\t\t- Text unter B.\n" +
+        "- # Kapitel C\n\t- Text in C.\n" +
+        "- # Kapitel D\n\t- Text in D.\n";
 
-    private sealed record Setup(Book Book, Guid A, Guid UnterA, Guid B, IReadOnlyList<Guid> ABlocks, Guid BBlock);
+    private sealed record Setup(Book Book, OutlineNode A, OutlineNode A1, OutlineNode A2, OutlineNode B, OutlineNode UnterB, OutlineNode C)
+    {
+        public Guid Block(string text) => Blocks(Book.Root).Single(tb => tb.Text == text).Key;
+
+        private static IEnumerable<TextBlock> Blocks(OutlineNode node) => node.TextBlocks.Concat(node.Children.SelectMany(Blocks));
+    }
 
     private static Setup Load()
     {
@@ -20,94 +29,228 @@ public class PlacementCheckTests
         var book = tv.Open().Books.Single();
         var a = book.Root.Children.Single(n => n.Title == "Kapitel A");
         var b = book.Root.Children.Single(n => n.Title == "Kapitel B");
-        var setup = new Setup(book, a.Key, a.Children.Single().Key, b.Key, a.TextBlocks.Select(t => t.Key).ToList(),
-            b.TextBlocks.Single().Key);
-        return setup;
+        return new Setup(book, a, a.Children.First(), a.Children.Last(), b, b.Children.Single(),
+            book.Root.Children.Single(n => n.Title == "Kapitel C"));
     }
 
-    private static PlacementCheckPrompt Build(Setup s, string note = "Meine Notiz")
+    private static PlacementHit Hit(Setup s, string text, double score) =>
+        new(s.Block(text), score, s.Book.FindTextBlock(s.Block(text))!.Section.Key);
+
+    /// <summary>Topics A1 (best), C, A2, B, D; places of A, A1 and C.</summary>
+    private static PlacementCheckPrompt Build(Setup s, string note = "Meine Notiz", Func<OutlineNode, string?>? summaryOf = null)
     {
-        var topics = new[] { new TopicHit(s.A, 0.8, "Alles über A."), new TopicHit(s.UnterA, 0.7, null), new TopicHit(s.B, 0.5, "Alles über B.") };
-        var places = new Dictionary<Guid, IReadOnlyList<PlacementHit>>
+        var topics = new[]
         {
-            [s.A] = [new PlacementHit(s.ABlocks[0], 0.9, s.A), new PlacementHit(s.ABlocks[1], 0.8, s.A)],
-            [s.B] = [new PlacementHit(s.BBlock, 0.6, s.B)],
+            new TopicHit(s.A1.Key, 0.8, "A1 handelt von Eins. Und mehr."), new TopicHit(s.C.Key, 0.7, null),
+            new TopicHit(s.A2.Key, 0.6, null), new TopicHit(s.B.Key, 0.5, "Alles über B."),
+            new TopicHit(s.Book.Root.Children.Single(n => n.Title == "Kapitel D").Key, 0.4, null),
         };
-        return PlacementCheck.Prompt(s.Book, note, topics, places);
+        var hits = new[]
+        {
+            Hit(s, "Text unter A1.", 0.9), Hit(s, "Mehr unter A1.", 0.85), Hit(s, "Noch mehr unter A1.", 0.84),
+            Hit(s, "Erster Absatz in A.", 0.8), Hit(s, "Text in C.", 0.7),
+        };
+        var places = hits.GroupBy(h => h.SectionKey).ToDictionary(g => g.Key, g => (IReadOnlyList<PlacementHit>)[.. g]);
+        return PlacementCheck.Prompt(s.Book, note, topics, places, summaryOf);
     }
 
     [Fact]
-    public void Prompt_NumbersTopicsAndPlaces_WithSummariesAndStarts()
+    public void Prompt_SectionsOfTheThreeBestChapters_ByChapterRank()
     {
         var s = Load();
         var prompt = Build(s);
 
-        Assert.Equal(3, prompt.Topics.Count);
-        Assert.Equal([1, 2, 3], prompt.Topics.Select(t => t.Number));
-        Assert.Equal(s.ABlocks, prompt.Topics[0].TextBlockKeys);
-        Assert.Empty(prompt.Topics[1].TextBlockKeys);
-        Assert.Equal([s.BBlock], prompt.Topics[2].TextBlockKeys);
+        // The best chapters are A (own text, then its sub-headings), C (no sub-headings) and B (only its sub-heading); not D.
+        Assert.Equal([s.A.Key, s.A1.Key, s.A2.Key, s.C.Key, s.UnterB.Key], prompt.Topics.Select(t => t.SectionKey));
+        Assert.Equal([1, 2, 3, 4, 5], prompt.Topics.Select(t => t.Number));
         Assert.StartsWith("Du ordnest eine Notiz in ein Buch ein.", prompt.System);
         Assert.Contains("Meine Notiz", prompt.User);
-        Assert.Contains("1. Kapitel A", prompt.User);
-        Assert.Contains("Alles über A.", prompt.User);
-        Assert.Contains("2. Kapitel A › Unter A", prompt.User);
-        Assert.Contains("3. Kapitel B", prompt.User);
-        Assert.Contains("1.1 nach: Erster Absatz in A.", prompt.User);
-        Assert.Contains("1.2 nach: Zweiter Absatz in A.", prompt.User);
-        Assert.Contains("3.1 nach: Text in B.", prompt.User);
-        Assert.Contains("0 = neue Stelle am Ende des Themas", prompt.User);
+        Assert.Contains("1. Kapitel A\n", prompt.User);
+        Assert.Contains("2. Kapitel A › Unter A1 – A1 handelt von Eins.\n", prompt.User);
+        Assert.Contains("3. Kapitel A › Unter A2\n", prompt.User);
+        Assert.Contains("4. Kapitel C\n", prompt.User);
+        Assert.Contains("5. Kapitel B › Unter B", prompt.User);
+        Assert.DoesNotContain("Kapitel D", prompt.User);
     }
 
     [Fact]
-    public void Parse_ValidAnswer()
+    public void Prompt_BestPlaces_AtMostTwoPerSection()
     {
         var s = Load();
         var prompt = Build(s);
 
-        var verdict = PlacementCheck.Parse("{\"thema\":1,\"stelle\":\"1.2\",\"begruendung\":\"Passt dazu.\"}", prompt);
-
-        Assert.Equal(new PlacementVerdict(s.A, s.ABlocks[1], "Passt dazu."), verdict);
-        var asStrings = PlacementCheck.Parse("{\"thema\":\"3\",\"stelle\":\"3.1\",\"begruendung\":\"B.\"}", prompt);
-        Assert.Equal(new PlacementVerdict(s.B, s.BBlock, "B."), asStrings);
+        Assert.Equal([s.Block("Erster Absatz in A.")], prompt.Topics[0].TextBlockKeys);
+        Assert.Equal([s.Block("Text unter A1."), s.Block("Mehr unter A1.")], prompt.Topics[1].TextBlockKeys);
+        Assert.Empty(prompt.Topics[2].TextBlockKeys);
+        Assert.Equal([s.Block("Text in C.")], prompt.Topics[3].TextBlockKeys);
+        Assert.Contains("   1.1 nach: Erster Absatz in A.", prompt.User);
+        Assert.Contains("   2.1 nach: Text unter A1.", prompt.User);
+        Assert.Contains("   2.2 nach: Mehr unter A1.", prompt.User);
+        Assert.Contains("   4.1 nach: Text in C.", prompt.User);
+        Assert.DoesNotContain("Noch mehr unter A1.", prompt.User);
     }
 
     [Fact]
-    public void Parse_NewPlace0_NullAfterKey()
+    public void Prompt_SummaryOfEverySection_FromUnderstanding()
+    {
+        var s = Load();
+        var prompt = Build(s, summaryOf: node => node.Key == s.A2.Key ? "Zwei, z. B. Schlaf. Rest." : null);
+
+        Assert.Contains("3. Kapitel A › Unter A2 – Zwei, z. B. Schlaf.\n", prompt.User);
+        Assert.Contains("2. Kapitel A › Unter A1 – A1 handelt von Eins.\n", prompt.User);
+        Assert.Equal("Zwei, z. B. Schlaf. Rest.", prompt.Topics[2].Summary);
+    }
+
+    [Theory]
+    [InlineData("Es geht ums Essen, bzw. ums Kochen. Rest.", "Es geht ums Essen, bzw. ums Kochen.")]
+    [InlineData("Kurz: so ist es. Rest.", "Kurz: so ist es.")]
+    [InlineData("Wirklich? Ja.", "Wirklich?")]
+    [InlineData("   ", null)]
+    public void Prompt_FirstSentenceOfSummary(string summary, string? expected)
+    {
+        var s = Load();
+        var prompt = Build(s, summaryOf: node => node.Key == s.A2.Key ? summary : null);
+
+        var line = prompt.User.Split('\n').Single(l => l.StartsWith("3. ", StringComparison.Ordinal));
+        Assert.Equal(expected is null ? "3. Kapitel A › Unter A2" : "3. Kapitel A › Unter A2 – " + expected, line);
+    }
+
+    [Fact]
+    public void Prompt_WhitespaceSummary_FallsBackToTopicSummary()
+    {
+        var s = Load();
+        var prompt = Build(s, summaryOf: _ => " ");
+
+        Assert.Contains("2. Kapitel A › Unter A1 – A1 handelt von Eins.\n", prompt.User);
+    }
+
+    [Fact]
+    public void Prompt_LargeChapter_LeavesRoomForTheOthers_AndNoPlacesOfLeftOutSections()
+    {
+        var body = "- # Groß\n\t- Eigener Text.\n" +
+                   string.Concat(Enumerable.Range(1, 8).Select(i => $"\t- ## Teil {i}\n\t\t- Text in Teil {i}.\n")) +
+                   "- # Klein\n\t- Text in Klein.\n";
+        var tv = TestVault.Create(("pages/Buch.md", "title:: Buch\ntype:: book\n\n" + body));
+        var book = tv.Open().Books.Single();
+        var big = book.Root.Children.Single(n => n.Title == "Groß");
+        var small = book.Root.Children.Single(n => n.Title == "Klein");
+        var lastPart = big.Children.Last();
+        var hit = new PlacementHit(lastPart.TextBlocks.Single().Key, 0.9, lastPart.Key);
+
+        var prompt = PlacementCheck.Prompt(book, "x", [new TopicHit(lastPart.Key, 0.9, null), new TopicHit(small.Key, 0.5, null)],
+            new Dictionary<Guid, IReadOnlyList<PlacementHit>> { [lastPart.Key] = [hit] });
+
+        // Groß itself and its first 5 parts (6 per chapter), then Klein; Teil 8 is left out, and so is its place.
+        Assert.Equal(7, prompt.Topics.Count);
+        Assert.Equal(small.Key, prompt.Topics[^1].SectionKey);
+        Assert.All(prompt.Topics, t => Assert.Empty(t.TextBlockKeys));
+        Assert.DoesNotContain("Text in Teil 8.", prompt.User);
+    }
+
+    [Fact]
+    public void Prompt_PlaceDeeperThanASubHeading_BelongsToIt()
+    {
+        var tv = TestVault.Create(("pages/Buch.md",
+            "title:: Buch\ntype:: book\n\n- # K\n\t- ## U\n\t\t- ### Tief\n\t\t\t- Tiefer Text.\n"));
+        var book = tv.Open().Books.Single();
+        var u = book.Root.Children.Single().Children.Single();
+        var deep = u.Children.Single();
+        var hit = new PlacementHit(deep.TextBlocks.Single().Key, 0.9, deep.Key);
+
+        var prompt = PlacementCheck.Prompt(book, "x", [new TopicHit(deep.Key, 0.9, null)],
+            new Dictionary<Guid, IReadOnlyList<PlacementHit>> { [deep.Key] = [hit, hit] });
+
+        var section = Assert.Single(prompt.Topics);
+        Assert.Equal(u.Key, section.SectionKey);
+        Assert.Equal([hit.TextBlockKey], section.TextBlockKeys);
+    }
+
+    [Fact]
+    public void Prompt_PrologueOnly_RootIsTheSection()
+    {
+        var tv = TestVault.Create(("pages/Buch.md", "title:: Buch\ntype:: book\n\n- Vorwort.\n"));
+        var book = tv.Open().Books.Single();
+
+        var prompt = PlacementCheck.Prompt(book, "x", [new TopicHit(book.Root.Key, 0.9, null)],
+            new Dictionary<Guid, IReadOnlyList<PlacementHit>>());
+
+        Assert.Equal([book.Root.Key], prompt.Topics.Select(t => t.SectionKey));
+        Assert.Contains("1. Buch", prompt.User);
+    }
+
+    [Fact]
+    public void Prompt_Schema_LimitsStelleToTheOfferedPlaces()
     {
         var s = Load();
         var prompt = Build(s);
 
-        var verdict = PlacementCheck.Parse("{\"thema\":2,\"stelle\":\"0\",\"begruendung\":\"Neu.\"}", prompt);
-
-        Assert.Equal(new PlacementVerdict(s.UnterA, null, "Neu."), verdict);
+        using var schema = JsonDocument.Parse(prompt.Schema);
+        var properties = schema.RootElement.GetProperty("properties");
+        Assert.Equal(["begruendung", "stelle"], properties.EnumerateObject().Select(p => p.Name));
+        Assert.Equal(["1.0", "1.1", "2.0", "2.1", "2.2", "3.0", "4.0", "4.1", "5.0"],
+            properties.GetProperty("stelle").GetProperty("enum").EnumerateArray().Select(e => e.GetString()));
+        Assert.Equal(PlacementCheck.Options(prompt).Schema, prompt.Schema);
+        Assert.True(PlacementCheck.Options(prompt).Json);
     }
 
     [Fact]
-    public void Parse_InvalidJson_Null()
+    public void Prompt_TopicsNotInBook_LeftOut()
     {
-        var prompt = Build(Load());
+        var s = Load();
+        var prompt = PlacementCheck.Prompt(s.Book, "x", [new TopicHit(Guid.NewGuid(), 0.9, null), new TopicHit(s.UnterB.Key, 0.5, null)],
+            new Dictionary<Guid, IReadOnlyList<PlacementHit>>());
 
-        Assert.Null(PlacementCheck.Parse("kein json", prompt));
-        Assert.Null(PlacementCheck.Parse("{\"thema\":", prompt));
-        Assert.Null(PlacementCheck.Parse("{\"thema\":1,\"stelle\":\"1.9\",\"begruendung\":\"x\"}", prompt));
+        Assert.Equal([s.UnterB.Key], prompt.Topics.Select(t => t.SectionKey));
     }
 
     [Fact]
-    public void Parse_TopicNotInList_Null()
+    public void Parse_Place_GivesSectionBlockAndSummary()
     {
-        var prompt = Build(Load());
+        var s = Load();
+        var prompt = Build(s);
 
-        Assert.Null(PlacementCheck.Parse("{\"thema\":4,\"stelle\":\"0\",\"begruendung\":\"x\"}", prompt));
-        Assert.Null(PlacementCheck.Parse("{\"thema\":1,\"stelle\":\"3.1\",\"begruendung\":\"x\"}", prompt));
+        var verdict = PlacementCheck.Parse("{\"begruendung\":\"Passt dazu.\",\"stelle\":\"2.2\"}", prompt);
+
+        Assert.Equal(new PlacementVerdict(s.A1.Key, s.Block("Mehr unter A1."), "Passt dazu.", "A1 handelt von Eins. Und mehr."), verdict);
+    }
+
+    [Theory]
+    [InlineData("\"3.0\"")]
+    [InlineData("\"3\"")]
+    [InlineData("3")]
+    public void Parse_NewPlaceAtEnd_NullAfterKey(string stelle)
+    {
+        var s = Load();
+        var verdict = PlacementCheck.Parse("{\"begruendung\":\"Neu.\",\"stelle\":" + stelle + "}", Build(s));
+
+        Assert.Equal(new PlacementVerdict(s.A2.Key, null, "Neu."), verdict);
+    }
+
+    [Fact]
+    public void Parse_NumberWithPlace()
+    {
+        var s = Load();
+
+        Assert.Equal(s.Block("Text in C."), PlacementCheck.Parse("{\"stelle\":4.1}", Build(s))!.AfterTextBlockKey);
+    }
+
+    [Theory]
+    [InlineData("kein json")]
+    [InlineData("{\"stelle\":")]
+    [InlineData("{\"begruendung\":\"x\"}")]
+    [InlineData("{\"stelle\":\"6.0\"}")]
+    [InlineData("{\"stelle\":\"3.1\"}")]
+    [InlineData("{\"stelle\":\"1.1.1\"}")]
+    [InlineData("{\"stelle\":\"eins\"}")]
+    public void Parse_Invalid_Null(string answer)
+    {
+        Assert.Null(PlacementCheck.Parse(answer, Build(Load())));
     }
 
     [Fact]
     public void Parse_ReasonTrimmedTo300()
     {
-        var prompt = Build(Load());
-
-        var verdict = PlacementCheck.Parse("{\"thema\":1,\"stelle\":\"0\",\"begruendung\":\"" + new string('x', 500) + "\"}", prompt);
+        var verdict = PlacementCheck.Parse("{\"begruendung\":\"" + new string('x', 500) + "\",\"stelle\":\"1.0\"}", Build(Load()));
 
         Assert.Equal(300, verdict!.Reason.Length);
     }
@@ -120,26 +263,5 @@ public class PlacementCheckTests
 
         Assert.Contains(new string('a', 3000) + new string('b', 1000) + "\n", prompt.User);
         Assert.DoesNotContain(new string('b', 1001), prompt.User);
-    }
-
-    [Fact]
-    public void Parse_PlaceNotInTopic_Null()
-    {
-        Assert.Null(PlacementCheck.Parse("{\"thema\":1,\"stelle\":\"1.9\",\"begruendung\":\"x\"}", Build(Load())));
-    }
-
-    [Fact]
-    public void Parse_StelleOfOtherTopic_Null()
-    {
-        Assert.Null(PlacementCheck.Parse("{\"thema\":1,\"stelle\":\"2.1\",\"begruendung\":\"x\"}", Build(Load())));
-    }
-
-    [Fact]
-    public void Parse_N0_NewPlace()
-    {
-        var s = Load();
-        var verdict = PlacementCheck.Parse("{\"thema\":1,\"stelle\":\"1.0\",\"begruendung\":\"x\"}", Build(s));
-
-        Assert.Equal(new PlacementVerdict(s.A, null, "x"), verdict);
     }
 }

@@ -1,7 +1,10 @@
 namespace NoteEvolution.AI.Language;
 
-/// <summary>Per-request generation settings: answer length cap, sampling temperature, and whether the answer must be a JSON object.</summary>
-public sealed record ChatOptions(int MaxTokens, double Temperature = 0.2, bool Json = false);
+/// <summary>
+/// Per-request generation settings: answer length cap, sampling temperature, whether the answer must be a JSON object,
+/// and optionally the JSON schema it must follow (implies <paramref name="Json"/>).
+/// </summary>
+public sealed record ChatOptions(int MaxTokens, double Temperature = 0.2, bool Json = false, string? Schema = null);
 
 /// <summary>A model installed on the language-model server.</summary>
 public sealed record ChatModelInfo(string Name, long SizeBytes);
