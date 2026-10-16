@@ -190,4 +190,143 @@ public sealed class StoreUnderstandingTests : IDisposable
         Assert.Null(_understanding.NoteCore(b));
         Assert.Equal(a, Assert.Single(_understanding.NoteCores()).Key);
     }
+
+    private static UnderstandingEntry PlacementEntry(string fingerprint, string identity, string json) =>
+        new(UnderstandingKind.Placement, fingerprint, identity, json, Chat, null, null);
+
+    private static string Verdict(Guid section, Guid? after = null) =>
+        PlacementCheck.Serialize(new PlacementVerdict(section, after, "Passt.", "Zusammenfassung", PlacementFit.Good, section));
+
+    private Guid SetUpPlacementNote(Book book, string fingerprint = "pf", string identity = "placement|Buch|note:n")
+    {
+        var note = Guid.NewGuid();
+        _understanding.UpdatePlacements(book.LinkName, new Dictionary<Guid, (string, string)> { [note] = (fingerprint, identity) });
+        return note;
+    }
+
+    [Fact]
+    public void Placement_Current()
+    {
+        var book = LoadBook();
+        var section = Section(book, "Vertrauen");
+        var after = section.TextBlocks.Single().Key;
+        var note = SetUpPlacementNote(book);
+        _store.Put(PlacementEntry("pf", "placement|Buch|note:n", Verdict(section.Key, after)));
+
+        var placement = _understanding.Placement(book, note);
+
+        Assert.NotNull(placement);
+        Assert.False(placement.Stale);
+        Assert.Equal(section.Key, placement.Verdict.SectionKey);
+        Assert.Equal(after, placement.Verdict.AfterTextBlockKey);
+        Assert.Equal(PlacementState.Current, _understanding.PlacementStateOf(note));
+    }
+
+    [Fact]
+    public void Placement_StaleFromIdentity()
+    {
+        var book = LoadBook();
+        var note = SetUpPlacementNote(book, "pf-new");
+        _store.Put(PlacementEntry("pf-old", "placement|Buch|note:n", Verdict(Section(book, "Liebe").Key)));
+
+        var placement = _understanding.Placement(book, note);
+
+        Assert.NotNull(placement);
+        Assert.True(placement.Stale);
+        Assert.Equal(PlacementState.Stale, _understanding.PlacementStateOf(note));
+    }
+
+    [Fact]
+    public void Placement_Missing_Null()
+    {
+        var book = LoadBook();
+        var note = SetUpPlacementNote(book);
+
+        Assert.Null(_understanding.Placement(book, note));
+        Assert.Null(_understanding.Placement(book, Guid.NewGuid()));
+        Assert.Equal(PlacementState.Missing, _understanding.PlacementStateOf(note));
+    }
+
+    [Fact]
+    public void Placement_OtherBook_Null()
+    {
+        var book = LoadBook();
+        var note = SetUpPlacementNote(book);
+        _store.Put(PlacementEntry("pf", "placement|Buch|note:n", Verdict(Section(book, "Liebe").Key)));
+        _understanding.UpdatePlacements("Anderes Buch", new Dictionary<Guid, (string, string)> { [note] = ("pf", "placement|Buch|note:n") });
+
+        Assert.Null(_understanding.Placement(book, note));
+    }
+
+    [Fact]
+    public void Placement_SectionGone_Null()
+    {
+        var book = LoadBook();
+        var note = SetUpPlacementNote(book);
+        _store.Put(PlacementEntry("pf", "placement|Buch|note:n", Verdict(Guid.NewGuid())));
+
+        Assert.Null(_understanding.Placement(book, note));
+    }
+
+    [Fact]
+    public void Placement_AfterBlockGone_Null()
+    {
+        var book = LoadBook();
+        var note = SetUpPlacementNote(book);
+        _store.Put(PlacementEntry("pf", "placement|Buch|note:n", Verdict(Section(book, "Liebe").Key, Guid.NewGuid())));
+
+        Assert.Null(_understanding.Placement(book, note));
+    }
+
+    [Fact]
+    public void Placement_InvalidJson_Null()
+    {
+        var book = LoadBook();
+        var note = SetUpPlacementNote(book);
+        _store.Put(PlacementEntry("pf", "placement|Buch|note:n", "{not json"));
+
+        Assert.Null(_understanding.Placement(book, note));
+    }
+
+    [Fact]
+    public void PlacementState_Failed_AfterMaxAttempts()
+    {
+        var book = LoadBook();
+        var note = SetUpPlacementNote(book);
+        for (var i = 0; i < UnderstandingWorker.MaxAttempts - 1; i++) _store.RecordFailure("pf");
+        Assert.Equal(PlacementState.Missing, _understanding.PlacementStateOf(note));
+
+        _store.RecordFailure("pf");
+
+        Assert.Equal(PlacementState.Failed, _understanding.PlacementStateOf(note));
+    }
+
+    [Fact]
+    public void Placement_CachedUntilEntryChanged()
+    {
+        var book = LoadBook();
+        var note = SetUpPlacementNote(book);
+        Assert.Null(_understanding.Placement(book, note));
+
+        // Written behind the store's back: the miss is remembered, the store is not asked again.
+        using (var other = UnderstandingStore.Open(_dir.Path))
+            other.Put(PlacementEntry("pf", "placement|Buch|note:n", Verdict(Section(book, "Liebe").Key)));
+        Assert.Null(_understanding.Placement(book, note));
+
+        // A result stored through the store (as the worker does) ends the miss.
+        _store.Put(PlacementEntry("pf", "placement|Buch|note:n", Verdict(Section(book, "Vertrauen").Key)));
+        Assert.Equal(Section(book, "Vertrauen").Key, _understanding.Placement(book, note)?.Verdict.SectionKey);
+    }
+
+    [Fact]
+    public void Placement_StoreClosed_Null()
+    {
+        var book = LoadBook();
+        var note = SetUpPlacementNote(book);
+        _store.Put(PlacementEntry("pf", "placement|Buch|note:n", Verdict(Section(book, "Liebe").Key)));
+        _store.Dispose();
+
+        Assert.Null(_understanding.Placement(book, note));
+        Assert.Equal(PlacementState.Missing, _understanding.PlacementStateOf(note));
+    }
 }
