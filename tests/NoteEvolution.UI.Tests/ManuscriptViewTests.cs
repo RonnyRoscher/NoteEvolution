@@ -310,19 +310,11 @@ public class ManuscriptViewTests : UiTestContext
         // The cursor in a text block: that block and its neighbours.
         var music = Block("Musik Gitarre Klavier spielen");
         await CursorAsync(editor, new CursorInfo(ElementKind.TextBlock, music.Key, music.Key, 0));
-        pane.WaitForState(() =>
-        {
-            Time.Advance(Debounce);
-            return First(pane).StartsWith("Musik", StringComparison.Ordinal);
-        }, TimeSpan.FromSeconds(10));
+        AdvanceUntil(pane, () => Assert.StartsWith("Musik", First(pane), StringComparison.Ordinal), Debounce);
 
         // The cursor on a heading: that heading's section.
         await CursorAsync(editor, new CursorInfo(ElementKind.Heading, Node("Kochen").Key, null, 0));
-        pane.WaitForState(() =>
-        {
-            Time.Advance(Debounce);
-            return First(pane).StartsWith("Suppe", StringComparison.Ordinal);
-        }, TimeSpan.FromSeconds(10));
+        AdvanceUntil(pane, () => Assert.StartsWith("Suppe", First(pane), StringComparison.Ordinal), Debounce);
     }
 
     [Fact]

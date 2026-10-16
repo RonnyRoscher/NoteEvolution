@@ -220,13 +220,7 @@ public class RelevantTabTests : UiTestContext
         Time.Advance(VaultSession.PageIndexDelay);
 
         // The page's notes get new keys and are embedded again; the list follows once they are in the index.
-        cut.WaitForState(
-            () =>
-            {
-                Time.Advance(Debounce);
-                return Texts(cut).SequenceEqual(["Schlaf Träume ganz neu"]);
-            },
-            Wait);
+        AdvanceUntil(cut, () => Assert.Equal(["Schlaf Träume ganz neu"], Texts(cut)), Debounce);
     }
 
     [Fact]
@@ -302,13 +296,7 @@ public class RelevantTabTests : UiTestContext
         // Closing the list lets the tab compute once with the current state, which leaves out the used note.
         cut.FindAll(".ne-relevant-list .ne-note-card")[index].QuerySelector(".ne-note-whereto")!.Click();
 
-        cut.WaitForState(
-            () =>
-            {
-                Time.Advance(Debounce);
-                return !Texts(cut).Contains(note.Block.Content);
-            },
-            Wait);
+        AdvanceUntil(cut, () => Assert.DoesNotContain(note.Block.Content, Texts(cut)), Debounce);
         Assert.Equal(30, Texts(cut).Count);
         Assert.Empty(State.WhereToOpenNotes);
     }
@@ -384,13 +372,7 @@ public class RelevantTabTests : UiTestContext
             // The AI becoming available recomputes the list (after the debounce).
             await Eventually(() => session.AiStatus.State == AiState.Ready);
             cut.WaitForAssertion(() => Assert.Empty(cut.FindAll(".ne-relevant-hint")));
-            cut.WaitForState(
-                () =>
-                {
-                    Time.Advance(Debounce);
-                    return Texts(cut).Count == 30;
-                },
-                Wait);
+            AdvanceUntil(cut, () => Assert.Equal(30, Texts(cut).Count), Debounce);
         }
         finally
         {

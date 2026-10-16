@@ -988,19 +988,21 @@ public sealed class VaultSession : IDisposable
             ? noteText[EmbeddingText.PassagePrefix.Length..]
             : noteText;
 
-        // Read here, on the UI thread: the identity the verdict is stored under (none for a note not in the vault).
-        var identity = Notes.Get(noteKey) is { } note
-            ? UnderstandingItems.NoteIdentity(note.Block.Content, note.Page.FilePath)
-            : null;
+        // Read here, on the UI thread: the identity the verdict is stored under (none for a note not in the vault), and
+        // the note's core statement item (none for a short note).
+        var note = Notes.Get(noteKey);
+        var identity = note is null ? null : UnderstandingItems.NoteIdentity(note.Block.Content, note.Page.FilePath);
+        var core = note is null ? null : UnderstandingItems.ForNote(note, understanding.ChatModel);
         PlacementCheckPrompt prompt;
         try
         {
             // Only snapshots (the book, the note's text and key) go to the background. The prompt is the background's
             // (same builder and cache), so the verdict is stored under the fingerprint the background asks for; one built
-            // before the book's summaries are all there is not remembered for the background.
+            // before the book's summaries or the note's core statement are there is not remembered for the background.
             prompt = await Task.Run(
                 () => understanding.PlacementPrompt(book, noteKey, text,
-                    remember: PlacementsReady(understanding, understanding.Understanding.Items(book))),
+                    remember: PlacementsReady(understanding, understanding.Understanding.Items(book))
+                        && understanding.CoresSettled()(core)),
                 ct);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -1274,8 +1276,9 @@ public sealed class VaultSession : IDisposable
     /// the other books' headings) and the understanding the notes' fingerprints. The items are computed in the background
     /// (headings once per book instance, notes once per snapshot); when all of them are known already (a focus change),
     /// they are handed over at once. A result is dropped when a later feed started meanwhile (its snapshots are newer).
+    /// Only a <paramref name="debounced"/> feed (after a page change or a settled summary) builds placement checks.
     /// </summary>
-    private void Feed(bool notesChanged)
+    private void Feed(bool notesChanged, bool debounced = false)
     {
         if (IsDisposed || _understanding is not { } parts)
         {
@@ -1303,7 +1306,11 @@ public sealed class VaultSession : IDisposable
 
             var notes = _noteSnapshot;
             var feed = Interlocked.Increment(ref _feedsStarted);
-            if (Work(parts, feed, book, books, notes, cachedOnly: true) is { } known)
+
+            // Taken when the feed starts, before the store is read (also when the background work starts late): a summary
+            // or core settled after it re-feeds once the work is applied (see Apply).
+            var settled = parts.Settled;
+            if (Work(parts, feed, book, books, notes, settled, debounced, cachedOnly: true) is { } known)
             {
                 Apply(parts, feed, section, notes, book, known);
                 return;
@@ -1311,7 +1318,7 @@ public sealed class VaultSession : IDisposable
 
             Observe(
                 () => Task.Run(() =>
-                    Apply(parts, feed, section, notes, book, Work(parts, feed, book, books, notes, cachedOnly: false)!.Value)),
+                    Apply(parts, feed, section, notes, book, Work(parts, feed, book, books, notes, settled, debounced, cachedOnly: false)!.Value)),
                 "Feeding the language model's background work");
         }
         catch (Exception ex)
@@ -1327,7 +1334,7 @@ public sealed class VaultSession : IDisposable
     /// cannot read the store, so it takes them only when they were built for these snapshots already.
     /// </summary>
     private FeedWork? Work(UnderstandingParts parts, int feed, Book? book, IReadOnlyList<Book> books,
-        IReadOnlyList<NoteSnapshot> notes, bool cachedOnly)
+        IReadOnlyList<NoteSnapshot> notes, int settled, bool debounced, bool cachedOnly)
     {
         var understanding = parts.Understanding;
         IReadOnlyList<UnderstandingItem>? Items(Book b) => cachedOnly ? understanding.CachedItems(b) : understanding.Items(b);
@@ -1365,10 +1372,10 @@ public sealed class VaultSession : IDisposable
         }
 
         IReadOnlyList<UnderstandingItem> placements = [];
+        IReadOnlyDictionary<Guid, string> waitingForCores = NoNotes;
         var ready = false;
+        var deferred = false;
 
-        // Taken before the store is read: a summary settled after it re-feeds once the work is applied (see Apply).
-        var settled = parts.Settled;
         if (book is not null && !BuildsPlacementChecks)
         {
             ready = true;
@@ -1385,9 +1392,15 @@ public sealed class VaultSession : IDisposable
             }
             else if (PlacementsReady(parts, current))
             {
-                if (BuildPlacements(parts, feed, book, notes) is { } fresh)
+                // A feed at once (opening, a book or section switch) leaves building them to a debounced one: so they
+                // always start a debounce after the summaries are there, also when those were done before the switch.
+                if (!debounced)
                 {
-                    (placements, ready) = (fresh, true);
+                    deferred = true;
+                }
+                else if (BuildPlacements(parts, feed, book, notes) is { } fresh)
+                {
+                    (placements, waitingForCores, ready) = (fresh.Items, fresh.WaitingForCores, true);
                 }
             }
             else
@@ -1396,7 +1409,7 @@ public sealed class VaultSession : IDisposable
             }
         }
 
-        return new FeedWork(current, noteItems, others, book?.LinkName, placements, ready, settled);
+        return new FeedWork(current, noteItems, others, book?.LinkName, placements, waitingForCores, ready, settled, deferred);
     }
 
     /// <summary>
@@ -1437,15 +1450,20 @@ public sealed class VaultSession : IDisposable
 
     /// <summary>
     /// The placement checks of the unused notes in snapshot order (in the background). A note whose check cannot be built
-    /// is logged and left out (spec 8), as is one without topics to offer; null when a later feed started meanwhile. The
-    /// checks are remembered for the snapshots unless a note had no topics (the embedder may have failed): the next feed
-    /// looks for them again.
+    /// is logged and left out (spec 8), as is one without topics to offer; null when a later feed started meanwhile. A
+    /// note whose core statement is not settled yet (see <see cref="UnderstandingParts.CoresSettled"/>) gets no check
+    /// either, as its prompt would rank the topics without the core: it is listed as waiting instead (its stored placement
+    /// shows as stale meanwhile). The checks are remembered for the snapshots unless a note had no topics (the embedder
+    /// may have failed) or waits for its core: the next feed looks for them again.
     /// </summary>
-    private IReadOnlyList<UnderstandingItem>? BuildPlacements(UnderstandingParts parts, int feed, Book book,
-        IReadOnlyList<NoteSnapshot> notes)
+    private (IReadOnlyList<UnderstandingItem> Items, IReadOnlyDictionary<Guid, string> WaitingForCores)? BuildPlacements(
+        UnderstandingParts parts, int feed, Book book, IReadOnlyList<NoteSnapshot> notes)
     {
         var items = new List<UnderstandingItem>();
+        var waiting = new Dictionary<Guid, string>();
         var withoutTopics = false;
+        var cores = parts.NoteItems(notes).ToDictionary(item => item.Key);
+        var coreSettled = parts.CoresSettled();
         foreach (var note in notes)
         {
             if (note.Used)
@@ -1458,6 +1476,13 @@ public sealed class VaultSession : IDisposable
                 return null; // its result would be dropped anyway
             }
 
+            var identity = UnderstandingItems.NoteIdentity(note.Content, note.FilePath);
+            if (!coreSettled(cores.GetValueOrDefault(note.Key)))
+            {
+                waiting[note.Key] = identity;
+                continue;
+            }
+
             try
             {
                 PlacementPromptBuilding?.Invoke(book, note.Key);
@@ -1468,8 +1493,7 @@ public sealed class VaultSession : IDisposable
                     continue; // nothing to choose from, as for "Genauer prüfen"
                 }
 
-                items.Add(UnderstandingItems.ForPlacement(note.Key, UnderstandingItems.NoteIdentity(note.Content, note.FilePath),
-                    book.LinkName, prompt, parts.ChatModel));
+                items.Add(UnderstandingItems.ForPlacement(note.Key, identity, book.LinkName, prompt, parts.ChatModel));
             }
             catch (Exception ex)
             {
@@ -1477,13 +1501,15 @@ public sealed class VaultSession : IDisposable
             }
         }
 
-        if (!withoutTopics)
+        if (!withoutTopics && waiting.Count == 0)
         {
             parts.RememberPlacements(book, notes, items);
         }
 
-        return items;
+        return (items, waiting);
     }
+
+    private static readonly IReadOnlyDictionary<Guid, string> NoNotes = new Dictionary<Guid, string>();
 
     /// <summary>Hands the work to the worker and the notes' fingerprints to the understanding, unless a later feed started.</summary>
     private void Apply(UnderstandingParts parts, int feed, Guid? section, IReadOnlyList<NoteSnapshot> notes, Book? book,
@@ -1508,35 +1534,49 @@ public sealed class VaultSession : IDisposable
                 parts.Understanding.UpdateNotes(map);
             }
 
+
+            // The checks are taken only from a feed during which no summary or core statement settled: one that ran
+            // while one did (started before, or slow) leaves them to the feed scheduled below, so they come a debounce
+            // after the last of them, as after a page change.
+            var ready = work.PlacementsReady && parts.Settled == work.Settled;
+            var (checks, waitingForCores) = ready ? (work.Placements, work.WaitingForCores) : ([], NoNotes);
+
             // Until the book's summaries are settled its last placement map stays (another book's is replaced by none).
             var placementsChanged = false;
             // The same checks again (a focus change) change nothing.
             var otherBook = !string.Equals(parts.PlacementBook, work.Book, StringComparison.Ordinal);
             if (work.Book is { } bookName
-                && (otherBook || (work.PlacementsReady && !ReferenceEquals(parts.PlacementItems, work.Placements))))
+                && (otherBook || (ready && !ReferenceEquals(parts.PlacementItems, checks))))
             {
                 var placements = new Dictionary<Guid, (string Fingerprint, string Identity)>();
-                foreach (var item in work.Placements)
+                foreach (var item in checks)
                 {
                     placements[item.Key] = (item.Fingerprint, item.Identity);
                 }
 
+                // A note waiting for its core statement has no check yet (no fingerprint): its last result shows as stale.
+                foreach (var (key, identity) in waitingForCores)
+                {
+                    placements[key] = (string.Empty, UnderstandingItems.PlacementIdentity(bookName, identity));
+                }
+
                 parts.Understanding.UpdatePlacements(bookName, placements);
                 parts.PlacementBook = bookName;
-                parts.PlacementItems = work.Placements;
+                parts.PlacementItems = checks;
                 placementsChanged = true;
             }
 
-            // Waiting is marked first, then the summaries settled since the store was read are looked at (the handlers
-            // count first, then look at waiting): one of the two sees the other, so no wake-up is lost.
-            var waiting = work.Book is not null && !work.PlacementsReady;
+            // Waiting is marked first, then the summaries settled since the feed started are looked at (the handlers count
+            // first, then look at waiting): one of the two sees the other, so no wake-up is lost. A feed that left building
+            // the checks to a debounced one schedules it.
+            var waiting = work.Book is not null && (!ready || waitingForCores.Count > 0);
             parts.PlacementsWaiting = waiting;
-            if (waiting && parts.Settled != work.Settled)
+            if (waiting && (work.Deferred || parts.Settled != work.Settled))
             {
                 ScheduleFeedFor(parts);
             }
 
-            parts.Worker.SetWork(work.Current, section, work.Notes, work.Others, work.Placements);
+            parts.Worker.SetWork(work.Current, section, work.Notes, work.Others, checks);
             Interlocked.Increment(ref _feedsApplied);
             // The same snapshots again (a focus change) keep the source, so only what changed is read again.
             var placementItems = parts.PlacementItems ?? [];
@@ -1555,7 +1595,8 @@ public sealed class VaultSession : IDisposable
 
     /// <summary>
     /// The store stored something (on the writer's thread; never throws): a placement is shown, and a summary of the
-    /// current book may settle its summaries, so the placement checks are built (debounced like a page change).
+    /// current book may settle its summaries, or a core statement (or its vector) a note's, so the placement checks are
+    /// built (debounced like a page change).
     /// </summary>
     private void OnEntryChanged(UnderstandingParts parts, string fingerprint)
     {
@@ -1567,7 +1608,7 @@ public sealed class VaultSession : IDisposable
         UnderstandingKind? kind;
         try
         {
-            kind = parts.Store.Get(fingerprint)?.Kind;
+            kind = parts.Store.KindOf(fingerprint);
         }
         catch (Exception ex) when (ex is ObjectDisposedException or DbException)
         {
@@ -1579,7 +1620,7 @@ public sealed class VaultSession : IDisposable
         {
             RaisePlacementsChanged();
         }
-        else if (kind == UnderstandingKind.Heading && parts.Settle())
+        else if (kind is UnderstandingKind.Heading or UnderstandingKind.Note && parts.Settle())
         {
             ScheduleFeedFor(parts);
         }
@@ -1631,7 +1672,8 @@ public sealed class VaultSession : IDisposable
         }
 
         _feedTimer = _time.CreateTimer(
-            _ => Dispatch(() => Feed(notesChanged: true), "the language model's work"), null, PageIndexDelay, Timeout.InfiniteTimeSpan);
+            _ => Dispatch(() => Feed(notesChanged: true, debounced: true), "the language model's work"), null, PageIndexDelay,
+            Timeout.InfiniteTimeSpan);
     }
 
     /// <summary>
@@ -1650,9 +1692,11 @@ public sealed class VaultSession : IDisposable
         var changed = away != parts.ServerAway;
         parts.ServerAway = away;
 
-        // A heading given up settles the book's summaries as a stored one does, but the store reports no entry for it.
-        var failed = parts.Worker.Progress.Kinds?.GetValueOrDefault(UnderstandingKind.Heading)?.Failed ?? 0;
-        if (parts.SwapHeadingFailures(failed) != failed && parts.Settle())
+        // A heading or core statement given up settles as a stored one does, but the store reports no entry for it.
+        var kinds = parts.Worker.Progress.Kinds;
+        var failed = (kinds?.GetValueOrDefault(UnderstandingKind.Heading)?.Failed ?? 0)
+            + (kinds?.GetValueOrDefault(UnderstandingKind.Note)?.Failed ?? 0);
+        if (parts.SwapFailures(failed) != failed && parts.Settle())
         {
             ScheduleFeedFor(parts);
         }
@@ -2012,10 +2056,10 @@ public sealed class VaultSession : IDisposable
             set => Interlocked.Exchange(ref _placementsWaiting, value ? 1 : 0); // a full fence before Settled is read
         }
 
-        /// <summary>How many times a heading was settled (stored or given up) so far.</summary>
+        /// <summary>How many times a heading or core statement was settled (stored, embedded or given up) so far.</summary>
         public int Settled => Interlocked.CompareExchange(ref _settled, 0, 0);
 
-        /// <summary>Counts a heading settled, then tells whether the last work applied waits for the summaries.</summary>
+        /// <summary>Counts a heading or core settled, then tells whether the last work applied waits for summaries or cores.</summary>
         public bool Settle()
         {
             Interlocked.Increment(ref _settled);
@@ -2024,7 +2068,7 @@ public sealed class VaultSession : IDisposable
 
         private int _placementsWaiting;
         private int _settled;
-        private int _headingFailures;
+        private int _failures;
 
         /// <summary>
         /// Remembers the key of the request with the server unless there is none, and returns the key remembered before:
@@ -2042,8 +2086,31 @@ public sealed class VaultSession : IDisposable
 
         private Guid? _lastRequest;
 
-        /// <summary>Remembers how many headings the worker gave up and returns the number remembered before.</summary>
-        public int SwapHeadingFailures(int failed) => Interlocked.Exchange(ref _headingFailures, failed);
+        /// <summary>Remembers how many headings and core statements the worker gave up and returns the number remembered before.</summary>
+        public int SwapFailures(int failed) => Interlocked.Exchange(ref _failures, failed);
+
+        /// <summary>
+        /// Tells of a note's core statement item (null for a note too short to get one) whether it is settled: stored with a
+        /// vector from the current embedding model (as <see cref="StoreUnderstanding.NoteCore"/> needs it), given up after
+        /// <see cref="UnderstandingWorker.MaxAttempts"/>, or not needed. Reads the store once for all notes; a closed or
+        /// failing store settles none.
+        /// </summary>
+        public Func<UnderstandingItem?, bool> CoresSettled()
+        {
+            try
+            {
+                var stored = Store.Fingerprints();
+                var withoutVector = Store.WithoutVector(EmbedModel).ToHashSet(StringComparer.Ordinal);
+                var attempts = Store.AllAttempts();
+                return core => core is null
+                    || (stored.Contains(core.Fingerprint) && !withoutVector.Contains(core.Fingerprint))
+                    || attempts.GetValueOrDefault(core.Fingerprint) >= UnderstandingWorker.MaxAttempts;
+            }
+            catch (Exception ex) when (ex is ObjectDisposedException or DbException)
+            {
+                return core => core is null;
+            }
+        }
 
         // The placement prompts per book instance and note text, and the placement checks last built (for which book and
         // snapshot; under _notesGate).
@@ -2168,12 +2235,15 @@ public sealed class VaultSession : IDisposable
 
     /// <summary>
     /// The worker's work of one feed: the current book's headings, the notes, the other books' headings, and the current
-    /// book (link name) with its notes' placement checks, which are only built once its summaries are settled, and the
-    /// count of settled headings taken before the store was read.
+    /// book (link name) with its notes' placement checks, which are only built once its summaries are settled (and a
+    /// note's once its core statement is: the notes still waiting for theirs, by key with their note identity), and the
+    /// count of settled headings and cores taken when the feed started, and whether it left building the checks (they
+    /// could be) to a debounced feed.
     /// </summary>
     private readonly record struct FeedWork(
         IReadOnlyList<UnderstandingItem> Current, IReadOnlyList<UnderstandingItem> Notes, IReadOnlyList<UnderstandingItem> Others,
-        string? Book, IReadOnlyList<UnderstandingItem> Placements, bool PlacementsReady, int Settled);
+        string? Book, IReadOnlyList<UnderstandingItem> Placements, IReadOnlyDictionary<Guid, string> WaitingForCores,
+        bool PlacementsReady, int Settled, bool Deferred);
 
     /// <summary>What the notes' status is put together from: the parts, the notes' snapshot and items, and the current book.</summary>
     private sealed class StatusSource

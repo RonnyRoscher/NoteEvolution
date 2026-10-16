@@ -73,8 +73,11 @@ public static class UnderstandingItems
         PlacementCheckPrompt prompt, string chatModel) =>
         new(UnderstandingKind.Placement,
             Hash([PromptVersion.ToString(), chatModel, "placement", prompt.System, prompt.User, prompt.Schema]),
-            $"placement|{bookLinkName}|{noteIdentity}", noteIdentity, prompt.User, [],
+            PlacementIdentity(bookLinkName, noteIdentity), noteIdentity, prompt.User, [],
             noteKey, prompt);
+
+    /// <summary>The identity of a note's placement checks against one book (<see cref="ForPlacement"/>), across edits of both.</summary>
+    public static string PlacementIdentity(string bookLinkName, string noteIdentity) => $"placement|{bookLinkName}|{noteIdentity}";
 
     /// <summary>
     /// The text the model sees for a note before it is limited: journal date, parent line, the note's own text and its

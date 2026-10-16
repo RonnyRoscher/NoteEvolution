@@ -324,8 +324,14 @@ public class LanguageModelTests : UiTestContext
         _chat.Version = "0.5.0";
         _chat.Failure = (_, _) => null;
         Time.Advance(TimeSpan.FromSeconds(1));
-        // The page-change feed found the summaries settled: 3 placement checks came with it.
-        await Eventually(() => session.Understanding is { Pause: UnderstandingPause.None, Done: 8, Total: 8 });
+        // The page-change feed found the summaries settled: the checks of the other two notes came with it; the edited
+        // note's comes with the feed its new core statement schedules.
+        await Eventually(() => session.Understanding is { Pause: UnderstandingPause.None, Done: 7, Total: 7 });
+        await Eventually(() =>
+        {
+            Time.Advance(VaultSession.PageIndexDelay);
+            return session.Understanding is { Pause: UnderstandingPause.None, Done: 8, Total: 8 };
+        });
         Assert.True(_chat.VersionCalls > checks);
         Assert.Contains(Topics(session), t => t.Summary is not null);
     }
@@ -525,6 +531,65 @@ public class LanguageModelTests : UiTestContext
     }
 
     [Fact]
+    public async Task Session_Placements_WaitForTheNotesCoreStatements()
+    {
+        var tv = Vault();
+        AnswerPlacements();
+        var answer = _chat.Answer;
+        using var coreHeld = new ManualResetEventSlim();
+        _chat.Answer = (call, n) =>
+        {
+            // The newer note's core statement (the first one asked) is held at the model, and the older one behind it.
+            if (call.Options.Schema is null && call.User.Contains(NewerNote, StringComparison.Ordinal))
+            {
+                coreHeld.Wait(Wait);
+            }
+
+            return answer(call, n);
+        };
+        var language = UseLanguageModel(_chat);
+        await language.RefreshAsync(CancellationToken.None);
+        var session = await OpenWithAiAsync(tv);
+        await Eventually(() => session.Understanding?.Kinds?[UnderstandingKind.Heading] is { Done: 3, Total: 3 },
+            "The summaries did not finish.");
+        await Eventually(() => _chat.Calls.Any(c => c.Options.Schema is null && c.User.Contains(NewerNote, StringComparison.Ordinal)),
+            "The core statement was not asked.");
+        await Task.Delay(100); // the summaries' vectors
+        var built = new List<Guid>();
+        session.PlacementPromptBuilding = (_, key) =>
+        {
+            lock (built)
+            {
+                built.Add(key);
+            }
+        };
+
+        // The summaries are settled, the long notes' core statements are not: only the short note (it gets none) is
+        // checked; the others' prompts would rank the topics without their cores.
+        var feeds = session.FeedsApplied;
+        Time.Advance(VaultSession.PageIndexDelay);
+        await Eventually(() => session.FeedsApplied > feeds, "The feed did not run.");
+        lock (built)
+        {
+            Assert.Equal([NoteKey(session, ShortNote)], built.Distinct());
+        }
+
+        Assert.Null(session.Placement(NoteKey(session, NewerNote)));
+        Assert.Empty(PlacementCalls(NewerNote));
+
+        // The cores settle and schedule the feed that builds their checks.
+        coreHeld.Set();
+        await Eventually(() =>
+        {
+            Time.Advance(VaultSession.PageIndexDelay);
+            return PlacementCalls(NewerNote).Count == 1 && PlacementCalls(OlderNote).Count == 1;
+        }, "The notes' placement checks were not built after their cores.");
+        await AllDone(session, 8);
+        Assert.Single(PlacementCalls(ShortNote));
+        Assert.NotNull(session.Placement(NoteKey(session, NewerNote)));
+    }
+
+    [Fact]
     public async Task Session_Placements_FailedSubHeadingDoesNotBlock()
     {
         var tv = Vault();
@@ -633,9 +698,13 @@ public class LanguageModelTests : UiTestContext
         var key = NoteKey(session, edited);
         await Eventually(() => session.Placement(key) is { Stale: true }, "The old placement was not shown as stale.");
 
-        // The core statement, then the new check.
+        // The core statement, then (the core settled it, after the debounce) the new check.
         gate.Release(100);
-        await Eventually(() => session.Placement(key) is { Stale: false }, "The new placement did not arrive.");
+        await Eventually(() =>
+        {
+            Time.Advance(VaultSession.PageIndexDelay);
+            return session.Placement(key) is { Stale: false };
+        }, "The new placement did not arrive.");
         Assert.Single(PlacementCalls(edited));
     }
 
@@ -701,7 +770,14 @@ public class LanguageModelTests : UiTestContext
         Time.Advance(VaultSession.PageIndexDelay);
         Assert.True(building.Wait(Wait), "Alpha's checks were not built.");
         State.CurrentBook = session.Vault.FindBook("Buch - Beta");
-        await AllDone(session, 1 + 2 + 3);
+
+        // Beta's summary is there: the switch leaves building its checks to the debounced feed it schedules (once its
+        // own feed is applied).
+        await Eventually(() =>
+        {
+            Time.Advance(VaultSession.PageIndexDelay);
+            return session.Understanding is { Done: 1 + 2 + 3, Total: 1 + 2 + 3 };
+        }, "Beta's checks were not built.");
         release.Set();
         await Task.Delay(100);
 
