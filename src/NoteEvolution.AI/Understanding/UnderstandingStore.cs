@@ -5,7 +5,7 @@ using Microsoft.Extensions.Logging;
 namespace NoteEvolution.AI.Understanding;
 
 /// <summary>What an understanding entry describes: a heading's topic summary or a note's core statement.</summary>
-public enum UnderstandingKind { Heading, Note }
+public enum UnderstandingKind { Heading, Note, Placement }
 
 /// <summary>
 /// One piece of the model's understanding: <paramref name="Text"/> produced by <paramref name="ChatModel"/> for the content
@@ -155,7 +155,8 @@ public sealed class UnderstandingStore : IDisposable
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
             using var command = _db.CreateCommand();
-            command.CommandText = "SELECT fingerprint FROM entries WHERE vector IS NULL OR embed_model IS NULL OR embed_model <> $embed ORDER BY updated";
+            // kind <> 2: placement results (UnderstandingKind.Placement, stored as INTEGER) are never embedded.
+            command.CommandText = "SELECT fingerprint FROM entries WHERE kind <> 2 AND (vector IS NULL OR embed_model IS NULL OR embed_model <> $embed) ORDER BY updated";
             command.Parameters.AddWithValue("$embed", embedModel);
             var result = new List<string>();
             using var reader = command.ExecuteReader();

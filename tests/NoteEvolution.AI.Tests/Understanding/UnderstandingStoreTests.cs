@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging;
 using NoteEvolution.AI.Understanding;
 using NoteEvolution.TestSupport;
 
@@ -62,6 +62,18 @@ public sealed class UnderstandingStoreTests
         Assert.Equal(["m2", "none"], store.WithoutVector("embed-1").Order());
         Assert.Equal([2f, 3f], store.Get("m2")!.Vector!);
         Assert.Equal("embed-2", store.Get("m2")!.EmbedModel);
+    }
+
+    [Fact]
+    public void WithoutVector_IgnoresPlacements()
+    {
+        using var dir = new TempDir();
+        using var store = UnderstandingStore.Open(dir.Path);
+        store.Put(Entry("note", kind: UnderstandingKind.Note));
+        store.Put(Entry("place", kind: UnderstandingKind.Placement));
+
+        Assert.Equal(["note"], store.WithoutVector("embed-1"));
+        Assert.Equal(2, (int)UnderstandingKind.Placement);
     }
 
     [Fact]

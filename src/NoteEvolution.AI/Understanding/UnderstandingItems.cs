@@ -9,11 +9,11 @@ namespace NoteEvolution.AI.Understanding;
 
 /// <summary>
 /// One unit of work for the language model: a heading (summary of its own text and its sub-headings' summaries) or a note
-/// (core statement). <paramref name="Fingerprint"/> covers everything the answer depends on, <paramref name="Identity"/>
+/// (core statement) or a placement check of a note against a book (<paramref name="Check"/> carries its prompt). <paramref name="Fingerprint"/> covers everything the answer depends on, <paramref name="Identity"/>
 /// names the thing across edits, <paramref name="Key"/> is the session key (<c>OutlineNode.Key</c> / <c>NoteBlock.Key</c>).
 /// </summary>
 public sealed record UnderstandingItem(UnderstandingKind Kind, string Fingerprint, string Identity, string Title,
-    string OwnText, IReadOnlyList<string> ChildFingerprints, Guid Key);
+    string OwnText, IReadOnlyList<string> ChildFingerprints, Guid Key, PlacementCheckPrompt? Check = null);
 
 /// <summary>Turns a book snapshot and notes into <see cref="UnderstandingItem"/>s. Pure; reads the model it is given.</summary>
 public static class UnderstandingItems
@@ -50,15 +50,33 @@ public static class UnderstandingItems
             return null;
         }
 
+        var identity = NoteIdentity(content, filePath);
+        var title = identity[(identity.IndexOf('#') + 1)..];
+        return new UnderstandingItem(UnderstandingKind.Note, NoteFingerprint(text, chatModel), identity, title, text, [], key);
+    }
+
+    /// <summary>The note's identity across edits: <c>note:</c>, its page's folder and file, <c>#</c> and the first line of its content (at most 80 characters).</summary>
+    public static string NoteIdentity(string content, string filePath)
+    {
         var firstLine = content.Split('\n', 2)[0].Trim();
         if (firstLine.Length > NoteIdentityLineLimit)
         {
             firstLine = firstLine[..NoteIdentityLineLimit];
         }
 
-        return new UnderstandingItem(UnderstandingKind.Note, NoteFingerprint(text, chatModel),
-            "note:" + RelativePagePath(filePath) + "#" + firstLine, firstLine, text, [], key);
+        return "note:" + RelativePagePath(filePath) + "#" + firstLine;
     }
+
+    /// <summary>
+    /// The placement check of a note against one book. The fingerprint follows the prompt (and so the book's relevant
+    /// state) and the chat model; the item has no children and its result carries no vector.
+    /// </summary>
+    public static UnderstandingItem ForPlacement(Guid noteKey, string noteIdentity, string bookLinkName,
+        PlacementCheckPrompt prompt, string chatModel) =>
+        new(UnderstandingKind.Placement,
+            Hash([PromptVersion.ToString(), chatModel, "placement", prompt.System, prompt.User, prompt.Schema]),
+            $"placement|{bookLinkName}|{noteIdentity}", noteIdentity[(noteIdentity.IndexOf('#') + 1)..], prompt.User, [],
+            noteKey, prompt);
 
     /// <summary>
     /// The text the model sees for a note before it is limited: journal date, parent line, the note's own text and its
