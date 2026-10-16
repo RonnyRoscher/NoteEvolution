@@ -186,7 +186,7 @@ public class PlacementCheckTests
 
         using var schema = JsonDocument.Parse(prompt.Schema);
         var properties = schema.RootElement.GetProperty("properties");
-        Assert.Equal(["begruendung", "stelle"], properties.EnumerateObject().Select(p => p.Name));
+        Assert.Equal(["begruendung", "stelle", "passung"], properties.EnumerateObject().Select(p => p.Name));
         Assert.Equal(["1.0", "1.1", "2.0", "2.1", "2.2", "3.0", "4.0", "4.1", "5.0"],
             properties.GetProperty("stelle").GetProperty("enum").EnumerateArray().Select(e => e.GetString()));
         Assert.Equal(PlacementCheck.Options(prompt).Schema, prompt.Schema);
@@ -211,7 +211,7 @@ public class PlacementCheckTests
 
         var verdict = PlacementCheck.Parse("{\"begruendung\":\"Passt dazu.\",\"stelle\":\"2.2\"}", prompt);
 
-        Assert.Equal(new PlacementVerdict(s.A1.Key, s.Block("Mehr unter A1."), "Passt dazu.", "A1 handelt von Eins. Und mehr."), verdict);
+        Assert.Equal(new PlacementVerdict(s.A1.Key, s.Block("Mehr unter A1."), "Passt dazu.", "A1 handelt von Eins. Und mehr.", EmbeddingSectionKey: s.A1.Key), verdict);
     }
 
     [Theory]
@@ -223,7 +223,7 @@ public class PlacementCheckTests
         var s = Load();
         var verdict = PlacementCheck.Parse("{\"begruendung\":\"Neu.\",\"stelle\":" + stelle + "}", Build(s));
 
-        Assert.Equal(new PlacementVerdict(s.A2.Key, null, "Neu."), verdict);
+        Assert.Equal(new PlacementVerdict(s.A2.Key, null, "Neu.", EmbeddingSectionKey: s.A1.Key), verdict);
     }
 
     [Fact]
@@ -263,5 +263,90 @@ public class PlacementCheckTests
 
         Assert.Contains(new string('a', 3000) + new string('b', 1000) + "\n", prompt.User);
         Assert.DoesNotContain(new string('b', 1001), prompt.User);
+    }
+
+    [Fact]
+    public void Prompt_Schema_HasPassungAfterStelle()
+    {
+        using var schema = JsonDocument.Parse(Build(Load()).Schema);
+        var passung = schema.RootElement.GetProperty("properties").GetProperty("passung");
+        Assert.Equal(["gut", "teilweise", "kaum"], passung.GetProperty("enum").EnumerateArray().Select(e => e.GetString()));
+        Assert.Equal(["begruendung", "stelle", "passung"], schema.RootElement.GetProperty("required").EnumerateArray().Select(e => e.GetString()));
+    }
+
+    [Fact]
+    public void Prompt_System_ExplainsPassung()
+    {
+        var system = Build(Load()).System;
+        Assert.Contains("kaum", system);
+        Assert.Contains("passung", system);
+    }
+
+    [Theory]
+    [InlineData(",\"passung\":\"gut\"", PlacementFit.Good)]
+    [InlineData(",\"passung\":\"teilweise\"", PlacementFit.Partial)]
+    [InlineData(",\"passung\":\"kaum\"", PlacementFit.Poor)]
+    [InlineData("", PlacementFit.Partial)]
+    [InlineData(",\"passung\":\"egal\"", PlacementFit.Partial)]
+    public void Parse_Passung(string passung, PlacementFit expected)
+    {
+        var verdict = PlacementCheck.Parse("{\"begruendung\":\"x\",\"stelle\":\"1.0\"" + passung + "}", Build(Load()));
+
+        Assert.NotNull(verdict);
+        Assert.Equal(expected, verdict.Fit);
+    }
+
+    [Fact]
+    public void Prompt_EmbeddingSection_IsSectionOfBestPlace()
+    {
+        var s = Load();
+        var prompt = Build(s);
+
+        Assert.Equal(s.A1.Key, prompt.EmbeddingSectionKey);
+        Assert.Equal(s.A1.Key, PlacementCheck.Parse("{\"stelle\":\"4.0\"}", prompt)!.EmbeddingSectionKey);
+    }
+
+    [Fact]
+    public void Prompt_EmbeddingSection_WithoutPlaces_IsBestTopicsSection()
+    {
+        var s = Load();
+        var prompt = PlacementCheck.Prompt(s.Book, "x", [new TopicHit(s.A1.Key, 0.8, null), new TopicHit(s.C.Key, 0.7, null)],
+            new Dictionary<Guid, IReadOnlyList<PlacementHit>>());
+
+        Assert.Equal(s.A1.Key, prompt.EmbeddingSectionKey);
+    }
+
+    [Fact]
+    public void Serialize_RoundTrips()
+    {
+        var verdict = new PlacementVerdict(Guid.NewGuid(), Guid.NewGuid(), "Weil.", "Zusammenfassung.", PlacementFit.Poor, Guid.NewGuid());
+
+        Assert.Equal(verdict, PlacementCheck.Deserialize(PlacementCheck.Serialize(verdict)));
+        Assert.Contains("\"fit\":\"Poor\"", PlacementCheck.Serialize(verdict));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("kein json")]
+    [InlineData("{}")]
+    [InlineData("{\"section\":\"x\"}")]
+    public void Deserialize_Invalid_Null(string json)
+    {
+        Assert.Null(PlacementCheck.Deserialize(json));
+    }
+
+    [Theory]
+    [InlineData("A1", "A1", false)]
+    [InlineData("A1", "A", false)]
+    [InlineData("A", "A1", false)]
+    [InlineData("C", "A1", true)]
+    [InlineData("C", null, false)]
+    public void IsUncertain(string chosen, string? embedding, bool expected)
+    {
+        var s = Load();
+        Guid? Key(string? name) => name switch { "A" => s.A.Key, "A1" => s.A1.Key, "C" => s.C.Key, _ => null };
+        var verdict = new PlacementVerdict(Key(chosen)!.Value, null, "", EmbeddingSectionKey: Key(embedding));
+
+        Assert.Equal(expected, PlacementCheck.IsUncertain(s.Book, verdict));
     }
 }
