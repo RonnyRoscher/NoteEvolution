@@ -924,6 +924,27 @@ html, body {
     white-space: nowrap;
 }
 
+.ne-note-whereto-fit {
+    font-size: 11px;
+}
+
+.ne-note-whereto-fit-good {
+    color: var(--success);
+}
+
+.ne-note-whereto-fit-partial {
+    color: var(--warning);
+}
+
+.ne-note-whereto-fit-poor {
+    color: var(--danger);
+}
+
+.ne-note-whereto-stale {
+    font-size: 11px;
+    color: var(--warning);
+}
+
 .ne-note-whereto-used {
     color: var(--accent);
 }

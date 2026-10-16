@@ -204,9 +204,13 @@ public class WhereToUnderstandingTests : UiTestContext
     {
         var session = await OpenReadyAsync();
 
-        // The time advanced below would let the background build its placement checks; they are done first.
+        // The time advanced below would let the background build its placement checks; they are done first, with no
+        // usable answer: the note has no stored placement, so the check is offered.
+        var answer = _chat.Answer;
+        _chat.Answer = (_, _) => "Das passt wohl zu Schlaf.";
         Time.Advance(VaultSession.PageIndexDelay);
         await Eventually(() => session.Understanding is { Total: 7, Done: 7 }, "The placement checks did not finish.");
+        _chat.Answer = answer;
         var cut = OpenList(session);
         var count = cut.FindAll(".ne-note-whereto-item").Count;
         using var gate = new SemaphoreSlim(0);
@@ -238,12 +242,9 @@ public class WhereToUnderstandingTests : UiTestContext
         Assert.Equal(Text("NoteWhereToAfter", FirstOfferedPlace()), Place(recommended));
         Assert.NotNull(Topic(recommended));
 
-        // The next check expects the mean of the checks so far.
-        cut.Find(".ne-note-whereto-check").Click();
-        cut.WaitForAssertion(() => Assert.Equal(Text("CheckRunning", Duration(0), Duration(42)), cut.Find(".ne-note-whereto-checking-text").TextContent.Trim()));
-        gate.Release();
-        cut.WaitForAssertion(() => Assert.Empty(cut.FindAll(".ne-note-whereto-checking")));
-        Assert.Single(cut.FindAll(".ne-note-whereto-recommended"));
+        // The check's result is stored: no second check is offered; the next one expects the mean of the checks so far.
+        Assert.Empty(cut.FindAll(".ne-note-whereto-check"));
+        Assert.Equal(TimeSpan.FromSeconds(42), LanguageModel!.ExpectedCheckDuration);
     }
 
     [Fact]
@@ -341,5 +342,92 @@ public class WhereToUnderstandingTests : UiTestContext
 
         cut.WaitForAssertion(() => Assert.Equal(target.Key, State.PendingReveal));
         Assert.Single(cut.FindAll(".ne-note-whereto-recommended"));
+    }
+
+    /// <summary>Lets the background build the placement checks of both notes and waits until the sleep note's is stored.</summary>
+    private async Task StorePlacementsAsync(VaultSession session)
+    {
+        Time.Advance(VaultSession.PageIndexDelay);
+        await Eventually(() => session.Understanding is { Total: 7, Done: 7 }, "The placement checks did not finish.");
+        await Eventually(() => session.Placement(session.Notes.All().Single(n => n.Block.Content == SleepNote).Key) is not null,
+            "The placement was not stored.");
+    }
+
+    [Fact]
+    public async Task WhereTo_StoredPlacement_ShownAtOnce_NoCheckButton()
+    {
+        var session = await OpenReadyAsync();
+        await StorePlacementsAsync(session);
+
+        var cut = OpenList(session);
+
+        var recommended = cut.Find(".ne-note-whereto-recommended");
+        Assert.Equal(Reason, recommended.QuerySelector(".ne-note-whereto-reason")!.TextContent.Trim());
+        Assert.Equal(Text("NoteWhereToAfter", FirstOfferedPlace()), Place(recommended));
+        Assert.Empty(cut.FindAll(".ne-note-whereto-stale"));
+        Assert.Empty(cut.FindAll(".ne-note-whereto-check"));
+    }
+
+    [Fact]
+    public async Task WhereTo_StalePlacement_ShownWithHint_CheckButton()
+    {
+        var session = await OpenReadyAsync();
+        await StorePlacementsAsync(session);
+
+        // The edit keeps the note's first 80 characters, so its identity: the stored placement is stale, the new check waits.
+        using var gate = new SemaphoreSlim(0);
+        _chat.Gate = gate;
+        const string edited = SleepNote + " Auch das.";
+        var page = session.Vault.FindPageByPath(Path.Combine(_vaults[^1].Root, "journals", "2026_03_01.md"))!;
+        page.AllBlocks().Single(b => b.Content == SleepNote).SetContent(edited);
+        Assert.True(session.TrySave(page, out var error), error?.Message);
+        Time.Advance(VaultSession.PageIndexDelay);
+        var note = session.Notes.All().Single(n => n.Block.Content == edited);
+        await Eventually(() => session.Placement(note.Key) is { Stale: true }, "The placement was not shown as stale.");
+
+        var cut = Render<NoteCard>(p => p.Add(c => c.Note, note));
+        cut.Find(".ne-note-whereto").Click();
+        cut.WaitForAssertion(() => Assert.NotEmpty(cut.FindAll(".ne-note-whereto-recommended")));
+
+        Assert.Equal("veraltet", cut.Find(".ne-note-whereto-stale").TextContent.Trim());
+        Assert.Equal("veraltet", Text("NoteWhereToStale"));
+        Assert.Single(cut.FindAll(".ne-note-whereto-check"));
+        gate.Release(100);
+    }
+
+    [Theory]
+    [InlineData("gut", "good", "Passung gut")]
+    [InlineData("teilweise", "partial", "Passung teilweise")]
+    [InlineData("kaum", "poor", "Passung schlecht")]
+    public async Task WhereTo_FitMarker(string answer, string css, string tooltip)
+    {
+        _chat.Answer = (call, n) => call.Options.Json
+            ? "{\"begruendung\": \"" + Reason + "\", \"stelle\": \"1.1\", \"passung\": \"" + answer + "\"}"
+            : call.User.StartsWith("Überschrift: ", StringComparison.Ordinal)
+                ? "Zusammenfassung von " + call.User.Split('\n')[0]["Überschrift: ".Length..] + "."
+                : $"Kernaussage {n}.";
+        var session = await OpenReadyAsync();
+        await StorePlacementsAsync(session);
+
+        var cut = OpenList(session);
+
+        Assert.Equal(tooltip, cut.Find($".ne-note-whereto-recommended .ne-note-whereto-fit-{css}").GetAttribute("title"));
+    }
+
+    [Fact]
+    public async Task WhereTo_PlacementArrivesWhileOpen_ReplacesRecommendation_ListNotReloaded()
+    {
+        var session = await OpenReadyAsync();
+        var cut = OpenList(session);
+        Assert.Empty(cut.FindAll(".ne-note-whereto-recommended"));
+        var items = cut.FindAll(".ne-note-whereto-item");
+        var texts = items.Select(item => item.TextContent).ToList();
+
+        await StorePlacementsAsync(session);
+
+        cut.WaitForAssertion(() => Assert.Single(cut.FindAll(".ne-note-whereto-recommended")));
+        Assert.Empty(cut.FindAll(".ne-note-whereto-check"));
+        var after = cut.FindAll(".ne-note-whereto-item").Where(item => !item.ClassList.Contains("ne-note-whereto-recommended")).ToList();
+        Assert.Equal(texts, after.Select(item => item.TextContent).ToList());
     }
 }

@@ -436,6 +436,18 @@
   <data name="NoteWhereToNewPlace" xml:space="preserve">
     <value>neue Stelle am Ende des Themas</value>
   </data>
+  <data name="NoteWhereToStale" xml:space="preserve">
+    <value>veraltet</value>
+  </data>
+  <data name="NoteWhereToFitGood" xml:space="preserve">
+    <value>Passung gut</value>
+  </data>
+  <data name="NoteWhereToFitPartial" xml:space="preserve">
+    <value>Passung teilweise</value>
+  </data>
+  <data name="NoteWhereToFitPoor" xml:space="preserve">
+    <value>Passung schlecht</value>
+  </data>
   <data name="CheckButton" xml:space="preserve">
     <value>Genauer prüfen</value>
   </data>

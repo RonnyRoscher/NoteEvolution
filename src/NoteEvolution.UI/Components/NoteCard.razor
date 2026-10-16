@@ -121,6 +121,12 @@
 
         public WhereToRecommendation? Recommendation { get; set; }
 
+        /// <summary>The recommendation is a stored placement that is out of date (note or book changed since).</summary>
+        public bool RecommendationStale { get; set; }
+
+        /// <summary>The note has a current stored placement: "Genauer prüfen" is not offered.</summary>
+        public bool PlacementCurrent { get; set; }
+
         public bool CheckFailed { get; set; }
     }
 
@@ -133,7 +139,7 @@
     private sealed record WhereToHit(Guid Key, string Path, string Excerpt, int Percent, string? Topic, Guid TopicKey, string? Summary);
 
     /// <summary>The model's choice: where a click goes, the topic's path and summary, the place and the model's reason.</summary>
-    private sealed record WhereToRecommendation(Guid TargetKey, string Topic, string? Summary, string Place, string Reason);
+    private sealed record WhereToRecommendation(Guid TargetKey, string Topic, string? Summary, string Place, string Reason, PlacementFit Fit);
 
     /// <summary>
     /// A running "Genauer prüfen": its cancellation, since when it runs (reset when its own request goes to the server),
@@ -305,6 +311,7 @@
         {
             _session.AiStatusChanged += OnAiStatusChanged;
             _session.NoteStatusChanged += OnAiStatusChanged;
+            _session.PlacementsChanged += OnPlacementsChanged;
         }
 
         return true;
@@ -316,7 +323,44 @@
         {
             _session.AiStatusChanged -= OnAiStatusChanged;
             _session.NoteStatusChanged -= OnAiStatusChanged;
+            _session.PlacementsChanged -= OnPlacementsChanged;
         }
+    }
+
+    /// <summary>A placement arrived: the open lists of this note take it over in place (their hits are not searched again).</summary>
+    private void OnPlacementsChanged() => _ = InvokeAsync(() =>
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        if (State is { CurrentBook: { } book } && _whereTo.Values.Any(list => ApplyStoredPlacement(list, book)))
+        {
+            StateHasChanged();
+        }
+    });
+
+    /// <summary>
+    /// Shows the note's stored placement as the list's recommendation (spec 4); false if nothing changed: a sub-bullet
+    /// has none, the hits are not there yet (they apply it when they arrive) and a running check brings its own.
+    /// </summary>
+    private bool ApplyStoredPlacement(WhereToList list, Book book)
+    {
+        if (list.NoteKey == Guid.Empty || list.Hits is null || list.Check is not null || State.Session?.Placement(list.NoteKey) is not { } placement
+            || !string.Equals(book.LinkName, list.BookName, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        list.PlacementCurrent = !placement.Stale;
+        if (Recommend(list, book, placement.Verdict) is { } recommendation)
+        {
+            list.Recommendation = recommendation;
+            list.RecommendationStale = placement.Stale;
+        }
+
+        return true;
     }
 
     private void OnAiStatusChanged() => _ = InvokeAsync(() =>
@@ -510,6 +554,7 @@
                     found.Hit.SectionKey,
                     summaries.GetValueOrDefault(found.Hit.SectionKey))),
         ];
+        ApplyStoredPlacement(list, book);
     }
 
     /// <summary>The titles from the book's top level down to <paramref name="topic"/>, joined with " › "; empty for the root (prologue).</summary>
@@ -587,6 +632,8 @@
         if (verdict is not null && Recommend(list, book, verdict) is { } recommendation)
         {
             list.Recommendation = recommendation;
+            list.RecommendationStale = false;
+            list.PlacementCurrent = true;
         }
         else if (failure != PlacementCheckFailure.Cancelled)
         {
@@ -609,11 +656,11 @@
         if (verdict.AfterTextBlockKey is { } after && book.FindTextBlock(after) is { } textBlock)
         {
             return new WhereToRecommendation(after, TopicPath(topic), summary,
-                L["NoteWhereToAfter", Excerpt.FirstLine(textBlock.Text, WhereToExcerptLength)], verdict.Reason);
+                L["NoteWhereToAfter", Excerpt.FirstLine(textBlock.Text, WhereToExcerptLength)], verdict.Reason, verdict.Fit);
         }
 
         return new WhereToRecommendation(topic.TextBlocks.LastOrDefault()?.Key ?? topic.Key, TopicPath(topic), summary,
-            L["NoteWhereToNewPlace"], verdict.Reason);
+            L["NoteWhereToNewPlace"], verdict.Reason, verdict.Fit);
     }
 
     /// <summary>Stops a running check; the list stays as it was.</summary>
@@ -715,11 +762,17 @@
                 <ul class="ne-note-whereto-list">
                     @if (list.Recommendation is { } recommended)
                     {
-                        <li>
+                        <li @key="@("recommended")">
                             <button type="button" class="ne-note-whereto-item ne-note-whereto-recommended"
                                     title="@(recommended.Summary ?? L["NoteWhereToItemTitle"])"
                                     @onclick="() => GoToHitAsync(list, recommended.TargetKey)">
                                 <span class="ne-note-whereto-recommended-label">@L["CheckRecommended"]</span>
+                                <span class="@("ne-note-whereto-fit ne-note-whereto-fit-" + recommended.Fit.ToString().ToLowerInvariant())"
+                                      title="@L["NoteWhereToFit" + recommended.Fit]">●</span>
+                                @if (list.RecommendationStale)
+                                {
+                                    <span class="ne-note-whereto-stale">@L["NoteWhereToStale"]</span>
+                                }
                                 @if (recommended.Topic.Length > 0)
                                 {
                                     <span class="ne-note-whereto-topic">@recommended.Topic</span>
@@ -735,7 +788,7 @@
                     }
                     @foreach (var hit in hits)
                     {
-                        <li>
+                        <li @key="hit.Key">
                             @if (hit.Topic is { } topic)
                             {
                                 <button type="button" class="ne-note-whereto-item" title="@(hit.Summary ?? L["NoteWhereToItemTitle"])"
@@ -775,7 +828,7 @@
                 {
                     @Checking(list, run)
                 }
-                else if (CheckAvailable)
+                else if (CheckAvailable && !list.PlacementCurrent)
                 {
                     <button type="button" class="ne-note-whereto-check" title="@L["CheckButtonTitle"]"
                             @onclick="() => CheckAsync(list, block)">@L["CheckButton"]</button>
