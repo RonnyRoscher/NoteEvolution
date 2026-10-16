@@ -1,6 +1,7 @@
 using System.Resources;
 using System.Text;
 using AngleSharp.Dom;
+using AngleSharp.Html.Parser;
 using Bunit;
 using Microsoft.AspNetCore.Components;
 using Microsoft.Extensions.DependencyInjection;
@@ -518,9 +519,10 @@ public class DialogTests : UiTestContext
 
     /// <summary>
     /// Waits up to <see cref="HandledWait"/> until <paramref name="assertion"/> holds for the places the assistant computes
-    /// in the background, checking again every <see cref="PlaceCheckInterval"/> as well: bUnit checks only after a render
-    /// it is told about, and a render of the places that lands just as the wait starts can go unnoticed (the wait then
-    /// times out although the places are shown).
+    /// in the background. bUnit can keep the elements of an older render when the render of the places lands while it
+    /// reads them (its markup has the places, the elements the assertion finds do not, and it checks no more): every
+    /// <see cref="PlaceCheckInterval"/> the elements are compared with the markup, and the component is rendered once
+    /// more if they lag behind, so they are read again. A component that did not render the places fails all the same.
     /// </summary>
     private static void WaitForPlaces(IRenderedComponent<HandledWizard> cut, Action assertion)
     {
@@ -534,7 +536,11 @@ public class DialogTests : UiTestContext
             }
             catch (Bunit.Extensions.WaitForHelpers.WaitForFailedException) when (DateTime.UtcNow < until)
             {
-                // Checked again with a new wait.
+                var rendered = new HtmlParser().ParseDocument(cut.Markup).Body!.TextContent;
+                if (rendered != string.Concat(cut.Nodes.Select(node => node.TextContent)))
+                {
+                    cut.Render();
+                }
             }
         }
     }
