@@ -29,11 +29,11 @@ public sealed record PlacementCheckPrompt(string System, string User, IReadOnlyL
 /// </summary>
 public static class PlacementCheck
 {
-    /// <summary>How many of the best topics the caller passes: enough to find two different chapters.</summary>
-    public const int TopicLimit = 6;
+    /// <summary>How many of the best topics the caller passes: enough to find three different chapters.</summary>
+    public const int TopicLimit = 9;
 
-    private const int MaxChapters = 2;
-    private const int MaxSections = 10;
+    private const int MaxChapters = 3;
+    private const int MaxSections = 14;
     private const int MaxPlacesPerSection = 2;
     private const int MaxPlaces = 6;
     private const int PlaceLength = 100;
@@ -54,9 +54,9 @@ public static class PlacementCheck
         new(UnderstandingPrompts.CheckTokens, Json: true, Schema: prompt.Schema);
 
     /// <summary>
-    /// The prompt for the chapters of the best <paramref name="topics"/> (at most 2, best first): each chapter's sections
+    /// The prompt for the chapters of the best <paramref name="topics"/> (at most 3, best first): each chapter's sections
     /// (the chapter itself if it has own text blocks, then its sub-headings; a chapter without sub-headings stands alone),
-    /// at most 10 in all, each with the first sentence of its summary (<paramref name="summaryOf"/>, else the topic's) and
+    /// at most 14 in all, each with the first sentence of its summary (<paramref name="summaryOf"/>, else the topic's) and
     /// up to 2 of the best <paramref name="places"/> (at most 6 in all). Topics that are not in the book are left out.
     /// </summary>
     public static PlacementCheckPrompt Prompt(Book book, string noteText, IReadOnlyList<TopicHit> topics,

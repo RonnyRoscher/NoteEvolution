@@ -13,7 +13,8 @@ public class PlacementCheckTests
         "\t- ## Unter A1\n\t\t- Text unter A1.\n\t\t- Mehr unter A1.\n\t\t- Noch mehr unter A1.\n" +
         "\t- ## Unter A2\n\t\t- Text unter A2.\n" +
         "- # Kapitel B\n\t- ## Unter B\n\t\t- Text unter B.\n" +
-        "- # Kapitel C\n\t- Text in C.\n";
+        "- # Kapitel C\n\t- Text in C.\n" +
+        "- # Kapitel D\n\t- Text in D.\n";
 
     private sealed record Setup(Book Book, OutlineNode A, OutlineNode A1, OutlineNode A2, OutlineNode B, OutlineNode UnterB, OutlineNode C)
     {
@@ -35,13 +36,14 @@ public class PlacementCheckTests
     private static PlacementHit Hit(Setup s, string text, double score) =>
         new(s.Block(text), score, s.Book.FindTextBlock(s.Block(text))!.Section.Key);
 
-    /// <summary>Topics A1 (best), C, A2, B; places of A, A1 and C.</summary>
+    /// <summary>Topics A1 (best), C, A2, B, D; places of A, A1 and C.</summary>
     private static PlacementCheckPrompt Build(Setup s, string note = "Meine Notiz", Func<OutlineNode, string?>? summaryOf = null)
     {
         var topics = new[]
         {
             new TopicHit(s.A1.Key, 0.8, "A1 handelt von Eins. Und mehr."), new TopicHit(s.C.Key, 0.7, null),
             new TopicHit(s.A2.Key, 0.6, null), new TopicHit(s.B.Key, 0.5, "Alles über B."),
+            new TopicHit(s.Book.Root.Children.Single(n => n.Title == "Kapitel D").Key, 0.4, null),
         };
         var hits = new[]
         {
@@ -53,21 +55,22 @@ public class PlacementCheckTests
     }
 
     [Fact]
-    public void Prompt_SectionsOfTheTwoBestChapters_InBookOrder()
+    public void Prompt_SectionsOfTheThreeBestChapters_InBookOrder()
     {
         var s = Load();
         var prompt = Build(s);
 
-        // A1 and C are the best topics: chapter A (own text, then its sub-headings) and chapter C (no sub-headings); not B.
-        Assert.Equal([s.A.Key, s.A1.Key, s.A2.Key, s.C.Key], prompt.Topics.Select(t => t.SectionKey));
-        Assert.Equal([1, 2, 3, 4], prompt.Topics.Select(t => t.Number));
+        // The best chapters are A (own text, then its sub-headings), C (no sub-headings) and B (only its sub-heading); not D.
+        Assert.Equal([s.A.Key, s.A1.Key, s.A2.Key, s.C.Key, s.UnterB.Key], prompt.Topics.Select(t => t.SectionKey));
+        Assert.Equal([1, 2, 3, 4, 5], prompt.Topics.Select(t => t.Number));
         Assert.StartsWith("Du ordnest eine Notiz in ein Buch ein.", prompt.System);
         Assert.Contains("Meine Notiz", prompt.User);
         Assert.Contains("1. Kapitel A\n", prompt.User);
         Assert.Contains("2. Kapitel A › Unter A1 – A1 handelt von Eins.\n", prompt.User);
         Assert.Contains("3. Kapitel A › Unter A2\n", prompt.User);
         Assert.Contains("4. Kapitel C\n", prompt.User);
-        Assert.DoesNotContain("Kapitel B", prompt.User);
+        Assert.Contains("5. Kapitel B › Unter B", prompt.User);
+        Assert.DoesNotContain("Kapitel D", prompt.User);
     }
 
     [Fact]
@@ -107,7 +110,7 @@ public class PlacementCheckTests
         using var schema = JsonDocument.Parse(prompt.Schema);
         var properties = schema.RootElement.GetProperty("properties");
         Assert.Equal(["begruendung", "stelle"], properties.EnumerateObject().Select(p => p.Name));
-        Assert.Equal(["1.0", "1.1", "2.0", "2.1", "2.2", "3.0", "4.0", "4.1"],
+        Assert.Equal(["1.0", "1.1", "2.0", "2.1", "2.2", "3.0", "4.0", "4.1", "5.0"],
             properties.GetProperty("stelle").GetProperty("enum").EnumerateArray().Select(e => e.GetString()));
         Assert.Equal(PlacementCheck.Options(prompt).Schema, prompt.Schema);
         Assert.True(PlacementCheck.Options(prompt).Json);
@@ -158,7 +161,7 @@ public class PlacementCheckTests
     [InlineData("kein json")]
     [InlineData("{\"stelle\":")]
     [InlineData("{\"begruendung\":\"x\"}")]
-    [InlineData("{\"stelle\":\"5.0\"}")]
+    [InlineData("{\"stelle\":\"6.0\"}")]
     [InlineData("{\"stelle\":\"3.1\"}")]
     [InlineData("{\"stelle\":\"1.1.1\"}")]
     [InlineData("{\"stelle\":\"eins\"}")]
