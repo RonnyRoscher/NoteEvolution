@@ -51,6 +51,9 @@ public sealed class VaultSession : IDisposable
     /// <summary>How long after a change the notes' status (the note cards' dots, spec 7.2) is put together again.</summary>
     public static readonly TimeSpan NoteStatusDelay = TimeSpan.FromSeconds(1);
 
+    /// <summary>How long after a change the coverage (spec 6.4) is computed again.</summary>
+    public static readonly TimeSpan CoverageDelay = TimeSpan.FromSeconds(1);
+
     /// <summary>How long the battery state read from the <see cref="ISystemMonitor"/> is used before it is read again.</summary>
     public static readonly TimeSpan BatteryReadInterval = TimeSpan.FromSeconds(30);
 
@@ -114,10 +117,16 @@ public sealed class VaultSession : IDisposable
     /// <summary>The notes' status inputs (without the running request) and the parts they were read with; null until put together.</summary>
     private volatile NoteStatuses? _noteStatuses;
 
-    // Putting the notes' status together: a timer waits, or a build runs (and was asked for again meanwhile); under _gate.
-    private StatusBuild _statusBuild;
-    private ITimer? _statusTimer;
+    // Putting the notes' status together at most once per NoteStatusDelay, with what changed since (under _gate).
+    private readonly Throttle _statusThrottle;
     private StatusChanges _statusChanged = new();
+
+    // The coverage: computed at most once per CoverageDelay while an owner watches it (the owners and whether it is out
+    // of date under _gate). While nobody watches, a change only marks it as out of date.
+    private readonly Throttle _coverageThrottle;
+    private readonly HashSet<object> _coverageWatchers = new(ReferenceEqualityComparer.Instance);
+    private bool _coverageOutdated = true;
+    private int _coverageComputations;
 
     private VaultSession(
         string root, IClock clock, ILogger logger, TimeProvider timeProvider, Func<Action, Task> dispatch, AiRuntime? ai,
@@ -129,6 +138,9 @@ public sealed class VaultSession : IDisposable
         _ai = ai;
         _language = language;
         _time = timeProvider;
+        _statusThrottle = new Throttle(timeProvider, NoteStatusDelay, () => Task.Run(BuildNoteStatus), logger,
+            "Putting the notes' status together");
+        _coverageThrottle = new Throttle(timeProvider, CoverageDelay, ComputeCoverageAsync, logger, "Computing the coverage");
         var vault = Core.Vaults.Vault.Open(root);
         var registry = new SelfWriteRegistry();
         _backups = new BackupService(vault.Root, clock);
@@ -154,6 +166,10 @@ public sealed class VaultSession : IDisposable
         {
             _language.Changed += OnLanguageChanged;
         }
+
+        vault.PageReplaced += OnPageReplacedForCoverage;
+        PagesChanged += _ => ScheduleCoverage();
+        PlacementsChanged += ScheduleCoverage;
     }
 
     public IVault Vault { get; }
@@ -207,16 +223,7 @@ public sealed class VaultSession : IDisposable
     internal Action? NoteStatusRaising { get; set; }
 
     /// <summary>The notes' status is being put together now; for tests.</summary>
-    internal bool NoteStatusBuilding
-    {
-        get
-        {
-            lock (_gate)
-            {
-                return _statusBuild is StatusBuild.Building or StatusBuild.BuildingAgain;
-            }
-        }
-    }
+    internal bool NoteStatusBuilding => _statusThrottle.Running;
 
     /// <summary><see cref="Understanding"/> may have changed (also from or to <c>null</c>); raised on the UI thread.</summary>
     public event Action? UnderstandingChanged;
@@ -261,6 +268,43 @@ public sealed class VaultSession : IDisposable
     /// progress changed or notes were embedded again); raised on the UI thread, at most once per <see cref="NoteStatusDelay"/>.
     /// </summary>
     public event Action? NoteStatusChanged;
+
+    /// <summary>
+    /// The current book's coverage (spec 6.1) as last computed; null before the first computation and without a current
+    /// book. It is computed only while an owner watches it (<see cref="WatchCoverage"/>). Call it on the UI thread.
+    /// </summary>
+    public Coverage? Coverage { get; private set; }
+
+    /// <summary><see cref="Coverage"/> changed; raised on the UI thread, at most once per <see cref="CoverageDelay"/>.</summary>
+    public event Action? CoverageChanged;
+
+    /// <summary>How many coverage computations started; for tests.</summary>
+    internal int CoverageComputations => Volatile.Read(ref _coverageComputations);
+
+    /// <summary>Called in the background just before the coverage is computed; for tests.</summary>
+    internal Action? CoverageComputing { get; set; }
+
+    /// <summary>The coverage is being computed now; for tests.</summary>
+    internal bool CoverageRunning => _coverageThrottle.Running;
+
+    /// <summary>
+    /// The <paramref name="owner"/> (a view showing the coverage) is <paramref name="visible"/> or no longer. While any
+    /// owner is, the coverage is computed <see cref="CoverageDelay"/> after a change (book switch, pages, placements);
+    /// a change while nobody watches is computed once someone does again. Call it on the UI thread.
+    /// </summary>
+    public void WatchCoverage(object owner, bool visible)
+    {
+        lock (_gate)
+        {
+            if (!(visible ? _coverageWatchers.Add(owner) : _coverageWatchers.Remove(owner)) || _disposed || !_coverageOutdated
+                || _coverageWatchers.Count == 0)
+            {
+                return;
+            }
+
+            _coverageThrottle.Request();
+        }
+    }
 
     /// <summary>The AI's state for this vault: the runtime's (model missing, downloading, load failed) or the index's.</summary>
     public AiStatus AiStatus
@@ -556,8 +600,11 @@ public sealed class VaultSession : IDisposable
             _pageIndexTimers.Clear();
             _feedTimer?.Dispose();
             _focusTimer?.Dispose();
-            _statusTimer?.Dispose();
+            _statusThrottle.Dispose();
+            _coverageThrottle.Dispose();
         }
+
+        Vault.PageReplaced -= OnPageReplacedForCoverage;
 
         if (_ai is not null)
         {
@@ -1049,6 +1096,11 @@ public sealed class VaultSession : IDisposable
         var bookChanged = !string.Equals(name, _focusBook, StringComparison.OrdinalIgnoreCase);
         _focusBook = name;
         _focusSection = sectionKey;
+        if (bookChanged)
+        {
+            ScheduleCoverage();
+        }
+
         lock (_gate)
         {
             // Under the lock: starting the language model's parts (which sets them under it) feeds the focus as it is then.
@@ -1632,44 +1684,8 @@ public sealed class VaultSession : IDisposable
 
             _statusChanged.All |= all;
             _statusChanged.Embeddings |= embeddings;
-            switch (_statusBuild)
-            {
-                case StatusBuild.Idle:
-                    _statusBuild = StatusBuild.Waiting;
-                    StartStatusTimer();
-                    break;
-                case StatusBuild.Building:
-                    _statusBuild = StatusBuild.BuildingAgain;
-                    break;
-            }
+            _statusThrottle.Request();
         }
-    }
-
-    /// <summary>Starts the status timer; call it under <see cref="_gate"/>.</summary>
-    private void StartStatusTimer()
-    {
-        if (_statusTimer is { } timer)
-        {
-            timer.Change(NoteStatusDelay, Timeout.InfiniteTimeSpan);
-            return;
-        }
-
-        _statusTimer = _time.CreateTimer(_ => OnStatusTimer(), null, NoteStatusDelay, Timeout.InfiniteTimeSpan);
-    }
-
-    private void OnStatusTimer()
-    {
-        lock (_gate)
-        {
-            if (_disposed)
-            {
-                return;
-            }
-
-            _statusBuild = StatusBuild.Building;
-        }
-
-        Observe(() => Task.Run(BuildNoteStatus), "Putting the notes' status together");
     }
 
     /// <summary>
@@ -1709,7 +1725,7 @@ public sealed class VaultSession : IDisposable
                     var changed = changes.Embeddings && UpdateEmbeddings(inputs);
                     if (notes.Count == 0 && !changed)
                     {
-                        return; // nothing to tell; the finally block still ends the build
+                        return; // nothing to tell
                     }
 
                     foreach (var (key, input) in NoteStatusInputs(source, notes))
@@ -1749,15 +1765,6 @@ public sealed class VaultSession : IDisposable
         finally
         {
             Interlocked.Increment(ref _noteStatusBuilds);
-            lock (_gate)
-            {
-                var again = _statusBuild == StatusBuild.BuildingAgain && !_disposed;
-                _statusBuild = again ? StatusBuild.Waiting : StatusBuild.Idle;
-                if (again)
-                {
-                    StartStatusTimer();
-                }
-            }
         }
     }
 
@@ -1820,6 +1827,115 @@ public sealed class VaultSession : IDisposable
         }
 
         return inputs;
+    }
+
+    /// <summary>Raised on the thread that replaced the page (the UI thread, or the opening's thread).</summary>
+    private void OnPageReplacedForCoverage(Page page) => ScheduleCoverage();
+
+    /// <summary>Something the coverage is computed from changed. Any thread; never throws.</summary>
+    private void ScheduleCoverage()
+    {
+        lock (_gate)
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            _coverageOutdated = true;
+            if (_coverageWatchers.Count > 0)
+            {
+                _coverageThrottle.Request();
+            }
+        }
+    }
+
+    /// <summary>
+    /// Takes the current book and its notes on the UI thread, reads their placements and computes the coverage in the
+    /// background, and applies it on the UI thread unless the book changed meanwhile (which computes it again). Only one
+    /// computation runs at a time, so the last one applied is the newest. A failure is logged and the last coverage stays.
+    /// </summary>
+    private async Task ComputeCoverageAsync()
+    {
+        CoverageSource? source = null;
+        Coverage coverage;
+        try
+        {
+            await _dispatch(() => source = TakeCoverageSource());
+            if (source is not { } taken)
+            {
+                return;
+            }
+
+            coverage = await Task.Run(() =>
+            {
+                Interlocked.Increment(ref _coverageComputations);
+                CoverageComputing?.Invoke();
+
+                // The store's placements are read here, not on the UI thread (a query or more per note).
+                var understanding = taken.Parts?.Understanding;
+                var notes = taken.Notes
+                    .Select(note => note with { Placement = note.Used ? null : understanding?.Placement(taken.Book, note.Key) })
+                    .ToList();
+                return CoverageCalculator.Compute(taken.Book, notes);
+            });
+        }
+        catch (Exception ex)
+        {
+            // A closed or failing store ends the computation as well; it is not worth an error then.
+            if (ex is not (ObjectDisposedException or DbException))
+            {
+                _logger.LogError(ex, "Computing the coverage failed");
+            }
+
+            lock (_gate)
+            {
+                _coverageOutdated = true;
+            }
+
+            return;
+        }
+
+        await _dispatch(() =>
+        {
+            if (!IsDisposed && string.Equals(_focusBook, source.Book.LinkName, StringComparison.OrdinalIgnoreCase))
+            {
+                Coverage = coverage;
+                CoverageChanged?.Invoke();
+            }
+        });
+    }
+
+    /// <summary>On the UI thread: what the coverage is computed from, or null if nobody watches or there is no book.</summary>
+    private CoverageSource? TakeCoverageSource()
+    {
+        lock (_gate)
+        {
+            if (_disposed || _coverageWatchers.Count == 0)
+            {
+                return null; // still out of date: computed once someone watches
+            }
+
+            _coverageOutdated = false;
+        }
+
+        if ((_focusBook is { } name ? Vault.FindBook(name) : null) is not { } book)
+        {
+            if (Coverage is not null)
+            {
+                Coverage = null;
+                CoverageChanged?.Invoke();
+            }
+
+            return null;
+        }
+
+        // The placements are read in the background (see ComputeCoverageAsync).
+        var notes = Notes.All()
+            .Where(note => note.Block.Parent is null)
+            .Select(note => new CoverageNote(note.Key, note.Date, note.IsUsed, note.Usages, null))
+            .ToList();
+        return new CoverageSource(book, _understanding, notes);
     }
 
     /// <summary>Called on any thread; never throws.</summary>
@@ -2020,6 +2136,9 @@ public sealed class VaultSession : IDisposable
         }
     }
 
+    /// <summary>What the coverage is computed from: the current book, the language model's parts (if any) and the notes (without placements), taken on the UI thread.</summary>
+    private sealed record CoverageSource(Book Book, UnderstandingParts? Parts, IReadOnlyList<CoverageNote> Notes);
+
     /// <summary>What a note's understanding items are computed from (and whether it is used, and where), read on the UI thread.</summary>
     private sealed record NoteSnapshot(Guid Key, string Text, string Content, string FilePath, bool Used,
         IReadOnlyList<UsedInEntry> Usages);
@@ -2092,8 +2211,6 @@ public sealed class VaultSession : IDisposable
         /// <summary>Notes were embedded: the known inputs' embeddings are read again.</summary>
         public bool Embeddings { get; set; }
     }
-
-    private enum StatusBuild { Idle, Waiting, Building, BuildingAgain }
 
     /// <summary>The services that exist once the semantic index does, with the embedder and model id behind it.</summary>
     private sealed record AiParts(

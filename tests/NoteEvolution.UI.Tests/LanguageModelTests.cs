@@ -855,6 +855,79 @@ public class LanguageModelTests : UiTestContext
         Assert.Single(PlacementCalls(NewerNote));
     }
 
+    // ---- Coverage (spec 6.4) ----
+
+    [Fact]
+    public async Task Coverage_ComputedOnlyWhileWatched()
+    {
+        var tv = Vault();
+        var session = await OpenWithPlacementsAsync(tv);
+        var changed = 0;
+        session.CoverageChanged += () => changed++;
+
+        // Nobody watches: nothing is computed, however much time passes.
+        Time.Advance(TimeSpan.FromSeconds(5));
+        await Task.Delay(50);
+        Assert.Equal(0, session.CoverageComputations);
+        Assert.Null(session.Coverage);
+
+        // Watching computes it a delay later: all three unused notes are placed and checked.
+        var owner = new object();
+        session.WatchCoverage(owner, visible: true);
+        Assert.Equal(0, session.CoverageComputations);
+        Time.Advance(VaultSession.CoverageDelay);
+        await Eventually(() => session.Coverage is not null, "The coverage was not computed.");
+        var coverage = session.Coverage!;
+        Assert.Equal((3, 3), (coverage.Checked, coverage.Unused));
+        Assert.Equal(3, coverage.Sections[Guid.Empty].TotalAssigned);
+        await Eventually(() => !session.CoverageRunning, "The computation did not end.");
+        Assert.Equal(1, changed);
+
+        // No longer watched: a change computes nothing, until someone watches again.
+        session.WatchCoverage(owner, visible: false);
+        Edit(session, NewerJournal, NewerNote, NewerNote + " Neu.");
+        Time.Advance(TimeSpan.FromSeconds(5));
+        await Task.Delay(50);
+        Assert.Equal(1, session.CoverageComputations);
+        session.WatchCoverage(owner, visible: true);
+        Time.Advance(VaultSession.CoverageDelay);
+        await Eventually(() => session.CoverageComputations >= 2 && !session.CoverageRunning, "The coverage was not computed again.");
+        Assert.NotSame(coverage, session.Coverage);
+    }
+
+    [Fact]
+    public async Task Coverage_ComputeThrows_KeepsLastAndLogs()
+    {
+        var tv = Vault();
+        AnswerPlacements();
+        var language = UseLanguageModel(_chat);
+        await language.RefreshAsync(CancellationToken.None);
+        var logger = new ListLogger();
+        var session = await OpenWithAiAsync(tv, logger: logger);
+        await AllDone(session, 5);
+        Time.Advance(VaultSession.PageIndexDelay);
+        await AllDone(session, 8);
+        session.WatchCoverage(this, visible: true);
+        Time.Advance(VaultSession.CoverageDelay);
+        await Eventually(() => session.Coverage is not null && !session.CoverageRunning, "The coverage was not computed.");
+        var last = session.Coverage!;
+
+        // The computation fails: logged, and the last coverage stays.
+        session.CoverageComputing = () => throw new InvalidOperationException("Coverage failed.");
+        Edit(session, NewerJournal, NewerNote, NewerNote + " Neu.");
+        Time.Advance(VaultSession.CoverageDelay);
+        await Eventually(() => logger.Entries.Any(e => e.Level == LogLevel.Error && e.Exception?.Message == "Coverage failed."),
+            "The failure was not logged.");
+        await Eventually(() => !session.CoverageRunning, "The computation did not end.");
+        Assert.Same(last, session.Coverage);
+
+        // The next change computes it again.
+        session.CoverageComputing = null;
+        Edit(session, NewerJournal, NewerNote + " Neu.", NewerNote);
+        Time.Advance(VaultSession.CoverageDelay);
+        await Eventually(() => !ReferenceEquals(last, session.Coverage), "The coverage was not computed again.");
+    }
+
     /// <summary>Collects the session's log entries.</summary>
     private sealed class ListLogger : ILogger
     {

@@ -266,4 +266,63 @@ public class NoteStatusUiTests : UiTestContext
         Assert.True(session.Understanding is { Done: >= 13 }, $"The placement checks did not run: {session.Understanding}.");
         Assert.NotNull(session.NoteStatus(session.Notes.All().First().Key));
     }
+
+    // The coverage's 300-note test (spec 6.4) is here rather than with the other coverage tests in LanguageModelTests: the
+    // tests of one class run one after another, and the two 300-note tests time out when they run at the same time.
+    [Fact]
+    public async Task Coverage_RecomputedAfterPlacementStored_Debounced1s()
+    {
+        var notes = string.Concat(Enumerable.Range(1, 300).Select(i => $"- Notiz Nummer {i} über Schlaf und Arbeit.\n"));
+        var vault = TestVault.Create(("pages/Buch - Alpha.md", Book), ("journals/2026_03_01.md", notes));
+        _vaults.Add(vault);
+        var language = UseLanguageModel(_chat);
+        await language.RefreshAsync(CancellationToken.None);
+        var session = await OpenWithAiAsync(vault);
+        var started = new List<DateTimeOffset>();
+        session.CoverageComputing = () =>
+        {
+            lock (started)
+            {
+                started.Add(Time.GetUtcNow());
+            }
+        };
+        session.WatchCoverage(this, visible: true);
+
+        // After the summaries the 300 placement checks are built and let through one at a time (each one is stored and
+        // raises PlacementsChanged) while fake time runs in small steps.
+        await Eventually(() => session.Understanding is { Total: 3, Done: 3 }, "The summaries did not finish.");
+        using var gate = new SemaphoreSlim(0);
+        _chat.Gate = gate;
+        Time.Advance(VaultSession.PageIndexDelay);
+        await Eventually(() => session.Understanding is { Total: 303 }, "The placement checks were not built.");
+
+        int Count()
+        {
+            lock (started)
+            {
+                return started.Count;
+            }
+        }
+
+        var until = DateTime.UtcNow + TimeSpan.FromSeconds(20);
+        while ((Count() < 4 || session.Understanding is not { Done: >= 13 }) && DateTime.UtcNow < until)
+        {
+            gate.Release();
+            Time.Advance(TimeSpan.FromMilliseconds(100));
+            await Eventually(() => !session.CoverageRunning, "The computation did not end.");
+            await Task.Delay(10);
+        }
+
+        gate.Release(1000);
+        DateTimeOffset[] times;
+        lock (started)
+        {
+            times = [.. started];
+        }
+
+        Assert.True(times.Length >= 4, $"Only {times.Length} computations ran.");
+        Assert.All(times.Zip(times.Skip(1)), pair => Assert.True(pair.Second - pair.First >= TimeSpan.FromSeconds(1),
+            $"Computed at {pair.First:HH:mm:ss.fff} and again at {pair.Second:HH:mm:ss.fff}."));
+        Assert.True(session.Coverage is { Unused: 300, Checked: > 0 }, $"The coverage did not count the checks: {session.Coverage}.");
+    }
 }
