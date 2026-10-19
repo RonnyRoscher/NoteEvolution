@@ -5,7 +5,8 @@
   "description": "The TipTap editor of NoteEvolution, bundled into ../../wwwroot/js/editor.bundle.js",
   "type": "module",
   "scripts": {
-    "build": "node build.mjs"
+    "build": "node build.mjs",
+    "test": "node --test test/"
   },
   "devDependencies": {
     "@tiptap/core": "2.27.3",
@@ -16,6 +17,7 @@
     "@tiptap/extension-italic": "2.27.3",
     "@tiptap/extension-text": "2.27.3",
     "@tiptap/pm": "2.27.3",
-    "esbuild": "0.25.12"
+    "esbuild": "0.25.12",
+    "jsdom": "26.1.0"
   }
 }

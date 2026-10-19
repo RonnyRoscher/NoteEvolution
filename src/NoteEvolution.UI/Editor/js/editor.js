@@ -168,11 +168,16 @@ class TextBlockView {
         } else {
             this.dom.removeAttribute('data-status');
         }
-        this.dates.textContent = dates ?? '';
-        this.dates.hidden = !dates;
-        if (datesTitle) {
+        // Every keystroke in the block renders it again: the label is only written when it changed.
+        if (this.dates.textContent !== (dates ?? '')) {
+            this.dates.textContent = dates ?? '';
+        }
+        if (this.dates.hidden !== !dates) {
+            this.dates.hidden = !dates;
+        }
+        if (datesTitle && this.dates.title !== datesTitle) {
             this.dates.title = datesTitle;
-        } else {
+        } else if (!datesTitle && this.dates.hasAttribute('title')) {
             this.dates.removeAttribute('title');
         }
         if (!sourcesChanged) {

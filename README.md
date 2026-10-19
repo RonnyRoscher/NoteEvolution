@@ -30,7 +30,8 @@ npm ci
 node build.mjs
 ```
 
-`node_modules` wird nicht eingecheckt.
+`node_modules` wird nicht eingecheckt. Die JavaScript-Tests des Editors (`test/`, mit jsdom) laufen im selben Ordner mit
+`npm test`.
 
 **Version:** Die Programmversion steht im Fenstertitel („NoteEvolution v0.1.3.2“). Sie zählt die Commits mit
 Codeänderungen (unter `src/` und `tests/` sowie Projekt- und Builddateien; ohne Merges und reine Doku-Commits), Stelle
