@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.RegularExpressions;
 using NoteEvolution.Core.Books;
 using NoteEvolution.Core.Format;
 using NoteEvolution.Core.Model;
@@ -13,7 +14,7 @@ namespace NoteEvolution.Core.Links;
 /// The time for the <c>created::</c> / <c>updated::</c> dates of the text blocks the service adopts, merges or changes
 /// (<see cref="BlockDates"/>); without a clock nothing is stamped.
 /// </param>
-public sealed class LinkService(IVault vault, IPageWriter writer, UndoManager undo, PendingStore pending, IClock? clock = null)
+public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoManager undo, PendingStore pending, IClock? clock = null)
     : ILinkService
 {
     private const string SourceKey = "source";
@@ -188,12 +189,20 @@ public sealed class LinkService(IVault vault, IPageWriter writer, UndoManager un
         // Everything is built detached first, so that a text that would not stay one block throws before anything changed.
         var text = NoteTag.Has(note.Content) ? NoteTag.Remove(note.Content) : note.Content;
         var lines = text.Split('\n', 2);
-        var title = lines[0].Trim();
+        // A note line that is a heading itself gives only its title (no "## # Titel").
+        var title = HeadingMarks().Replace(lines[0].Trim(), "").Trim();
         var heading = Block.CreateDetached(HeadingText.WithTitle("", level, title.Length > 0 ? title : untitledTitle));
         var adopted = new List<(Block Note, Block Copy)>();
         if (lines.Length > 1 && !string.IsNullOrWhiteSpace(lines[1]))
         {
-            adopted.Add((note, Block.CreateDetached(lines[1].Trim())));
+            var further = lines[1].Trim();
+            if (HeadingMarks().IsMatch(further))
+            {
+                // As a text block of its own it would be read as a heading, and the note would not be linked.
+                throw new ArgumentException("The note block's further text would start with a heading.", nameof(noteBlockKey));
+            }
+
+            adopted.Add((note, Block.CreateDetached(further)));
         }
 
         adopted.AddRange(note.Children.Select(child => (child, CopyOf(child))));
@@ -233,6 +242,8 @@ public sealed class LinkService(IVault vault, IPageWriter writer, UndoManager un
             throw;
         }
 
+        var headingAfter = CaptureSubtree(heading);
+
         // A note block without a text block of its own counts as used by the book. The entry is written with the
         // sub-points' entries (they are on the same page); without a block reference it cannot wait in pending.json.
         var linkName = book.LinkName;
@@ -254,7 +265,7 @@ public sealed class LinkService(IVault vault, IPageWriter writer, UndoManager un
         var headingKey = heading.Key;
         List<(Guid NoteId, Guid TextBlockId)> usages = [.. links.Select(link => (link.NoteId, link.TextBlockId))];
         undo.Push(new UndoAction(
-            "Übernehmen", () => UndoAdoptAsHeading(bookPath, linkName, headingKey, usages, bookUsageAdded ? noteId : null)));
+            "Übernehmen", () => UndoAdoptAsHeading(bookPath, linkName, headingKey, headingAfter, usages, bookUsageAdded ? noteId : null)));
         if (!noteUpdatePending)
         {
             RetryPending();
@@ -894,20 +905,24 @@ public sealed class LinkService(IVault vault, IPageWriter writer, UndoManager un
     /// <summary>
     /// Removes the heading <see cref="AdoptAsHeading"/> added (found by its key) with everything below it, then the
     /// usages of its text blocks from the notes and, if <see cref="AdoptAsHeading"/> added it, the entry without block
-    /// reference from <paramref name="bookUsageNoteId"/>; the notes keep their <c>id::</c>.
+    /// reference from <paramref name="bookUsageNoteId"/>; the notes keep their <c>id::</c>. Refused before anything
+    /// changes if the heading with its subtree is no longer exactly as <see cref="AdoptAsHeading"/> left it
+    /// (<paramref name="after"/>): text written below it would go, and the usages of a block split off would stay.
     /// </summary>
     private void UndoAdoptAsHeading(
-        string bookPath, string linkName, Guid headingKey, IReadOnlyList<(Guid NoteId, Guid TextBlockId)> usages,
-        Guid? bookUsageNoteId)
+        string bookPath, string linkName, Guid headingKey, IReadOnlyList<SubtreeBlock> after,
+        IReadOnlyList<(Guid NoteId, Guid TextBlockId)> usages, Guid? bookUsageNoteId)
     {
         var page = CurrentPage(bookPath);
-        if (page.AllBlocks().FirstOrDefault(b => b.Key == headingKey) is { } heading)
+        if (page.AllBlocks().FirstOrDefault(b => b.Key == headingKey) is not { } heading || !SubtreeIs(heading, after))
         {
-            var parent = heading.Parent;
-            var index = IndexOf(page, heading);
-            page.RemoveBlock(heading);
-            SaveBook(page, () => page.RestoreBlock(parent, index, heading));
+            throw new InvalidOperationException("Die Überschrift wurde seit dem Übernehmen geändert.");
         }
+
+        var parent = heading.Parent;
+        var index = IndexOf(page, heading);
+        page.RemoveBlock(heading);
+        SaveBook(page, () => page.RestoreBlock(parent, index, heading));
 
         var noteUpdatePending = false;
         foreach (var (noteId, textBlockId) in usages)
@@ -1449,6 +1464,10 @@ public sealed class LinkService(IVault vault, IPageWriter writer, UndoManager un
 
         throw new ArgumentException("The block does not belong to this page.", nameof(block));
     }
+
+    /// <summary>The <c>#</c> marks that make a line a heading (<c>"# "</c> to <c>"###### "</c>).</summary>
+    [GeneratedRegex("^#{1,6} +")]
+    private static partial Regex HeadingMarks();
 
     private static string Hash(string content) => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(content)));
 

@@ -54,16 +54,17 @@ public interface ILinkService
     /// section's level (level 1 for the root) and goes at the end of the section, after all its sub-sections; with it,
     /// the heading is one level deeper and goes after the section's own text blocks, before its first sub-section. No
     /// existing block changes its section. The heading's title is the first line of the note block's text (without a
-    /// <c>#notiz</c> tag, trimmed; <paramref name="untitledTitle"/> if that is blank). Below it the further lines of the
-    /// note block's text (if any) become the first text block, then each direct sub-point becomes a text block with its
+    /// <c>#notiz</c> tag and leading <c>#</c> heading marks, trimmed; <paramref name="untitledTitle"/> if that is
+    /// blank). Below it the further lines of the note block's text (if any) become the first text block, then each
+    /// direct sub-point becomes a text block with its
     /// deeper sub-points as details; each of them is linked to its note block like a block of <see cref="Adopt"/>
     /// (<c>id::</c>, <c>source::</c>, <c>status:: relevant</c>, the dates, <c>used-in::</c> on the note). Without a text
     /// block of its own the note block gets a <c>used-in::</c> entry for the book without block reference. Can be undone
-    /// („Übernehmen“).
+    /// („Übernehmen“) as long as the heading with everything below it is still as this left it.
     /// </summary>
     /// <exception cref="ArgumentException">
-    /// Unknown note block or section, a note block without sub-points, a heading deeper than level 6, or a text that
-    /// would not stay one block; nothing was changed.
+    /// Unknown note block or section, a note block without sub-points, a heading deeper than level 6, further text that
+    /// would start with a heading, or a text that would not stay one block; nothing was changed.
     /// </exception>
     /// <exception cref="ReadOnlyPageException">The book page is read-only.</exception>
     /// <exception cref="InvalidOperationException">The note's page is read-only; nothing was changed.</exception>

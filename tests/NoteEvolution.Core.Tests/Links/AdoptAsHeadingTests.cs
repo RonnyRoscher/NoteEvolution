@@ -192,7 +192,7 @@ public class AdoptAsHeadingTests
         Assert.Contains("- # Thema **fett**\n", s.ReadBook());
         Assert.Equal(Journal, s.ReadJournal());
         Assert.Equal(
-            [BookId(s, "Punkt eins"), BookId(s, "Punkt zwei")],
+            new[] { BookId(s, "Punkt eins"), BookId(s, "Punkt zwei") }.Order(),
             s.Pending.Load().Select(p => p.BookBlockId).Order());
     }
 
@@ -213,6 +213,61 @@ public class AdoptAsHeadingTests
             s.ReadJournal());
         Assert.False(s.Undo.CanUndo);
         Assert.Empty(s.Pending.Load());
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void Undo_HeadingChangedSince_RefusedAndNothingChanges(bool addBlock)
+    {
+        using var s = new LinkSetup(journal: Journal);
+        var r = s.Links.AdoptAsHeading(s.Book, s.Note("Thema **fett** #notiz").Key, Guid.Empty, asSubheading: false, Untitled);
+
+        // The user works below the heading: writes a new text block, or changes an adopted one.
+        var heading = s.Book.FindNode(r.HeadingKey)!.Block!;
+        if (addBlock)
+        {
+            s.Book.Page.InsertBlock(heading, heading.Children.Count, Block.CreateDetached("Selbst geschrieben"));
+        }
+        else
+        {
+            heading.Children[0].SetContent("Punkt eins, umgeschrieben");
+        }
+
+        s.Writer.Save(s.Book.Page);
+        var (book, journal) = (s.ReadBook(), s.ReadJournal());
+
+        Assert.Throws<InvalidOperationException>(s.Undo.Undo);
+
+        Assert.Equal(book, s.ReadBook());
+        Assert.Equal(journal, s.ReadJournal());
+        Assert.NotNull(s.Book.FindNode(r.HeadingKey));
+        Assert.Empty(s.Pending.Load());
+    }
+
+    [Fact]
+    public void FirstLineIsAHeading_TitleWithoutTheMarks()
+    {
+        using var s = new LinkSetup(journal: "- ## Thema\n\t- Punkt\n");
+
+        var r = s.Links.AdoptAsHeading(s.Book, s.Note("## Thema").Key, Guid.Empty, asSubheading: false, Untitled);
+
+        Assert.Equal("Thema", s.Book.FindNode(r.HeadingKey)!.Title);
+        Assert.Contains("\n- # Thema\n", s.ReadBook());
+    }
+
+    [Fact]
+    public void FurtherTextStartsWithAHeading_Refused()
+    {
+        const string journal = "- Thema\n  # Unterthema\n\t- Punkt\n";
+        using var s = new LinkSetup(journal: journal);
+
+        Assert.Throws<ArgumentException>(() =>
+            s.Links.AdoptAsHeading(s.Book, s.Note("Thema\n# Unterthema").Key, Guid.Empty, asSubheading: false, Untitled));
+
+        Assert.Equal(LinkSetup.DefaultBook, s.ReadBook());
+        Assert.Equal(journal, s.ReadJournal());
+        Assert.False(s.Undo.CanUndo);
     }
 
     [Fact]

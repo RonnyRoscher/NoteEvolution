@@ -4,6 +4,7 @@
 @using NoteEvolution.AI.Relevance
 @using NoteEvolution.AI.Understanding
 @using NoteEvolution.Core.Books
+@using NoteEvolution.Core.Links
 @using NoteEvolution.Core.Model
 @using NoteEvolution.Core.Vaults
 @implements IDisposable
@@ -443,8 +444,9 @@
 
     /// <summary>
     /// Goes to the place where the note is used: the book of its first <c>used-in::</c> entry with a block
-    /// reference (else its first entry), where the editor reveals that block (an entry without a block, or a block that
-    /// is not found, only switches the book).
+    /// reference (else its first entry), where the editor reveals that block. An entry without a block reveals the
+    /// heading the note was adopted as (<see cref="HeadingOfSubPoints"/>); without one, like a block that is not found,
+    /// it only switches the book.
     /// </summary>
     private void GoToUsage()
     {
@@ -461,7 +463,7 @@
         }
 
         var sameBook = string.Equals(State.CurrentBook?.LinkName, book.LinkName, StringComparison.OrdinalIgnoreCase);
-        var target = entry.BookBlockId is { } blockId ? TargetOf(book.Root, blockId) : null;
+        var target = entry.BookBlockId is { } blockId ? TargetOf(book.Root, blockId) : HeadingOfSubPoints(book);
         State.CurrentBook = book;
         if (target is { } key)
         {
@@ -906,6 +908,17 @@
                 </div>
             }
         </text>;
+
+    /// <summary>
+    /// The heading the note went to when it was adopted as a heading (its own entry has no block): the heading of the
+    /// first text block in <paramref name="book"/> one of its sub-points is used in; <c>null</c> if there is none.
+    /// </summary>
+    private Guid? HeadingOfSubPoints(Book book) =>
+        Note.Block.Children
+            .SelectMany(child => UsedInValue.Parse(child.GetProperty("used-in") ?? ""))
+            .Where(entry => string.Equals(entry.PageName, book.LinkName, StringComparison.OrdinalIgnoreCase))
+            .Select(entry => entry.BookBlockId is { } id ? book.FindTextBlockById(id)?.Section : null)
+            .FirstOrDefault(section => section?.Block is not null)?.Key;
 
     /// <summary>
     /// The key of the heading or text block with the id <paramref name="blockId"/>; for a paragraph (detail) the key of

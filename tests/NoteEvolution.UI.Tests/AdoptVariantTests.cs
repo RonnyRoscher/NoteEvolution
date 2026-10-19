@@ -53,6 +53,9 @@ public class AdoptVariantTests : UiTestContext
 
     private readonly TestVault _vault = TestVault.Create((BookPath, BookText), (NotePath, NoteText));
 
+    /// <summary>Further vaults of single tests, deleted with <see cref="_vault"/>.</summary>
+    private readonly List<TestVault> _otherVaults = [];
+
     protected override void Dispose(bool disposing)
     {
         // The session is closed first, then the vault folder is deleted.
@@ -60,6 +63,7 @@ public class AdoptVariantTests : UiTestContext
         if (disposing)
         {
             _vault.Dispose();
+            _otherVaults.ForEach(v => v.Dispose());
         }
     }
 
@@ -425,6 +429,48 @@ public class AdoptVariantTests : UiTestContext
         Assert.Contains($"  used-in:: [[Buch - Alpha]] (({textBlock.Block.Id}))\n", _vault.Read(NotePath));
         AssertRevealed(headingLine.Trim('\t', '-', ' ', '\n'), ElementKind.Heading);
         Assert.Equal(variant, Settings.LastAdoptVariant);
+    }
+
+    [Fact]
+    public async Task UsedMark_NoteAdoptedAsHeading_RevealsTheHeading()
+    {
+        var session = await OpenSessionAsync(_vault);
+        CursorAt("Erster Text", 7);
+        var cut = Render<NoteCard>(p => p.Add(c => c.Note, session.Notes.All().Single(n => n.Block.Content == "Eine Notiz")));
+        cut.Find(".ne-note-adopt-more").Click();
+        cut.Find(".ne-adopt-menu .ne-adopt-as-heading").Click();
+        State.TakePendingReveal();
+        CursorAt("Dritter Text");
+
+        // The note's own entry has no block; the mark goes to the heading its sub-points went below.
+        cut.Find(".ne-note-used").Click();
+
+        AssertRevealed("# Eine Notiz", ElementKind.Heading);
+    }
+
+    [Fact]
+    public async Task Level6Section_NoSubheading_SplitButtonFallsBack()
+    {
+        var deep = TestVault.Create(
+            (BookPath, "title:: Alpha\ntype:: book\n\n- # A\n\t- ## B\n\t\t- ### C\n\t\t\t- #### D\n\t\t\t\t- ##### E\n\t\t\t\t\t- ###### F\n\t\t\t\t\t\t- Text unter F\n"),
+            (NotePath, NoteText));
+        _otherVaults.Add(deep);
+        var session = await OpenSessionAsync(deep);
+        CursorAt("Text unter F");
+        Settings.LastAdoptVariant = AdoptVariant.AsSubheading;
+        var cut = Render<NoteCard>(p => p.Add(c => c.Note, session.Notes.All().Single(n => n.Block.Content == "Eine Notiz")));
+
+        Assert.Equal(Text("AdoptAtCursor"), cut.Find(".ne-note-adopt").TextContent);
+        cut.Find(".ne-note-adopt-more").Click();
+        Assert.Equal(
+            [Text("AdoptAtCursor"), Text("AdoptAfter"), Text("AdoptBelow"), Text("AdoptAsHeading")],
+            cut.FindAll(".ne-adopt-menu button").Select(b => b.TextContent));
+        Assert.Equal(AdoptVariant.AsSubheading, Settings.LastAdoptVariant);
+
+        // Above level 6 it is offered again.
+        CursorAt("##### E");
+        cut.Render();
+        Assert.Equal(Text("AdoptAsSubheading"), cut.Find(".ne-note-adopt").TextContent);
     }
 
     [Fact]
