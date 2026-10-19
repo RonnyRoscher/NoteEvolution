@@ -42,7 +42,7 @@ public class RowSplitterTests : UiTestContext
         cut.Find(".ne-row-splitter").PointerDown(new PointerEventArgs { ClientY = from });
         foreach (var y in to)
         {
-            cut.Find(".ne-row-splitter-overlay").PointerMove(new PointerEventArgs { ClientY = y });
+            cut.Find(".ne-row-splitter-overlay").PointerMove(new PointerEventArgs { ClientY = y, Buttons = 1 });
         }
     }
 
@@ -56,13 +56,28 @@ public class RowSplitterTests : UiTestContext
         Assert.Contains("height: 240px", cut.Find(".ne-recent").GetAttribute("style"));
         Assert.Equal(180, SavedHeight);
 
-        cut.Find(".ne-row-splitter-overlay").PointerMove(new PointerEventArgs { ClientY = 5000 });
+        cut.Find(".ne-row-splitter-overlay").PointerMove(new PointerEventArgs { ClientY = 5000, Buttons = 1 });
         Assert.Contains("height: 480px", cut.Find(".ne-recent").GetAttribute("style"));
 
         cut.Find(".ne-row-splitter-overlay").PointerUp(new PointerEventArgs { ClientY = -5000 });
         Assert.Contains("height: 60px", cut.Find(".ne-recent").GetAttribute("style"));
         Assert.Empty(cut.FindAll(".ne-row-splitter-overlay"));
         Assert.Equal(60, SavedHeight);
+    }
+
+    [Fact]
+    public async Task MoveWithoutAPressedButton_EndsTheDrag_HeightKept()
+    {
+        // The button went up before the overlay was there (Start awaits the shown heights), so no pointerup arrived.
+        ShownHeights(list: 180, pane: 600);
+        var cut = await RenderPaneAsync();
+        Drag(cut, 200, 260);
+
+        cut.Find(".ne-row-splitter-overlay").PointerMove(new PointerEventArgs { ClientY = 400, Buttons = 0 });
+
+        Assert.Empty(cut.FindAll(".ne-row-splitter-overlay"));
+        Assert.Contains("height: 240px", cut.Find(".ne-recent").GetAttribute("style"));
+        Assert.Equal(240, SavedHeight);
     }
 
     [Fact]

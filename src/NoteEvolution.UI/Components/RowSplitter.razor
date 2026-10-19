@@ -49,7 +49,20 @@
         _dragging = true;
     }
 
-    private async Task Move(PointerEventArgs e) => await SetAsync(_startHeight + e.ClientY - _startY, _maxHeight);
+    /// <summary>
+    /// Follows the pointer. A move without a pressed button ends the drag where it is: the button went up before the
+    /// overlay was there to see it (<see cref="Start"/> awaits the shown heights first).
+    /// </summary>
+    private async Task Move(PointerEventArgs e)
+    {
+        if (e.Buttons == 0)
+        {
+            await StopAsync();
+            return;
+        }
+
+        await SetAsync(_startHeight + e.ClientY - _startY, _maxHeight);
+    }
 
     private async Task End(PointerEventArgs e)
     {
@@ -58,7 +71,17 @@
             return;
         }
 
-        await Move(e);
+        await SetAsync(_startHeight + e.ClientY - _startY, _maxHeight);
+        await StopAsync();
+    }
+
+    private async Task StopAsync()
+    {
+        if (!_dragging)
+        {
+            return;
+        }
+
         _dragging = false;
         await DragEnded.InvokeAsync();
     }
