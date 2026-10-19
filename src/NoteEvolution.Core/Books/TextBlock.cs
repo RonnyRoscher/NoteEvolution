@@ -14,6 +14,8 @@ public sealed class TextBlock : BookItem
         Text = block.Content;
         Sources = SourceValue.Parse(block.GetProperty("source") ?? "");
         Status = BlockStatuses.Of(block);
+        Created = BlockDates.Created(block);
+        Updated = BlockDates.Updated(block);
     }
 
     public Block Block { get; }
@@ -31,6 +33,12 @@ public sealed class TextBlock : BookItem
 
     /// <summary>The <c>status::</c> property, or the <c>#notiz</c> tag as a remark; a draft by default.</summary>
     public BlockStatus Status { get; }
+
+    /// <summary>The <c>created::</c> date as local time, or <c>null</c> if missing or unreadable.</summary>
+    public DateTime? Created { get; }
+
+    /// <summary>The <c>updated::</c> date as local time, or <c>null</c> if missing or unreadable.</summary>
+    public DateTime? Updated { get; }
 
     /// <summary>
     /// The paragraphs that are exported: those whose status is not excluded and that are not inside an excluded
