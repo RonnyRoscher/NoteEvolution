@@ -149,6 +149,15 @@
             },
         };
 
+        // The arrow keys on a row splitter change the list's height (RowSplitter.razor); they must not also scroll a
+        // pane. Tab and the other keys keep their default.
+        document.addEventListener('keydown', e => {
+            if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && e.target instanceof Element
+                && e.target.closest('.ne-row-splitter')) {
+                e.preventDefault();
+            }
+        }, true);
+
         // Should the start never report back (an error before the shell runs), the app shows itself after 30 s anyway.
         setTimeout(() => window.neSplash.done(), 30000);
     </script>

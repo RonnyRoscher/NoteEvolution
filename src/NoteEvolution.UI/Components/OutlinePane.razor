@@ -25,20 +25,23 @@ else
         }
         <button type="button" class="ne-outline-coverage-toggle" aria-pressed="@(Settings.ShowCoverage ? "true" : "false")"
                 @onclick="ToggleCoverage">@L["OutlineCoverageToggle"]</button>
-        <ul class="ne-outline-tree">
-            @if (book.Root.TextBlocks.Any())
-            {
-                <OutlineItem Node="book.Root" Pane="this" />
-            }
-            @foreach (var child in book.Root.Children)
-            {
-                <OutlineItem Node="child" Pane="this" />
-            }
-        </ul>
-        <div class="ne-drop-end @(IsDropHint(Guid.Empty, before: true) ? "drop-here" : null)"
-             @ondragenter="() => DragEnter(Guid.Empty, before: true)" @ondragover:preventDefault
-             @ondrop="DropAtEnd" @ondrop:preventDefault></div>
-        <button type="button" class="ne-outline-add-root" disabled="@(!Editable)" @onclick="AddRoot">+ @L["OutlineAddRoot"]</button>
+        @* Only the tree scrolls: the list, the splitter and the toggle above it stay in view. *@
+        <div class="ne-outline-scroll">
+            <ul class="ne-outline-tree">
+                @if (book.Root.TextBlocks.Any())
+                {
+                    <OutlineItem Node="book.Root" Pane="this" />
+                }
+                @foreach (var child in book.Root.Children)
+                {
+                    <OutlineItem Node="child" Pane="this" />
+                }
+            </ul>
+            <div class="ne-drop-end @(IsDropHint(Guid.Empty, before: true) ? "drop-here" : null)"
+                 @ondragenter="() => DragEnter(Guid.Empty, before: true)" @ondragover:preventDefault
+                 @ondrop="DropAtEnd" @ondrop:preventDefault></div>
+            <button type="button" class="ne-outline-add-root" disabled="@(!Editable)" @onclick="AddRoot">+ @L["OutlineAddRoot"]</button>
+        </div>
     </div>
 }
 

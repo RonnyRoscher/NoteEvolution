@@ -427,6 +427,16 @@ html, body {
     flex: 1;
     min-height: 0;
     padding: 0 4px 8px;
+    /* The list and the toggle stay in place; only the tree below them scrolls (.ne-outline-scroll). */
+    overflow: hidden;
+}
+
+.ne-outline-scroll {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
 }
 
 .ne-outline-tree {
@@ -2087,10 +2097,12 @@ html, body {
     min-height: 60px;
     /* A stored height taller than the pane is shown cut back, so the outline keeps room (the setting stays). */
     max-height: calc(100% - 120px);
-    overflow-y: auto;
+    /* The title stays in place; only the entries scroll (.ne-recent-list). */
+    overflow: hidden;
 }
 
 .ne-recent-title {
+    flex: none;
     margin: 4px 0;
     font-size: 0.85em;
 }
@@ -2102,6 +2114,9 @@ html, body {
 }
 
 .ne-recent-list {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
     margin: 0;
     padding: 0;
     list-style: none;
