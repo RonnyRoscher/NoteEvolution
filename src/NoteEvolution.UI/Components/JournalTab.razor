@@ -8,18 +8,13 @@
 
 @* The "Journal" tab: one card per journal page (a day), newest first, from a chosen day on; its root blocks inside. *@
 @{
-    var visible = Days(_entries.Where(note => _jump is not { } jump || note.Date <= jump));
+    var visible = Days(_entries.Where(note => Jump is not { } jump || note.Date <= jump));
 
     // A day with a card whose "Wohin damit?" list is open stays, also beyond the days shown so far.
     var shown = visible.Where((day, index) => index < _shown || day.Any(note => State.WhereToOpenNotes.Contains(note.Key)));
 }
 
 <div class="ne-journal">
-    <label class="ne-journal-jump-label">
-        <span>@L["NotesJumpTo"]</span>
-        <input class="ne-journal-jump" type="date" value="@(_jump?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture))"
-               @onchange="OnJump" />
-    </label>
     @if (visible.Count == 0)
     {
         <div class="ne-search-empty">@L["NotesJournalEmpty"]</div>
@@ -57,7 +52,7 @@
 
     /// <summary>The notes in <see cref="_entries"/> only because their "Wohin damit?" list is open (see <see cref="WhereToPins"/>).</summary>
     private HashSet<Guid> _keptOnly = [];
-    private DateOnly? _jump;
+    private DateOnly? _lastJump;
     private int _shown = PageSize;
     private (Guid? Key, int Sequence) _lastReveal;
     private Guid? _highlightKey;
@@ -67,11 +62,14 @@
 
     [Parameter, EditorRequired] public NoteFilter Filter { get; set; } = default!;
 
+    /// <summary>The day the list starts at (newer days are hidden); the date field sits in the notes pane's filter row.</summary>
+    [Parameter] public DateOnly? Jump { get; set; }
+
     /// <summary>Changes whenever the vault's pages or the session changed, so the entries are read again.</summary>
     [Parameter] public int Revision { get; set; }
 
     /// <summary>
-    /// The note a source jumped to: the tab sets its date jump to the note's day, makes sure the note is among the shown
+    /// The note a source jumped to: the pane sets the date jump to the note's day, the tab makes sure the note is among the shown
     /// entries, marks its card and focuses it. <see cref="RevealSequence"/> tells a new request from the same one again.
     /// </summary>
     [Parameter] public Guid? RevealKey { get; set; }
@@ -99,6 +97,12 @@
             _entries = [.. _entries.Select(note => _keptOnly.Contains(note.Key) ? notes?.Get(note.Key) : note).OfType<NoteBlock>()];
         }
 
+        if (Jump != _lastJump)
+        {
+            _lastJump = Jump;
+            _shown = PageSize;
+        }
+
         if (RevealKey is { } key && (key, RevealSequence) != _lastReveal)
         {
             _lastReveal = (key, RevealSequence);
@@ -119,7 +123,6 @@
             return;
         }
 
-        _jump = day;
         _shown = Math.Max(_shown, Days(_entries.Where(note => note.Date <= day)).FindIndex(d => d.Any(note => note.Key == key)) + 1);
         _highlightKey = key;
         _focusRequest++;
@@ -159,13 +162,5 @@
             var id = day.Select(note => note.Block.Id).FirstOrDefault(id => id is not null);
             Platform.OpenExternal(LogseqLink.For(session.Vault.Root, id, day[0].Page.Name));
         }
-    }
-
-    private void OnJump(ChangeEventArgs e)
-    {
-        _jump = DateOnly.TryParseExact(e.Value?.ToString(), "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var day)
-            ? day
-            : null;
-        _shown = PageSize;
     }
 }

@@ -628,17 +628,12 @@ html, body {
     scrollbar-gutter: stable;
 }
 
-/* A tab's own row (the search field, the date jump) stays on top of its scrolling cards. */
-.ne-notes-scroll .ne-search-input,
-.ne-notes-scroll .ne-journal-jump-label {
+/* A tab's own row (the search field) stays on top of its scrolling cards. */
+.ne-notes-scroll .ne-search-input {
     position: sticky;
     top: 0;
     z-index: 2;
     box-shadow: 0 0 0 6px var(--bg-pane);
-}
-
-.ne-notes-scroll .ne-journal-jump-label {
-    background: var(--bg-pane);
 }
 
 .ne-notes-tabs {

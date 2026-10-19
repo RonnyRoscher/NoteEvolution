@@ -14,7 +14,7 @@ else
 {
     var filter = new NoteFilter(Settings.HideUsed, _from, _to);
     <div class="ne-notes-pane">
-        @* The head stays in place; only what is below it scrolls (with the search field or the date jump on top). *@
+        @* The head stays in place; only what is below it scrolls (with the search field on top). *@
         <div class="ne-notes-head">
             <div class="ne-notes-tabs" role="tablist">
                 <button type="button" role="tab" class="ne-tab ne-tab-relevant @(_tab == Tab.Relevant ? "active" : null)"
@@ -32,6 +32,11 @@ else
                     <input type="date" class="ne-filter-from" value="@Format(_from)" @onchange="e => _from = Parse(e)" /></label>
                 <label class="ne-filter-date"><span>@L["NotesTo"]</span>
                     <input type="date" class="ne-filter-to" value="@Format(_to)" @onchange="e => _to = Parse(e)" /></label>
+                @if (_tab == Tab.Journal)
+                {
+                    <label class="ne-filter-date ne-journal-jump-label"><span>@L["NotesJumpTo"]</span>
+                        <input type="date" class="ne-journal-jump" value="@Format(_jump)" @onchange="e => _jump = Parse(e)" /></label>
+                }
             </div>
         </div>
         <div class="ne-notes-scroll">
@@ -60,7 +65,7 @@ else
             }
             else
             {
-                <JournalTab Filter="filter" Revision="_revision" RevealKey="_revealKey" RevealSequence="_revealSequence" />
+                <JournalTab Filter="filter" Jump="_jump" Revision="_revision" RevealKey="_revealKey" RevealSequence="_revealSequence" />
             }
         </div>
     </div>
@@ -81,6 +86,9 @@ else
     private string _query = "";
     private DateOnly? _from;
     private DateOnly? _to;
+
+    /// <summary>The Journal tab starts at this day (its field is in the filter row).</summary>
+    private DateOnly? _jump;
 
     /// <summary>Counts the changes of the vault's pages and of the session; the tabs read their notes again when it changes.</summary>
     private int _revision;
@@ -139,6 +147,7 @@ else
         if (note.Date is not null && session.Notes.Journal(new NoteFilter(Settings.HideUsed, _from, _to)).Any(entry => entry.Key == note.Key))
         {
             _tab = Tab.Journal;
+            _jump = note.Date;
             _revealKey = note.Key;
             _revealSequence++;
             StateHasChanged();

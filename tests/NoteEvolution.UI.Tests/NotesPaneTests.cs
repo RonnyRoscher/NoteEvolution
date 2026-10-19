@@ -70,7 +70,7 @@ public class NotesPaneTests : UiTestContext
         Assert.NotNull(head.QuerySelector(".ne-notes-filters"));
         Assert.Empty(head.QuerySelectorAll(".ne-note-card"));
         var scroll = cut.Find(".ne-notes-pane > .ne-notes-scroll");
-        Assert.NotNull(scroll.QuerySelector(".ne-journal-jump"));
+        Assert.Empty(scroll.QuerySelectorAll(".ne-journal-jump, .ne-journal-jump-label"));
         Assert.Equal(4, scroll.QuerySelectorAll(".ne-note-card").Length);
     }
 
@@ -264,6 +264,25 @@ public class NotesPaneTests : UiTestContext
         cut.Find(".ne-tab-search").Click();
         Search(cut, "Gedächtnis");
         Assert.Equal(["Gedächtnis und Musik"], Texts(cut));
+    }
+
+    [Fact]
+    public async Task NotesPane_JournalTab_HasTheDateJumpInTheFilterRow_OtherTabsNot()
+    {
+        using var tv = Create();
+        await OpenAlphaAsync(tv);
+        var cut = Render<NotesPane>();
+        ShowJournal(cut);
+
+        Assert.NotNull(cut.Find(".ne-notes-filters").QuerySelector(".ne-journal-jump"));
+        Assert.Single(cut.FindAll(".ne-journal-jump"));
+        Assert.Empty(cut.FindAll(".ne-notes-scroll .ne-journal-jump-label"));
+
+        foreach (var tab in new[] { ".ne-tab-relevant", ".ne-tab-search", ".ne-tab-coverage" })
+        {
+            cut.Find(tab).Click();
+            Assert.Empty(cut.FindAll(".ne-journal-jump"));
+        }
     }
 
     [Fact]
