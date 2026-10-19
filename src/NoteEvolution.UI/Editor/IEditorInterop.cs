@@ -120,4 +120,11 @@ public interface IEditorInterop : IAsyncDisposable
     /// keeps the list for later documents, ignoring keys it does not show. An empty list removes the marking.
     /// </summary>
     Task SetMarkedAsync(IReadOnlyList<MarkedNode> nodes);
+
+    /// <summary>
+    /// Sets the dates labels of the shown text blocks by key (<c>null</c>: none) without replacing the document: the
+    /// cursor and the undo history stay, and no <see cref="IEditorCallbacks.OnDocumentChanged"/> is raised. Keys the
+    /// editor does not show are ignored.
+    /// </summary>
+    Task SetBlockDatesAsync(IReadOnlyDictionary<Guid, BlockDateLabel?> dates);
 }

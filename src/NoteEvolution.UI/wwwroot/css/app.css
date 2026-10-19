@@ -1193,6 +1193,8 @@ html, body {
 
 .ne-block {
     position: relative;
+    /* The dates (.ne-block-dates) take a line of their own in a narrow column. */
+    container-type: inline-size;
 }
 
 /*
@@ -1230,6 +1232,16 @@ html, body {
 
 .ne-block-dates[hidden] {
     display: none;
+}
+
+/* Beside the dates a narrow column would break the first line's words (ProseMirror wraps with break-word). */
+@container (max-width: 480px) {
+    .ne-block-dates {
+        float: none;
+        display: block;
+        margin-left: 0;
+        text-align: right;
+    }
 }
 
 .ne-para {

@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using System.Text.Json.Nodes;
 using Bunit;
@@ -185,6 +186,84 @@ public class EditorPaneTests : UiTestContext
         await cut.InvokeAsync(() => State.Session!.HandleExternalChange(path));
 
         cut.WaitForAssertion(() => Assert.Equal("Erster Text|Zweiter Text, extern|Dritter Text", TextsOf(Editor.Json)));
+    }
+
+    private static Guid KeyOf(JsonNode doc, int index) => Guid.Parse((string)Blocks(doc)[At(doc, index)]!["attrs"]!["key"]!);
+
+    private BlockDateLabel? LabelOf(Guid key) =>
+        State.CurrentBook!.FindTextBlock(key) is { } text
+            ? BlockDateText.LabelOf(text.Created, text.Updated, Services.GetRequiredService<IStringLocalizer<Strings>>())
+            : null;
+
+    [Fact]
+    public async Task Pane_OwnSave_PushesTheChangedBlocksDates_DocumentKept()
+    {
+        using var tv = Alpha();
+        var (_, cut) = await RenderAsync(tv);
+        var doc = Doc(Editor.Json);
+        var key = KeyOf(doc, 1);
+        SetText(doc, 1, "Zweiter Text, geändert");
+
+        await ChangeAsync(cut, doc);
+        await cut.InvokeAsync(() => State.FlushEditor!());
+
+        var pushed = Assert.Single(Editor.BlockDates);
+        var label = Assert.Single(pushed);
+        Assert.Equal(key, label.Key);
+        Assert.Equal("geändert " + Clock.Now.ToLocalTime().ToString("dd.MM.yyyy HH:mm", CultureInfo.InvariantCulture), label.Value!.Text);
+        Assert.Equal(LabelOf(key), label.Value);
+        Assert.Single(Editor.Documents);
+
+        // Another save in the same minute: the label is unchanged, nothing is pushed.
+        SetText(doc, 1, "Zweiter Text, noch einmal");
+        await ChangeAsync(cut, doc);
+        await cut.InvokeAsync(() => State.FlushEditor!());
+
+        Assert.Contains("\t- Zweiter Text, noch einmal\n", tv.Read(BookPath));
+        Assert.Single(Editor.BlockDates);
+    }
+
+    [Fact]
+    public async Task Pane_OwnSave_NewBlock_GetsItsDates()
+    {
+        using var tv = Alpha();
+        var (_, cut) = await RenderAsync(tv);
+        var doc = Doc(Editor.Json);
+        var typed = (JsonObject)Blocks(doc)[At(doc, 2)]!.DeepClone();
+        var key = Guid.NewGuid();
+        typed["attrs"]!["key"] = key.ToString("D");
+        typed["attrs"]!["sources"] = new JsonArray();
+        typed["content"]![0]!["content"] = new JsonArray(new JsonObject { ["type"] = "text", ["text"] = "Neu getippt" });
+        typed["content"]![0]!["attrs"]!["md"] = null;
+        Blocks(doc).Add(typed);
+
+        await ChangeAsync(cut, doc);
+        await cut.InvokeAsync(() => State.FlushEditor!());
+
+        Assert.Contains("\t- Neu getippt\n", tv.Read(BookPath));
+        var label = Assert.Single(Assert.Single(Editor.BlockDates));
+        Assert.Equal(key, label.Key);
+        Assert.StartsWith("erstellt ", label.Value!.Text);
+        Assert.Equal(LabelOf(key), label.Value);
+        Assert.Single(Editor.Documents);
+    }
+
+    [Fact]
+    public async Task Pane_SaveWithoutDateChange_PushesNoDates()
+    {
+        using var tv = Alpha();
+        var (_, cut) = await RenderAsync(tv);
+        var before = tv.Read(BookPath);
+        var doc = Doc(Editor.Json);
+        SetPara(doc, 1, 0, "Zweiter Text", ""); // a trailing hard break, which the file does not keep
+
+        await ChangeAsync(cut, doc);
+        await cut.InvokeAsync(() => State.FlushEditor!());
+        await cut.InvokeAsync(() => State.FlushEditor!());
+
+        Assert.Equal(before, tv.Read(BookPath));
+        Assert.Empty(Editor.BlockDates);
+        Assert.Single(Editor.Documents);
     }
 
     private const string StatusBook =

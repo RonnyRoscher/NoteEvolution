@@ -200,6 +200,7 @@ public class EditorDocMapperTests
         Assert.Equal("", block.Text);
         Assert.NotEqual(Guid.Empty, block.Key);
     }
+
     [Fact]
     public void ToJson_SetsDatesOnTextBlocks_NotOnHeadings()
     {
