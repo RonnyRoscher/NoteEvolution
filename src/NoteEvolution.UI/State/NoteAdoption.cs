@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using NoteEvolution.Core.Books;
 using NoteEvolution.Core.Links;
+using NoteEvolution.Core.Model;
 using NoteEvolution.Core.Storage;
 
 namespace NoteEvolution.UI.State;
@@ -19,6 +20,15 @@ public enum AdoptVariant
 
     /// <summary>As the first details below the current text block or detail.</summary>
     Below,
+
+    /// <summary>
+    /// A note block with sub-points as a heading of the reference section's level at the end of that section (see
+    /// <see cref="ILinkService.AdoptAsHeading"/>).
+    /// </summary>
+    AsHeading,
+
+    /// <summary>A note block with sub-points as a heading one level below the reference section, before its sub-sections.</summary>
+    AsSubheading,
 }
 
 /// <summary>Adopting a note into the current book (spec 4 and 5.2), shared by the note cards and the editor's drop target.</summary>
@@ -38,36 +48,75 @@ public static class NoteAdoption
         RunAsync(state, noteBlockKey, (links, book) => NewTextBlock(links.Adopt(book, noteBlockKey, position(book))), logger);
 
     /// <summary>
+    /// Whether <paramref name="variant"/> is offered for <paramref name="noteBlock"/>: the heading variants only for a
+    /// note block with sub-points, a sub-heading not below a level-6 heading (<see cref="ReferenceSection"/> in the
+    /// current book); the other variants always.
+    /// </summary>
+    public static bool Offers(AppState state, Block noteBlock, AdoptVariant variant) => variant switch
+    {
+        AdoptVariant.AsHeading => noteBlock.Children.Count > 0,
+        AdoptVariant.AsSubheading => noteBlock.Children.Count > 0
+                                     && !(state.CurrentBook is { } book && ReferenceSection(state, book)?.Level >= MaxHeadingLevel),
+        _ => true,
+    };
+
+    /// <summary>
+    /// The section a note adopted as a heading is placed relative to: the section of the current element (for a heading
+    /// its own), without one the section a note goes to without a current element (see <see cref="AdoptAsync(AppState, Guid, AdoptVariant, string, ILogger)"/>).
+    /// </summary>
+    public static OutlineNode? ReferenceSection(AppState state, Book book) =>
+        book.FindNode(CurrentElement(state, book) is { } element ? BookElements.SectionOf(book, element) : FallbackSection(state, book));
+
+    /// <summary>The deepest heading level (<c>######</c>).</summary>
+    private const int MaxHeadingLevel = 6;
+
+    /// <summary>The cursor's element, else <see cref="AppState.CurrentElement"/>, looked up in <paramref name="book"/>.</summary>
+    private static BookElement? CurrentElement(AppState state, Book book) =>
+        (state.Cursor is { } c ? BookElements.Find(book, c.Key) : null)
+        ?? (state.CurrentElement is { } current ? BookElements.Find(book, current.Key) : null);
+
+    /// <summary>Without a cursor in the book the last current section applies; without one, the end of the book (the root).</summary>
+    private static Guid FallbackSection(AppState state, Book book) =>
+        book.FindNode(state.CurrentSectionKey) is { Block: not null }
+            ? state.CurrentSectionKey
+            : BookElements.LastHeadingKey(book) ?? Guid.Empty;
+
+    /// <summary>
     /// Adopts the note block <paramref name="noteBlockKey"/> into the current book the way <paramref name="variant"/>
     /// says (spec 4), relative to <see cref="AppState.CurrentElement"/> and at <see cref="AppState.Cursor"/>'s offset,
     /// both read after the editor's text was saved; with the same checks as the overload with an
     /// <see cref="InsertPosition"/>. The offset is only used for the cursor's own element: when the book does not have
     /// it (the current element is a fallback), the note goes after the fallback element instead. Without a current
     /// element the note becomes a new text block at the end of the last current section, else at the end of the book.
-    /// A new text block is revealed in the editor; after adopting into an existing element that element is revealed, so
-    /// the user sees where the text went (the cursor goes to its start).
+    /// A new text block or heading is revealed in the editor; after adopting into an existing element that element is
+    /// revealed, so the user sees where the text went (the cursor goes to its start). The heading variants place the
+    /// heading relative to <see cref="ReferenceSection"/>; <paramref name="untitledTitle"/> is the title of a heading
+    /// from a note block whose first line is blank.
     /// </summary>
     /// <returns>The message to show, or <c>null</c> if the note was adopted without remark.</returns>
-    public static Task<AdoptMessage?> AdoptAsync(AppState state, Guid noteBlockKey, AdoptVariant variant, ILogger logger) =>
-        RunAsync(state, noteBlockKey, (links, book) => Adopt(links, state, book, noteBlockKey, variant), logger);
+    public static Task<AdoptMessage?> AdoptAsync(
+        AppState state, Guid noteBlockKey, AdoptVariant variant, string untitledTitle, ILogger logger) =>
+        RunAsync(state, noteBlockKey, (links, book) => Adopt(links, state, book, noteBlockKey, variant, untitledTitle), logger);
 
     /// <summary>
-    /// Adopts the note into the element the variant and the cursor name (see the mapping in spec 4); also returns the
-    /// element to reveal: the new text block, or the existing element the note went into.
+    /// Adopts the note into the element the variant and the cursor name (see the mapping in spec 4), or as a heading;
+    /// also returns the element to reveal: the new text block or heading, or the existing element the note went into.
     /// </summary>
-    private static (AdoptResult Result, Guid? Reveal) Adopt(
-        ILinkService links, AppState state, Book book, Guid noteBlockKey, AdoptVariant variant)
+    private static (bool NoteUpdatePending, Guid? Reveal) Adopt(
+        ILinkService links, AppState state, Book book, Guid noteBlockKey, AdoptVariant variant, string untitledTitle)
     {
         // The current element is checked against the book just read from the vault, not the state's (older) one.
-        var cursor = state.Cursor is { } c ? BookElements.Find(book, c.Key) : null;
-        var element = cursor ?? (state.CurrentElement is { } current ? BookElements.Find(book, current.Key) : null);
-        if (element is null)
+        if (variant is AdoptVariant.AsHeading or AdoptVariant.AsSubheading)
         {
-            // Without a cursor in the book the last current section applies; without one, the end of the book.
-            var section = book.FindNode(state.CurrentSectionKey) is { Block: not null }
-                ? state.CurrentSectionKey
-                : BookElements.LastHeadingKey(book) ?? Guid.Empty;
-            return NewTextBlock(links.Adopt(book, noteBlockKey, new InsertPosition.SectionEnd(section)));
+            var section = ReferenceSection(state, book)!;
+            var heading = links.AdoptAsHeading(book, noteBlockKey, section.Key, variant == AdoptVariant.AsSubheading, untitledTitle);
+            return (heading.NoteUpdatePending, heading.HeadingKey);
+        }
+
+        var cursor = state.Cursor is { } c ? BookElements.Find(book, c.Key) : null;
+        if (CurrentElement(state, book) is not { } element)
+        {
+            return NewTextBlock(links.Adopt(book, noteBlockKey, new InsertPosition.SectionEnd(FallbackSection(state, book))));
         }
 
         // The cursor's offset belongs to its own element; it is never applied to a fallback element.
@@ -81,21 +130,24 @@ public static class NoteAdoption
         {
             (ElementKind.Heading, _) => NewTextBlock(links.Adopt(book, noteBlockKey, new InsertPosition.SectionStart(element.Key))),
             (ElementKind.TextBlock, AdoptVariant.After) => NewTextBlock(links.Adopt(book, noteBlockKey, new InsertPosition.After(element.Key))),
-            (_, AdoptVariant.AtCursor) => (links.AdoptInto(book, noteBlockKey, new IntoPosition.AtCursor(element.Key, offset)), element.Key),
-            (_, AdoptVariant.After) => (links.AdoptInto(book, noteBlockKey, new IntoPosition.AfterDetail(element.Key)), element.Key),
-            _ => (links.AdoptInto(book, noteBlockKey, new IntoPosition.FirstChild(element.Key)), element.Key),
+            (_, AdoptVariant.AtCursor) => Into(links.AdoptInto(book, noteBlockKey, new IntoPosition.AtCursor(element.Key, offset)), element.Key),
+            (_, AdoptVariant.After) => Into(links.AdoptInto(book, noteBlockKey, new IntoPosition.AfterDetail(element.Key)), element.Key),
+            _ => Into(links.AdoptInto(book, noteBlockKey, new IntoPosition.FirstChild(element.Key)), element.Key),
         };
     }
 
     /// <summary>The result of an adoption that made a new text block, which is revealed.</summary>
-    private static (AdoptResult Result, Guid? Reveal) NewTextBlock(AdoptResult result) => (result, result.TextBlockKey);
+    private static (bool NoteUpdatePending, Guid? Reveal) NewTextBlock(AdoptResult result) => (result.NoteUpdatePending, result.TextBlockKey);
+
+    /// <summary>The result of an adoption into the existing element <paramref name="element"/>, which is revealed.</summary>
+    private static (bool NoteUpdatePending, Guid? Reveal) Into(AdoptResult result, Guid element) => (result.NoteUpdatePending, element);
 
     /// <summary>
     /// Runs an adoption (<paramref name="adopt"/>, which also names the element to reveal) with the checks
     /// of <see cref="AdoptAsync(AppState, Guid, Func{Book, InsertPosition}, ILogger)"/>, then reveals that element.
     /// </summary>
     private static async Task<AdoptMessage?> RunAsync(
-        AppState state, Guid noteBlockKey, Func<ILinkService, Book, (AdoptResult Result, Guid? Reveal)> adopt, ILogger logger)
+        AppState state, Guid noteBlockKey, Func<ILinkService, Book, (bool NoteUpdatePending, Guid? Reveal)> adopt, ILogger logger)
     {
         Guid? reveal = null;
         try
@@ -117,7 +169,7 @@ public static class NoteAdoption
     }
 
     private static async Task<(AdoptMessage? Message, Guid? Reveal)> TryAdoptAsync(
-        AppState state, Guid noteBlockKey, Func<ILinkService, Book, (AdoptResult Result, Guid? Reveal)> adopt, ILogger logger)
+        AppState state, Guid noteBlockKey, Func<ILinkService, Book, (bool NoteUpdatePending, Guid? Reveal)> adopt, ILogger logger)
     {
         try
         {
@@ -157,11 +209,11 @@ public static class NoteAdoption
             return (new AdoptMessage("NoteAdoptConflict", true), null);
         }
 
-        AdoptResult result;
+        bool noteUpdatePending;
         Guid? reveal;
         try
         {
-            (result, reveal) = adopt(session.Links, book);
+            (noteUpdatePending, reveal) = adopt(session.Links, book);
         }
         catch (FileChangedExternallyException)
         {
@@ -196,6 +248,6 @@ public static class NoteAdoption
             }
         }
 
-        return (result.NoteUpdatePending ? new AdoptMessage("NoteUpdatePending", false) : null, reveal);
+        return (noteUpdatePending ? new AdoptMessage("NoteUpdatePending", false) : null, reveal);
     }
 }

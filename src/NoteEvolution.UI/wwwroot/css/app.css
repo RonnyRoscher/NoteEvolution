@@ -318,6 +318,19 @@ html, body {
     width: 32px;
 }
 
+/* Expanded, the outline pane's head is only its collapse button, at the top right beside the list header. */
+.ne-outline {
+    position: relative;
+}
+
+.ne-outline:not(.collapsed) > .ne-pane-head {
+    position: absolute;
+    top: 0;
+    right: 0;
+    z-index: 2;
+    padding: 4px;
+}
+
 /* The notes pane has no fixed maximum width; when the window gets narrower it gives way before the editor. Its head
    stays in place, only the cards below it scroll (.ne-notes-scroll). */
 .ne-notes {
@@ -429,6 +442,16 @@ html, body {
     padding: 0 4px 8px;
     /* The list and the toggle stay in place; only the tree below them scrolls (.ne-outline-scroll). */
     overflow: hidden;
+}
+
+/* "Gliederung" below the "Zuletzt geändert" list, styled as a pane title. */
+.ne-outline-label {
+    flex: none;
+    margin: 6px 4px 2px;
+    color: var(--fg-muted);
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
 }
 
 .ne-outline-scroll {
@@ -2104,7 +2127,27 @@ html, body {
 .ne-recent-title {
     flex: none;
     margin: 4px 0;
+    /* Room for the pane's collapse button at the top right. */
+    padding-right: 28px;
     font-size: 0.85em;
+}
+
+.ne-recent.collapsed {
+    height: auto;
+    min-height: 0;
+}
+
+.ne-recent-toggle {
+    padding: 2px 4px;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+}
+
+.ne-recent-toggle:hover {
+    background: var(--bg-raised);
 }
 
 .ne-recent-empty {

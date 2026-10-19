@@ -734,7 +734,7 @@ public class EditorPaneTests : UiTestContext
 
         // Adopting at the cursor takes the no-cursor path: a new text block at the end of the book.
         var note = session.Notes.All().Single(n => n.Block.Content == "Eine Notiz").Key;
-        Assert.Null(await cut.InvokeAsync(() => NoteAdoption.AdoptAsync(State, note, AdoptVariant.AtCursor, NullLogger.Instance)));
+        Assert.Null(await cut.InvokeAsync(() => NoteAdoption.AdoptAsync(State, note, AdoptVariant.AtCursor, "(ohne Titel)", NullLogger.Instance)));
 
         var added = State.CurrentBook!.Page.AllBlocks().Single(b => b.Content == "Eine Notiz");
         Assert.Equal(beta + $"\t- Eine Notiz\n\t  id:: {added.Id}\n\t  source:: (({session.Notes.All().Single().Block.Id}))\n\t  status:: relevant\n\t  created:: {Stamp}\n\t  updated:: {Stamp}\n", tv.Read(betaPath));

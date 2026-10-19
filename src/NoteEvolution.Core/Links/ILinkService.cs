@@ -8,6 +8,10 @@ namespace NoteEvolution.Core.Links;
 /// <param name="NoteUpdatePending">The note could not be written; its update waits in <c>pending.json</c>.</param>
 public sealed record AdoptResult(Guid TextBlockKey, Guid TextBlockId, bool NoteUpdatePending);
 
+/// <param name="HeadingKey"><see cref="Model.Block.Key"/> of the new heading.</param>
+/// <param name="NoteUpdatePending">A note could not be written; its update waits in <c>pending.json</c>.</param>
+public sealed record HeadingAdoptResult(Guid HeadingKey, bool NoteUpdatePending);
+
 /// <summary>
 /// The operations that keep both sides of a link consistent: <c>source::</c> on the book block and
 /// <c>used-in::</c> on the note. Each writes the book first, then the notes. The methods that take a
@@ -43,6 +47,28 @@ public interface ILinkService
     /// <exception cref="ReadOnlyPageException">The book page is read-only.</exception>
     /// <exception cref="InvalidOperationException">The note's page is read-only; nothing was changed.</exception>
     AdoptResult AdoptInto(Book book, Guid noteBlockKey, IntoPosition position);
+
+    /// <summary>
+    /// Adopts a note block with sub-points as a new heading relative to the section <paramref name="sectionKey"/>
+    /// (<see cref="Guid.Empty"/> = the root, level 0). Without <paramref name="asSubheading"/> the heading gets the
+    /// section's level (level 1 for the root) and goes at the end of the section, after all its sub-sections; with it,
+    /// the heading is one level deeper and goes after the section's own text blocks, before its first sub-section. No
+    /// existing block changes its section. The heading's title is the first line of the note block's text (without a
+    /// <c>#notiz</c> tag and leading <c>#</c> heading marks, trimmed; <paramref name="untitledTitle"/> if that is
+    /// blank). Below it the further lines of the note block's text (if any) become the first text block, then each
+    /// direct sub-point becomes a text block with its
+    /// deeper sub-points as details; each of them is linked to its note block like a block of <see cref="Adopt"/>
+    /// (<c>id::</c>, <c>source::</c>, <c>status:: relevant</c>, the dates, <c>used-in::</c> on the note). Without a text
+    /// block of its own the note block gets a <c>used-in::</c> entry for the book without block reference. Can be undone
+    /// („Übernehmen“) as long as the heading with everything below it is still as this left it.
+    /// </summary>
+    /// <exception cref="ArgumentException">
+    /// Unknown note block or section, a note block without sub-points, a heading deeper than level 6, further text that
+    /// would start with a heading, or a text that would not stay one block; nothing was changed.
+    /// </exception>
+    /// <exception cref="ReadOnlyPageException">The book page is read-only.</exception>
+    /// <exception cref="InvalidOperationException">The note's page is read-only; nothing was changed.</exception>
+    HeadingAdoptResult AdoptAsHeading(Book book, Guid noteBlockKey, Guid sectionKey, bool asSubheading, string untitledTitle);
 
     /// <summary>
     /// Fully links an existing text block and a note block (a confirmed placement): gives both an <c>id::</c>, adds

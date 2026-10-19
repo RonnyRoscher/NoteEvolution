@@ -4,6 +4,7 @@
 @using NoteEvolution.AI.Relevance
 @using NoteEvolution.AI.Understanding
 @using NoteEvolution.Core.Books
+@using NoteEvolution.Core.Links
 @using NoteEvolution.Core.Model
 @using NoteEvolution.Core.Vaults
 @implements IDisposable
@@ -443,8 +444,9 @@
 
     /// <summary>
     /// Goes to the place where the note is used: the book of its first <c>used-in::</c> entry with a block
-    /// reference (else its first entry), where the editor reveals that block (an entry without a block, or a block that
-    /// is not found, only switches the book).
+    /// reference (else its first entry), where the editor reveals that block. An entry without a block reveals the
+    /// heading the note was adopted as (<see cref="HeadingOfSubPoints"/>); without one, like a block that is not found,
+    /// it only switches the book.
     /// </summary>
     private void GoToUsage()
     {
@@ -461,7 +463,7 @@
         }
 
         var sameBook = string.Equals(State.CurrentBook?.LinkName, book.LinkName, StringComparison.OrdinalIgnoreCase);
-        var target = entry.BookBlockId is { } blockId ? TargetOf(book.Root, blockId) : null;
+        var target = entry.BookBlockId is { } blockId ? TargetOf(book.Root, blockId) : HeadingOfSubPoints(book);
         State.CurrentBook = book;
         if (target is { } key)
         {
@@ -908,6 +910,17 @@
         </text>;
 
     /// <summary>
+    /// The heading the note went to when it was adopted as a heading (its own entry has no block): the heading of the
+    /// first text block in <paramref name="book"/> one of its sub-points is used in; <c>null</c> if there is none.
+    /// </summary>
+    private Guid? HeadingOfSubPoints(Book book) =>
+        Note.Block.Children
+            .SelectMany(child => UsedInValue.Parse(child.GetProperty("used-in") ?? ""))
+            .Where(entry => string.Equals(entry.PageName, book.LinkName, StringComparison.OrdinalIgnoreCase))
+            .Select(entry => entry.BookBlockId is { } id ? book.FindTextBlockById(id)?.Section : null)
+            .FirstOrDefault(section => section?.Block is not null)?.Key;
+
+    /// <summary>
     /// The key of the heading or text block with the id <paramref name="blockId"/>; for a paragraph (detail) the key of
     /// its text block.
     /// </summary>
@@ -931,18 +944,21 @@
     {
         AdoptVariant.After => (L["AdoptAfter"].Value, L["AdoptAfterTitle"].Value),
         AdoptVariant.Below => (L["AdoptBelow"].Value, L["AdoptBelowTitle"].Value),
+        AdoptVariant.AsHeading => (L["AdoptAsHeading"].Value, L["AdoptAsHeadingTitle"].Value),
+        AdoptVariant.AsSubheading => (L["AdoptAsSubheading"].Value, L["AdoptAsSubheadingTitle"].Value),
         _ => (L["AdoptAtCursor"].Value, L["AdoptAtCursorTitle"].Value),
     };
 
     /// <summary>
     /// "Übernehmen" for <paramref name="block"/> as a split button: the main part adopts the way used last (first "Am
-    /// Cursor", see <see cref="UiSettings.LastAdoptVariant"/>) and is labelled so; the arrow opens the menu of all three
-    /// ways. <paramref name="cssClass"/> names the main part, the arrow gets it with <c>-more</c>.
+    /// Cursor", see <see cref="UiSettings.LastAdoptVariant"/>) and is labelled so, unless that way is not offered for
+    /// the block (<see cref="NoteAdoption.Offers"/>): then it adopts "Am Cursor"; the arrow opens the menu of the ways
+    /// offered. <paramref name="cssClass"/> names the main part, the arrow gets it with <c>-more</c>.
     /// </summary>
     private RenderFragment AdoptSplit(Block block, string cssClass)
     {
         // The button adopts the way it shows, even if another card changes the choice before this one renders again.
-        var variant = Settings.LastAdoptVariant;
+        var variant = NoteAdoption.Offers(State, block, Settings.LastAdoptVariant) ? Settings.LastAdoptVariant : AdoptVariant.AtCursor;
         var (label, title) = Texts(variant);
         return @<span class="ne-adopt-split">
             <button type="button" class="@cssClass" title="@title"
@@ -960,10 +976,10 @@
     /// <summary>Opens the menu of adopt variants of <paramref name="blockKey"/> (closing any other), or closes it.</summary>
     private void ToggleAdoptMenu(Guid blockKey) => _adoptMenu = _adoptMenu == blockKey ? null : blockKey;
 
-    /// <summary>The menu of adopt variants for <paramref name="block"/>, each with a tooltip that explains it.</summary>
+    /// <summary>The menu of the adopt variants offered for <paramref name="block"/>, each with a tooltip that explains it.</summary>
     private RenderFragment AdoptMenu(Block block) =>
         @<div class="ne-adopt-menu" role="menu">
-            @foreach (var (variant, cssClass) in MenuVariants)
+            @foreach (var (variant, cssClass) in MenuVariants.Where(v => NoteAdoption.Offers(State, block, v.Variant)))
             {
                 var (label, title) = Texts(variant);
                 <button type="button" role="menuitem" class="@cssClass" title="@title"
@@ -976,6 +992,8 @@
         (AdoptVariant.AtCursor, "ne-adopt-at-cursor"),
         (AdoptVariant.After, "ne-adopt-after"),
         (AdoptVariant.Below, "ne-adopt-below"),
+        (AdoptVariant.AsHeading, "ne-adopt-as-heading"),
+        (AdoptVariant.AsSubheading, "ne-adopt-as-subheading"),
     ];
 
     /// <summary>
@@ -1009,6 +1027,6 @@
     {
         _adoptMenu = null;
         _message = null;
-        _message = await NoteAdoption.AdoptAsync(State, block.Key, variant, Logger);
+        _message = await NoteAdoption.AdoptAsync(State, block.Key, variant, L["OutlineUntitled"].Value, Logger);
     }
 }

@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.RegularExpressions;
 using NoteEvolution.Core.Books;
 using NoteEvolution.Core.Format;
 using NoteEvolution.Core.Model;
@@ -13,7 +14,7 @@ namespace NoteEvolution.Core.Links;
 /// The time for the <c>created::</c> / <c>updated::</c> dates of the text blocks the service adopts, merges or changes
 /// (<see cref="BlockDates"/>); without a clock nothing is stamped.
 /// </param>
-public sealed class LinkService(IVault vault, IPageWriter writer, UndoManager undo, PendingStore pending, IClock? clock = null)
+public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoManager undo, PendingStore pending, IClock? clock = null)
     : ILinkService
 {
     private const string SourceKey = "source";
@@ -157,6 +158,120 @@ public sealed class LinkService(IVault vault, IPageWriter writer, UndoManager un
         }
 
         return new AdoptResult(textBlock.Key, textBlockId, noteUpdatePending);
+    }
+
+    public HeadingAdoptResult AdoptAsHeading(Book book, Guid noteBlockKey, Guid sectionKey, bool asSubheading, string untitledTitle)
+    {
+        var bookPage = book.Page;
+        EnsureWritable(bookPage);
+        var (notePage, note) = FindWritableNote(noteBlockKey);
+        if (note.Children.Count == 0)
+        {
+            throw new ArgumentException("The note block has no sub-points.", nameof(noteBlockKey));
+        }
+
+        var section = book.FindNode(sectionKey) ?? throw new ArgumentException("No section has this key.", nameof(sectionKey));
+        var level = asSubheading ? section.Level + 1 : Math.Max(section.Level, 1);
+        if (level > OutlineEditor.MaxLevel)
+        {
+            throw new ArgumentException($"A heading below level {section.Level} would exceed level {OutlineEditor.MaxLevel}.", nameof(sectionKey));
+        }
+
+        // A sub-heading goes before the section's first sub-section, a heading of the same level right after the
+        // section's subtree: no existing block changes its section.
+        var firstSubsection = section.Items.ToList().FindIndex(item => item is OutlineNode);
+        var (parent, index) = asSubheading
+            ? (section.Block, firstSubsection >= 0 ? firstSubsection : section.Items.Count)
+            : section.Block is { } sectionBlock
+                ? (sectionBlock.Parent, IndexOf(bookPage, sectionBlock) + 1)
+                : (null, bookPage.Roots.Count);
+
+        // Everything is built detached first, so that a text that would not stay one block throws before anything changed.
+        var text = NoteTag.Has(note.Content) ? NoteTag.Remove(note.Content) : note.Content;
+        var lines = text.Split('\n', 2);
+        // A note line that is a heading itself gives only its title (no "## # Titel").
+        var title = HeadingMarks().Replace(lines[0].Trim(), "").Trim();
+        var heading = Block.CreateDetached(HeadingText.WithTitle("", level, title.Length > 0 ? title : untitledTitle));
+        var adopted = new List<(Block Note, Block Copy)>();
+        if (lines.Length > 1 && !string.IsNullOrWhiteSpace(lines[1]))
+        {
+            var further = lines[1].Trim();
+            if (HeadingMarks().IsMatch(further))
+            {
+                // As a text block of its own it would be read as a heading, and the note would not be linked.
+                throw new ArgumentException("The note block's further text would start with a heading.", nameof(noteBlockKey));
+            }
+
+            adopted.Add((note, Block.CreateDetached(further)));
+        }
+
+        adopted.AddRange(note.Children.Select(child => (child, CopyOf(child))));
+
+        List<(Block Block, List<RawLine> Lines, bool WasDirty)> notesBefore =
+            [.. note.Children.Prepend(note).Select(block => (block, block.Lines.ToList(), block.IsDirty))];
+        var noteId = note.EnsureId();
+        bookPage.InsertBlock(parent, index, heading);
+        var links = new List<(Block Note, Guid NoteId, Guid TextBlockId)>();
+        foreach (var (source, copy) in adopted)
+        {
+            var sourceId = source.EnsureId();
+            bookPage.InsertBlock(heading, heading.Children.Count, copy);
+            var textBlockId = copy.EnsureId();
+            copy.SetProperty(SourceKey, SourceValue.Format([sourceId]));
+            copy.SetProperty(BlockStatuses.Key, Relevant);
+            if (clock is not null)
+            {
+                BlockDates.StampNew(copy, clock.Now);
+            }
+
+            links.Add((source, sourceId, textBlockId));
+        }
+
+        try
+        {
+            SaveBook(bookPage, () => bookPage.RemoveBlock(heading));
+        }
+        catch
+        {
+            // The book does not reference the notes, so new id:: lines must not reach the note file later.
+            foreach (var (block, blockLines, wasDirty) in notesBefore)
+            {
+                block.RestoreLines(blockLines, wasDirty);
+            }
+
+            throw;
+        }
+
+        var headingAfter = CaptureSubtree(heading);
+
+        // A note block without a text block of its own counts as used by the book. The entry is written with the
+        // sub-points' entries (they are on the same page); without a block reference it cannot wait in pending.json.
+        var linkName = book.LinkName;
+        var bookUsageAdded = false;
+        if (links.All(link => link.Note != note))
+        {
+            bookUsageAdded = !UsedInValue.Parse(note.GetProperty(UsedInKey) ?? "")
+                .Any(e => e.BookBlockId is null && string.Equals(e.PageName, linkName, StringComparison.OrdinalIgnoreCase));
+            ApplyEntry(note, linkName, null, remove: false);
+        }
+
+        var noteUpdatePending = false;
+        foreach (var (source, _, textBlockId) in links)
+        {
+            noteUpdatePending |= UpdateNote(notePage, source, linkName, textBlockId, remove: false).Pending;
+        }
+
+        var bookPath = bookPage.FilePath;
+        var headingKey = heading.Key;
+        List<(Guid NoteId, Guid TextBlockId)> usages = [.. links.Select(link => (link.NoteId, link.TextBlockId))];
+        undo.Push(new UndoAction(
+            "Übernehmen", () => UndoAdoptAsHeading(bookPath, linkName, headingKey, headingAfter, usages, bookUsageAdded ? noteId : null)));
+        if (!noteUpdatePending)
+        {
+            RetryPending();
+        }
+
+        return new HeadingAdoptResult(headingKey, noteUpdatePending);
     }
 
     public void Link(Book book, Guid textBlockKey, Guid noteBlockKey)
@@ -788,6 +903,45 @@ public sealed class LinkService(IVault vault, IPageWriter writer, UndoManager un
     }
 
     /// <summary>
+    /// Removes the heading <see cref="AdoptAsHeading"/> added (found by its key) with everything below it, then the
+    /// usages of its text blocks from the notes and, if <see cref="AdoptAsHeading"/> added it, the entry without block
+    /// reference from <paramref name="bookUsageNoteId"/>; the notes keep their <c>id::</c>. Refused before anything
+    /// changes if the heading with its subtree is no longer exactly as <see cref="AdoptAsHeading"/> left it
+    /// (<paramref name="after"/>): text written below it would go, and the usages of a block split off would stay.
+    /// </summary>
+    private void UndoAdoptAsHeading(
+        string bookPath, string linkName, Guid headingKey, IReadOnlyList<SubtreeBlock> after,
+        IReadOnlyList<(Guid NoteId, Guid TextBlockId)> usages, Guid? bookUsageNoteId)
+    {
+        var page = CurrentPage(bookPath);
+        if (page.AllBlocks().FirstOrDefault(b => b.Key == headingKey) is not { } heading || !SubtreeIs(heading, after))
+        {
+            throw new InvalidOperationException("Die Überschrift wurde seit dem Übernehmen geändert.");
+        }
+
+        var parent = heading.Parent;
+        var index = IndexOf(page, heading);
+        page.RemoveBlock(heading);
+        SaveBook(page, () => page.RestoreBlock(parent, index, heading));
+
+        var noteUpdatePending = false;
+        foreach (var (noteId, textBlockId) in usages)
+        {
+            noteUpdatePending |= RemoveUsageOfFound(noteId, linkName, textBlockId) is { Pending: true };
+        }
+
+        if (bookUsageNoteId is { } id && FindNote(id) is { Page.IsReadOnly: false } note)
+        {
+            noteUpdatePending |= UpdateNote(note.Page, note.Block, linkName, null, remove: true).Pending;
+        }
+
+        if (!noteUpdatePending)
+        {
+            RetryPending();
+        }
+    }
+
+    /// <summary>
     /// Puts the text block with its details back as it was before <see cref="AdoptInto"/> (lines, without the inserted
     /// blocks), then removes the note's usage if <see cref="AdoptInto"/> added the note as a source
     /// (<paramref name="addedNoteId"/>). Refused before anything changes if the text block's subtree is no longer
@@ -1310,6 +1464,10 @@ public sealed class LinkService(IVault vault, IPageWriter writer, UndoManager un
 
         throw new ArgumentException("The block does not belong to this page.", nameof(block));
     }
+
+    /// <summary>The <c>#</c> marks that make a line a heading (<c>"# "</c> to <c>"###### "</c>).</summary>
+    [GeneratedRegex("^#{1,6} +")]
+    private static partial Regex HeadingMarks();
 
     private static string Hash(string content) => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(content)));
 
