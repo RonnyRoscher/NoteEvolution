@@ -495,7 +495,8 @@ public sealed class LinkService(IVault vault, IPageWriter writer, UndoManager un
     /// else <c>null</c>.
     /// </param>
     /// <param name="Carried">
-    /// The later blocks' properties (other than <c>id::</c>, <c>source::</c> and <c>status::</c>) the first block lacks.
+    /// The later blocks' properties (other than <c>id::</c>, <c>source::</c>, <c>status::</c> and the dates) the first
+    /// block lacks.
     /// </param>
     /// <param name="RemovedIds">The ids of the later blocks that vanish (not the one taken over).</param>
     /// <param name="EarliestCreated">
