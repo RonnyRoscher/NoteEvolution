@@ -62,13 +62,18 @@ public static class BookSync
     /// written is validated before the first change, so the exceptions listed here leave the page untouched. On
     /// any other exception the page may be partly changed: the caller must reload it from disk.
     /// </para>
+    /// <para>
+    /// With <paramref name="now"/>, text blocks get their dates (<see cref="BlockDates"/>): a new one both, one whose
+    /// own text or paragraphs changed <c>updated::</c>. Moving a block, renaming a heading or saving without a change
+    /// stamps nothing. Without <paramref name="now"/>, nothing is stamped.
+    /// </para>
     /// </summary>
     /// <exception cref="ReadOnlyPageException">The book page is read-only.</exception>
     /// <exception cref="ArgumentException">
     /// Unknown scope, an inconsistent snapshot (empty or duplicate keys, a text block or paragraph with the key
     /// of a heading), or a text that would change the block tree (see <see cref="Block.SetContent"/>); nothing is changed.
     /// </exception>
-    public static SyncResult Apply(Book book, SectionSnapshot snapshot, IVault? vault = null)
+    public static SyncResult Apply(Book book, SectionSnapshot snapshot, IVault? vault = null, DateTimeOffset? now = null)
     {
         var page = book.Page;
         if (page.IsReadOnly)
@@ -77,7 +82,7 @@ public static class BookSync
         }
 
         var before = PageSerializer.Serialize(page);
-        var run = new Run(book, NormalizeLineEndings(snapshot), vault);
+        var run = new Run(book, NormalizeLineEndings(snapshot), vault, now);
         run.Execute();
         var changed = !before.AsSpan().SequenceEqual(PageSerializer.Serialize(page));
         return new SyncResult(changed, run.Effects);
@@ -111,6 +116,7 @@ public static class BookSync
         private readonly Page _page;
         private readonly Book _book;
         private readonly IVault? _vault;
+        private readonly DateTimeOffset? _now;
         private readonly SectionSnapshot _snapshot;
         private readonly OutlineNode _scope;
 
@@ -129,11 +135,15 @@ public static class BookSync
         /// <summary>The content to write, by key: for new blocks and for blocks whose text changed. Validated up front.</summary>
         private readonly Dictionary<Guid, string> _contents = [];
 
+        /// <summary>The text of every present block the snapshot lists as a text block, before the change (dates only).</summary>
+        private readonly Dictionary<Block, List<string>> _textsBefore = [];
+
         /// <summary>Checks the snapshot and plans and validates every text change; the page is not touched yet.</summary>
-        public Run(Book book, SectionSnapshot snapshot, IVault? vault)
+        public Run(Book book, SectionSnapshot snapshot, IVault? vault, DateTimeOffset? now)
         {
             _page = book.Page;
             _vault = vault;
+            _now = now;
             _book = book;
             _snapshot = snapshot;
             _scope = book.FindNode(snapshot.ScopeKey)
@@ -146,6 +156,16 @@ public static class BookSync
             }
 
             PlanContents();
+            if (_now is not null)
+            {
+                foreach (var text in _snapshot.Nodes.OfType<SnapshotTextBlock>())
+                {
+                    if (_blocks.TryGetValue(text.Key, out var block))
+                    {
+                        _textsBefore[block] = TextOf(block);
+                    }
+                }
+            }
         }
 
         public List<SyncEffect> Effects { get; } = [];
@@ -172,6 +192,39 @@ public static class BookSync
             }
 
             RemoveMissing();
+            StampChangedTextBlocks();
+        }
+
+        /// <summary>
+        /// A present text block whose text (its content or its paragraphs' contents and depths) differs from before
+        /// gets <c>updated::</c>; new ones were stamped when they were created.
+        /// </summary>
+        private void StampChangedTextBlocks()
+        {
+            foreach (var block in _textBlocks)
+            {
+                if (_textsBefore.TryGetValue(block, out var before) && !before.SequenceEqual(TextOf(block)))
+                {
+                    BlockDates.StampChanged(block, _now!.Value);
+                }
+            }
+        }
+
+        /// <summary>The block's content, then each descendant's depth and content in file order.</summary>
+        private static List<string> TextOf(Block block)
+        {
+            var text = new List<string> { block.Content };
+            AddDescendants(text, block, 1);
+            return text;
+        }
+
+        private static void AddDescendants(List<string> text, Block parent, int depth)
+        {
+            foreach (var child in parent.Children)
+            {
+                text.Add($"{depth}:{child.Content}");
+                AddDescendants(text, child, depth + 1);
+            }
         }
 
         private void CollectHeadings(OutlineNode node)
@@ -342,6 +395,11 @@ public static class BookSync
             }
 
             var block = Block.CreateDetached(_contents[text.Key], properties, text.Key);
+            if (_now is { } now)
+            {
+                BlockDates.StampNew(block, now);
+            }
+
             _blocks[text.Key] = block;
             return block;
         }

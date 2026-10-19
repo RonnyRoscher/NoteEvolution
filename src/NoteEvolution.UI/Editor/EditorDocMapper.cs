@@ -17,10 +17,16 @@ namespace NoteEvolution.UI.Editor;
 /// <see cref="InlineMarkdown.Format"/>; a typed <c>*</c> or <c>_</c> gets a backslash where it would otherwise read
 /// as emphasis (ruling R28), and a <c>\*</c> or <c>\_</c> in the file shows as the bare character.
 /// </para>
+/// <para>
+/// A text block may also carry <c>dates</c> and <c>datesTitle</c> (its created/updated dates, see
+/// <see cref="BlockDateText"/>); they are only shown, <see cref="FromJson"/> ignores them.
+/// </para>
 /// </summary>
 public static class EditorDocMapper
 {
-    public static string ToJson(SectionSnapshot snapshot)
+    /// <param name="snapshot">The book section to show.</param>
+    /// <param name="datesOf">The dates label of a text block by its key; <c>null</c> (or a <c>null</c> label): none.</param>
+    public static string ToJson(SectionSnapshot snapshot, Func<Guid, BlockDateLabel?>? datesOf = null)
     {
         var content = new JsonArray();
         foreach (var node in snapshot.Nodes)
@@ -28,7 +34,7 @@ public static class EditorDocMapper
             content.Add(node switch
             {
                 SnapshotHeading heading => Heading(heading),
-                SnapshotTextBlock text => TextBlock(text),
+                SnapshotTextBlock text => TextBlock(text, datesOf?.Invoke(text.Key)),
                 _ => throw new ArgumentException($"Unknown snapshot node {node.GetType().Name}.", nameof(snapshot)),
             });
         }
@@ -36,7 +42,7 @@ public static class EditorDocMapper
         if (content.Count == 0)
         {
             // The document needs a block; one to type in. It is only written once it is typed in.
-            content.Add(TextBlock(new SnapshotTextBlock(Guid.CreateVersion7(), null, "", [], [])));
+            content.Add(TextBlock(new SnapshotTextBlock(Guid.CreateVersion7(), null, "", [], []), null));
         }
 
         return new JsonObject { ["type"] = "doc", ["content"] = content }.ToJsonString();
@@ -80,7 +86,7 @@ public static class EditorDocMapper
         return result;
     }
 
-    private static JsonObject TextBlock(SnapshotTextBlock text)
+    private static JsonObject TextBlock(SnapshotTextBlock text, BlockDateLabel? dates)
     {
         var paragraphs = new JsonArray(Para(null, text.Text, 0, false, BlockStatus.Draft));
         foreach (var paragraph in text.Paragraphs)
@@ -106,6 +112,12 @@ public static class EditorDocMapper
             ["sources"] = sources,
         };
         AddStatus(attrs, text.Status);
+        if (dates is not null)
+        {
+            attrs["dates"] = dates.Text;
+            attrs["datesTitle"] = dates.Title;
+        }
+
         return new JsonObject { ["type"] = "textBlock", ["attrs"] = attrs, ["content"] = paragraphs };
     }
 

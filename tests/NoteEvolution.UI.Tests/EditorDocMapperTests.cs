@@ -200,4 +200,46 @@ public class EditorDocMapperTests
         Assert.Equal("", block.Text);
         Assert.NotEqual(Guid.Empty, block.Key);
     }
+
+    [Fact]
+    public void ToJson_SetsDatesOnTextBlocks_NotOnHeadings()
+    {
+        var heading = Guid.Parse("0199a000-0000-7000-8000-000000000003");
+        var other = Guid.Parse("0199a000-0000-7000-8000-000000000004");
+        var snapshot = new SectionSnapshot(Scope, true,
+        [
+            new SnapshotHeading(heading, 1, "Kapitel"),
+            new SnapshotTextBlock(BlockKey, null, "Text", [], []),
+            new SnapshotTextBlock(other, null, "Ohne Datum", [], []),
+        ]);
+        var label = new BlockDateLabel("geändert 19.10.2026 14:32", "Geändert: 19.10.2026 14:32");
+
+        var doc = JsonNode.Parse(EditorDocMapper.ToJson(snapshot, key => key == BlockKey || key == heading ? label : null))!;
+
+        var nodes = doc["content"]!.AsArray();
+        Assert.False(nodes[0]!["attrs"]!.AsObject().ContainsKey("dates"));
+        Assert.Equal("geändert 19.10.2026 14:32", (string?)nodes[1]!["attrs"]!["dates"]);
+        Assert.Equal("Geändert: 19.10.2026 14:32", (string?)nodes[1]!["attrs"]!["datesTitle"]);
+        Assert.False(nodes[2]!["attrs"]!.AsObject().ContainsKey("dates"));
+        Assert.False(nodes[2]!["attrs"]!.AsObject().ContainsKey("datesTitle"));
+    }
+
+    [Fact]
+    public void FromJson_IgnoresDates()
+    {
+        var label = new BlockDateLabel("erstellt 12.10.2026", "Erstellt: 12.10.2026 09:15");
+        var snapshot = OneBlock("Text", [new SnapshotParagraph(Guid.Parse("0199a000-0000-7000-8000-000000000003"), "Absatz", 1, false)]);
+        var doc = JsonNode.Parse(EditorDocMapper.ToJson(snapshot, _ => label))!;
+        var changed = (JsonObject)doc.DeepClone();
+        changed["content"]![0]!["attrs"]!["dates"] = "geändert 01.01.2030 00:00";
+        changed["content"]![0]!["attrs"]!["datesTitle"] = "anders";
+
+        var back = EditorDocMapper.FromJson(doc.ToJsonString(), Scope, false);
+        var backChanged = EditorDocMapper.FromJson(changed.ToJsonString(), Scope, false);
+
+        Assert.Equal(Describe(snapshot), Describe(back));
+        Assert.Equal(Describe(back), Describe(backChanged));
+        Assert.Equal(((SnapshotTextBlock)back.Nodes.Single()) with { Paragraphs = [], Sources = [] },
+            ((SnapshotTextBlock)backChanged.Nodes.Single()) with { Paragraphs = [], Sources = [] });
+    }
 }

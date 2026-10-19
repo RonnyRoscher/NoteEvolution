@@ -25,6 +25,13 @@ public sealed class UiSettings
 
     public const int MaxLineWidthCh = 100;
 
+    public const double DefaultRecentListHeight = 180;
+
+    public const double MinRecentListHeight = 60;
+
+    /// <summary>The tallest stored height of the "Zuletzt geändert" list that is believed; a larger value is a broken file.</summary>
+    public const double MaxRecentListHeight = 4000;
+
     private static readonly JsonSerializerOptions Json = new()
     {
         WriteIndented = true,
@@ -37,6 +44,9 @@ public sealed class UiSettings
     public double OutlineWidth { get; set; } = 260;
 
     public double NotesWidth { get; set; } = 380;
+
+    /// <summary>The height in pixels of the "Zuletzt geändert" list above the outline (spec "Blockdaten" 4.3).</summary>
+    public double RecentListHeight { get; set; } = DefaultRecentListHeight;
 
     public bool OutlineCollapsed { get; set; }
 
@@ -108,6 +118,11 @@ public sealed class UiSettings
             var settings = File.Exists(path) ? JsonSerializer.Deserialize<UiSettings>(File.ReadAllBytes(path), Json) ?? new() : new();
             settings.FontSizePt = Math.Clamp(settings.FontSizePt, MinFontSizePt, MaxFontSizePt);
             settings.LineWidthCh = Math.Clamp(settings.LineWidthCh, MinLineWidthCh, MaxLineWidthCh);
+            if (!(settings.RecentListHeight is >= MinRecentListHeight and <= MaxRecentListHeight))
+            {
+                settings.RecentListHeight = DefaultRecentListHeight;
+            }
+
             if (!Enum.IsDefined(settings.LastAdoptVariant))
             {
                 settings.LastAdoptVariant = AdoptVariant.AtCursor;

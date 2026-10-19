@@ -1,0 +1,137 @@
+@* A horizontal divider below a list: dragging it (or pressing the arrow keys while it has the focus) changes the list's height. *@
+@using Microsoft.JSInterop
+@using NoteEvolution.UI.State
+@inject IStringLocalizer<Strings> L
+@inject IJSRuntime JS
+
+<div @ref="_element" class="ne-row-splitter @(_dragging ? "dragging" : null)" role="separator" aria-orientation="horizontal"
+     tabindex="0" aria-label="@L["ResizeRecentList"]" title="@L["ResizeRecentList"]"
+     aria-valuemin="@MinHeight" aria-valuenow="@((int)Math.Round(Height))"
+     @onpointerdown="Start" @onkeydown="KeyDown"></div>
+@if (_dragging)
+{
+    @* Covers the window while dragging, so the pointer is followed even over the editor. *@
+    <div class="ne-row-splitter-overlay" @onpointermove="Move" @onpointerup="End" @onpointerleave="End"></div>
+}
+
+@code {
+    public const double MinHeight = UiSettings.MinRecentListHeight;
+
+    /// <summary>The room the content below the list keeps.</summary>
+    public const double MinRestHeight = 120;
+
+    public const double KeyStep = 20;
+
+    private ElementReference _element;
+    private bool _dragging;
+    private double _startY;
+    private double _startHeight;
+    private double _maxHeight = double.PositiveInfinity;
+
+    /// <summary>The current height of the list above this splitter.</summary>
+    [Parameter] public double Height { get; set; }
+
+    [Parameter] public EventCallback<double> HeightChanged { get; set; }
+
+    /// <summary>Raised once when a drag ends or a key changed the height, e.g. to save it.</summary>
+    [Parameter] public EventCallback DragEnded { get; set; }
+
+    /// <summary>
+    /// Starts dragging from the height the list shows: a short pane can show it smaller than its stored height, and
+    /// dragging from the stored height would leave the splitter standing still at first.
+    /// </summary>
+    private async Task Start(PointerEventArgs e)
+    {
+        var shown = await HeightOfAsync(container: false);
+        _maxHeight = await MaxHeightAsync();
+        _startY = e.ClientY;
+        _startHeight = shown > 0 ? shown : Height;
+        _dragging = true;
+    }
+
+    /// <summary>
+    /// Follows the pointer. A move without a pressed button ends the drag where it is: the button went up before the
+    /// overlay was there to see it (<see cref="Start"/> awaits the shown heights first).
+    /// </summary>
+    private async Task Move(PointerEventArgs e)
+    {
+        if (e.Buttons == 0)
+        {
+            await StopAsync();
+            return;
+        }
+
+        await SetAsync(_startHeight + e.ClientY - _startY, _maxHeight);
+    }
+
+    private async Task End(PointerEventArgs e)
+    {
+        if (!_dragging)
+        {
+            return;
+        }
+
+        await SetAsync(_startHeight + e.ClientY - _startY, _maxHeight);
+        await StopAsync();
+    }
+
+    private async Task StopAsync()
+    {
+        if (!_dragging)
+        {
+            return;
+        }
+
+        _dragging = false;
+        await DragEnded.InvokeAsync();
+    }
+
+    private async Task KeyDown(KeyboardEventArgs e)
+    {
+        var step = e.Key switch
+        {
+            "ArrowUp" => -KeyStep,
+            "ArrowDown" => KeyStep,
+            _ => 0,
+        };
+        if (step == 0)
+        {
+            return;
+        }
+
+        // From what is shown: a stored height taller than the pane is displayed cut back.
+        var shown = await HeightOfAsync(container: false);
+        var max = await MaxHeightAsync();
+        await SetAsync((shown > 0 ? shown : Height) + step, max);
+        await DragEnded.InvokeAsync();
+    }
+
+    private async Task SetAsync(double height, double max)
+    {
+        height = Math.Clamp(height, MinHeight, Math.Max(MinHeight, max));
+        if (height != Height)
+        {
+            await HeightChanged.InvokeAsync(height);
+        }
+    }
+
+    /// <summary>The tallest the list may get so the content below keeps <see cref="MinRestHeight"/>; no limit if the pane's height is unknown.</summary>
+    private async Task<double> MaxHeightAsync()
+    {
+        var total = await HeightOfAsync(container: true);
+        return total > 0 ? total - MinRestHeight : double.PositiveInfinity;
+    }
+
+    /// <summary>The height of the list above, or of the whole container (index.html, <c>neLayout</c>); 0 if unknown.</summary>
+    private async Task<double> HeightOfAsync(bool container)
+    {
+        try
+        {
+            return await JS.InvokeAsync<double>("neLayout.paneHeight", _element, container);
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or InvalidOperationException or TaskCanceledException)
+        {
+            return 0;
+        }
+    }
+}

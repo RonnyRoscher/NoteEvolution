@@ -31,6 +31,9 @@ public class StatusCommandUiTests : UiTestContext
         "- # Zwei\n" +
         "\t- Dritter Text\n";
 
+    /// <summary>The book after a change below "Erster Text": the text block got <c>updated::</c> after its status line.</summary>
+    private string Stamped => BookText.Replace("\t  status:: relevant\n", "\t  status:: relevant\n\t  updated:: " + Stamp + "\n");
+
     private readonly TestVault _vault = TestVault.Create((BookPath, BookText));
 
     protected override void Dispose(bool disposing)
@@ -105,8 +108,8 @@ public class StatusCommandUiTests : UiTestContext
         var documents = Editor.Documents.Count;
         await cut.InvokeAsync(() => cut.Find("select.ne-sec-status").Change("Wording"));
 
-        var wording = BookText.Replace("\t\t- Ein Detail\n", "\t\t- Ein Detail\n\t\t  status:: formulierung\n");
-        AssertBook(BookText, wording, [], ["\t\t  status:: formulierung"]);
+        var wording = Stamped.Replace("\t\t- Ein Detail\n", "\t\t- Ein Detail\n\t\t  status:: formulierung\n");
+        AssertBook(BookText, wording, [], ["\t  updated:: " + Stamp, "\t\t  status:: formulierung"]);
         cut.WaitForAssertion(() => Assert.Equal("Wording", Shown(cut)));
         Assert.Equal(Text("UndoStatus"), session.Undo.NextDescription);
         Assert.Empty(Editor.Reveals);
@@ -220,8 +223,8 @@ public class StatusCommandUiTests : UiTestContext
         await MoveToAsync(cut, "Ein Detail");
         await cut.InvokeAsync(() => Editor.Callbacks!.OnSectionCommand(SectionCommand.ToggleRemark));
 
-        var remark = BookText.Replace("\t\t- Ein Detail\n", "\t\t- Ein Detail\n\t\t  status:: bemerkung\n");
-        AssertBook(BookText, remark, [], ["\t\t  status:: bemerkung"]);
+        var remark = Stamped.Replace("\t\t- Ein Detail\n", "\t\t- Ein Detail\n\t\t  status:: bemerkung\n");
+        AssertBook(BookText, remark, [], ["\t  updated:: " + Stamp, "\t\t  status:: bemerkung"]);
         Assert.Equal(Text("UndoStatus"), session.Undo.NextDescription);
         Assert.Empty(Editor.Reveals);
         Assert.Contains("\"status\":\"bemerkung\"", Editor.Json);
@@ -231,15 +234,15 @@ public class StatusCommandUiTests : UiTestContext
         // Again: back to a draft, the line goes; the detail is still there.
         await cut.InvokeAsync(() => Editor.Callbacks!.OnSectionCommand(SectionCommand.ToggleRemark));
 
-        Assert.Equal(BookText, _vault.Read(BookPath));
+        Assert.Equal(Stamped, _vault.Read(BookPath));
         Assert.Equal(KeyOf("Ein Detail"), State.Cursor!.Key);
 
         // Any other status becomes a remark.
         await MoveToAsync(cut, "Erster Text");
         await cut.InvokeAsync(() => Editor.Callbacks!.OnSectionCommand(SectionCommand.ToggleRemark));
 
-        var relevantToRemark = BookText.Replace("\t  status:: relevant\n", "\t  status:: bemerkung\n");
-        AssertBook(BookText, relevantToRemark, ["\t  status:: relevant"], ["\t  status:: bemerkung"]);
+        var relevantToRemark = Stamped.Replace("\t  status:: relevant\n", "\t  status:: bemerkung\n");
+        AssertBook(Stamped, relevantToRemark, ["\t  status:: relevant"], ["\t  status:: bemerkung"]);
 
         // A remark by #notiz becomes a draft: the tag goes.
         await MoveToAsync(cut, "Notiz Detail #notiz");
@@ -255,7 +258,7 @@ public class StatusCommandUiTests : UiTestContext
         Assert.True(session.TryUndo(out var error), error?.ToString());
         Assert.Equal(relevantToRemark, _vault.Read(BookPath));
         Assert.True(session.TryUndo(out error), error?.ToString());
-        Assert.Equal(BookText, _vault.Read(BookPath));
+        Assert.Equal(Stamped, _vault.Read(BookPath));
     }
 
     [Fact]
@@ -271,9 +274,9 @@ public class StatusCommandUiTests : UiTestContext
 
         AssertBook(
             BookText,
-            BookText.Replace("\t\t- Notiz Detail #notiz\n", "\t\t- Notiz Detail #notiz\n\t\t-\n\t\t  status:: bemerkung\n"),
+            Stamped.Replace("\t\t- Notiz Detail #notiz\n", "\t\t- Notiz Detail #notiz\n\t\t-\n\t\t  status:: bemerkung\n"),
             [],
-            ["\t\t-", "\t\t  status:: bemerkung"]);
+            ["\t  updated:: " + Stamp, "\t\t-", "\t\t  status:: bemerkung"]);
         var added = Book.FindTextBlock(KeyOf("Erster Text"))!.Paragraphs[^1].Block.Key;
         Assert.Equal(BlockStatus.Remark, Book.FindTextBlock(KeyOf("Erster Text"))!.Paragraphs[^1].Status);
         cut.WaitForAssertion(() => Assert.Equal(added, Assert.Single(Editor.Reveals)));

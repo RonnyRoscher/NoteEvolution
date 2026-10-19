@@ -165,7 +165,7 @@ public class SectionBarTests : UiTestContext
 
         await cut.InvokeAsync(() => cut.Find(".ne-sec-after").Click());
 
-        Assert.Equal(BookText.Replace("\t\t- Ein Detail\n", "\t\t- Ein Detail\n\t-\n"), _vault.Read(BookPath));
+        Assert.Equal(BookText.Replace("\t\t- Ein Detail\n", "\t\t- Ein Detail\n\t-\n\t  created:: " + Stamp + "\n\t  updated:: " + Stamp + "\n"), _vault.Read(BookPath));
         var added = KeyOf("");
         cut.WaitForAssertion(() => Assert.Equal(added, Assert.Single(Editor.Reveals)));
         Assert.Equal(Text("UndoStructure"), session.Undo.NextDescription);

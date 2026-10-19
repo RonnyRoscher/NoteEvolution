@@ -393,6 +393,32 @@ html, body {
     cursor: col-resize;
 }
 
+.ne-row-splitter {
+    flex: none;
+    /* A 1px line with a 7px grip area. */
+    height: 1px;
+    cursor: row-resize;
+    background: var(--border);
+    background-clip: content-box;
+    padding: 3px 0;
+    margin: -3px 0;
+    z-index: 1;
+}
+
+.ne-row-splitter:hover,
+.ne-row-splitter:focus-visible,
+.ne-row-splitter.dragging {
+    background: var(--accent);
+    background-clip: content-box;
+}
+
+.ne-row-splitter-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    cursor: row-resize;
+}
+
 /* Outline */
 
 .ne-outline-pane {
@@ -401,6 +427,16 @@ html, body {
     flex: 1;
     min-height: 0;
     padding: 0 4px 8px;
+    /* The list and the toggle stay in place; only the tree below them scrolls (.ne-outline-scroll). */
+    overflow: hidden;
+}
+
+.ne-outline-scroll {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
 }
 
 .ne-outline-tree {
@@ -602,17 +638,12 @@ html, body {
     scrollbar-gutter: stable;
 }
 
-/* A tab's own row (the search field, the date jump) stays on top of its scrolling cards. */
-.ne-notes-scroll .ne-search-input,
-.ne-notes-scroll .ne-journal-jump-label {
+/* A tab's own row (the search field) stays on top of its scrolling cards. */
+.ne-notes-scroll .ne-search-input {
     position: sticky;
     top: 0;
     z-index: 2;
     box-shadow: 0 0 0 6px var(--bg-pane);
-}
-
-.ne-notes-scroll .ne-journal-jump-label {
-    background: var(--bg-pane);
 }
 
 .ne-notes-tabs {
@@ -1193,6 +1224,8 @@ html, body {
 
 .ne-block {
     position: relative;
+    /* The dates (.ne-block-dates) take a line of their own in a narrow column. */
+    container-type: inline-size;
 }
 
 /*
@@ -1212,6 +1245,34 @@ html, body {
 .ne-block:has(.ne-current) > .ne-block-handle {
     pointer-events: auto;
     cursor: grab;
+}
+
+/*
+ * The created/updated dates of a text block, at its top right in small grey text; the text flows around them. The
+ * status mark of wording and done lies outside the text (right: -10px), so the two never overlap.
+ */
+.ne-block-dates {
+    float: right;
+    margin-left: 8px;
+    font-family: var(--font-ui);
+    font-size: 11px;
+    line-height: 1.8;
+    color: var(--fg-muted);
+    user-select: none;
+}
+
+.ne-block-dates[hidden] {
+    display: none;
+}
+
+/* Beside the dates a narrow column would break the first line's words (ProseMirror wraps with break-word). */
+@container (max-width: 480px) {
+    .ne-block-dates {
+        float: none;
+        display: block;
+        margin-left: 0;
+        text-align: right;
+    }
 }
 
 .ne-para {
@@ -2024,4 +2085,71 @@ html, body {
 
 .ne-coverage-uncertain-list {
     margin-top: 8px;
+}
+
+/* Recently changed text blocks above the outline */
+
+.ne-recent {
+    flex: none;
+    display: flex;
+    flex-direction: column;
+    height: 180px;
+    min-height: 60px;
+    /* A stored height taller than the pane is shown cut back, so the outline keeps room (the setting stays). */
+    max-height: calc(100% - 120px);
+    /* The title stays in place; only the entries scroll (.ne-recent-list). */
+    overflow: hidden;
+}
+
+.ne-recent-title {
+    flex: none;
+    margin: 4px 0;
+    font-size: 0.85em;
+}
+
+.ne-recent-empty {
+    margin: 0;
+    color: var(--fg-muted);
+    font-size: 0.85em;
+}
+
+.ne-recent-list {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.ne-recent-item {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    width: 100%;
+    padding: 3px 4px;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.ne-recent-item:hover {
+    background: var(--bg-raised);
+}
+
+.ne-recent-when,
+.ne-recent-path {
+    color: var(--fg-muted);
+    font-size: 0.75em;
+}
+
+.ne-recent-summary {
+    font-size: 0.85em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 100%;
 }

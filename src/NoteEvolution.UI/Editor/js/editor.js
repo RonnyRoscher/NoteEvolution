@@ -48,6 +48,14 @@ const statusAttribute = {
     renderHTML: attrs => (attrs.status ? { 'data-status': attrs.status } : {}),
 };
 
+// The created/updated dates of a text block as shown at its top right (dates) and as its tooltip (datesTitle). They
+// come from the book, are only shown and never go back to C# as something to save; new or pasted blocks have none.
+const datesAttribute = {
+    default: null,
+    rendered: false,
+    parseHTML: () => null,
+};
+
 // textBlock comes first: it is the default node where the document needs one.
 const Doc = Node.create({
     name: 'doc',
@@ -119,7 +127,7 @@ const Para = Node.create({
     },
 });
 
-/** A text block with its source chips below and a handle to drag it. */
+/** A text block with its dates at the top right, its source chips below and a handle to drag it. */
 class TextBlockView {
     constructor(node, options) {
         this.node = node;
@@ -129,12 +137,15 @@ class TextBlockView {
         const handle = document.createElement('div');
         handle.className = 'ne-block-handle';
         handle.contentEditable = 'false';
+        this.dates = document.createElement('span');
+        this.dates.className = 'ne-block-dates';
+        this.dates.contentEditable = 'false';
         this.contentDOM = document.createElement('div');
         this.contentDOM.className = 'ne-block-content';
         this.chips = document.createElement('div');
         this.chips.className = 'ne-chips';
         this.chips.contentEditable = 'false';
-        this.dom.append(handle, this.contentDOM, this.chips);
+        this.dom.append(handle, this.dates, this.contentDOM, this.chips);
         this.render();
     }
 
@@ -149,13 +160,25 @@ class TextBlockView {
     }
 
     render(sourcesChanged = true) {
-        const { key, sources, status } = this.node.attrs;
+        const { key, sources, status, dates, datesTitle } = this.node.attrs;
         this.dom.setAttribute('data-key', key ?? '');
         this.dom.toggleAttribute('data-has-sources', (sources ?? []).length > 0);
         if (status) {
             this.dom.setAttribute('data-status', status);
         } else {
             this.dom.removeAttribute('data-status');
+        }
+        // Every keystroke in the block renders it again: the label is only written when it changed.
+        if (this.dates.textContent !== (dates ?? '')) {
+            this.dates.textContent = dates ?? '';
+        }
+        if (this.dates.hidden !== !dates) {
+            this.dates.hidden = !dates;
+        }
+        if (datesTitle && this.dates.title !== datesTitle) {
+            this.dates.title = datesTitle;
+        } else if (!datesTitle && this.dates.hasAttribute('title')) {
+            this.dates.removeAttribute('title');
         }
         if (!sourcesChanged) {
             return;
@@ -207,6 +230,8 @@ const TextBlock = Node.create({
                 renderHTML: attrs => ({ 'data-sources': JSON.stringify(attrs.sources ?? []) }),
             },
             status: statusAttribute,
+            dates: datesAttribute,
+            datesTitle: datesAttribute,
         };
     },
     parseHTML() {
@@ -259,7 +284,8 @@ function newParagraph({ tr, dispatch }) {
 
 /**
  * Ctrl+Enter: splits the text block at the cursor; the new part gets a new key, splitFrom and the sources, but no
- * status (a draft). At the block's end an empty block without splitFrom follows (at its start one is put before it).
+ * dates and no status (a draft). At the block's end an empty block without splitFrom follows (at its start one is put
+ * before it).
  */
 function splitTextBlock({ tr, dispatch }) {
     const { $from } = tr.selection;
@@ -396,9 +422,9 @@ function keyedNodes(doc) {
 /**
  * Gives every heading, text block and sub-bullet a unique key: a missing or duplicate key is replaced by a new one
  * (a duplicate text block also gets splitFrom = the original key); a text block or sub-bullet with a new key is new
- * content and has no status. Of duplicates, the node where the old document's node went keeps the key. Also keeps the
- * paragraph shape: the first paragraph is the block's text (no key, depth 0, no #notiz, no status), every other one
- * has depth 1 … previous depth + 1.
+ * content and has no status and no dates. Of duplicates, the node where the old document's node went keeps the key.
+ * Also keeps the paragraph shape: the first paragraph is the block's text (no key, depth 0, no #notiz, no status),
+ * every other one has depth 1 … previous depth + 1.
  */
 function normalize(transactions, oldState, newState) {
     const mapping = new Mapping();
@@ -422,7 +448,9 @@ function normalize(transactions, oldState, newState) {
         const key = take(node.attrs.key, offset);
         if (key !== node.attrs.key) {
             const splitFrom = node.type.name === 'textBlock' && node.attrs.key ? node.attrs.key : node.attrs.splitFrom;
-            tr.setNodeMarkup(offset, undefined, node.type.name === 'textBlock' ? { ...node.attrs, key, splitFrom, status: null } : { ...node.attrs, key });
+            tr.setNodeMarkup(offset, undefined, node.type.name === 'textBlock'
+                ? { ...node.attrs, key, splitFrom, status: null, dates: null, datesTitle: null }
+                : { ...node.attrs, key });
         }
         if (node.type.name !== 'textBlock') {
             return;
@@ -610,6 +638,9 @@ const MarkedNodes = Extension.create({
     },
 });
 
+// Marks the transaction of setBlockDates: it only shows dates and is not reported as an edit.
+const datesOnlyKey = 'neDatesOnly';
+
 /** The nearest scrolling ancestor of element (the document's scroller if none). */
 function scrollParent(element) {
     for (let e = element.parentElement; e; e = e.parentElement) {
@@ -783,7 +814,12 @@ export function createEditor(host, dotnet, options = {}) {
                 },
             },
         },
-        onUpdate: ({ editor: e }) => call('DocumentChanged', JSON.stringify(e.getJSON())),
+        // Dates set by setBlockDates are no edit: they are not reported (nothing to save).
+        onUpdate: ({ editor: e, transaction }) => {
+            if (!transaction.getMeta(datesOnlyKey)) {
+                call('DocumentChanged', JSON.stringify(e.getJSON()));
+            }
+        },
         onSelectionUpdate: ({ editor: e }) => reportCursor(e.state),
         // A click on the place the selection already has changes no selection; after a new book it places the cursor.
         onFocus: ({ editor: e }) => reportCursor(e.state),
@@ -868,6 +904,25 @@ export function createEditor(host, dotnet, options = {}) {
         setMarked(nodes) {
             marked = new Map(nodes.map(node => [node.key, node.ownTextOnly === true]));
             editor.view.dispatch(editor.state.tr.setMeta(markedKey, true).setMeta('addToHistory', false));
+        },
+        /**
+         * Sets the dates of the text blocks with the given keys: list is an array of { key, dates, datesTitle } (null:
+         * none). The document, the cursor and the undo history stay; no change is reported. Unknown keys are ignored.
+         */
+        setBlockDates(list) {
+            const byKey = new Map(list.map(item => [item.key, item]));
+            const tr = editor.state.tr;
+            editor.state.doc.forEach((node, offset) => {
+                const item = node.type.name === 'textBlock' ? byKey.get(node.attrs.key) : undefined;
+                const dates = item?.dates ?? null;
+                const datesTitle = item?.datesTitle ?? null;
+                if (item && (dates !== node.attrs.dates || datesTitle !== node.attrs.datesTitle)) {
+                    tr.setNodeMarkup(offset, undefined, { ...node.attrs, dates, datesTitle });
+                }
+            });
+            if (tr.docChanged) {
+                editor.view.dispatch(tr.setMeta('addToHistory', false).setMeta(datesOnlyKey, true));
+            }
         },
         destroy() {
             cancelAnimationFrame(boxFrame);

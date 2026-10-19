@@ -124,18 +124,20 @@ public class RangeCommandTests : UiTestContext
     }
 
     /// <summary>The book after merging the range of "# Eins": its own blocks into one, and those of "## Eins-A" into one.</summary>
-    private const string MergedBook =
+    private string MergedBook =>
         "title:: Alpha\ntype:: book\n\n" +
         "- Vorspann Text\n" +
         "- # Eins\n" +
         "\t- Erster Text\n" +
         $"\t  id:: {ErsterId}\n" +
         $"\t  source:: (({NoteA})), (({NoteB}))\n" +
+        $"\t  updated:: {Stamp}\n" +
         "\n" +
         "\t  Zweiter Text\n" +
         "\t\t- Ein Detail\n" +
         "\t- ## Eins-A\n" +
         "\t\t- Unter Text\n" +
+        $"\t\t  updated:: {Stamp}\n" +
         "\n" +
         "\t\t  Unter Zwei\n" +
         "- # Zwei\n" +
@@ -270,7 +272,11 @@ public class RangeCommandTests : UiTestContext
         AssertChangedLines(
             BookText, MergedBook,
             removed: [$"\t  source:: (({NoteA}))", "\t- Zweiter Text", $"\t  id:: {ZweiterId}", $"\t  source:: (({NoteB}))", "\t\t- Unter Zwei"],
-            added: [$"\t  source:: (({NoteA})), (({NoteB}))", "", "\t  Zweiter Text", "", "\t\t  Unter Zwei"]);
+            added:
+            [
+                $"\t  source:: (({NoteA})), (({NoteB}))", $"\t  updated:: {Stamp}", "", "\t  Zweiter Text", $"\t\t  updated:: {Stamp}", "",
+                "\t\t  Unter Zwei",
+            ]);
         Assert.Equal(MergedNotes, _vault.Read(NotesPath));
         AssertChangedLines(NotesText, MergedNotes, [$"  used-in:: [[Buch - Alpha]] (({ZweiterId}))"], [$"  used-in:: [[Buch - Alpha]] (({ErsterId}))"]);
 
@@ -330,9 +336,10 @@ public class RangeCommandTests : UiTestContext
 
         await ClickAsync(cut, ".ne-sec-merge");
 
-        var merged = BookText.Replace("\t\t- Ein Detail\n", "\n\t  Ein Detail\n");
+        var merged = BookText.Replace(
+            $"\t  source:: (({NoteA}))\n\t\t- Ein Detail\n", $"\t  source:: (({NoteA}))\n\t  updated:: {Stamp}\n\n\t  Ein Detail\n");
         Assert.Equal(merged, _vault.Read(BookPath));
-        AssertChangedLines(BookText, merged, removed: ["\t\t- Ein Detail"], added: ["", "\t  Ein Detail"]);
+        AssertChangedLines(BookText, merged, removed: ["\t\t- Ein Detail"], added: [$"\t  updated:: {Stamp}", "", "\t  Ein Detail"]);
         Assert.Equal(NotesText, _vault.Read(NotesPath));
         cut.WaitForAssertion(() => Assert.Equal(erster, Assert.Single(Editor.Reveals)));
         Assert.Equal(erster, State.Cursor!.Key);
@@ -373,7 +380,9 @@ public class RangeCommandTests : UiTestContext
 
         Assert.Null(await ManuscriptCommands.RunAsync(State, SectionCommand.Merge, "x", NullLogger.Instance));
 
-        Assert.Equal(book.Replace("\t\t\t- Tiefer\n", "\n\t\t  Tiefer\n"), vault.Read(BookPath));
+        Assert.Equal(
+            book.Replace("\t- Mit Details\n", "\t- Mit Details\n\t  updated:: " + Stamp + "\n").Replace("\t\t\t- Tiefer\n", "\n\t\t  Tiefer\n"),
+            vault.Read(BookPath));
         Assert.Equal(detail, State.Cursor!.Key);
         Assert.Equal(detail, State.PendingReveal);
         Assert.Equal("Zusammenfügen", State.Session!.Undo.NextDescription);
@@ -642,7 +651,11 @@ public class RangeCommandTests : UiTestContext
 
         // The save makes the detail the cursor element, so the same level is another range: nothing is merged or wrapped.
         Assert.Null(message);
-        Assert.Equal(BookText.Replace("\t\t- Ein Detail\n", "\t\t- Ein Detail\n\t\t- Neues Detail\n"), _vault.Read(BookPath));
+        Assert.Equal(
+            BookText.Replace(
+                "\t\t- Ein Detail\n",
+                "\t  updated:: " + Stamp + "\n\t\t- Ein Detail\n\t\t- Neues Detail\n"),
+            _vault.Read(BookPath));
         Assert.Equal(NotesText, _vault.Read(NotesPath));
         Assert.NotEqual("Zusammenfügen", session.Undo.NextDescription);
         Assert.NotEqual(Text("UndoWrap"), session.Undo.NextDescription);

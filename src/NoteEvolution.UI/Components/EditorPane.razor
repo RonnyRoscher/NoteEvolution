@@ -61,6 +61,9 @@
     private bool _shownChips;
     private bool _disposed;
 
+    /// <summary>The dates labels the editor shows, by text block key (spec "Blockdaten" 3).</summary>
+    private Dictionary<Guid, BlockDateLabel?> _shownDates = [];
+
     /// <summary>Where the section bar goes (pixels from the pane's top) and whether the marking is in view, as the editor reports it.</summary>
     private double _barTop;
 
@@ -525,6 +528,7 @@
             // After its own save the editor keeps its document (cursor, undo history) even where the book holds a
             // text slightly normalized; it is compared with the book's version from now on (R33).
             _saver.Shown = shown with { Snapshot = fresh, FromEditor = false };
+            await ShowDatesAsync(DatesOf(fresh, book));
             StateHasChanged();
             await RevealPendingAsync();
             return;
@@ -535,7 +539,9 @@
         _newTarget = !sameTarget;
         try
         {
-            await Editor.SetDocumentAsync(EditorDocMapper.ToJson(fresh), _showChips, keepCursor: sameTarget);
+            var dates = DatesOf(fresh, book);
+            await Editor.SetDocumentAsync(EditorDocMapper.ToJson(fresh, key => dates.GetValueOrDefault(key)), _showChips, keepCursor: sameTarget);
+            _shownDates = dates;
         }
         finally
         {
@@ -629,6 +635,27 @@
     {
         _showChips = e.Value is true;
         await SyncAsync();
+    }
+
+    /// <summary>The dates each text block of the snapshot shows at its top right (spec "Blockdaten" 3).</summary>
+    private Dictionary<Guid, BlockDateLabel?> DatesOf(SectionSnapshot snapshot, Book book) =>
+        snapshot.Nodes.OfType<SnapshotTextBlock>().DistinctBy(t => t.Key).ToDictionary(
+            t => t.Key,
+            t => book.FindTextBlock(t.Key) is { } text ? BlockDateText.LabelOf(text.Created, text.Updated, L) : null);
+
+    /// <summary>
+    /// Gives the kept document the labels that changed (e.g. after its own save stamped a block), without reloading it.
+    /// </summary>
+    private async Task ShowDatesAsync(Dictionary<Guid, BlockDateLabel?> dates)
+    {
+        var changed = dates.Where(d => d.Value != _shownDates.GetValueOrDefault(d.Key)).ToDictionary();
+        if (changed.Count > 0)
+        {
+            await Editor.SetBlockDatesAsync(changed);
+        }
+
+        // Only what the editor took counts as shown: after a failed push the next sync pushes the labels again.
+        _shownDates = dates;
     }
 
     /// <summary>

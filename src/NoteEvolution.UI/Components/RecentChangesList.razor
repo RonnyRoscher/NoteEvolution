@@ -1,0 +1,121 @@
+@using NoteEvolution.Core.Books
+@using NoteEvolution.Core.Storage
+@using NoteEvolution.UI.State
+@implements IDisposable
+@inject AppState State
+@inject IClock Clock
+@inject IStringLocalizer<Strings> L
+
+@* The "Zuletzt geändert" list above the outline (spec "Blockdaten" 4.1): the newest changed text blocks of the current book. *@
+@if (State.CurrentBook is not null)
+{
+    <section class="ne-recent" aria-label="@L["RecentTitle"]" style="@HeightStyle">
+        <h4 class="ne-recent-title">@L["RecentTitle"]</h4>
+        @if (_items.Count == 0)
+        {
+            <p class="ne-recent-empty">@L["RecentEmpty"]</p>
+        }
+        else
+        {
+            var now = Clock.Now.LocalDateTime;
+            <ul class="ne-recent-list">
+                @foreach (var item in _items)
+                {
+                    <li @key="item.TextBlockKey">
+                        <button type="button" class="ne-recent-item" title="@item.Excerpt" @onclick="() => Reveal(item)" @onclick:stopPropagation="true">
+                            <span class="ne-recent-when">@RecentChanges.When(item.Updated, now, L)</span>
+                            <span class="ne-recent-summary">@item.Summary</span>
+                            <span class="ne-recent-path">@item.SectionPath</span>
+                        </button>
+                    </li>
+                }
+            </ul>
+        }
+    </section>
+}
+
+@code {
+    private VaultSession? _session;
+    private VaultSession? _computedFor;
+    private Book? _book;
+    private IReadOnlyList<RecentChange> _items = [];
+
+    /// <summary>The height of the list in pixels (the splitter below it sets it); <c>null</c> lets the list take its own height.</summary>
+    [Parameter] public double? Height { get; set; }
+
+    private string? HeightStyle => Height is { } h ? FormattableString.Invariant($"height: {h}px") : null;
+
+    protected override void OnInitialized()
+    {
+        State.Changed += OnStateChanged;
+        TrackSession();
+        Recompute();
+    }
+
+    public void Dispose()
+    {
+        State.Changed -= OnStateChanged;
+        Unsubscribe();
+    }
+
+    // The shell refreshes the book on a page change and then notifies, so a changed page arrives as a state change.
+    private void OnStateChanged() => _ = InvokeAsync(() =>
+    {
+        TrackSession();
+
+        // Every cursor move notifies; the list only depends on the book (a changed page brings a new instance).
+        if (!ReferenceEquals(State.CurrentBook, _book) || _session != _computedFor)
+        {
+            Recompute();
+        }
+
+        StateHasChanged();
+    });
+
+    private void OnSummariesChanged() => _ = InvokeAsync(() =>
+    {
+        Recompute();
+        StateHasChanged();
+    });
+
+    /// <summary>How often the list was computed (a test hook for the guard in <see cref="OnStateChanged"/>).</summary>
+    internal int Recomputes { get; private set; }
+
+    private void Recompute()
+    {
+        Recomputes++;
+        _book = State.CurrentBook;
+        _computedFor = _session;
+        _items = _book is null ? [] : RecentChanges.Of(_book, node => _session?.TopicSummary(_book, node.Key));
+    }
+
+    /// <summary>Follows the summaries of the current session (a vault switch brings a new one).</summary>
+    private void TrackSession()
+    {
+        if (ReferenceEquals(State.Session, _session))
+        {
+            return;
+        }
+
+        Unsubscribe();
+        _session = State.Session;
+        if (_session is not null)
+        {
+            _session.UnderstandingChanged += OnSummariesChanged;
+        }
+    }
+
+    private void Unsubscribe()
+    {
+        if (_session is not null)
+        {
+            _session.UnderstandingChanged -= OnSummariesChanged;
+        }
+    }
+
+    private void Reveal(RecentChange item)
+    {
+        State.RevealElement(item.TextBlockKey);
+        State.Notify();
+    }
+}

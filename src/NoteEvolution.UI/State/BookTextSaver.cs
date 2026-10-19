@@ -332,7 +332,7 @@ public sealed class BookTextSaver(AppState state, ILogger logger)
         try
         {
             snapshot = EditorDocMapper.FromJson(json, shown.Snapshot.ScopeKey, shown.Snapshot.IncludeSubsections);
-            result = BookSync.Apply(book, snapshot, shown.Session.Vault);
+            result = BookSync.Apply(book, snapshot, shown.Session.Vault, shown.Session.Clock.Now);
             snapshot = WithShownStatuses(snapshot, shown.Snapshot);
             return true;
         }

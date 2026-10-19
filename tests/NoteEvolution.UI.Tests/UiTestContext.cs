@@ -44,6 +44,9 @@ public abstract class UiTestContext : BunitContext
 
         // The width a pane shows (index.html); 0 means unknown, the splitter then starts from the stored width.
         JSInterop.Setup<double>("neLayout.paneWidth", _ => true).SetResult(0);
+
+        // The height of the list above a row splitter, or of the container with `true` (index.html); 0 means unknown.
+        JSInterop.Setup<double>("neLayout.paneHeight", _ => true).SetResult(0);
     }
 
     /// <summary>The editor every rendered <c>EditorPane</c> talks to.</summary>
@@ -59,6 +62,9 @@ public abstract class UiTestContext : BunitContext
     protected AppState State { get; } = new();
 
     protected FakeClock Clock { get; } = new(new DateTimeOffset(2026, 10, 6, 9, 0, 0, TimeSpan.FromHours(2)));
+
+    /// <summary>The <c>updated::</c> value an editor save stamps on a changed text block now.</summary>
+    protected string Stamp => BlockDates.Format(Clock.Now);
 
     /// <summary>Never advances on its own, so the vault watcher's debounce timers only fire when a test says so.</summary>
     protected FakeTimeProvider Time { get; } = new();

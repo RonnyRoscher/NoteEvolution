@@ -43,6 +43,12 @@ public sealed class TipTapInterop(IJSRuntime js, AppState state) : IEditorIntero
         await Initialized.InvokeVoidAsync(
             "setMarked", [nodes.Select(node => new { key = node.Key.ToString("D"), ownTextOnly = node.OwnTextOnly }).ToArray()]);
 
+    /// <summary>Passes the labels to the script as an array of <c>{ key, dates, datesTitle }</c>.</summary>
+    public async Task SetBlockDatesAsync(IReadOnlyDictionary<Guid, BlockDateLabel?> dates) =>
+        await Initialized.InvokeVoidAsync(
+            "setBlockDates",
+            [dates.Select(d => new { key = d.Key.ToString("D"), dates = d.Value?.Text, datesTitle = d.Value?.Title }).ToArray()]);
+
     [JSInvokable]
     public Task DocumentChanged(string docJson) => _callbacks?.OnDocumentChanged(docJson) ?? Task.CompletedTask;
 
