@@ -60,6 +60,9 @@ public abstract class UiTestContext : BunitContext
 
     protected FakeClock Clock { get; } = new(new DateTimeOffset(2026, 10, 6, 9, 0, 0, TimeSpan.FromHours(2)));
 
+    /// <summary>The <c>updated::</c> value an editor save stamps on a changed text block now.</summary>
+    protected string Stamp => BlockDates.Format(Clock.Now);
+
     /// <summary>Never advances on its own, so the vault watcher's debounce timers only fire when a test says so.</summary>
     protected FakeTimeProvider Time { get; } = new();
 

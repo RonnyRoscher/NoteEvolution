@@ -642,7 +642,11 @@ public class RangeCommandTests : UiTestContext
 
         // The save makes the detail the cursor element, so the same level is another range: nothing is merged or wrapped.
         Assert.Null(message);
-        Assert.Equal(BookText.Replace("\t\t- Ein Detail\n", "\t\t- Ein Detail\n\t\t- Neues Detail\n"), _vault.Read(BookPath));
+        Assert.Equal(
+            BookText.Replace(
+                "\t\t- Ein Detail\n",
+                "\t  updated:: " + Stamp + "\n\t\t- Ein Detail\n\t\t- Neues Detail\n"),
+            _vault.Read(BookPath));
         Assert.Equal(NotesText, _vault.Read(NotesPath));
         Assert.NotEqual("Zusammenfügen", session.Undo.NextDescription);
         Assert.NotEqual(Text("UndoWrap"), session.Undo.NextDescription);

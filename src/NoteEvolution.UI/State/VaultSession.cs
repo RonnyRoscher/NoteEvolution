@@ -131,6 +131,7 @@ public sealed class VaultSession : IDisposable
         _ai = ai;
         _language = language;
         _time = timeProvider;
+        Clock = clock;
         var vault = Core.Vaults.Vault.Open(root);
         var registry = new SelfWriteRegistry();
         _backups = new BackupService(vault.Root, clock);
@@ -166,6 +167,9 @@ public sealed class VaultSession : IDisposable
     }
 
     public IVault Vault { get; }
+
+    /// <summary>The app clock, e.g. for the dates of the book's text blocks.</summary>
+    public IClock Clock { get; }
 
     public INoteRepository Notes { get; }
 
