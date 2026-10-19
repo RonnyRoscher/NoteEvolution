@@ -28,8 +28,9 @@ Stand: 2026-10-19 · Status: Entwurf · Baut auf der Buchansicht (Editor, Gliede
 - **Wann gesetzt wird:**
   - **Neuer Textblock**, ob im Editor getippt, aus einer Notiz übernommen, durch „Bemerkung anfügen“ angelegt oder durch Teilen eines Blocks entstanden: `created` und `updated` = jetzt.
   - **Geänderter Textblock**, wenn beim Speichern sein Text (einschließlich Unterpunkten) oder sein Status (`status::`) anders ist als vorher: `updated` = jetzt. `created` bleibt.
-  - **Zusammengeführte Blöcke**, wenn der Editor zwei Blöcke zu einem verbindet: Der verbleibende Block bekommt `updated` = jetzt.
+  - **Zusammengeführte Blöcke**, wenn der Editor zwei Blöcke zu einem verbindet: Der verbleibende Block bekommt `updated` = jetzt. Beim „Zusammenfügen“ der Abschnittsleiste behält er das früheste lesbare `created` der zusammengefügten Blöcke.
   - **Nicht als Änderung zählen:** Verschieben oder Umsortieren ohne Textänderung, Umbenennen einer Überschrift, Änderungen an anderen Eigenschaften (`id`, `source`), und Speichern ohne Unterschied.
+  - **Rückgängig:** Ein gelöschter und per Rückgängig zurückgeholter Block gilt als neu.
 - **Bestehende Blöcke ohne Daten:** Sie bleiben ohne Daten, bis sie das erste Mal geändert werden. Dann bekommen sie `updated`; `created` bleibt leer.
 - **Zeitquelle:** die App-Uhr (`IClock`), damit Tests feste Zeiten setzen können.
 - **Externe Änderungen:** Ändert ein anderes Programm die Datei, setzt NoteEvolution keine Daten nach. Die Daten werden aus der Datei gelesen, wie sie dort stehen.
