@@ -931,18 +931,21 @@
     {
         AdoptVariant.After => (L["AdoptAfter"].Value, L["AdoptAfterTitle"].Value),
         AdoptVariant.Below => (L["AdoptBelow"].Value, L["AdoptBelowTitle"].Value),
+        AdoptVariant.AsHeading => (L["AdoptAsHeading"].Value, L["AdoptAsHeadingTitle"].Value),
+        AdoptVariant.AsSubheading => (L["AdoptAsSubheading"].Value, L["AdoptAsSubheadingTitle"].Value),
         _ => (L["AdoptAtCursor"].Value, L["AdoptAtCursorTitle"].Value),
     };
 
     /// <summary>
     /// "Übernehmen" for <paramref name="block"/> as a split button: the main part adopts the way used last (first "Am
-    /// Cursor", see <see cref="UiSettings.LastAdoptVariant"/>) and is labelled so; the arrow opens the menu of all three
-    /// ways. <paramref name="cssClass"/> names the main part, the arrow gets it with <c>-more</c>.
+    /// Cursor", see <see cref="UiSettings.LastAdoptVariant"/>) and is labelled so, unless that way is not offered for
+    /// the block (<see cref="NoteAdoption.Offers"/>): then it adopts "Am Cursor"; the arrow opens the menu of the ways
+    /// offered. <paramref name="cssClass"/> names the main part, the arrow gets it with <c>-more</c>.
     /// </summary>
     private RenderFragment AdoptSplit(Block block, string cssClass)
     {
         // The button adopts the way it shows, even if another card changes the choice before this one renders again.
-        var variant = Settings.LastAdoptVariant;
+        var variant = NoteAdoption.Offers(State, block, Settings.LastAdoptVariant) ? Settings.LastAdoptVariant : AdoptVariant.AtCursor;
         var (label, title) = Texts(variant);
         return @<span class="ne-adopt-split">
             <button type="button" class="@cssClass" title="@title"
@@ -960,10 +963,10 @@
     /// <summary>Opens the menu of adopt variants of <paramref name="blockKey"/> (closing any other), or closes it.</summary>
     private void ToggleAdoptMenu(Guid blockKey) => _adoptMenu = _adoptMenu == blockKey ? null : blockKey;
 
-    /// <summary>The menu of adopt variants for <paramref name="block"/>, each with a tooltip that explains it.</summary>
+    /// <summary>The menu of the adopt variants offered for <paramref name="block"/>, each with a tooltip that explains it.</summary>
     private RenderFragment AdoptMenu(Block block) =>
         @<div class="ne-adopt-menu" role="menu">
-            @foreach (var (variant, cssClass) in MenuVariants)
+            @foreach (var (variant, cssClass) in MenuVariants.Where(v => NoteAdoption.Offers(State, block, v.Variant)))
             {
                 var (label, title) = Texts(variant);
                 <button type="button" role="menuitem" class="@cssClass" title="@title"
@@ -976,6 +979,8 @@
         (AdoptVariant.AtCursor, "ne-adopt-at-cursor"),
         (AdoptVariant.After, "ne-adopt-after"),
         (AdoptVariant.Below, "ne-adopt-below"),
+        (AdoptVariant.AsHeading, "ne-adopt-as-heading"),
+        (AdoptVariant.AsSubheading, "ne-adopt-as-subheading"),
     ];
 
     /// <summary>
@@ -1009,6 +1014,6 @@
     {
         _adoptMenu = null;
         _message = null;
-        _message = await NoteAdoption.AdoptAsync(State, block.Key, variant, Logger);
+        _message = await NoteAdoption.AdoptAsync(State, block.Key, variant, L["OutlineUntitled"].Value, Logger);
     }
 }

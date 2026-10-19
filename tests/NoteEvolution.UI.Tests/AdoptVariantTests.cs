@@ -72,7 +72,7 @@ public class AdoptVariantTests : UiTestContext
     private Guid NoteKey(string content) => State.Session!.Notes.All().Single(n => n.Block.Content == content).Key;
 
     private Task<AdoptMessage?> AdoptAsync(AdoptVariant variant, string note = "Eine Notiz") =>
-        NoteAdoption.AdoptAsync(State, NoteKey(note), variant, NullLogger.Instance);
+        NoteAdoption.AdoptAsync(State, NoteKey(note), variant, Text("OutlineUntitled"), NullLogger.Instance);
 
     /// <summary>Puts the cursor (as the editor reports it) into the element whose block has <paramref name="content"/>.</summary>
     private void CursorAt(string content, int offset = 0)
@@ -378,6 +378,66 @@ public class AdoptVariantTests : UiTestContext
         Assert.Equal(
             ["Erster Text", "Eine Notiz", "Zweiter Text", "Unterpunkt, der länger als eine Zeile ist und deshalb eigene Knöpfe zum Übernehmen bekommt"],
             Book.Root.Children.First().TextBlocks.Select(t => t.Text));
+    }
+
+    [Fact]
+    public async Task Menu_HeadingVariants_OnlyForBlocksWithSubPoints()
+    {
+        var session = await OpenSessionAsync(_vault);
+        var cut = Render<NoteCard>(p => p.Add(c => c.Note, session.Notes.All().Single(n => n.Block.Content == "Eine Notiz")));
+
+        cut.Find(".ne-note-adopt-more").Click();
+        Assert.Equal(
+            [Text("AdoptAtCursor"), Text("AdoptAfter"), Text("AdoptBelow"), Text("AdoptAsHeading"), Text("AdoptAsSubheading")],
+            cut.FindAll(".ne-adopt-menu button").Select(b => b.TextContent));
+        Assert.Equal(Text("AdoptAsHeadingTitle"), cut.Find(".ne-adopt-menu .ne-adopt-as-heading").GetAttribute("title"));
+
+        // The sub-bullet has no sub-points of its own.
+        cut.Find(".ne-note-child-adopt-more").Click();
+        Assert.Equal(
+            [Text("AdoptAtCursor"), Text("AdoptAfter"), Text("AdoptBelow")],
+            cut.FindAll(".ne-adopt-menu button").Select(b => b.TextContent));
+    }
+
+    [Theory]
+    [InlineData(AdoptVariant.AsHeading, "- # Eine Notiz\n", "- # Zwei\n", 1)]
+    [InlineData(AdoptVariant.AsSubheading, "\t- ## Eine Notiz\n", "\t- Zweiter Text\n", 2)]
+    public async Task Menu_AsHeading_AdoptsAndRevealsTheHeading(AdoptVariant variant, string headingLine, string neighbour, int level)
+    {
+        var session = await OpenSessionAsync(_vault);
+        CursorAt("Erster Text", 7);
+        var cut = Render<NoteCard>(p => p.Add(c => c.Note, session.Notes.All().Single(n => n.Block.Content == "Eine Notiz")));
+
+        cut.Find(".ne-note-adopt-more").Click();
+        cut.Find(".ne-adopt-menu " + (variant == AdoptVariant.AsHeading ? ".ne-adopt-as-heading" : ".ne-adopt-as-subheading")).Click();
+
+        var heading = Book.FindNode(KeyOf(headingLine.Trim('\t', '-', ' ', '\n')))!;
+        Assert.Equal(("Eine Notiz", level), (heading.Title, heading.Level));
+        var textBlock = heading.TextBlocks.Single();
+        Assert.Equal("Unterpunkt, der länger als eine Zeile ist und deshalb eigene Knöpfe zum Übernehmen bekommt", textBlock.Text);
+        Assert.Equal([Guid.Parse(ChildId)], textBlock.Sources);
+        var book = _vault.Read(BookPath);
+        Assert.True(
+            variant == AdoptVariant.AsHeading
+                ? book.IndexOf(headingLine, StringComparison.Ordinal) < book.IndexOf(neighbour, StringComparison.Ordinal)
+                : book.IndexOf(neighbour, StringComparison.Ordinal) < book.IndexOf(headingLine, StringComparison.Ordinal));
+        Assert.Contains("  used-in:: [[Buch - Alpha]]\n", _vault.Read(NotePath));
+        Assert.Contains($"  used-in:: [[Buch - Alpha]] (({textBlock.Block.Id}))\n", _vault.Read(NotePath));
+        AssertRevealed(headingLine.Trim('\t', '-', ' ', '\n'), ElementKind.Heading);
+        Assert.Equal(variant, Settings.LastAdoptVariant);
+    }
+
+    [Fact]
+    public async Task SplitButton_LastVariantAsHeading_FallsBackToAtCursorWithoutSubPoints()
+    {
+        var session = await OpenSessionAsync(_vault);
+        Settings.LastAdoptVariant = AdoptVariant.AsHeading;
+        var cut = Render<NoteCard>(p => p.Add(c => c.Note, session.Notes.All().Single(n => n.Block.Content == "Eine Notiz")));
+
+        Assert.Equal(Text("AdoptAsHeading"), cut.Find(".ne-note-adopt").TextContent);
+        Assert.Equal(Text("AdoptAtCursor"), cut.Find(".ne-note-child-adopt").TextContent);
+        Assert.Equal(Text("AdoptAtCursorTitle"), cut.Find(".ne-note-child-adopt").GetAttribute("title"));
+        Assert.Equal(AdoptVariant.AsHeading, Settings.LastAdoptVariant);
     }
 
     [Theory]

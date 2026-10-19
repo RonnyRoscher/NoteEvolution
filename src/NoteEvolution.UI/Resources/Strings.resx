@@ -468,6 +468,18 @@
   <data name="AdoptBelowTitle" xml:space="preserve">
     <value>Als erstes Unterelement des aktuellen einfügen</value>
   </data>
+  <data name="AdoptAsHeading" xml:space="preserve">
+    <value>Als Überschrift</value>
+  </data>
+  <data name="AdoptAsSubheading" xml:space="preserve">
+    <value>Als Unterüberschrift</value>
+  </data>
+  <data name="AdoptAsHeadingTitle" xml:space="preserve">
+    <value>Als neue Überschrift der Ebene des aktuellen Abschnitts an dessen Ende einfügen; die Unterpunkte werden Textblöcke</value>
+  </data>
+  <data name="AdoptAsSubheadingTitle" xml:space="preserve">
+    <value>Als neue Überschrift eine Ebene tiefer im aktuellen Abschnitt einfügen, vor dessen Unterabschnitten; die Unterpunkte werden Textblöcke</value>
+  </data>
   <data name="NoteAdoptMore" xml:space="preserve">
     <value>Weitere Arten zu übernehmen</value>
   </data>
