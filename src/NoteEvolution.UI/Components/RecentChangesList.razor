@@ -9,13 +9,17 @@
 @* The "Zuletzt geändert" list above the outline (spec "Blockdaten" 4.1): the newest changed text blocks of the current book. *@
 @if (State.CurrentBook is not null)
 {
-    <section class="ne-recent" aria-label="@L["RecentTitle"]" style="@HeightStyle">
-        <h4 class="ne-recent-title">@L["RecentTitle"]</h4>
-        @if (_items.Count == 0)
+    <section class="ne-recent @(Collapsed ? "collapsed" : null)" aria-label="@L["RecentTitle"]" style="@HeightStyle">
+        <h4 class="ne-recent-title">
+            <button type="button" class="ne-recent-toggle" aria-expanded="@(Collapsed ? "false" : "true")"
+                    title="@(Collapsed ? L["Expand"] : L["Collapse"])" @onclick="() => CollapsedChanged.InvokeAsync(!Collapsed)">@(Collapsed ? "▸" : "▾") @L["RecentTitle"]</button>
+        </h4>
+        @* Collapsed, only the header stays. *@
+        @if (!Collapsed && _items.Count == 0)
         {
             <p class="ne-recent-empty">@L["RecentEmpty"]</p>
         }
-        else
+        else if (!Collapsed)
         {
             var now = Clock.Now.LocalDateTime;
             <ul class="ne-recent-list">
@@ -43,7 +47,13 @@
     /// <summary>The height of the list in pixels (the splitter below it sets it); <c>null</c> lets the list take its own height.</summary>
     [Parameter] public double? Height { get; set; }
 
-    private string? HeightStyle => Height is { } h ? FormattableString.Invariant($"height: {h}px") : null;
+    /// <summary>Only the header is shown; its toggle raises <see cref="CollapsedChanged"/> with the other state.</summary>
+    [Parameter] public bool Collapsed { get; set; }
+
+    [Parameter] public EventCallback<bool> CollapsedChanged { get; set; }
+
+    /// <summary>Collapsed, the list takes the header's height and <see cref="Height"/> waits for the next expand.</summary>
+    private string? HeightStyle => !Collapsed && Height is { } h ? FormattableString.Invariant($"height: {h}px") : null;
 
     protected override void OnInitialized()
     {

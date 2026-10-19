@@ -48,6 +48,9 @@ public sealed class UiSettings
     /// <summary>The height in pixels of the "Zuletzt geändert" list above the outline (spec "Blockdaten" 4.3).</summary>
     public double RecentListHeight { get; set; } = DefaultRecentListHeight;
 
+    /// <summary>The "Zuletzt geändert" list shows only its header; <see cref="RecentListHeight"/> stays for expanding it.</summary>
+    public bool RecentListCollapsed { get; set; }
+
     public bool OutlineCollapsed { get; set; }
 
     public bool NotesCollapsed { get; set; }

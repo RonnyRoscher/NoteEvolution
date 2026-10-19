@@ -11,21 +11,26 @@
 
 @if (State.CurrentBook is not { } book)
 {
+    <div class="ne-outline-label">@L["Outline"]</div>
     <div class="ne-placeholder">@L["OutlinePlaceholder"]</div>
 }
 else
 {
     _warnings = WarningsByNode(book);
     <div class="ne-outline-pane">
-        <RecentChangesList Height="Settings.RecentListHeight" />
-        <RowSplitter Height="Settings.RecentListHeight" HeightChanged="h => Settings.RecentListHeight = h" DragEnded="SaveSettings" />
+        <RecentChangesList Height="Settings.RecentListHeight" Collapsed="Settings.RecentListCollapsed" CollapsedChanged="SetRecentListCollapsed" />
+        @if (!Settings.RecentListCollapsed)
+        {
+            <RowSplitter Height="Settings.RecentListHeight" HeightChanged="h => Settings.RecentListHeight = h" DragEnded="SaveSettings" />
+        }
+        <div class="ne-outline-label">@L["Outline"]</div>
         @if (_error is not null)
         {
             <div class="ne-outline-error" role="alert">@_error</div>
         }
         <button type="button" class="ne-outline-coverage-toggle" aria-pressed="@(Settings.ShowCoverage ? "true" : "false")"
                 @onclick="ToggleCoverage">@L["OutlineCoverageToggle"]</button>
-        @* Only the tree scrolls: the list, the splitter and the toggle above it stay in view. *@
+        @* Only the tree scrolls: the list, the splitter, the label and the toggle above it stay in view. *@
         <div class="ne-outline-scroll">
             <ul class="ne-outline-tree">
                 @if (book.Root.TextBlocks.Any())
@@ -147,6 +152,13 @@ else
         Settings.ShowCoverage = !Settings.ShowCoverage;
         SaveSettings();
         UpdateWatch();
+    }
+
+    /// <summary>Collapses or expands the "Zuletzt geändert" list (kept in <c>ui.json</c>); its height stays as it is.</summary>
+    private void SetRecentListCollapsed(bool collapsed)
+    {
+        Settings.RecentListCollapsed = collapsed;
+        SaveSettings();
     }
 
     private void SaveSettings()
