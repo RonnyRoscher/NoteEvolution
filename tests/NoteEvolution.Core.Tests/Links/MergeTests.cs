@@ -467,6 +467,108 @@ public class MergeTests
         Assert.False(s.Undo.CanUndo);
     }
 
+    // A fixed local time with the local offset, so the tests hold in any time zone.
+    private static readonly DateTimeOffset StampNow = LocalNow();
+
+    private const string DatedBook =
+        "title:: Buch: Test\n" +
+        "type:: book\n" +
+        "\n" +
+        "- # Kapitel\n" +
+        "\t- Erster Text\n" +
+        "\t  created:: 2026-05-01T10:00\n" +
+        "\t  updated:: 2026-05-02T10:00\n" +
+        "\t- Zweiter Text\n" +
+        "\t  created:: 2026-04-01T09:00\n" +
+        "\t  updated:: 2026-06-01T09:00\n" +
+        "\t- Dritter Text\n";
+
+    [Fact]
+    public void Merge_DatedBlocks_KeepsTheEarliestCreated_StampsUpdated()
+    {
+        using var s = new LinkSetup(DatedBook, clock: new FakeClock(StampNow));
+
+        s.Links.MergeTextBlocks(s.Book, [[s.Text("Erster Text").Key, s.Text("Zweiter Text").Key]]);
+
+        Assert.Equal(
+            "title:: Buch: Test\ntype:: book\n\n- # Kapitel\n" +
+            "\t- Erster Text\n" +
+            "\t  created:: 2026-04-01T09:00\n" +
+            "\t  updated:: 2026-10-19T14:32\n" +
+            "\n" +
+            "\t  Zweiter Text\n" +
+            "\t- Dritter Text\n",
+            s.ReadBook());
+
+        s.Undo.Undo();
+
+        Assert.Equal(DatedBook, s.ReadBook());
+        Assert.False(s.Undo.CanUndo);
+    }
+
+    [Fact]
+    public void Merge_FirstUndated_LaterDated_FirstGetsTheLatersCreated()
+    {
+        const string book =
+            "title:: Buch: Test\ntype:: book\n\n- # Kapitel\n" +
+            "\t- Erster Text\n" +
+            "\t- Zweiter Text\n" +
+            "\t  created:: 2026-04-01T09:00\n" +
+            "\t  updated:: 2026-06-01T09:00\n";
+        using var s = new LinkSetup(book, clock: new FakeClock(StampNow));
+
+        s.Links.MergeTextBlocks(s.Book, [[s.Text("Erster Text").Key, s.Text("Zweiter Text").Key]]);
+
+        Assert.Equal(
+            "title:: Buch: Test\ntype:: book\n\n- # Kapitel\n" +
+            "\t- Erster Text\n" +
+            "\t  created:: 2026-04-01T09:00\n" +
+            "\t  updated:: 2026-10-19T14:32\n" +
+            "\n" +
+            "\t  Zweiter Text\n",
+            s.ReadBook());
+
+        s.Undo.Undo();
+
+        Assert.Equal(book, s.ReadBook());
+    }
+
+    [Fact]
+    public void Merge_FirstHasTheEarliestCreated_KeepsIt_UnreadableOnesIgnored()
+    {
+        const string book =
+            "title:: Buch: Test\ntype:: book\n\n- # Kapitel\n" +
+            "\t- Erster Text\n" +
+            "\t  created:: 2026-03-01T08:00\n" +
+            "\t  updated:: 2026-03-01T08:00\n" +
+            "\t- Zweiter Text\n" +
+            "\t  created:: 2026-04-01T09:00:30\n" +
+            "\t  updated:: 2026-06-01T09:00\n" +
+            "\t- Dritter Text\n" +
+            "\t  created:: kaputt\n";
+        using var s = new LinkSetup(book, clock: new FakeClock(StampNow));
+
+        s.Links.MergeTextBlocks(
+            s.Book, [[s.Text("Erster Text").Key, s.Text("Zweiter Text").Key, s.Text("Dritter Text").Key]]);
+
+        Assert.Equal(
+            "title:: Buch: Test\ntype:: book\n\n- # Kapitel\n" +
+            "\t- Erster Text\n" +
+            "\t  created:: 2026-03-01T08:00\n" +
+            "\t  updated:: 2026-10-19T14:32\n" +
+            "\n" +
+            "\t  Zweiter Text\n" +
+            "\n" +
+            "\t  Dritter Text\n",
+            s.ReadBook());
+    }
+
+    private static DateTimeOffset LocalNow()
+    {
+        var local = new DateTime(2026, 10, 19, 14, 32, 0, DateTimeKind.Unspecified);
+        return new DateTimeOffset(local, TimeZoneInfo.Local.GetUtcOffset(local));
+    }
+
     private static void AssertChangedLines(string before, string after, int[] removed, int[] added)
     {
         var (actualRemoved, actualAdded) = LineDiff.Changed(Encoding.UTF8.GetBytes(before), Encoding.UTF8.GetBytes(after));

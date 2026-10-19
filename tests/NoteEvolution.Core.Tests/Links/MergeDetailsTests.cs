@@ -405,6 +405,76 @@ public class MergeDetailsTests
 
     private static Guid KeyOf(LinkSetup s, string content) => s.Book.Page.AllBlocks().Single(b => b.Content == content).Key;
 
+    // A fixed local time with the local offset, so the tests hold in any time zone.
+    private static readonly DateTimeOffset StampNow = LocalNow();
+
+    [Fact]
+    public void MergeDetails_DatedHead_DatedDetail_HeadKeepsTheEarliestCreated_StampsUpdated()
+    {
+        // The detail was a text block once (indented in the editor) and still has its dates.
+        const string book =
+            Head +
+            "\t- Text A\n" +
+            "\t  created:: 2026-05-01T10:00\n" +
+            "\t  updated:: 2026-05-02T10:00\n" +
+            "\t\t- Detail 1\n" +
+            "\t\t  created:: 2026-04-01T09:00\n" +
+            "\t\t  updated:: 2026-06-01T09:00\n" +
+            "\t- Text B\n";
+        using var s = new LinkSetup(book, clock: new FakeClock(StampNow));
+
+        s.Links.MergeDetails(s.Book, s.Text("Text A").Key);
+
+        Assert.Equal(
+            Head +
+            "\t- Text A\n" +
+            "\t  created:: 2026-04-01T09:00\n" +
+            "\t  updated:: 2026-10-19T14:32\n" +
+            "\n" +
+            "\t  Detail 1\n" +
+            "\t- Text B\n",
+            s.ReadBook());
+
+        s.Undo.Undo();
+
+        Assert.Equal(book, s.ReadBook());
+        Assert.False(s.Undo.CanUndo);
+    }
+
+    [Fact]
+    public void MergeDetails_DetailHead_GetsNoDates_TextBlockStampsUpdated()
+    {
+        const string book =
+            Head +
+            "\t- Text A\n" +
+            "\t  created:: 2026-05-01T10:00\n" +
+            "\t  updated:: 2026-05-02T10:00\n" +
+            "\t\t- Detail 1\n" +
+            "\t\t\t- Tiefer\n" +
+            "\t\t\t  created:: 2026-04-01T09:00\n" +
+            "\t\t\t  updated:: 2026-06-01T09:00\n";
+        using var s = new LinkSetup(book, clock: new FakeClock(StampNow));
+        var detail = s.Book.Page.AllBlocks().Single(b => b.Content == "Detail 1").Key;
+
+        s.Links.MergeDetails(s.Book, detail);
+
+        Assert.Equal(
+            Head +
+            "\t- Text A\n" +
+            "\t  created:: 2026-05-01T10:00\n" +
+            "\t  updated:: 2026-10-19T14:32\n" +
+            "\t\t- Detail 1\n" +
+            "\n" +
+            "\t\t  Tiefer\n",
+            s.ReadBook());
+    }
+
+    private static DateTimeOffset LocalNow()
+    {
+        var local = new DateTime(2026, 10, 19, 14, 32, 0, DateTimeKind.Unspecified);
+        return new DateTimeOffset(local, TimeZoneInfo.Local.GetUtcOffset(local));
+    }
+
     private static void AssertChangedLines(string before, string after, int[] removed, int[] added)
     {
         var (actualRemoved, actualAdded) = LineDiff.Changed(Encoding.UTF8.GetBytes(before), Encoding.UTF8.GetBytes(after));

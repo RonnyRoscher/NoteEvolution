@@ -84,8 +84,10 @@ public interface ILinkService
     /// behind its details, and the later blocks are removed. The first block gets the union of all <c>source::</c>
     /// values (first-seen order); without an <c>id::</c> of its own it takes over the <c>id::</c> of the first later
     /// block that has one, else it gets a new one if a later block was linked. The later blocks' other properties are
-    /// carried over where the first block lacks the key. Then every note whose <c>used-in::</c> referenced a removed
-    /// block references the first block instead, in place; an entry that would duplicate one already there is dropped.
+    /// carried over where the first block lacks the key (not <c>created::</c> / <c>updated::</c>: the first block gets
+    /// the earliest readable <c>created::</c> of the group and a new <c>updated::</c>). Then every note whose
+    /// <c>used-in::</c> referenced a removed block references the first block instead, in place; an entry that would
+    /// duplicate one already there is dropped.
     /// Can be undone („Zusammenfügen“) as long as the book is still exactly as this left it: the book and the notes
     /// still as this left them get their former bytes back, other notes get their former usages added again.
     /// </summary>
@@ -111,7 +113,8 @@ public interface ILinkService
     /// to the enclosing text block's <c>source::</c> (union), and every note whose <c>used-in::</c> referenced a merged
     /// detail references the text block instead (which gets an <c>id::</c> if needed). Other properties of the merged
     /// details are carried over where the head lacks the key, except <c>collapsed::</c> (the view state of a detail
-    /// that goes; the head keeps its own). Can be undone („Zusammenfügen“) as
+    /// that goes; the head keeps its own) and the dates (a text block head gets the earliest readable
+    /// <c>created::</c>; the text block gets a new <c>updated::</c>). Can be undone („Zusammenfügen“) as
     /// <see cref="MergeTextBlocks"/>.
     /// </summary>
     /// <returns>The key of the head.</returns>

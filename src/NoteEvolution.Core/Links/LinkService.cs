@@ -304,6 +304,11 @@ public sealed class LinkService(IVault vault, IPageWriter writer, UndoManager un
                     first.SetProperty(property.Key, property.Value);
                 }
 
+                if (plan.EarliestCreated is { } created)
+                {
+                    first.SetProperty(BlockDates.CreatedKey, created);
+                }
+
                 foreach (var block in later)
                 {
                     var sources = SourceValue.Parse(block.GetProperty(SourceKey) ?? "");
@@ -364,6 +369,12 @@ public sealed class LinkService(IVault vault, IPageWriter writer, UndoManager un
             foreach (var property in plan.Carried)
             {
                 head.SetProperty(property.Key, property.Value);
+            }
+
+            // Only a text block has dates: a detail head does not take a created:: over.
+            if (head == textBlock && plan.EarliestCreated is { } created)
+            {
+                head.SetProperty(BlockDates.CreatedKey, created);
             }
 
             foreach (var detail in merged)
@@ -487,15 +498,21 @@ public sealed class LinkService(IVault vault, IPageWriter writer, UndoManager un
     /// The later blocks' properties (other than <c>id::</c>, <c>source::</c> and <c>status::</c>) the first block lacks.
     /// </param>
     /// <param name="RemovedIds">The ids of the later blocks that vanish (not the one taken over).</param>
-    private sealed record MergePlan(string? TakenId, IReadOnlyList<BlockProperty> Carried, IReadOnlyList<Guid> RemovedIds);
+    /// <param name="EarliestCreated">
+    /// The raw <c>created::</c> value of a later block that is earlier than the first block's (or the first block has
+    /// no readable one); else <c>null</c>: the first block keeps its own line (or none).
+    /// </param>
+    private sealed record MergePlan(
+        string? TakenId, IReadOnlyList<BlockProperty> Carried, IReadOnlyList<Guid> RemovedIds, string? EarliestCreated);
 
     /// <summary>
     /// Plans the properties of one group (see <see cref="MergePlan"/>): a later block's property is carried over when
     /// the first block (or an earlier later block) does not have its key yet (ignoring case). With
     /// <paramref name="takeOverId"/> the first block without an <c>id::</c> takes over the first later one's; without
-    /// it every later block's id goes (merged details: their usages move to the text block). <c>status::</c> and the
-    /// properties with a key in <paramref name="ignoredKeys"/> are neither carried over nor compared: the first block
-    /// keeps its own line (or none), the later blocks' lines go with them.
+    /// it every later block's id goes (merged details: their usages move to the text block). <c>status::</c>, the dates
+    /// and the properties with a key in <paramref name="ignoredKeys"/> are neither carried over nor compared: the first
+    /// block keeps its own line (or none), the later blocks' lines go with them; the earliest readable
+    /// <c>created::</c> of the group is planned separately (see <see cref="MergePlan"/>), <c>updated::</c> is stamped.
     /// </summary>
     /// <exception cref="MergeRefusedException">Two of the blocks have different values for the same key.</exception>
     private static MergePlan PlanMerge(List<Block> blocks, bool takeOverId, IReadOnlyCollection<string>? ignoredKeys = null)
@@ -509,6 +526,8 @@ public sealed class LinkService(IVault vault, IPageWriter writer, UndoManager un
             string.Equals(property.Key, IdKey, StringComparison.OrdinalIgnoreCase)
             || string.Equals(property.Key, SourceKey, StringComparison.OrdinalIgnoreCase)
             || string.Equals(property.Key, BlockStatuses.Key, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(property.Key, BlockDates.CreatedKey, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(property.Key, BlockDates.UpdatedKey, StringComparison.OrdinalIgnoreCase)
             || (ignoredKeys?.Contains(property.Key, StringComparer.OrdinalIgnoreCase) ?? false);
 
         var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -535,7 +554,11 @@ public sealed class LinkService(IVault vault, IPageWriter writer, UndoManager un
         }
 
         var removedIds = later.Select(block => block.Id).OfType<Guid>().Where(id => id != keptId).Distinct().ToList();
-        return new MergePlan(taken?.GetProperty(IdKey), carried, removedIds);
+        var firstCreated = BlockDates.Created(first);
+        var earliest = later
+            .Where(block => BlockDates.Created(block) is { } created && (firstCreated is null || created < firstCreated))
+            .MinBy(BlockDates.Created);
+        return new MergePlan(taken?.GetProperty(IdKey), carried, removedIds, earliest?.GetProperty(BlockDates.CreatedKey));
     }
 
     /// <summary>
