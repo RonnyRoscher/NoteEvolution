@@ -54,6 +54,16 @@ public class CoverageTabTests : UiTestContext
         return session;
     }
 
+    private static async Task Eventually(Func<bool> condition, string because)
+    {
+        var until = DateTime.UtcNow + DefaultWaitTimeout;
+        while (!condition())
+        {
+            Assert.True(DateTime.UtcNow < until, because);
+            await Task.Delay(10);
+        }
+    }
+
     private OutlineNode Node(string title) => State.CurrentBook!.Root.Children.SelectMany(Flatten).First(n => n.Title == title);
 
     private static IEnumerable<OutlineNode> Flatten(OutlineNode node) => new[] { node }.Concat(node.Children.SelectMany(Flatten));
@@ -159,8 +169,10 @@ public class CoverageTabTests : UiTestContext
 
         cut.Find(".ne-tab-coverage").Click();
         Time.Advance(VaultSession.CoverageDelay);
-        cut.WaitForAssertion(() => Assert.True(session.CoverageComputations > before));
-        cut.WaitForAssertion(() => Assert.False(session.CoverageRunning));
+        // Polled, not waited for with WaitForAssertion: that only checks again on a render, and the computation's last
+        // render (applying the coverage) comes before it counts as finished, so a check at that render can miss the end.
+        await Eventually(() => session.CoverageComputations > before && !session.CoverageRunning,
+            "The coverage was not computed in time.");
 
         cut.Find(".ne-tab-journal").Click();
         var after = session.CoverageComputations;
