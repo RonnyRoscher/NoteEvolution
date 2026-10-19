@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Localization;
 using NoteEvolution.Core.Books;
 using NoteEvolution.TestSupport;
+using NoteEvolution.UI.Editor;
 using NoteEvolution.UI.Components;
 using NoteEvolution.UI.Resources;
 using NoteEvolution.UI.State;
@@ -185,5 +186,30 @@ public class RecentChangesTests : UiTestContext
             Assert.Equal(2, items.Count);
             Assert.Contains("Neuer Text", items[0].TextContent);
         });
+    }
+
+    [Fact]
+    public async Task List_CursorMoves_DoNotRecompute_NewBookInstanceDoes()
+    {
+        using var tv = Vault("- # Eins\n" + Indented(Block("Erster Text", "2026-10-05T10:00")));
+        var session = await OpenSessionAsync(tv);
+        var cut = Render<RecentChangesList>();
+        var computed = cut.Instance.Recomputes;
+
+        State.Cursor = new CursorInfo(ElementKind.Heading, State.CurrentBook!.Root.Children.Single().Key, null, 0);
+        State.Notify();
+        State.Notify();
+
+        cut.WaitForAssertion(() => Assert.Single(cut.FindAll(".ne-recent-item")));
+        Assert.Equal(computed, cut.Instance.Recomputes);
+
+        var path = Path.Combine(tv.Root, BookPath);
+        File.WriteAllText(path, "title:: Alpha\ntype:: book\n\n- # Eins\n" + Indented(Block("Erster Text", "2026-10-05T10:00") + Block("Neuer Text", Stamp)));
+        session.HandleExternalChange(path);
+        State.RefreshBook();
+        State.Notify();
+
+        cut.WaitForAssertion(() => Assert.Equal(2, cut.FindAll(".ne-recent-item").Count));
+        Assert.True(cut.Instance.Recomputes > computed);
     }
 }

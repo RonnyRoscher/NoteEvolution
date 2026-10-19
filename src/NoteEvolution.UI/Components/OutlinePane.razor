@@ -17,7 +17,8 @@ else
 {
     _warnings = WarningsByNode(book);
     <div class="ne-outline-pane">
-        <RecentChangesList />
+        <RecentChangesList Height="Settings.RecentListHeight" />
+        <RowSplitter Height="Settings.RecentListHeight" HeightChanged="h => Settings.RecentListHeight = h" DragEnded="SaveSettings" />
         @if (_error is not null)
         {
             <div class="ne-outline-error" role="alert">@_error</div>
@@ -141,6 +142,12 @@ else
     private void ToggleCoverage()
     {
         Settings.ShowCoverage = !Settings.ShowCoverage;
+        SaveSettings();
+        UpdateWatch();
+    }
+
+    private void SaveSettings()
+    {
         try
         {
             Settings.Save(Platform.UserDataDirectory);
@@ -149,8 +156,6 @@ else
         {
             Logger.LogWarning(ex, "Saving the UI settings failed");
         }
-
-        UpdateWatch();
     }
 
     /// <summary>The session computes the coverage only while the bars are shown.</summary>

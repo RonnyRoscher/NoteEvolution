@@ -142,6 +142,11 @@
                 const pane = paneOnRight ? splitter?.nextElementSibling : splitter?.previousElementSibling;
                 return pane ? pane.getBoundingClientRect().width : 0;
             },
+            // Called by the row splitter (RowSplitter.razor): the height of the element above it, or of the whole container.
+            paneHeight(splitter, container) {
+                const element = container ? splitter?.parentElement : splitter?.previousElementSibling;
+                return element ? element.getBoundingClientRect().height : 0;
+            },
         };
 
         // Should the start never report back (an error before the shell runs), the app shows itself after 30 s anyway.

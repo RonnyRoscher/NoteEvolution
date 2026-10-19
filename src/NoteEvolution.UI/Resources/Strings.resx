@@ -298,6 +298,9 @@
   <data name="ResizePane" xml:space="preserve">
     <value>Breite ziehen</value>
   </data>
+  <data name="ResizeRecentList" xml:space="preserve">
+    <value>Höhe der Liste ziehen</value>
+  </data>
 
   <!-- Gliederung -->
   <data name="OutlinePrologue" xml:space="preserve">

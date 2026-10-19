@@ -44,6 +44,9 @@ public abstract class UiTestContext : BunitContext
 
         // The width a pane shows (index.html); 0 means unknown, the splitter then starts from the stored width.
         JSInterop.Setup<double>("neLayout.paneWidth", _ => true).SetResult(0);
+
+        // The height of the list above a row splitter, or of the container with `true` (index.html); 0 means unknown.
+        JSInterop.Setup<double>("neLayout.paneHeight", _ => true).SetResult(0);
     }
 
     /// <summary>The editor every rendered <c>EditorPane</c> talks to.</summary>

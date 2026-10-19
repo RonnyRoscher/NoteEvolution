@@ -36,6 +36,7 @@
 
 @code {
     private VaultSession? _session;
+    private VaultSession? _computedFor;
     private Book? _book;
     private IReadOnlyList<RecentChange> _items = [];
 
@@ -61,7 +62,13 @@
     private void OnStateChanged() => _ = InvokeAsync(() =>
     {
         TrackSession();
-        Recompute();
+
+        // Every cursor move notifies; the list only depends on the book (a changed page brings a new instance).
+        if (!ReferenceEquals(State.CurrentBook, _book) || _session != _computedFor)
+        {
+            Recompute();
+        }
+
         StateHasChanged();
     });
 
@@ -71,9 +78,14 @@
         StateHasChanged();
     });
 
+    /// <summary>How often the list was computed (a test hook for the guard in <see cref="OnStateChanged"/>).</summary>
+    internal int Recomputes { get; private set; }
+
     private void Recompute()
     {
+        Recomputes++;
         _book = State.CurrentBook;
+        _computedFor = _session;
         _items = _book is null ? [] : RecentChanges.Of(_book, node => _session?.TopicSummary(_book, node.Key));
     }
 

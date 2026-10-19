@@ -393,6 +393,32 @@ html, body {
     cursor: col-resize;
 }
 
+.ne-row-splitter {
+    flex: none;
+    /* A 1px line with a 7px grip area. */
+    height: 1px;
+    cursor: row-resize;
+    background: var(--border);
+    background-clip: content-box;
+    padding: 3px 0;
+    margin: -3px 0;
+    z-index: 1;
+}
+
+.ne-row-splitter:hover,
+.ne-row-splitter:focus-visible,
+.ne-row-splitter.dragging {
+    background: var(--accent);
+    background-clip: content-box;
+}
+
+.ne-row-splitter-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    cursor: row-resize;
+}
+
 /* Outline */
 
 .ne-outline-pane {
@@ -2064,8 +2090,9 @@ html, body {
     flex-direction: column;
     height: 180px;
     min-height: 60px;
+    /* A stored height taller than the pane is shown cut back, so the outline keeps room (the setting stays). */
+    max-height: calc(100% - 120px);
     overflow-y: auto;
-    border-bottom: 1px solid var(--border);
 }
 
 .ne-recent-title {
