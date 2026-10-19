@@ -140,6 +140,9 @@ public class RecentChangesTests : UiTestContext
         Assert.Contains("heute 08:30", items[0].TextContent);
         Assert.Contains("Eins", items[0].TextContent);
         Assert.Contains("03.10.2026", items[1].TextContent);
+        // Date, summary, then the section path small below (spec 4.1).
+        Assert.Equal(
+            ["ne-recent-when", "ne-recent-summary", "ne-recent-path"], items[0].Children.Select(child => child.ClassName));
 
         items[1].Click();
 

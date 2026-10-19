@@ -24,8 +24,8 @@
                     <li @key="item.TextBlockKey">
                         <button type="button" class="ne-recent-item" title="@item.Excerpt" @onclick="() => Reveal(item)" @onclick:stopPropagation="true">
                             <span class="ne-recent-when">@RecentChanges.When(item.Updated, now, L)</span>
-                            <span class="ne-recent-path">@item.SectionPath</span>
                             <span class="ne-recent-summary">@item.Summary</span>
+                            <span class="ne-recent-path">@item.SectionPath</span>
                         </button>
                     </li>
                 }
