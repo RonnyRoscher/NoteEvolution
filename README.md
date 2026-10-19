@@ -53,6 +53,14 @@ Der Editor zeigt immer das ganze Buch. Der **aktuelle Abschnitt** ist das Elemen
 oder Detail-Unterpunkt); ein Kasten mit Balken links markiert ihn, und er bestimmt „Relevant“. Ein Klick in der
 Gliederung springt zur Überschrift.
 
+Jeder Textblock zeigt rechts oben klein und grau, wann er erstellt und zuletzt geändert wurde („erstellt 12.10.2026 ·
+geändert 19.10.2026 14:32“). Die Daten stehen als `created::` und `updated::` im Block der Buchdatei; neue Blöcke
+bekommen beide, eine Änderung von Text oder Status setzt `updated` (Verschieben zählt nicht). Bestehende Blöcke ohne
+Daten bleiben so, bis sie geändert werden. Über der Gliederung steht **„Zuletzt geändert“**: die 20 zuletzt geänderten
+Textblöcke mit Datum, dem ersten Satz der Abschnitts-Zusammenfassung (sonst dem Textanfang) und dem Abschnitt; ein
+Klick springt hin. Der Schieber zwischen Liste und Gliederung stellt die Höhe ein (auch mit Pfeil hoch/runter); sie
+bleibt nach einem Neustart erhalten.
+
 Am unteren Rand der Markierung stehen die Abschnittsknöpfe und die Quellen:
 
 | Befehl | Tastenkürzel |
@@ -70,7 +78,7 @@ Ist „Verwendete ausblenden“ eingeschaltet, erscheint die Notiz stattdessen a
 Der Reiter **Journal** ist beim Start ausgewählt und zeigt jede Journal-Datei als eine Karte (ein Tag, mit Datum
 und „In Logseq öffnen“); ihre Hauptpunkte stehen darin als Kästen mit Linie, jeder mit seinen Knöpfen untereinander
 rechts neben dem Text (darüber ✓, wenn verwendet) und seinen Unterpunkten darunter. „Suche“ und „Relevant“ zeigen
-weiter einzelne Hauptpunkte als Treffer.
+weiter einzelne Hauptpunkte als Treffer. Im Journal steht „Springen zum Tag“ in der Filterzeile hinter „Von“/„Bis“.
 
 Zum Übernehmen hat jede Notiz einen geteilten Knopf, ebenso jeder Unteranstrich mit mehr als einer Zeile (mehr als
 80 Zeichen, ein Zeilenumbruch oder eigene Unteranstriche), der kein Punkt einer Aufzählung ist („1.“, „2)“, „a)“, „–“,
@@ -252,6 +260,12 @@ Fenster und Grundlayout
 - [ ] Einstellungen: Schriftgröße, Zeilenbreite und Farbschema wirken; geänderte Notizordner laden den Vault neu.
 
 Gliederung
+- [ ] Text in einem Block ändern und ca. 1 s warten: „geändert …“ im Blockkopf springt auf jetzt, der Cursor bleibt;
+      der Block steht oben in „Zuletzt geändert“; in der Datei ändert sich nur dieser Block (Text und `updated::`).
+- [ ] Ein Buch nur öffnen und wieder schließen: `git diff` der Buchdatei ist leer.
+- [ ] Schieber zwischen „Zuletzt geändert“ und Gliederung ziehen; nach Neustart ist die Höhe dieselbe. Lange Gliederung
+      scrollen: Liste und Schieber bleiben stehen.
+- [ ] Zwei datierte Textblöcke zusammenfügen: klappt; der Block behält das frühere Erstellungsdatum.
 - [ ] Überschrift per Doppelklick umbenennen (Fokus im Eingabefeld), „+“ legt eine Unterüberschrift an.
 - [ ] Abschnitte per Ziehen umsortieren und einhängen (echtes Ziehen mit der Maus in WebView2).
 
