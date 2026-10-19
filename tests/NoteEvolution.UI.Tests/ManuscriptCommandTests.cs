@@ -120,7 +120,10 @@ public class ManuscriptCommandTests : UiTestContext
         var message = await RunAsync(SectionCommand.InsertChild);
 
         Assert.Null(message);
-        AssertBook(BookText.Replace("\t- Zweiter Text\n", "\t- Zweiter Text\n\t\t-\n"), [], ["\t\t-"]);
+        AssertBook(
+            BookText.Replace("\t- Zweiter Text\n", "\t- Zweiter Text\n\t  updated:: " + Stamp + "\n\t\t-\n"),
+            [],
+            ["\t  updated:: " + Stamp, "\t\t-"]);
         var added = KeyOf("");
         AssertRevealed(added, ElementKind.Detail);
         Assert.Equal(KeyOf("Zweiter Text"), State.Cursor!.TextBlockKey);
@@ -173,19 +176,20 @@ public class ManuscriptCommandTests : UiTestContext
 
         CursorAt("Ein Detail");
         Assert.Null(await RunAsync(SectionCommand.Delete));
-        AssertBook(BookText.Replace("\t\t- Ein Detail\n", ""), ["\t\t- Ein Detail"], []);
+        var detailGone = BookText.Replace("\t- Erster Text\n\t\t- Ein Detail\n", "\t- Erster Text\n\t  updated:: " + Stamp + "\n");
+        AssertBook(detailGone, ["\t\t- Ein Detail"], ["\t  updated:: " + Stamp]);
         Assert.Equal(Undo, session.Undo.NextDescription);
 
         CursorAt("Zweiter Text");
         Assert.Null(await RunAsync(SectionCommand.Delete));
-        Assert.Equal(BookText.Replace("\t\t- Ein Detail\n", "").Replace("\t- Zweiter Text\n", ""), _vault.Read(BookPath));
+        Assert.Equal(detailGone.Replace("\t- Zweiter Text\n", ""), _vault.Read(BookPath));
         Assert.Equal("Löschen", session.Undo.NextDescription);
 
         // The heading goes with its whole section, and the usages of its text blocks leave the notes.
         CursorAt("# Zwei");
         Assert.Null(await RunAsync(SectionCommand.Delete));
         Assert.Equal(
-            "title:: Alpha\ntype:: book\n\n- Vorspann Text\n- # Eins\n\t- Erster Text\n\t- ## Eins-A\n\t\t- Unter Text\n",
+            "title:: Alpha\ntype:: book\n\n- Vorspann Text\n- # Eins\n\t- Erster Text\n\t  updated:: " + Stamp + "\n\t- ## Eins-A\n\t\t- Unter Text\n",
             _vault.Read(BookPath));
         Assert.DoesNotContain(DritterId, _vault.Read(NotePath));
         Assert.Equal("Löschen", session.Undo.NextDescription);
@@ -408,13 +412,15 @@ public class ManuscriptCommandTests : UiTestContext
 
         Assert.Null(await RunAsync(SectionCommand.Delete));
 
-        Assert.Equal(BookText.Replace("\t\t- Ein Detail\n", ""), tv.Read(BookPath));
+        var touched = "\t- Erster Text\n\t  updated:: " + Stamp + "\n";
+        Assert.Equal(BookText.Replace("\t- Erster Text\n\t\t- Ein Detail\n", touched), tv.Read(BookPath));
         Assert.Equal(NoteText + $"- Andere Notiz\n  id:: {otherId}\n", tv.Read(NotePath));
         Assert.Equal("Löschen", session.Undo.NextDescription);
 
         Assert.True(session.TryUndo(out var error), error?.ToString());
 
-        Assert.Equal(bookText, tv.Read(BookPath));
+        // The detail is back; the undo of a link-service delete leaves the text block's updated:: of the delete.
+        Assert.Equal(bookText.Replace("\t- Erster Text\n", touched), tv.Read(BookPath));
         Assert.Equal(noteText, tv.Read(NotePath));
     }
 

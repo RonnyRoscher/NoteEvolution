@@ -33,11 +33,14 @@ internal sealed class LinkSetup : IDisposable
 
     private static readonly DateTimeOffset Now = new(2026, 3, 15, 14, 30, 5, TimeSpan.Zero);
 
-    public LinkSetup(string book = DefaultBook, string journal = DefaultJournal)
+    public LinkSetup(string book = DefaultBook, string journal = DefaultJournal, IClock? clock = null)
     {
+        _clock = clock;
         Tv = TestVault.Create((BookFile, book), (JournalFile, journal));
         Reopen();
     }
+
+    private readonly IClock? _clock;
 
     public TestVault Tv { get; }
 
@@ -70,7 +73,7 @@ internal sealed class LinkSetup : IDisposable
         Writer = new FailingWriter(inner);
         Undo = new UndoManager();
         Pending = new PendingStore(Vault.Root);
-        Links = new LinkService(Vault, Writer, Undo, Pending);
+        Links = new LinkService(Vault, Writer, Undo, Pending, _clock);
     }
 
     public Block Note(string content) => Journal.AllBlocks().Single(b => b.Content == content);

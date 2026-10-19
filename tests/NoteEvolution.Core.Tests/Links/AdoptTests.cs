@@ -553,6 +553,53 @@ public class AdoptTests
         Assert.False(s.Undo.CanUndo);
     }
 
+    // A fixed local time with the local offset, so the tests hold in any time zone.
+    private static readonly DateTimeOffset StampNow = LocalNow();
+
+    private static DateTimeOffset LocalNow()
+    {
+        var local = new DateTime(2026, 10, 19, 14, 32, 0, DateTimeKind.Unspecified);
+        return new DateTimeOffset(local, TimeZoneInfo.Local.GetUtcOffset(local));
+    }
+
+    [Fact]
+    public void Adopt_NewTextBlockHasBothDates()
+    {
+        using var s = new LinkSetup(clock: new FakeClock(StampNow));
+
+        var r = s.Links.Adopt(s.Book, s.Note("Zweite Notiz").Key, new InsertPosition.After(s.Text("Erster Textblock").Key));
+
+        var noteId = s.Note("Zweite Notiz").Id;
+        Assert.Contains(
+            $"\t\t- Zweite Notiz\n\t\t  id:: {r.TextBlockId}\n\t\t  source:: (({noteId}))\n\t\t  status:: relevant\n" +
+            "\t\t  created:: 2026-10-19T14:32\n\t\t  updated:: 2026-10-19T14:32\n",
+            s.ReadBook());
+    }
+
+    [Fact]
+    public void AdoptInto_TextBlockGetsUpdated()
+    {
+        const string book =
+            "title:: Buch: Test\ntype:: book\n\n- # Kapitel\n\t- Hallo Welt\n\t  created:: 2026-01-02T03:04\n\t  updated:: 2026-01-02T03:04\n";
+        using var s = new LinkSetup(book, clock: new FakeClock(StampNow));
+
+        s.Links.AdoptInto(s.Book, s.Note("Zweite Notiz").Key, new IntoPosition.FirstChild(s.Text("Hallo Welt").Key));
+
+        var text = s.ReadBook();
+        Assert.Contains("\t  created:: 2026-01-02T03:04\n\t  updated:: 2026-10-19T14:32\n", text);
+        Assert.Equal(1, text.Split("2026-10-19T14:32").Length - 1);
+    }
+
+    [Fact]
+    public void Adopt_WithoutClock_NoDates()
+    {
+        using var s = new LinkSetup();
+
+        s.Links.Adopt(s.Book, s.Note("Zweite Notiz").Key, new InsertPosition.After(s.Text("Erster Textblock").Key));
+
+        Assert.DoesNotContain("created::", s.ReadBook());
+    }
+
     private static Block BookBlock(LinkSetup s, string content) => s.Book.Page.AllBlocks().Single(b => b.Content == content);
 
     private static void AssertChangedLines(string before, string after, int[] removed, int[] added)

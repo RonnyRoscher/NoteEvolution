@@ -9,7 +9,12 @@ using NoteEvolution.Core.Vaults;
 
 namespace NoteEvolution.Core.Links;
 
-public sealed class LinkService(IVault vault, IPageWriter writer, UndoManager undo, PendingStore pending) : ILinkService
+/// <param name="clock">
+/// The time for the <c>created::</c> / <c>updated::</c> dates of the text blocks the service adopts, merges or changes
+/// (<see cref="BlockDates"/>); without a clock nothing is stamped.
+/// </param>
+public sealed class LinkService(IVault vault, IPageWriter writer, UndoManager undo, PendingStore pending, IClock? clock = null)
+    : ILinkService
 {
     private const string SourceKey = "source";
     private const string UsedInKey = "used-in";
@@ -35,6 +40,11 @@ public sealed class LinkService(IVault vault, IPageWriter writer, UndoManager un
         var textBlockId = copy.EnsureId();
         copy.SetProperty(SourceKey, SourceValue.Format([noteId]));
         copy.SetProperty(BlockStatuses.Key, Relevant);
+        if (clock is not null)
+        {
+            BlockDates.StampNew(copy, clock.Now);
+        }
+
         try
         {
             SaveBook(bookPage, () => bookPage.RemoveBlock(copy));
@@ -118,6 +128,7 @@ public sealed class LinkService(IVault vault, IPageWriter writer, UndoManager un
 
         var textBlockId = textBlock.EnsureId();
         var sourceAdded = AddSource(textBlock, noteId);
+        StampChanged(textBlock);
         try
         {
             SaveBook(bookPage, () =>
@@ -225,7 +236,28 @@ public sealed class LinkService(IVault vault, IPageWriter writer, UndoManager un
     public void DeleteDetail(Book book, Guid detailKey)
     {
         EnsureWritable(book.Page);
-        DeleteBlock(book, FindElement(book, detailKey, detailOnly: true).Element);
+        var (textBlock, detail) = FindElement(book, detailKey, detailOnly: true);
+        var lines = textBlock.Lines.ToList();
+        var wasDirty = textBlock.IsDirty;
+        StampChanged(textBlock);
+        try
+        {
+            DeleteBlock(book, detail);
+        }
+        catch
+        {
+            textBlock.RestoreLines(lines, wasDirty);
+            throw;
+        }
+    }
+
+    /// <summary>Gives a book text block <c>updated::</c> (a change of its text or details); nothing without a clock.</summary>
+    private void StampChanged(Block textBlock)
+    {
+        if (clock is not null)
+        {
+            BlockDates.StampChanged(textBlock, clock.Now);
+        }
     }
 
     public void DeleteSection(Book book, Guid headingKey)
@@ -288,6 +320,7 @@ public sealed class LinkService(IVault vault, IPageWriter writer, UndoManager un
                 }
 
                 first.SetContent(content);
+                StampChanged(first);
                 foreach (var block in later)
                 {
                     foreach (var detail in block.Children.ToList())
@@ -350,6 +383,7 @@ public sealed class LinkService(IVault vault, IPageWriter writer, UndoManager un
             }
 
             head.SetContent(content);
+            StampChanged(textBlock);
             foreach (var detail in head.Children.Where(merged.Contains).ToList())
             {
                 // The Bemerkung (remark) details below a merged detail stay: they come up to the head, where the detail

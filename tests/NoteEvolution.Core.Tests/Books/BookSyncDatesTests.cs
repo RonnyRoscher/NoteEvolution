@@ -290,6 +290,61 @@ public class BookSyncDatesTests
             Serialize(s.Book));
     }
 
+    [Fact]
+    public void Apply_ParagraphsReordered_Updates()
+    {
+        using var s = new LinkSetup(TestBook);
+        var snapshot = Section(s, "Abschnitt");
+        var block = TextNode(snapshot, "Erster Textblock");
+        var reordered = block with { Paragraphs = [block.Paragraphs[1], block.Paragraphs[0]] };
+
+        var result = BookSync.Apply(s.Book, Replace(snapshot, block, reordered), now: Now);
+
+        Assert.True(result.Changed);
+        Assert.Equal(
+            TestBook
+                .Replace($"\t\t  updated:: {Old}\n", $"\t\t  updated:: {Stamp}\n")
+                .Replace("\t\t\t- Absatz eins\n\t\t\t- Absatz zwei\n", "\t\t\t- Absatz zwei\n\t\t\t- Absatz eins\n"),
+            Serialize(s.Book));
+    }
+
+    [Fact]
+    public void Apply_ParagraphReindented_Updates()
+    {
+        using var s = new LinkSetup(TestBook);
+        var snapshot = Section(s, "Abschnitt");
+        var block = TextNode(snapshot, "Erster Textblock");
+        var reindented = block with { Paragraphs = [block.Paragraphs[0], block.Paragraphs[1] with { Depth = 2 }] };
+
+        var result = BookSync.Apply(s.Book, Replace(snapshot, block, reindented), now: Now);
+
+        Assert.True(result.Changed);
+        Assert.Equal(
+            TestBook
+                .Replace($"\t\t  updated:: {Old}\n", $"\t\t  updated:: {Stamp}\n")
+                .Replace("\t\t\t- Absatz zwei\n", "\t\t\t\t- Absatz zwei\n"),
+            Serialize(s.Book));
+    }
+
+    /// <summary>A block put back from a note: the editor brings it back with its sources, and <c>Create</c> links it to the vault.</summary>
+    [Fact]
+    public void Apply_BlockPutBackWithSources_GetsBothDates()
+    {
+        const string noteId = "7f3a91c2-4b1d-4e8a-9c3f-1a2b3c4d5e6f";
+        using var s = new LinkSetup(TestBook, $"- Quelle\n  id:: {noteId}\n");
+        var snapshot = Section(s, "Abschnitt");
+        var putBack = new SnapshotTextBlock(
+            Guid.NewGuid(), null, "Zurückgelegt", [], [new SourceInfo(Guid.Parse(noteId), "Quelle", false)]);
+
+        var result = BookSync.Apply(s.Book, snapshot with { Nodes = [.. snapshot.Nodes, putBack] }, s.Vault, Now);
+
+        var link = Assert.IsType<BlockSplit>(Assert.Single(result.Effects));
+        Assert.Contains(
+            $"\t\t- Zurückgelegt\n\t\t  id:: {link.NewBookBlockId}\n\t\t  source:: (({noteId}))\n" +
+            $"\t\t  created:: {Stamp}\n\t\t  updated:: {Stamp}\n",
+            Serialize(s.Book));
+    }
+
     private static string Serialize(Book book) => Encoding.UTF8.GetString(PageSerializer.Serialize(book.Page));
 
     private static SectionSnapshot Section(LinkSetup s, string title) =>

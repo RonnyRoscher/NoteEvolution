@@ -637,7 +637,7 @@ public class EditorPaneTests : UiTestContext
         Assert.Null(await cut.InvokeAsync(() => NoteAdoption.AdoptAsync(State, note, AdoptVariant.AtCursor, NullLogger.Instance)));
 
         var added = State.CurrentBook!.Page.AllBlocks().Single(b => b.Content == "Eine Notiz");
-        Assert.Equal(beta + $"\t- Eine Notiz\n\t  id:: {added.Id}\n\t  source:: (({session.Notes.All().Single().Block.Id}))\n\t  status:: relevant\n", tv.Read(betaPath));
+        Assert.Equal(beta + $"\t- Eine Notiz\n\t  id:: {added.Id}\n\t  source:: (({session.Notes.All().Single().Block.Id}))\n\t  status:: relevant\n\t  created:: {Stamp}\n\t  updated:: {Stamp}\n", tv.Read(betaPath));
     }
 
     [Fact]

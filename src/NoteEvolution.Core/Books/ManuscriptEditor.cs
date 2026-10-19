@@ -19,13 +19,17 @@ public static class ManuscriptEditor
     /// whole section, for a text block a text block directly after it, for a detail a detail of the same depth after
     /// it and its deeper details.
     /// </summary>
+    /// <param name="now">
+    /// With a time, a new text block gets both dates and a new detail stamps <c>updated::</c> on its text block; a new
+    /// heading gets none. Without, nothing is stamped.
+    /// </param>
     /// <returns>The <see cref="Block.Key"/> of the new element.</returns>
     /// <exception cref="ArgumentException">The element is not in the book.</exception>
-    public static Guid InsertAfter(Book book, BookElement current)
+    public static Guid InsertAfter(Book book, BookElement current, DateTimeOffset? now = null)
     {
         var block = BlockOf(book, current);
         var content = current.Kind == ElementKind.Heading ? EmptyHeading(book.FindNode(current.Key)!.Level) : "";
-        return Insert(book, block.Parent, IndexOf(book.Page, block) + 1, content);
+        return Insert(book, block.Parent, IndexOf(book.Page, block) + 1, content, current.Kind, current, now);
     }
 
     /// <summary>
@@ -33,14 +37,15 @@ public static class ManuscriptEditor
     /// heading after its own text blocks and before its existing sub-sections, for a text block a detail of depth 1,
     /// for a detail a detail one level deeper.
     /// </summary>
+    /// <param name="now">As for <see cref="InsertAfter"/>; a new detail stamps <c>updated::</c> on its text block.</param>
     /// <returns>The <see cref="Block.Key"/> of the new element.</returns>
     /// <exception cref="ArgumentException">The element is not in the book, or it is a level-6 heading.</exception>
-    public static Guid InsertChild(Book book, BookElement current)
+    public static Guid InsertChild(Book book, BookElement current, DateTimeOffset? now = null)
     {
         var block = BlockOf(book, current);
         if (current.Kind != ElementKind.Heading)
         {
-            return Insert(book, block, 0, "");
+            return Insert(book, block, 0, "", ElementKind.Detail, current, now);
         }
 
         var node = book.FindNode(current.Key)!;
@@ -51,7 +56,7 @@ public static class ManuscriptEditor
 
         var firstSubsection = node.Children.FirstOrDefault()?.Block;
         var index = firstSubsection is null ? block.Children.Count : IndexOf(book.Page, firstSubsection);
-        return Insert(book, block, index, EmptyHeading(node.Level + 1));
+        return Insert(book, block, index, EmptyHeading(node.Level + 1), ElementKind.Heading, current, now);
     }
 
     /// <summary>Whether <see cref="InsertChild"/> is possible: <c>false</c> for a level-6 heading or an unknown element.</summary>
@@ -212,11 +217,13 @@ public static class ManuscriptEditor
         return new WrappedSection(heading.Key, section.Block?.Key, indices, [.. tops.Select(top => top.Key)], MovedBlocks(moved, levels));
     }
 
-    /// <summary>Deletes a detail with its deeper details.</summary>
+    /// <summary>Deletes a detail with its deeper details; with <paramref name="now"/> its text block gets <c>updated::</c>.</summary>
     /// <exception cref="ArgumentException">The key is not that of a detail.</exception>
-    public static void DeleteDetail(Book book, Guid detailKey)
+    public static void DeleteDetail(Book book, Guid detailKey, DateTimeOffset? now = null)
     {
-        var block = BlockOf(book, new BookElement(ElementKind.Detail, detailKey));
+        var element = new BookElement(ElementKind.Detail, detailKey);
+        var block = BlockOf(book, element);
+        StampOwner(book, element, now);
         book.Page.RemoveBlock(block);
     }
 
@@ -224,13 +231,14 @@ public static class ManuscriptEditor
     /// Sets the status of a text block or detail: sets the <c>status::</c> line, or removes it for
     /// <see cref="BlockStatus.Draft"/>. Any status but <see cref="BlockStatus.Remark"/> also removes a <c>#notiz</c> tag
     /// (<see cref="NoteTag.Remove"/>); a remark on a block that has <c>#notiz</c> and no <c>status::</c> line changes
-    /// nothing. Everything else of the block stays as it is.
+    /// nothing. Everything else of the block stays as it is. With <paramref name="now"/> a change of the block gives its
+    /// text block (the block itself, or the one a detail belongs to) <c>updated::</c>; an unchanged block gets nothing.
     /// </summary>
     /// <exception cref="ArgumentException">
     /// The element is a heading or not in the book, or the text without the tag would not stay one block.
     /// </exception>
     /// <exception cref="InvalidOperationException">The block's code fence is not closed; it has no place for properties.</exception>
-    public static void SetStatus(Book book, BookElement element, BlockStatus status)
+    public static void SetStatus(Book book, BookElement element, BlockStatus status, DateTimeOffset? now = null)
     {
         var block = StatusBlockOf(book, element);
         var hasTag = NoteTag.Has(block.Content);
@@ -245,6 +253,9 @@ public static class ManuscriptEditor
             Block.ValidateContent(content);
         }
 
+        var linesBefore = block.Lines.ToList();
+        var wasDirty = block.IsDirty;
+
         if (BlockStatuses.FileValue(status) is { } value)
         {
             block.SetProperty(BlockStatuses.Key, value);
@@ -258,17 +269,33 @@ public static class ManuscriptEditor
         {
             block.SetContent(content);
         }
+
+        if (!block.Lines.SequenceEqual(linesBefore))
+        {
+            try
+            {
+                StampOwner(book, element, now);
+            }
+            catch (InvalidOperationException)
+            {
+                // The text block has no place for the date: the status change is refused as a whole.
+                block.RestoreLines(linesBefore, wasDirty);
+                throw;
+            }
+        }
     }
 
     /// <summary>
     /// Adds a remark to the text block of <paramref name="element"/> (the text block itself, or the one a detail belongs
-    /// to): a new empty detail of depth 1 with <c>status:: bemerkung</c>, after its last detail.
+    /// to): a new empty detail of depth 1 with <c>status:: bemerkung</c>, after its last detail. With
+    /// <paramref name="now"/> the text block gets <c>updated::</c>.
     /// </summary>
     /// <returns>The <see cref="Block.Key"/> of the new detail.</returns>
     /// <exception cref="ArgumentException">The element is a heading or not in the book.</exception>
-    public static Guid AddRemark(Book book, BookElement element)
+    public static Guid AddRemark(Book book, BookElement element, DateTimeOffset? now = null)
     {
         StatusBlockOf(book, element);
+        StampOwner(book, element, now);
         var textBlock = BookElements.TextBlockOf(book, element)!.Block;
         var remark = Block.CreateDetached("", [new BlockProperty(BlockStatuses.Key, BlockStatuses.FileValue(BlockStatus.Remark)!)]);
         book.Page.InsertBlock(textBlock, textBlock.Children.Count, remark);
@@ -304,11 +331,34 @@ public static class ManuscriptEditor
         };
     }
 
-    private static Guid Insert(Book book, Block? parent, int index, string content)
+    /// <summary>
+    /// Inserts an empty block of <paramref name="kind"/> and stamps it: a text block gets both dates, a detail changes
+    /// its text block (<paramref name="reference"/> is the element it is inserted at, or below).
+    /// </summary>
+    private static Guid Insert(
+        Book book, Block? parent, int index, string content, ElementKind kind, BookElement reference, DateTimeOffset? now)
     {
         var block = Block.CreateDetached(content);
+        if (now is { } time && kind == ElementKind.TextBlock)
+        {
+            BlockDates.StampNew(block, time);
+        }
+        else if (kind == ElementKind.Detail)
+        {
+            StampOwner(book, reference, now);
+        }
+
         book.Page.InsertBlock(parent, index, block);
         return block.Key;
+    }
+
+    /// <summary>Stamps <c>updated::</c> on the text block of a text block or detail element; nothing without a time.</summary>
+    private static void StampOwner(Book book, BookElement element, DateTimeOffset? now)
+    {
+        if (now is { } time && BookElements.TextBlockOf(book, element) is { } owner)
+        {
+            BlockDates.StampChanged(owner.Block, time);
+        }
     }
 
     private static string EmptyHeading(int level) => HeadingText.WithTitle("", level, "");

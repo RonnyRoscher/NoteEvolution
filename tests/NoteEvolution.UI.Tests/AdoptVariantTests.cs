@@ -125,9 +125,9 @@ public class AdoptVariantTests : UiTestContext
         AssertBook(
             BookText.Replace(
                 "\t- Erster Text\n" + $"\t  id:: {ErsterId}\n",
-                "\t- Erster Eine NotizText\n" + $"\t  id:: {ErsterId}\n" + $"\t  source:: (({NoteId}))\n" + "\t\t- Unterpunkt, der länger als eine Zeile ist und deshalb eigene Knöpfe zum Übernehmen bekommt\n" + "\t\t  status:: relevant\n"),
+                "\t- Erster Eine NotizText\n" + $"\t  id:: {ErsterId}\n" + $"\t  source:: (({NoteId}))\n\t  updated:: {Stamp}\n" + "\t\t- Unterpunkt, der länger als eine Zeile ist und deshalb eigene Knöpfe zum Übernehmen bekommt\n" + "\t\t  status:: relevant\n"),
             ["\t- Erster Text"],
-            ["\t- Erster Eine NotizText", $"\t  source:: (({NoteId}))", "\t\t- Unterpunkt, der länger als eine Zeile ist und deshalb eigene Knöpfe zum Übernehmen bekommt", "\t\t  status:: relevant"]);
+            ["\t- Erster Eine NotizText", $"\t  source:: (({NoteId}))", $"\t  updated:: {Stamp}", "\t\t- Unterpunkt, der länger als eine Zeile ist und deshalb eigene Knöpfe zum Übernehmen bekommt", "\t\t  status:: relevant"]);
         Assert.Equal(NoteUsedIn(Guid.Parse(ErsterId)), _vault.Read(NotePath));
         AssertRevealed("Erster Eine NotizText", ElementKind.TextBlock);
     }
@@ -145,9 +145,9 @@ public class AdoptVariantTests : UiTestContext
         AssertBook(
             BookText.Replace(
                 "\t- Zweiter Text\n",
-                "\t- Eine Notiz\n" + $"\t  id:: {id}\n" + $"\t  source:: (({NoteId}))\n" + "\t  status:: relevant\n" + "\t\t- Unterpunkt, der länger als eine Zeile ist und deshalb eigene Knöpfe zum Übernehmen bekommt\n" + "\t- Zweiter Text\n"),
+                "\t- Eine Notiz\n" + $"\t  id:: {id}\n" + $"\t  source:: (({NoteId}))\n" + "\t  status:: relevant\n" + $"\t  created:: {Stamp}\n\t  updated:: {Stamp}\n" + "\t\t- Unterpunkt, der länger als eine Zeile ist und deshalb eigene Knöpfe zum Übernehmen bekommt\n" + "\t- Zweiter Text\n"),
             [],
-            ["\t- Eine Notiz", $"\t  id:: {id}", $"\t  source:: (({NoteId}))", "\t  status:: relevant", "\t\t- Unterpunkt, der länger als eine Zeile ist und deshalb eigene Knöpfe zum Übernehmen bekommt"]);
+            ["\t- Eine Notiz", $"\t  id:: {id}", $"\t  source:: (({NoteId}))", "\t  status:: relevant", $"\t  created:: {Stamp}", $"\t  updated:: {Stamp}", "\t\t- Unterpunkt, der länger als eine Zeile ist und deshalb eigene Knöpfe zum Übernehmen bekommt"]);
         Assert.Equal(NoteUsedIn(id), _vault.Read(NotePath));
     }
 
@@ -162,9 +162,9 @@ public class AdoptVariantTests : UiTestContext
         AssertBook(
             BookText.Replace(
                 $"\t  id:: {ErsterId}\n",
-                $"\t  id:: {ErsterId}\n" + $"\t  source:: (({NoteId}))\n" + "\t\t- Eine Notiz\n" + "\t\t  status:: relevant\n" + "\t\t\t- Unterpunkt, der länger als eine Zeile ist und deshalb eigene Knöpfe zum Übernehmen bekommt\n"),
+                $"\t  id:: {ErsterId}\n" + $"\t  source:: (({NoteId}))\n\t  updated:: {Stamp}\n" + "\t\t- Eine Notiz\n" + "\t\t  status:: relevant\n" + "\t\t\t- Unterpunkt, der länger als eine Zeile ist und deshalb eigene Knöpfe zum Übernehmen bekommt\n"),
             [],
-            [$"\t  source:: (({NoteId}))", "\t\t- Eine Notiz", "\t\t  status:: relevant", "\t\t\t- Unterpunkt, der länger als eine Zeile ist und deshalb eigene Knöpfe zum Übernehmen bekommt"]);
+            [$"\t  source:: (({NoteId}))", $"\t  updated:: {Stamp}", "\t\t- Eine Notiz", "\t\t  status:: relevant", "\t\t\t- Unterpunkt, der länger als eine Zeile ist und deshalb eigene Knöpfe zum Übernehmen bekommt"]);
         Assert.Equal(NoteUsedIn(Guid.Parse(ErsterId)), _vault.Read(NotePath));
         AssertRevealed("Erster Text", ElementKind.TextBlock);
     }
@@ -179,10 +179,10 @@ public class AdoptVariantTests : UiTestContext
 
         AssertBook(
             BookText
-                .Replace($"\t  id:: {ErsterId}\n", $"\t  id:: {ErsterId}\n" + $"\t  source:: (({NoteId}))\n")
+                .Replace($"\t  id:: {ErsterId}\n", $"\t  id:: {ErsterId}\n" + $"\t  source:: (({NoteId}))\n\t  updated:: {Stamp}\n")
                 .Replace("\t\t- Zweites Detail\n", "\t\t- Eine Notiz\n\t\t  status:: relevant\n\t\t\t- Unterpunkt, der länger als eine Zeile ist und deshalb eigene Knöpfe zum Übernehmen bekommt\n\t\t- Zweites Detail\n"),
             [],
-            [$"\t  source:: (({NoteId}))", "\t\t- Eine Notiz", "\t\t  status:: relevant", "\t\t\t- Unterpunkt, der länger als eine Zeile ist und deshalb eigene Knöpfe zum Übernehmen bekommt"]);
+            [$"\t  source:: (({NoteId}))", $"\t  updated:: {Stamp}", "\t\t- Eine Notiz", "\t\t  status:: relevant", "\t\t\t- Unterpunkt, der länger als eine Zeile ist und deshalb eigene Knöpfe zum Übernehmen bekommt"]);
         Assert.Equal(NoteUsedIn(Guid.Parse(ErsterId)), _vault.Read(NotePath));
         AssertRevealed("Ein Detail", ElementKind.Detail);
     }
@@ -197,10 +197,10 @@ public class AdoptVariantTests : UiTestContext
 
         AssertBook(
             BookText
-                .Replace($"\t  id:: {ErsterId}\n", $"\t  id:: {ErsterId}\n" + $"\t  source:: (({NoteId}))\n")
+                .Replace($"\t  id:: {ErsterId}\n", $"\t  id:: {ErsterId}\n" + $"\t  source:: (({NoteId}))\n\t  updated:: {Stamp}\n")
                 .Replace("\t\t\t- Tiefes Detail\n", "\t\t\t- Eine Notiz\n\t\t\t  status:: relevant\n\t\t\t\t- Unterpunkt, der länger als eine Zeile ist und deshalb eigene Knöpfe zum Übernehmen bekommt\n\t\t\t- Tiefes Detail\n"),
             [],
-            [$"\t  source:: (({NoteId}))", "\t\t\t- Eine Notiz", "\t\t\t  status:: relevant", "\t\t\t\t- Unterpunkt, der länger als eine Zeile ist und deshalb eigene Knöpfe zum Übernehmen bekommt"]);
+            [$"\t  source:: (({NoteId}))", $"\t  updated:: {Stamp}", "\t\t\t- Eine Notiz", "\t\t\t  status:: relevant", "\t\t\t\t- Unterpunkt, der länger als eine Zeile ist und deshalb eigene Knöpfe zum Übernehmen bekommt"]);
         Assert.Equal(NoteUsedIn(Guid.Parse(ErsterId)), _vault.Read(NotePath));
         AssertRevealed("Ein Detail", ElementKind.Detail);
     }
@@ -215,10 +215,10 @@ public class AdoptVariantTests : UiTestContext
 
         AssertBook(
             BookText
-                .Replace($"\t  id:: {ErsterId}\n", $"\t  id:: {ErsterId}\n" + $"\t  source:: (({NoteId}))\n")
+                .Replace($"\t  id:: {ErsterId}\n", $"\t  id:: {ErsterId}\n" + $"\t  source:: (({NoteId}))\n\t  updated:: {Stamp}\n")
                 .Replace("\t\t- Ein Detail\n", "\t\t- Ein Eine NotizDetail\n\t\t\t- Unterpunkt, der länger als eine Zeile ist und deshalb eigene Knöpfe zum Übernehmen bekommt\n\t\t\t  status:: relevant\n"),
             ["\t\t- Ein Detail"],
-            [$"\t  source:: (({NoteId}))", "\t\t- Ein Eine NotizDetail", "\t\t\t- Unterpunkt, der länger als eine Zeile ist und deshalb eigene Knöpfe zum Übernehmen bekommt", "\t\t\t  status:: relevant"]);
+            [$"\t  source:: (({NoteId}))", $"\t  updated:: {Stamp}", "\t\t- Ein Eine NotizDetail", "\t\t\t- Unterpunkt, der länger als eine Zeile ist und deshalb eigene Knöpfe zum Übernehmen bekommt", "\t\t\t  status:: relevant"]);
         AssertRevealed("Ein Eine NotizDetail", ElementKind.Detail);
     }
 
@@ -239,9 +239,9 @@ public class AdoptVariantTests : UiTestContext
         AssertBook(
             BookText.Replace(
                 "- # Zwei\n",
-                "- # Zwei\n" + "\t- Eine Notiz\n" + $"\t  id:: {id}\n" + $"\t  source:: (({NoteId}))\n" + "\t  status:: relevant\n" + "\t\t- Unterpunkt, der länger als eine Zeile ist und deshalb eigene Knöpfe zum Übernehmen bekommt\n"),
+                "- # Zwei\n" + "\t- Eine Notiz\n" + $"\t  id:: {id}\n" + $"\t  source:: (({NoteId}))\n" + "\t  status:: relevant\n" + $"\t  created:: {Stamp}\n\t  updated:: {Stamp}\n" + "\t\t- Unterpunkt, der länger als eine Zeile ist und deshalb eigene Knöpfe zum Übernehmen bekommt\n"),
             [],
-            ["\t- Eine Notiz", $"\t  id:: {id}", $"\t  source:: (({NoteId}))", "\t  status:: relevant", "\t\t- Unterpunkt, der länger als eine Zeile ist und deshalb eigene Knöpfe zum Übernehmen bekommt"]);
+            ["\t- Eine Notiz", $"\t  id:: {id}", $"\t  source:: (({NoteId}))", "\t  status:: relevant", $"\t  created:: {Stamp}", $"\t  updated:: {Stamp}", "\t\t- Unterpunkt, der länger als eine Zeile ist und deshalb eigene Knöpfe zum Übernehmen bekommt"]);
     }
 
     [Theory]
@@ -259,9 +259,9 @@ public class AdoptVariantTests : UiTestContext
         var key = AssertRevealedNewTextBlock("Eine Notiz");
         var id = Book.FindTextBlock(key)!.Block.Id;
         AssertBook(
-            BookText + "\t- Eine Notiz\n" + $"\t  id:: {id}\n" + $"\t  source:: (({NoteId}))\n" + "\t  status:: relevant\n" + "\t\t- Unterpunkt, der länger als eine Zeile ist und deshalb eigene Knöpfe zum Übernehmen bekommt\n",
+            BookText + "\t- Eine Notiz\n" + $"\t  id:: {id}\n" + $"\t  source:: (({NoteId}))\n" + "\t  status:: relevant\n" + $"\t  created:: {Stamp}\n\t  updated:: {Stamp}\n" + "\t\t- Unterpunkt, der länger als eine Zeile ist und deshalb eigene Knöpfe zum Übernehmen bekommt\n",
             [],
-            ["\t- Eine Notiz", $"\t  id:: {id}", $"\t  source:: (({NoteId}))", "\t  status:: relevant", "\t\t- Unterpunkt, der länger als eine Zeile ist und deshalb eigene Knöpfe zum Übernehmen bekommt"]);
+            ["\t- Eine Notiz", $"\t  id:: {id}", $"\t  source:: (({NoteId}))", "\t  status:: relevant", $"\t  created:: {Stamp}", $"\t  updated:: {Stamp}", "\t\t- Unterpunkt, der länger als eine Zeile ist und deshalb eigene Knöpfe zum Übernehmen bekommt"]);
     }
 
     [Fact]
@@ -280,9 +280,9 @@ public class AdoptVariantTests : UiTestContext
         AssertBook(
             BookText.Replace(
                 "\t- Zweiter Text\n",
-                "\t- Eine Notiz\n" + $"\t  id:: {id}\n" + $"\t  source:: (({NoteId}))\n" + "\t  status:: relevant\n" + "\t\t- Unterpunkt, der länger als eine Zeile ist und deshalb eigene Knöpfe zum Übernehmen bekommt\n" + "\t- Zweiter Text\n"),
+                "\t- Eine Notiz\n" + $"\t  id:: {id}\n" + $"\t  source:: (({NoteId}))\n" + "\t  status:: relevant\n" + $"\t  created:: {Stamp}\n\t  updated:: {Stamp}\n" + "\t\t- Unterpunkt, der länger als eine Zeile ist und deshalb eigene Knöpfe zum Übernehmen bekommt\n" + "\t- Zweiter Text\n"),
             [],
-            ["\t- Eine Notiz", $"\t  id:: {id}", $"\t  source:: (({NoteId}))", "\t  status:: relevant", "\t\t- Unterpunkt, der länger als eine Zeile ist und deshalb eigene Knöpfe zum Übernehmen bekommt"]);
+            ["\t- Eine Notiz", $"\t  id:: {id}", $"\t  source:: (({NoteId}))", "\t  status:: relevant", $"\t  created:: {Stamp}", $"\t  updated:: {Stamp}", "\t\t- Unterpunkt, der länger als eine Zeile ist und deshalb eigene Knöpfe zum Übernehmen bekommt"]);
     }
 
     [Fact]
@@ -298,9 +298,9 @@ public class AdoptVariantTests : UiTestContext
         AssertBook(
             BookText.Replace(
                 "\t- Zweiter Text\n",
-                "\t- Zweiter Unterpunkt, der länger als eine Zeile ist und deshalb eigene Knöpfe zum Übernehmen bekommtText\n" + $"\t  id:: {id}\n" + $"\t  source:: (({ChildId}))\n"),
+                "\t- Zweiter Unterpunkt, der länger als eine Zeile ist und deshalb eigene Knöpfe zum Übernehmen bekommtText\n" + $"\t  id:: {id}\n" + $"\t  source:: (({ChildId}))\n" + $"\t  updated:: {Stamp}\n"),
             ["\t- Zweiter Text"],
-            ["\t- Zweiter Unterpunkt, der länger als eine Zeile ist und deshalb eigene Knöpfe zum Übernehmen bekommtText", $"\t  id:: {id}", $"\t  source:: (({ChildId}))"]);
+            ["\t- Zweiter Unterpunkt, der länger als eine Zeile ist und deshalb eigene Knöpfe zum Übernehmen bekommtText", $"\t  id:: {id}", $"\t  source:: (({ChildId}))", $"\t  updated:: {Stamp}"]);
         Assert.Equal(NoteText + $"\t  used-in:: [[Buch - Alpha]] (({id}))\n", _vault.Read(NotePath));
     }
 

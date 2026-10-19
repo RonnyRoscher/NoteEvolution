@@ -120,7 +120,7 @@ public static class ManuscriptCommands
 
             return RunStatus(session, book, () =>
             {
-                ManuscriptEditor.SetStatus(book, element, status);
+                ManuscriptEditor.SetStatus(book, element, status, session.Clock.Now);
                 return null;
             }, undoDescription, logger).Message;
         }
@@ -170,14 +170,14 @@ public static class ManuscriptCommands
             var toggled = BlockStatuses.Of(BlockOf(book, element)) == BlockStatus.Remark ? BlockStatus.Draft : BlockStatus.Remark;
             return RunStatus(session, book, () =>
             {
-                ManuscriptEditor.SetStatus(book, element, toggled);
+                ManuscriptEditor.SetStatus(book, element, toggled, session.Clock.Now);
                 return null;
             }, undoDescription, logger);
         }
 
         if (command == SectionCommand.AddRemark)
         {
-            return RunStatus(session, book, () => ManuscriptEditor.AddRemark(book, element), undoDescription, logger);
+            return RunStatus(session, book, () => ManuscriptEditor.AddRemark(book, element, session.Clock.Now), undoDescription, logger);
         }
 
         if (command != SectionCommand.Delete)
@@ -345,10 +345,10 @@ public static class ManuscriptCommands
             switch (command)
             {
                 case SectionCommand.InsertAfter:
-                    reveal = ManuscriptEditor.InsertAfter(book, element);
+                    reveal = ManuscriptEditor.InsertAfter(book, element, session.Clock.Now);
                     break;
                 case SectionCommand.InsertChild:
-                    reveal = ManuscriptEditor.InsertChild(book, element);
+                    reveal = ManuscriptEditor.InsertChild(book, element, session.Clock.Now);
                     break;
                 case SectionCommand.Indent:
                     ManuscriptEditor.Indent(book, element.Key);
@@ -367,7 +367,7 @@ public static class ManuscriptCommands
                     reveal = wrapped.NewHeadingKey;
                     break;
                 case SectionCommand.Delete:
-                    ManuscriptEditor.DeleteDetail(book, element.Key);
+                    ManuscriptEditor.DeleteDetail(book, element.Key, session.Clock.Now);
                     break;
                 default:
                     // Every other command has its own path; none may fall through to a change of the page.
