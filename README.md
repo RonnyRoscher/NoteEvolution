@@ -58,8 +58,8 @@ geändert 19.10.2026 14:32“). Die Daten stehen als `created::` und `updated::`
 bekommen beide, eine Änderung von Text oder Status setzt `updated` (Verschieben zählt nicht). Bestehende Blöcke ohne
 Daten bleiben so, bis sie geändert werden. Über der Gliederung steht **„Zuletzt geändert“**: die 20 zuletzt geänderten
 Textblöcke mit Datum, dem ersten Satz der Abschnitts-Zusammenfassung (sonst dem Textanfang) und dem Abschnitt; ein
-Klick springt hin. Der Schieber zwischen Liste und Gliederung stellt die Höhe ein (auch mit Pfeil hoch/runter); sie
-bleibt nach einem Neustart erhalten.
+Klick springt hin. Der Schieber zwischen Liste und Gliederung stellt die Höhe ein (auch mit Pfeil hoch/runter); die
+Liste lässt sich mit ▾/▸ einklappen. Höhe und Klappzustand bleiben nach einem Neustart erhalten.
 
 Am unteren Rand der Markierung stehen die Abschnittsknöpfe und die Quellen:
 
@@ -91,6 +91,11 @@ zuletzt gewählte Art und trägt deren Namen (anfangs **Am Cursor**), der Pfeil 
 erhalten (`ui.json`). Daneben steht **Wohin damit?** (nur mit lokaler KI). Die Quelle hängt immer am umgebenden
 Textblock. Neue Blöcke und Details aus „Danach“ und „Darunter“ bekommen den Status Relevant; am Cursor behält der
 Block seinen Status, nur die dabei entstehenden Details werden Relevant.
+Hat der Punkt Unterpunkte, bietet der Pfeil zusätzlich **Als Überschrift** (neue Überschrift auf der Ebene des aktuellen
+Abschnitts, an dessen Ende) und **Als Unterüberschrift** (eine Ebene tiefer, nach den Textblöcken des Abschnitts und vor
+seinen Unterabschnitten; nicht unter Ebene 6). Die erste Zeile wird der Titel, jeder direkte Unterpunkt ein eigener
+Textblock (Relevant, verknüpft); bestehender Text bleibt in seinem Abschnitt. „Rückgängig“ nimmt das zurück, solange
+unter der neuen Überschrift nichts geändert wurde.
 
 **Status:** Jeder Textblock und jedes Detail hat einen Arbeitsstand. Die Auswahl in der Leiste (Tooltip „Status des Blocks“) zeigt und
 ändert ihn für das Element am Cursor (auf Überschriften ausgegraut); jede Änderung lässt sich mit „Rückgängig“
