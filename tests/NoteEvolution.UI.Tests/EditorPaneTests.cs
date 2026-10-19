@@ -224,6 +224,27 @@ public class EditorPaneTests : UiTestContext
     }
 
     [Fact]
+    public async Task Pane_DatesPushFails_PushedAgainOnTheNextSync()
+    {
+        using var tv = Alpha();
+        var (_, cut) = await RenderAsync(tv);
+        var doc = Doc(Editor.Json);
+        var key = KeyOf(doc, 1);
+        SetText(doc, 1, "Zweiter Text, geändert");
+        Editor.FailBlockDates = new InvalidOperationException("The editor is gone.");
+
+        await ChangeAsync(cut, doc);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => cut.InvokeAsync(() => State.FlushEditor!()));
+
+        // The next sync (the save's own state change may already bring one) pushes the label that was not shown.
+        await cut.InvokeAsync(() => State.FlushEditor!());
+
+        var label = Assert.Single(Assert.Single(Editor.BlockDates));
+        Assert.Equal(key, label.Key);
+        Assert.Equal(LabelOf(key), label.Value);
+    }
+
+    [Fact]
     public async Task Pane_OwnSave_NewBlock_GetsItsDates()
     {
         using var tv = Alpha();

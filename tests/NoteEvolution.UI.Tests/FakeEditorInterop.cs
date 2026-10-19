@@ -26,6 +26,9 @@ public sealed class FakeEditorInterop : IEditorInterop
     /// <summary>The labels passed to <see cref="SetBlockDatesAsync"/>, in order.</summary>
     public List<IReadOnlyDictionary<Guid, BlockDateLabel?>> BlockDates { get; } = [];
 
+    /// <summary>When set, the next <see cref="SetBlockDatesAsync"/> throws it (and shows nothing).</summary>
+    public Exception? FailBlockDates { get; set; }
+
     /// <summary>
     /// All calls in order: <c>doc</c> for <see cref="SetDocumentAsync"/>, <c>reveal:{key}</c> for
     /// <see cref="RevealAsync"/>, <c>marked</c> for <see cref="SetMarkedAsync"/>, <c>dates</c> for
@@ -88,6 +91,12 @@ public sealed class FakeEditorInterop : IEditorInterop
 
     public Task SetBlockDatesAsync(IReadOnlyDictionary<Guid, BlockDateLabel?> dates)
     {
+        if (FailBlockDates is { } failure)
+        {
+            FailBlockDates = null;
+            throw failure;
+        }
+
         BlockDates.Add(new Dictionary<Guid, BlockDateLabel?>(dates));
         Calls.Add("dates");
         return Task.CompletedTask;

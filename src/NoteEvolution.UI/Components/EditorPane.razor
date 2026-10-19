@@ -649,11 +649,13 @@
     private async Task ShowDatesAsync(Dictionary<Guid, BlockDateLabel?> dates)
     {
         var changed = dates.Where(d => d.Value != _shownDates.GetValueOrDefault(d.Key)).ToDictionary();
-        _shownDates = dates;
         if (changed.Count > 0)
         {
             await Editor.SetBlockDatesAsync(changed);
         }
+
+        // Only what the editor took counts as shown: after a failed push the next sync pushes the labels again.
+        _shownDates = dates;
     }
 
     /// <summary>
