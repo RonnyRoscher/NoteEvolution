@@ -127,7 +127,7 @@ public static class PlacementCheck
             var line = $"{number}. {HeadingPath(book, section)}";
             if (!string.IsNullOrWhiteSpace(summary))
             {
-                line += " – " + FirstSentence(summary);
+                line += " – " + SummaryText.FirstSentence(summary, SummaryLength);
             }
 
             lines.Add(line);
@@ -363,31 +363,6 @@ public static class PlacementCheck
 
         return titles.Count == 0 ? book.Title : string.Join(PathSeparator, titles);
     }
-
-    /// <summary>The first sentence of a summary, at most <see cref="SummaryLength"/> characters.</summary>
-    private static string FirstSentence(string summary)
-    {
-        // A sentence ends at ".", "!" or "?" before a space, unless the word before the "." is an abbreviation like "z.",
-        // "B." or "bzw.".
-        var text = summary.Trim();
-        for (var i = 0; i < text.Length - 1; i++)
-        {
-            if (text[i] is '.' or '!' or '?' && text[i + 1] == ' ')
-            {
-                var word = text[(text.LastIndexOf(' ', i) + 1)..i];
-                if (text[i] != '.' || (word.Length > 1 && !Abbreviations.Contains(word)))
-                {
-                    text = text[..(i + 1)];
-                    break;
-                }
-            }
-        }
-
-        return text.Length <= SummaryLength ? text : text[..(SummaryLength - 1)] + "…";
-    }
-
-    private static readonly HashSet<string> Abbreviations = new(
-        ["bzw", "ca", "d.h", "etc", "evtl", "ggf", "inkl", "insb", "Nr", "S", "u.a", "usw", "vgl", "z.B"], StringComparer.OrdinalIgnoreCase);
 
     private static string FirstLine(string content)
     {

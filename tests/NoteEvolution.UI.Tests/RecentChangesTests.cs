@@ -1,0 +1,189 @@
+using Bunit;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Localization;
+using NoteEvolution.Core.Books;
+using NoteEvolution.TestSupport;
+using NoteEvolution.UI.Components;
+using NoteEvolution.UI.Resources;
+using NoteEvolution.UI.State;
+
+namespace NoteEvolution.UI.Tests;
+
+/// <summary>The "Zuletzt geändert" list (spec "Blockdaten" 4.1).</summary>
+public class RecentChangesTests : UiTestContext
+{
+    private const string BookPath = "pages/Buch - Alpha.md";
+
+    private readonly List<TestVault> _vaults = [];
+
+    private IStringLocalizer<Strings> L => Services.GetRequiredService<IStringLocalizer<Strings>>();
+
+    protected override void Dispose(bool disposing)
+    {
+        base.Dispose(disposing);
+        if (disposing)
+        {
+            _vaults.ForEach(v => v.Dispose());
+        }
+    }
+
+    private TestVault Vault(string body)
+    {
+        var vault = TestVault.Create((BookPath, "title:: Alpha\ntype:: book\n\n" + body));
+        _vaults.Add(vault);
+        return vault;
+    }
+
+    private static string Block(string text, string? updated) =>
+        $"- {text}\n" + (updated is null ? "" : $"  updated:: {updated}\n");
+
+    private static string Indented(string blocks) => string.Concat(blocks.Split('\n', StringSplitOptions.RemoveEmptyEntries).Select(l => "\t" + l + "\n"));
+
+    private static Book BookOf(TestVault vault) => vault.Open().Books.Single();
+
+    private static IReadOnlyList<RecentChange> Of(Book book, Func<OutlineNode, string?>? summary = null, int limit = 20) =>
+        RecentChanges.Of(book, summary ?? (_ => null), limit);
+
+    [Fact]
+    public void Of_NewestFirst_AtMost20()
+    {
+        var blocks = string.Concat(Enumerable.Range(0, 25).Select(i => Block($"Text {i}", $"2026-10-01T10:{i:00}")));
+        var book = BookOf(Vault("- # Eins\n" + Indented(blocks)));
+
+        var changes = Of(book);
+
+        Assert.Equal(20, changes.Count);
+        Assert.Equal("Text 24", changes[0].Excerpt);
+        Assert.Equal("Text 5", changes[^1].Excerpt);
+        Assert.Equal(changes.OrderByDescending(c => c.Updated), changes);
+        Assert.Equal(3, Of(book, limit: 3).Count);
+    }
+
+    [Fact]
+    public void Of_SkipsBlocksWithoutUpdated()
+    {
+        var book = BookOf(Vault("- # Eins\n" + Indented(Block("Ohne", null) + Block("Mit", "2026-10-01T10:00"))));
+
+        var change = Assert.Single(Of(book));
+
+        Assert.Equal("Mit", change.Excerpt);
+        Assert.Equal(new DateTime(2026, 10, 1, 10, 0, 0), change.Updated);
+    }
+
+    [Fact]
+    public void Of_SummaryFirstSentence_ElseExcerpt()
+    {
+        var book = BookOf(Vault("- # Eins\n" + Indented(Block("Ein Text im Abschnitt.", "2026-10-01T10:00"))
+            + "- # Zwei\n" + Indented(Block("Zweiter Text", "2026-10-01T09:00"))));
+        var asked = new List<string>();
+
+        var changes = Of(book, node =>
+        {
+            asked.Add(node.Title);
+            return node.Title == "Eins" ? "Es geht z. B. um Schlaf. Dann um Träume." : "  ";
+        });
+
+        Assert.Equal("Es geht z. B. um Schlaf.", changes[0].Summary);
+        Assert.Equal("Ein Text im Abschnitt.", changes[0].Excerpt);
+        Assert.Equal("Zweiter Text", changes[1].Summary);
+        Assert.Equal(["Eins", "Zwei"], asked);
+    }
+
+    [Fact]
+    public void Of_ExcerptCutAt80()
+    {
+        var book = BookOf(Vault("- # Eins\n" + Indented(Block(new string('x', 100), "2026-10-01T10:00"))));
+
+        Assert.Equal(80, Assert.Single(Of(book)).Excerpt.Length);
+    }
+
+    [Fact]
+    public void Of_SectionPath()
+    {
+        var book = BookOf(Vault("- Vorwort\n  updated:: 2026-10-01T08:00\n- # Eins\n\t- ## Eins-A\n" + Indented(Indented(Block("Tief", "2026-10-01T10:00")))));
+
+        var changes = Of(book);
+
+        Assert.Equal("Eins › Eins-A", changes[0].SectionPath);
+        Assert.Equal("Alpha", changes[1].SectionPath);
+    }
+
+    [Fact]
+    public void When_Today_Yesterday_Date()
+    {
+        var now = new DateTime(2026, 10, 19, 15, 0, 0);
+
+        Assert.Equal("heute 14:32", RecentChanges.When(new DateTime(2026, 10, 19, 14, 32, 0), now, L));
+        Assert.Equal("gestern 09:10", RecentChanges.When(new DateTime(2026, 10, 18, 9, 10, 0), now, L));
+        Assert.Equal("17.10.2026", RecentChanges.When(new DateTime(2026, 10, 17, 9, 10, 0), now, L));
+    }
+
+    [Fact]
+    public void When_Midnight()
+    {
+        Assert.Equal(
+            "gestern 23:59", RecentChanges.When(new DateTime(2026, 10, 19, 23, 59, 0), new DateTime(2026, 10, 20, 0, 1, 0), L));
+    }
+
+    [Fact]
+    public async Task List_ShowsEntries_ClickReveals()
+    {
+        using var tv = Vault("- # Eins\n" + Indented(Block("Erster Text", "2026-10-03T10:00") + Block("Zweiter Text", "2026-10-06T08:30")));
+        await OpenSessionAsync(tv);
+        var cut = Render<OutlinePane>();
+
+        var items = cut.FindAll(".ne-recent-item");
+
+        Assert.Equal(2, items.Count);
+        Assert.Contains("Zweiter Text", items[0].TextContent);
+        Assert.Contains("heute 08:30", items[0].TextContent);
+        Assert.Contains("Eins", items[0].TextContent);
+        Assert.Contains("03.10.2026", items[1].TextContent);
+
+        items[1].Click();
+
+        Assert.Equal(State.CurrentBook!.Root.Children.Single().TextBlocks.First().Key, State.PendingReveal);
+    }
+
+    [Fact]
+    public async Task List_Empty_Hint()
+    {
+        using var tv = Vault("- # Eins\n" + Indented(Block("Ohne Datum", null)));
+        await OpenSessionAsync(tv);
+
+        var cut = Render<OutlinePane>();
+
+        Assert.Equal("Noch keine Änderungen mit Datum", cut.Find(".ne-recent-empty").TextContent);
+        Assert.Empty(cut.FindAll(".ne-recent-item"));
+    }
+
+    [Fact]
+    public void List_NoBook_Hidden()
+    {
+        var cut = Render<RecentChangesList>();
+
+        Assert.Empty(cut.FindAll(".ne-recent"));
+    }
+
+    [Fact]
+    public async Task List_UpdatesAfterSave()
+    {
+        using var tv = Vault("- # Eins\n" + Indented(Block("Erster Text", "2026-10-05T10:00")));
+        var session = await OpenSessionAsync(tv);
+        var cut = Render<OutlinePane>();
+        Assert.Single(cut.FindAll(".ne-recent-item"));
+        var path = Path.Combine(tv.Root, BookPath);
+
+        File.WriteAllText(path, "title:: Alpha\ntype:: book\n\n- # Eins\n" + Indented(Block("Erster Text", "2026-10-05T10:00") + Block("Neuer Text", Stamp)));
+        session.HandleExternalChange(path);
+        State.RefreshBook();
+        State.Notify();
+
+        cut.WaitForAssertion(() =>
+        {
+            var items = cut.FindAll(".ne-recent-item");
+            Assert.Equal(2, items.Count);
+            Assert.Contains("Neuer Text", items[0].TextContent);
+        });
+    }
+}

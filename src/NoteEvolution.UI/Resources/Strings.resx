@@ -1251,4 +1251,19 @@ NoteEvolution: CPU {2} %, RAM {3} GB</value>
     <value>Geändert: {0}</value>
     <comment>Tooltip der Blockdaten; {0} = Datum und Uhrzeit</comment>
   </data>
+  <data name="RecentTitle" xml:space="preserve">
+    <value>Zuletzt geändert</value>
+    <comment>Überschrift der Liste der zuletzt geänderten Textblöcke über der Gliederung</comment>
+  </data>
+  <data name="RecentEmpty" xml:space="preserve">
+    <value>Noch keine Änderungen mit Datum</value>
+  </data>
+  <data name="RecentToday" xml:space="preserve">
+    <value>heute {0}</value>
+    <comment>{0} = Uhrzeit</comment>
+  </data>
+  <data name="RecentYesterday" xml:space="preserve">
+    <value>gestern {0}</value>
+    <comment>{0} = Uhrzeit</comment>
+  </data>
 </root>
