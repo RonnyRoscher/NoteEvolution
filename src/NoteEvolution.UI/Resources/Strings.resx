@@ -1235,4 +1235,20 @@ NoteEvolution: CPU {2} %, RAM {3} GB</value>
   <data name="NoteFitPoor" xml:space="preserve">
     <value>Passung kaum</value>
   </data>
+  <data name="BlockDatesCreated" xml:space="preserve">
+    <value>erstellt {0}</value>
+    <comment>Kopf eines Textblocks im Editor; {0} = Datum (mit Uhrzeit nur am Tag der Änderung)</comment>
+  </data>
+  <data name="BlockDatesUpdated" xml:space="preserve">
+    <value>geändert {0}</value>
+    <comment>Kopf eines Textblocks im Editor; {0} = Datum und Uhrzeit</comment>
+  </data>
+  <data name="BlockDatesCreatedTitle" xml:space="preserve">
+    <value>Erstellt: {0}</value>
+    <comment>Tooltip der Blockdaten; {0} = Datum und Uhrzeit</comment>
+  </data>
+  <data name="BlockDatesUpdatedTitle" xml:space="preserve">
+    <value>Geändert: {0}</value>
+    <comment>Tooltip der Blockdaten; {0} = Datum und Uhrzeit</comment>
+  </data>
 </root>

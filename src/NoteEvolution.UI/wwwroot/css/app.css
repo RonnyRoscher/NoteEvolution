@@ -1214,6 +1214,24 @@ html, body {
     cursor: grab;
 }
 
+/*
+ * The created/updated dates of a text block, at its top right in small grey text; the text flows around them. The
+ * status mark of wording and done lies outside the text (right: -10px), so the two never overlap.
+ */
+.ne-block-dates {
+    float: right;
+    margin-left: 8px;
+    font-family: var(--font-ui);
+    font-size: 11px;
+    line-height: 1.8;
+    color: var(--fg-muted);
+    user-select: none;
+}
+
+.ne-block-dates[hidden] {
+    display: none;
+}
+
 .ne-para {
     margin: 0;
     padding-left: calc(var(--depth, 0) * 1.5em);

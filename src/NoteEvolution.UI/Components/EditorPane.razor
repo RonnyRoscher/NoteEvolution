@@ -535,7 +535,7 @@
         _newTarget = !sameTarget;
         try
         {
-            await Editor.SetDocumentAsync(EditorDocMapper.ToJson(fresh), _showChips, keepCursor: sameTarget);
+            await Editor.SetDocumentAsync(EditorDocMapper.ToJson(fresh, DatesOf(book)), _showChips, keepCursor: sameTarget);
         }
         finally
         {
@@ -630,6 +630,10 @@
         _showChips = e.Value is true;
         await SyncAsync();
     }
+
+    /// <summary>The dates a text block of the book shows at its top right (spec "Blockdaten" 3).</summary>
+    private Func<Guid, BlockDateLabel?> DatesOf(Book book) =>
+        key => book.FindTextBlock(key) is { } text ? BlockDateText.LabelOf(text.Created, text.Updated, L) : null;
 
     /// <summary>
     /// Same nodes, texts, paragraphs, statuses and chips (<see cref="SnapshotTextBlock.SplitFrom"/> is left out).
