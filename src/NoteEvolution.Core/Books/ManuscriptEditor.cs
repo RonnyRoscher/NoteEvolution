@@ -343,6 +343,104 @@ public static class ManuscriptEditor
         return remark.Key;
     }
 
+    /// <summary>
+    /// Inserts a cross reference <c>((id))</c> to the heading or text block <paramref name="targetKey"/> into the text of
+    /// the text block or detail <paramref name="elementKey"/> (spec 2.2), at <paramref name="offset"/> in its content
+    /// (the block's Markdown, clamped to it; see <see cref="ContentOffset"/> for an offset the editor reports). The
+    /// target gets an <c>id::</c> if it has none, without a date; the referring text block (the element itself, or the
+    /// one a detail belongs to) gets <c>updated::</c>. At the start of a line, the line escape (see
+    /// <see cref="BlockTextEscape"/>) is written anew for the line with the reference in front.
+    /// </summary>
+    /// <exception cref="ArgumentException">
+    /// The element is a heading or not in the book, or the target is not a heading or text block of the book, or it is
+    /// the element itself.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">A block has no place for properties (an open code fence); nothing is changed.</exception>
+    public static void InsertReference(Book book, Guid elementKey, int offset, Guid targetKey, DateTimeOffset now)
+    {
+        var element = ReferringElement(book, elementKey);
+        var target = (book.FindNode(targetKey)?.Block ?? book.FindTextBlock(targetKey)?.Block)
+                     ?? throw new ArgumentException("The target is not a heading or text block of the book.", nameof(targetKey));
+        if (targetKey == elementKey)
+        {
+            throw new ArgumentException("An element cannot refer to itself.", nameof(targetKey));
+        }
+
+        var block = BlockOf(book, element);
+        var owner = BookElements.TextBlockOf(book, element)!.Block;
+        var saved = new[] { block, owner, target }.Distinct().Select(b => (Block: b, Lines: b.Lines.ToList(), b.IsDirty)).ToList();
+        try
+        {
+            var reference = BlockRefs.Format(target.EnsureId());
+            block.SetContent(WithReference(block.Content, Math.Clamp(offset, 0, block.Content.Length), reference));
+            BlockDates.StampChanged(owner, now);
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            foreach (var (b, lines, isDirty) in saved)
+            {
+                b.RestoreLines(lines, isDirty);
+            }
+
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// The offset in the content of the text block or detail <paramref name="elementKey"/> (as <see cref="InsertReference"/>
+    /// takes it) for an offset in its text as the editor shows it: without emphasis markers, line escapes and a
+    /// <c>#notiz</c> tag, <c>\*</c> and <c>\_</c> as one character, a line break as one. It is the first place where
+    /// a reference shows at that offset with the text around it unchanged (also in its emphasis); out of range is clamped.
+    /// </summary>
+    /// <exception cref="ArgumentException">The element is a heading or not in the book.</exception>
+    public static int ContentOffset(Book book, Guid elementKey, int shownOffset)
+    {
+        var element = ReferringElement(book, elementKey);
+        Func<string, string> editorText = element.Kind == ElementKind.TextBlock ? BlockTextEscape.Unescape : BookSnapshot.ParagraphText;
+        var content = BlockOf(book, element).Content;
+        var shown = InlineMarkdown.ShownChars(editorText(content));
+        var at = Math.Clamp(shownOffset, 0, shown.Count);
+        var probe = BlockRefs.Format(Guid.Empty);
+        for (var m = 0; m <= content.Length; m++)
+        {
+            var trial = InlineMarkdown.ShownChars(editorText(WithReference(content, m, probe)));
+            if (trial.Count == shown.Count + probe.Length
+                && trial.Take(at).SequenceEqual(shown.Take(at))
+                && trial.Skip(at).Take(probe.Length).Select(c => c.Char).SequenceEqual(probe)
+                && trial.Skip(at + probe.Length).SequenceEqual(shown.Skip(at)))
+            {
+                return m;
+            }
+        }
+
+        // Not expected: every shown offset has such a place. The end at least keeps the text as it is.
+        return content.Length;
+    }
+
+    /// <summary>The text block or detail that may hold a reference.</summary>
+    /// <exception cref="ArgumentException">The key is that of a heading or of no element of the book.</exception>
+    private static BookElement ReferringElement(Book book, Guid elementKey) =>
+        BookElements.Find(book, elementKey) is { Kind: not ElementKind.Heading } element
+            ? element
+            : throw new ArgumentException("A reference goes into a text block or a detail of the book.", nameof(elementKey));
+
+    /// <summary>
+    /// <paramref name="content"/> with <paramref name="reference"/> at <paramref name="offset"/>; at the start of a line
+    /// the line is escaped anew, so an escape the line no longer needs goes (<c>\# x</c> becomes <c>((id))# x</c>).
+    /// </summary>
+    private static string WithReference(string content, int offset, string reference)
+    {
+        if (offset > 0 && content[offset - 1] != '\n')
+        {
+            return content.Insert(offset, reference);
+        }
+
+        var end = content.IndexOf('\n', offset);
+        end = end < 0 ? content.Length : end;
+        var line = BlockTextEscape.Escape(reference + BlockTextEscape.Unescape(content[offset..end]));
+        return content[..offset] + line + content[end..];
+    }
+
     /// <summary>The block of a text block or detail; headings have no status.</summary>
     /// <exception cref="ArgumentException">The element is a heading or not in the book.</exception>
     private static Block StatusBlockOf(Book book, BookElement element)

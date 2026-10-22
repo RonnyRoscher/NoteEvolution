@@ -132,6 +132,57 @@ public static class ManuscriptCommands
         }
     }
 
+    /// <summary>
+    /// Whether <see cref="InsertReferenceAsync"/> is possible now: as for <see cref="CanSetStatus"/>, the book is
+    /// writable, no conflict is open for it (R26), and the cursor is in a text block or detail (headings hold no
+    /// references).
+    /// </summary>
+    public static bool CanInsertReference(AppState state) => CanSetStatus(state);
+
+    /// <summary>
+    /// Inserts a cross reference to the heading or text block <paramref name="targetKey"/> at the cursor of the text
+    /// block or detail at the cursor (<see cref="ManuscriptEditor.InsertReference"/>, spec 2.2), in the same order as
+    /// <see cref="RunAsync"/>: the editor saves its text first, and text it could not save refuses the command; a
+    /// read-only book or an open conflict refuses it too. The editor reports the cursor's offset in the text it shows;
+    /// it is converted to the offset in the block's Markdown (<see cref="ManuscriptEditor.ContentOffset"/>). On a
+    /// heading or without an element at the cursor nothing changes; an invalid target shows <c>SectionCommandFailed</c>.
+    /// The reference and an <c>id::</c> the target gets are saved together with one undo action
+    /// (<paramref name="undoDescription"/>) that is refused once the page changed after the command. The element is
+    /// revealed, the book view is taken from the vault again and <see cref="AppState.Notify"/> is raised.
+    /// </summary>
+    /// <returns>The message to show, or <c>null</c> if the reference was inserted (or nothing changed) without remark.</returns>
+    public static async Task<AdoptMessage?> InsertReferenceAsync(AppState state, Guid targetKey, string undoDescription, ILogger logger)
+    {
+        Guid? reveal = null;
+        try
+        {
+            var (message, session, book) = await PrepareAsync(state, logger);
+            if (session is null || book is null || state.Cursor is not { } cursor || StatusTargetOf(state, book) is not { } element)
+            {
+                return message;
+            }
+
+            (message, reveal) = RunStatus(session, book, () =>
+            {
+                var offset = ManuscriptEditor.ContentOffset(book, element.Key, cursor.Offset);
+                ManuscriptEditor.InsertReference(book, element.Key, offset, targetKey, session.Clock.Now);
+                return element.Key;
+            }, undoDescription, logger);
+            return message;
+        }
+        finally
+        {
+            // On success the book changed; after a failure the vault holds the page as it is on disk again.
+            state.RefreshBook();
+            if (reveal is { } key)
+            {
+                state.RevealElement(key);
+            }
+
+            state.Notify();
+        }
+    }
+
     private static async Task<(AdoptMessage? Message, Guid? Reveal)> TryRunAsync(
         AppState state, SectionCommand command, string undoDescription, ILogger logger)
     {
@@ -394,12 +445,14 @@ public static class ManuscriptCommands
     }
 
     /// <summary>
-    /// Runs a status change on the page (<paramref name="change"/>: <see cref="ManuscriptEditor.SetStatus"/> or
-    /// <see cref="ManuscriptEditor.AddRemark"/>), saves it and pushes a <see cref="StructureUndo"/>
+    /// Runs a change of block text or properties on the page (<paramref name="change"/>:
+    /// <see cref="ManuscriptEditor.SetStatus"/>, <see cref="ManuscriptEditor.AddRemark"/> or
+    /// <see cref="ManuscriptEditor.InsertReference"/>), saves it and pushes a <see cref="StructureUndo"/>
     /// (<paramref name="undoDescription"/>). A change refused before anything changed (a heading, a block without place
-    /// for properties) shows <c>SectionCommandFailed</c>; a failed save is handled like that of a structure command.
+    /// for properties, an invalid reference target) shows <c>SectionCommandFailed</c>; a failed save is handled like
+    /// that of a structure command.
     /// </summary>
-    /// <returns>The message, and the element to reveal (the new remark; none after a status change).</returns>
+    /// <returns>The message, and the element to reveal (the new remark, the referring element; none after a status change).</returns>
     private static (AdoptMessage? Message, Guid? Reveal) RunStatus(
         VaultSession session, Book book, Func<Guid?> change, string undoDescription, ILogger logger)
     {
@@ -413,7 +466,7 @@ public static class ManuscriptCommands
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
         {
             // Refused before anything changed.
-            logger.LogWarning(ex, "The status change was refused");
+            logger.LogWarning(ex, "The block change was refused");
             return (new AdoptMessage("SectionCommandFailed", true), null);
         }
 

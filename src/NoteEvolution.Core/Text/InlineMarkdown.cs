@@ -77,6 +77,21 @@ public static class InlineMarkdown
     /// <summary>The number of characters the editor shows for <paramref name="text"/> (editor text, already unescaped).</summary>
     internal static int TextLength(string text) => Parse(text).Sum(run => ShownLength(run.Text, run.Text.Length));
 
+    /// <summary>
+    /// The characters the editor shows for <paramref name="text"/> (editor text, already unescaped), each with its
+    /// emphasis; <c>\*</c> and <c>\_</c> show as the bare character.
+    /// </summary>
+    internal static List<(char Char, bool Bold, bool Italic)> ShownChars(string text)
+    {
+        var result = new List<(char, bool, bool)>();
+        foreach (var run in Parse(text))
+        {
+            for (var i = 0; i < run.Text.Length; i += ShownCharLength(run.Text, i))
+                result.Add((run.Text[i + ShownCharLength(run.Text, i) - 1], run.Bold, run.Italic));
+        }
+        return result;
+    }
+
     /// <summary>The number of shown characters in <c>text[..end]</c>; <c>\*</c> and <c>\_</c> show as one.</summary>
     private static int ShownLength(string text, int end)
     {

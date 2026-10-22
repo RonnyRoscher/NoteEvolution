@@ -1,0 +1,139 @@
+@using NoteEvolution.Core.Books
+@using NoteEvolution.Core.Text
+@inject IStringLocalizer<Strings> L
+
+@* The search for the target of a cross reference (spec 2.2): the headings (their path) and text blocks (section ›
+   start of the text) of the book, filtered while typing, case-insensitively. Arrow keys and Enter choose, a click
+   chooses too, Escape cancels. *@
+<div class="ne-ref-picker" role="dialog" aria-label="@L["RefPickerTitle"]">
+    <input type="text" class="ne-ref-query" placeholder="@L["RefPickerPlaceholder"]" aria-label="@L["RefPickerPlaceholder"]"
+           @ref="_input" value="@_query" @oninput="QueryChanged" @onkeydown="KeyDownAsync" />
+    <div class="ne-ref-list" role="listbox">
+        @if (_matches.Count == 0)
+        {
+            <span class="ne-ref-none">@L["RefPickerNone"]</span>
+        }
+        @for (var i = 0; i < _matches.Count; i++)
+        {
+            var candidate = _matches[i];
+            <button type="button" role="option" aria-selected="@(i == _selected ? "true" : "false")"
+                    class="ne-ref-option @(candidate.IsHeading ? "ne-ref-heading" : "ne-ref-text") @(i == _selected ? "ne-ref-selected" : "")"
+                    title="@candidate.Label" @onclick="() => OnPick.InvokeAsync(candidate.Key)">@candidate.Label</button>
+        }
+    </div>
+</div>
+
+@code {
+    /// <summary>How many characters of a text block's text its label shows.</summary>
+    private const int ExcerptLength = 60;
+
+    private const string Separator = " › ";
+
+    private ElementReference _input;
+    private List<Candidate> _candidates = [];
+    private List<Candidate> _matches = [];
+    private string _query = "";
+    private int _selected;
+    private bool _focused;
+
+    /// <summary>The book whose headings and text blocks are offered.</summary>
+    [Parameter, EditorRequired]
+    public Book Book { get; set; } = default!;
+
+    /// <summary>The element the reference goes into; a text block is not offered as its own target.</summary>
+    [Parameter]
+    public Guid? ExcludeKey { get; set; }
+
+    /// <summary>A target was chosen: the <see cref="Block.Key"/> of the heading or text block.</summary>
+    [Parameter]
+    public EventCallback<Guid> OnPick { get; set; }
+
+    /// <summary>Escape was pressed.</summary>
+    [Parameter]
+    public EventCallback OnCancel { get; set; }
+
+    /// <summary>A target offered: its key, the label shown and searched, and whether it is a heading.</summary>
+    private sealed record Candidate(Guid Key, string Label, bool IsHeading);
+
+    protected override void OnParametersSet()
+    {
+        _candidates = [.. CandidatesOf(Book.Root, []).Where(candidate => candidate.Key != ExcludeKey)];
+        Filter();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_focused)
+        {
+            _focused = true;
+            await _input.FocusAsync();
+        }
+    }
+
+    private void QueryChanged(ChangeEventArgs args)
+    {
+        _query = args.Value?.ToString() ?? "";
+        _selected = 0;
+        Filter();
+    }
+
+    private void Filter()
+    {
+        var query = _query.Trim();
+        _matches = query.Length == 0
+            ? _candidates
+            : [.. _candidates.Where(candidate => candidate.Label.Contains(query, StringComparison.CurrentCultureIgnoreCase))];
+        _selected = Math.Clamp(_selected, 0, Math.Max(0, _matches.Count - 1));
+    }
+
+    private async Task KeyDownAsync(KeyboardEventArgs args)
+    {
+        switch (args.Key)
+        {
+            case "ArrowDown":
+                _selected = Math.Min(_selected + 1, Math.Max(0, _matches.Count - 1));
+                break;
+            case "ArrowUp":
+                _selected = Math.Max(_selected - 1, 0);
+                break;
+            case "Enter" when _matches.Count > 0:
+                await OnPick.InvokeAsync(_matches[_selected].Key);
+                break;
+            case "Escape":
+                await OnCancel.InvokeAsync();
+                break;
+        }
+    }
+
+    /// <summary>The headings below <paramref name="node"/> (with their path) and its text blocks, in book order.</summary>
+    private IEnumerable<Candidate> CandidatesOf(OutlineNode node, List<string> path)
+    {
+        var section = path.Count > 0 ? path[^1] : Book.Title;
+        foreach (var item in node.Items)
+        {
+            switch (item)
+            {
+                case OutlineNode child:
+                    List<string> childPath = [.. path, child.Title.Length > 0 ? child.Title : L["OutlineUntitled"].Value];
+                    yield return new Candidate(child.Key, string.Join(Separator, childPath), true);
+                    foreach (var candidate in CandidatesOf(child, childPath))
+                    {
+                        yield return candidate;
+                    }
+
+                    break;
+                case TextBlock textBlock:
+                    yield return new Candidate(textBlock.Key, section + Separator + Excerpt(textBlock.Text), false);
+                    break;
+            }
+        }
+    }
+
+    /// <summary>The start of the text as the editor shows it (without emphasis markers), on one line.</summary>
+    private static string Excerpt(string content)
+    {
+        var text = string.Concat(InlineMarkdown.Parse(BlockTextEscape.Unescape(content)).Select(run => run.Text))
+            .Replace("\\*", "*").Replace("\\_", "_").ReplaceLineEndings(" ").Trim();
+        return text.Length <= ExcerptLength ? text : text[..ExcerptLength].TrimEnd() + "…";
+    }
+}

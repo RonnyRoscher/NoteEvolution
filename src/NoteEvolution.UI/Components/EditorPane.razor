@@ -36,7 +36,8 @@
     @if (State.CurrentBook is not null)
     {
         <SectionBar Top="_barTop" Visible="_barVisible" Element="State.CurrentElement" Locked="ReadOnlyReason is not null"
-                    OnCommand="OnSectionCommand" OnStatus="OnStatusChosen" />
+                    OnCommand="OnSectionCommand" OnStatus="OnStatusChosen"
+                    OnReference="OnReferenceChosen" />
     }
 </div>
 
@@ -309,6 +310,16 @@
     public async Task OnStatusChosen(BlockStatus status)
     {
         _saver.Message = await ManuscriptCommands.SetStatusAsync(State, status, L["UndoStatus"], Logger);
+        StateHasChanged();
+    }
+
+    /// <summary>
+    /// Inserts a cross reference to the heading or text block chosen in the section bar at the cursor
+    /// (<see cref="ManuscriptCommands.InsertReferenceAsync"/>) and shows its message.
+    /// </summary>
+    public async Task OnReferenceChosen(Guid targetKey)
+    {
+        _saver.Message = await ManuscriptCommands.InsertReferenceAsync(State, targetKey, L["UndoReference"], Logger);
         StateHasChanged();
     }
 

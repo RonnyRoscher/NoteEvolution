@@ -257,6 +257,28 @@
     <value>Bemerkung anfügen</value>
     <comment>Name der Aktion für „Rückgängig“ nach „Bemerkung anfügen“</comment>
   </data>
+  <data name="SectionInsertRef" xml:space="preserve">
+    <value>Verweis einfügen</value>
+  </data>
+  <data name="SectionInsertRefTitle" xml:space="preserve">
+    <value>Fügt an der Cursorstelle einen Verweis auf eine Überschrift oder einen Textblock dieses Buchs ein</value>
+    <comment>Titel des Knopfs „Verweis einfügen“ in der Leiste am aktuellen Block</comment>
+  </data>
+  <data name="UndoReference" xml:space="preserve">
+    <value>Verweis einfügen</value>
+    <comment>Name der Aktion für „Rückgängig“ nach „Verweis einfügen“</comment>
+  </data>
+  <data name="RefPickerTitle" xml:space="preserve">
+    <value>Verweisziel wählen</value>
+    <comment>Beschriftung der Suche nach dem Ziel eines Verweises (für Screenreader)</comment>
+  </data>
+  <data name="RefPickerPlaceholder" xml:space="preserve">
+    <value>Überschrift oder Text suchen …</value>
+  </data>
+  <data name="RefPickerNone" xml:space="preserve">
+    <value>Nichts gefunden</value>
+    <comment>In der Suche nach dem Ziel eines Verweises, wenn nichts passt</comment>
+  </data>
   <data name="RangeUp" xml:space="preserve">
     <value>Bereich ▲</value>
   </data>

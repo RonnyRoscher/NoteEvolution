@@ -1621,6 +1621,59 @@ html, body {
     color: var(--danger);
 }
 
+/* The search for a cross reference target opens upwards above its button, like the list of sources. */
+.ne-sec-ref-area {
+    position: relative;
+}
+
+.ne-ref-picker {
+    position: absolute;
+    left: 0;
+    bottom: calc(100% + 6px);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    width: 420px;
+    max-width: 80vw;
+    padding: 6px;
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    z-index: 3;
+}
+
+.ne-ref-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    max-height: 260px;
+    overflow-y: auto;
+}
+
+.ne-shell .ne-ref-option {
+    border: none;
+    background: transparent;
+    text-align: left;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.ne-shell .ne-ref-heading {
+    font-weight: 600;
+}
+
+.ne-shell .ne-ref-option:hover,
+.ne-shell .ne-ref-selected {
+    background: var(--hint-bg);
+}
+
+.ne-ref-none {
+    padding: 3px 10px;
+    color: var(--fg-muted);
+}
+
 /* Assistants menu in the header */
 
 .ne-assistants {
