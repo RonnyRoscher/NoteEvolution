@@ -23,6 +23,7 @@ const zeroRect = () => ({ top: 0, bottom: 0, left: 0, right: 0, width: 0, height
 window.Range.prototype.getClientRects = noRects;
 window.Range.prototype.getBoundingClientRect = zeroRect;
 const { createEditor } = await import('../editor.js');
+const { undoDepth } = await import('@tiptap/pm/history');
 
 const A = '6650a1c2-1b7e-4c1d-9a0f-2b3c4d5e6f70';
 const T = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
@@ -124,5 +125,61 @@ test('a click on a reference reports its id', () => {
     s.host.querySelectorAll('.ne-ref')[1].dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true }));
 
     assert.deepEqual(s.calls.filter(c => c.method === 'ReferenceClicked').map(c => c.args), [[M]]);
+    s.done();
+});
+
+test('setRefLabels updates changed labels in place, without history and without a change report', () => {
+    const s = setUp();
+    s.editor.commands.setTextSelection(4);
+    const selection = s.editor.state.selection.toJSON();
+
+    s.api.setRefLabels([
+        { id: T.toUpperCase(), label: '→ Eins neu', title: 'Buch › Eins neu', missing: false },
+        { id: M, label: '→ Verweis fehlt', title: 'Das Ziel fehlt', missing: true },
+    ]);
+
+    const refs = s.host.querySelectorAll('.ne-ref');
+    assert.equal(refs[0].textContent, '→ Eins neu');
+    assert.equal(refs[0].title, 'Buch › Eins neu');
+    assert.equal(refs[1].textContent, '→ Verweis fehlt');
+    assert.equal(undoDepth(s.editor.state), 0);
+    assert.equal(s.calls.filter(c => c.method === 'DocumentChanged').length, 0);
+    assert.deepEqual(s.editor.state.selection.toJSON(), selection);
+
+    // A deleted target: the reference turns missing.
+    s.api.setRefLabels([{ id: T, label: '→ Verweis fehlt', title: 'Das Ziel fehlt', missing: true }]);
+
+    assert.equal(s.host.querySelectorAll('.ne-ref')[0].classList.contains('missing'), true);
+    assert.equal(s.editor.state.doc.child(0).child(0).child(1).attrs.missing, true);
+    s.done();
+});
+
+test('setRefLabels turns a typed reference into a node, keeps the cursor and the marks; not while the cursor is inside', () => {
+    const s = setUp();
+    const typed = `((${A}))`;
+    // Paragraph start 2 + 13 positions: the end of the paragraph.
+    s.editor.commands.insertContentAt(15, { type: 'text', text: ` ${typed} x`, marks: [{ type: 'italic' }] });
+    const depth = undoDepth(s.editor.state);
+    const changes = s.calls.filter(c => c.method === 'DocumentChanged').length;
+    const end = s.editor.state.doc.child(0).child(0).content.size + 2;
+    const labels = [{ id: A, label: '→ Zwei', title: 'Buch › Zwei', missing: false }];
+
+    // The cursor inside the typed reference: it stays text.
+    s.editor.commands.setTextSelection(20);
+    s.api.setRefLabels(labels);
+    assert.equal(s.host.querySelectorAll('.ne-ref').length, 2);
+
+    s.editor.commands.setTextSelection(end);
+    s.api.setRefLabels(labels);
+
+    const content = s.editor.getJSON().content[0].content[0].content;
+    assert.deepEqual(content.map(n => n.type), ['text', 'blockRef', 'text', 'blockRef', 'text', 'blockRef', 'text']);
+    assert.deepEqual({ ...content[5].attrs }, { id: A, label: '→ Zwei', title: 'Buch › Zwei', missing: false });
+    assert.deepEqual(content[5].marks, [{ type: 'italic' }]);
+    assert.equal(s.host.querySelectorAll('.ne-ref')[2].textContent, '→ Zwei');
+    // The cursor stays at the end: the 40 characters became one position.
+    assert.equal(s.editor.state.selection.from, end - typed.length + 1);
+    assert.equal(undoDepth(s.editor.state), depth);
+    assert.equal(s.calls.filter(c => c.method === 'DocumentChanged').length, changes);
     s.done();
 });

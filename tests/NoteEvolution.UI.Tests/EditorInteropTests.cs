@@ -118,6 +118,17 @@ public class EditorInteropTests
     }
 
     [Fact]
+    public async Task SetRefLabels_Serializes_IdLabelTitleMissing()
+    {
+        var interop = await InitAsync();
+
+        await interop.SetRefLabelsAsync(new Dictionary<Guid, RefLabel> { [Guid.Parse(Key)] = new("Eins", "Buch: Eins", true) });
+
+        var payload = JsonSerializer.Serialize(_js.Calls.Single(c => c.Method == "setRefLabels").Args.Single());
+        Assert.Equal($$"""[{"id":"{{Key}}","label":"Eins","title":"Buch: Eins","missing":true}]""", payload);
+    }
+
+    [Fact]
     public async Task ReferenceClicked_Forwarded_InvalidIdIgnored()
     {
         var interop = await InitAsync();

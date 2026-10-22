@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Localization;
 using Microsoft.Extensions.Logging.Abstractions;
 using NoteEvolution.Core.Books;
+using NoteEvolution.Core.Format;
 using NoteEvolution.TestSupport;
 using NoteEvolution.UI.Components;
 using NoteEvolution.UI.Editor;
@@ -108,6 +109,17 @@ public partial class ReferencePickerTests : UiTestContext
         cut.WaitForAssertion(() => Assert.False(cut.Find(".ne-sec-ref").HasAttribute("disabled")));
         Assert.Empty(cut.FindAll(".ne-ref-picker"));
         Assert.Equal("false", cut.Find(".ne-sec-ref").GetAttribute("aria-expanded"));
+    }
+
+    [Fact]
+    public void Picker_ReferenceInATextBlock_ShowsAsArrow()
+    {
+        var text = BookText.Replace("\t- Dritter Text\n", "\t- Dritter ((aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa)) Text\n");
+        var book = Book.Load(LogseqParser.Parse("Buch - Alpha.md", System.Text.Encoding.UTF8.GetBytes(text)));
+
+        var cut = Render<ReferencePicker>(p => p.Add(x => x.Book, book));
+
+        Assert.Contains("Zwei › Dritter → Text", cut.FindAll(".ne-ref-option").Select(o => o.TextContent.Trim()));
     }
 
     [Fact]

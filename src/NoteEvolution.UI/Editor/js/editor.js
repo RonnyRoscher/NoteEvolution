@@ -198,6 +198,44 @@ function deleteReference(state, dispatch, forward) {
     return true;
 }
 
+const refPattern = /\(\(([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\)\)/gi;
+
+/**
+ * Adds to tr what setRefLabels changes in doc: blockRef nodes whose label, title or missing differ from labels (a Map
+ * of lower-case id → { label, title, missing }) get the new ones, and a reference typed as text whose id labels has
+ * becomes a blockRef node with the text's marks, unless the selection touches its inside (it is converted by a later
+ * call then).
+ */
+function updateRefs(tr, doc, labels, selection) {
+    const replacements = [];
+    doc.descendants((node, pos) => {
+        if (node.type.name === 'blockRef') {
+            const label = labels.get((node.attrs.id ?? '').toLowerCase());
+            if (label && (label.label !== node.attrs.label || label.title !== node.attrs.title || label.missing !== node.attrs.missing)) {
+                tr.setNodeMarkup(pos, undefined, { ...node.attrs, label: label.label, title: label.title, missing: label.missing });
+            }
+            return false;
+        }
+        if (!node.isText) {
+            return true;
+        }
+        for (const match of node.text.matchAll(refPattern)) {
+            const id = match[1].toLowerCase();
+            const label = labels.get(id);
+            const from = pos + match.index;
+            const to = from + match[0].length;
+            if (label && !(selection.from < to && selection.to > from)) {
+                replacements.push({ from, to, attrs: { id, ...label }, marks: node.marks });
+            }
+        }
+        return false;
+    });
+    // From the back, so the positions found stay valid (setNodeMarkup keeps every size).
+    for (const { from, to, attrs, marks } of replacements.reverse()) {
+        tr.replaceWith(from, to, doc.type.schema.nodes.blockRef.create(attrs, null, marks));
+    }
+}
+
 /** A text block with its dates at the top right, its source chips below and a handle to drag it. */
 class TextBlockView {
     constructor(node, options) {
@@ -712,8 +750,9 @@ const MarkedNodes = Extension.create({
     },
 });
 
-// Marks the transaction of setBlockDates: it only shows dates and is not reported as an edit.
-const datesOnlyKey = 'neDatesOnly';
+// Marks the transactions of setBlockDates and setRefLabels: they only show what the book holds and are not reported
+// as an edit.
+const shownOnlyKey = 'neShownOnly';
 
 /** The nearest scrolling ancestor of element (the document's scroller if none). */
 function scrollParent(element) {
@@ -889,9 +928,10 @@ export function createEditor(host, dotnet, options = {}) {
                 },
             },
         },
-        // Dates set by setBlockDates are no edit: they are not reported (nothing to save).
+        // Dates and reference labels set by setBlockDates and setRefLabels are no edit: they are not reported (nothing to
+        // save).
         onUpdate: ({ editor: e, transaction }) => {
-            if (!transaction.getMeta(datesOnlyKey)) {
+            if (!transaction.getMeta(shownOnlyKey)) {
                 call('DocumentChanged', JSON.stringify(e.getJSON()));
             }
         },
@@ -999,7 +1039,22 @@ export function createEditor(host, dotnet, options = {}) {
                 }
             });
             if (tr.docChanged) {
-                editor.view.dispatch(tr.setMeta('addToHistory', false).setMeta(datesOnlyKey, true));
+                editor.view.dispatch(tr.setMeta('addToHistory', false).setMeta(shownOnlyKey, true));
+            }
+        },
+        /**
+         * Shows the current labels of the references: list is an array of { id, label, title, missing }. Reference
+         * nodes take the new labels, and a reference typed as text becomes a node (see updateRefs). The document stays
+         * otherwise, the cursor is kept (mapped across a conversion before it), nothing goes into the undo history and
+         * no change is reported. Ids the document does not hold are ignored.
+         */
+        setRefLabels(list) {
+            const labels = new Map(list.map(item => [String(item.id).toLowerCase(),
+                { label: item.label ?? '', title: item.title ?? '', missing: item.missing === true }]));
+            const tr = editor.state.tr;
+            updateRefs(tr, editor.state.doc, labels, editor.state.selection);
+            if (tr.docChanged) {
+                editor.view.dispatch(tr.setMeta('addToHistory', false).setMeta(shownOnlyKey, true));
             }
         },
         destroy() {

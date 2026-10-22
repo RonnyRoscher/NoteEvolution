@@ -65,6 +65,12 @@
     /// <summary>The dates labels the editor shows, by text block key (spec "Blockdaten" 3).</summary>
     private Dictionary<Guid, BlockDateLabel?> _shownDates = [];
 
+    /// <summary>The cross references of the text the editor shows (spec 2.3), as last loaded or pushed.</summary>
+    private ShownRefs _shownRefs = new([], []);
+
+    /// <summary>The references of a text in order (by target id) and the label of each target.</summary>
+    private sealed record ShownRefs(List<Guid> Order, Dictionary<Guid, RefLabel> Labels);
+
     /// <summary>Where the section bar goes (pixels from the pane's top) and whether the marking is in view, as the editor reports it.</summary>
     private double _barTop;
 
@@ -557,6 +563,7 @@
             // text slightly normalized; it is compared with the book's version from now on (R33).
             _saver.Shown = shown with { Snapshot = fresh, FromEditor = false };
             await ShowDatesAsync(DatesOf(fresh, book));
+            await ShowRefLabelsAsync(fresh, book);
             StateHasChanged();
             await RevealPendingAsync();
             return;
@@ -568,9 +575,11 @@
         try
         {
             var dates = DatesOf(fresh, book);
+            var refs = RefsOf(fresh, book);
             var json = EditorDocMapper.ToJson(fresh, key => dates.GetValueOrDefault(key), RefLabels.Of(book, L));
             await Editor.SetDocumentAsync(json, _showChips, keepCursor: sameTarget);
             _shownDates = dates;
+            _shownRefs = refs;
         }
         finally
         {
@@ -686,6 +695,35 @@
 
         // Only what the editor took counts as shown: after a failed push the next sync pushes the labels again.
         _shownDates = dates;
+    }
+
+    /// <summary>The references in the texts of the snapshot, with their labels from the book (<see cref="RefLabels"/>).</summary>
+    private ShownRefs RefsOf(SectionSnapshot snapshot, Book book)
+    {
+        var labelOf = RefLabels.Of(book, L);
+        var order = snapshot.Nodes.OfType<SnapshotTextBlock>()
+            .SelectMany(t => t.Paragraphs.Select(p => p.Text).Prepend(t.Text))
+            .SelectMany(text => BlockRefs.Find(text).Select(r => r.Id))
+            .ToList();
+        return new ShownRefs(order, order.Distinct().ToDictionary(id => id, labelOf));
+    }
+
+    /// <summary>
+    /// Gives the kept document the current reference labels (a target renamed or deleted in its own save) and lets it
+    /// turn references typed as text into reference nodes; pushed only when a label or the references changed.
+    /// </summary>
+    private async Task ShowRefLabelsAsync(SectionSnapshot snapshot, Book book)
+    {
+        var refs = RefsOf(snapshot, book);
+        var same = refs.Order.SequenceEqual(_shownRefs.Order)
+                   && refs.Labels.All(l => _shownRefs.Labels.GetValueOrDefault(l.Key) == l.Value);
+        if (!same)
+        {
+            await Editor.SetRefLabelsAsync(refs.Labels);
+        }
+
+        // Only what the editor took counts as shown: after a failed push the next sync pushes the labels again.
+        _shownRefs = refs;
     }
 
     /// <summary>

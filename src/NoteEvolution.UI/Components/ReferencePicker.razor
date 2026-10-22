@@ -27,10 +27,6 @@
 </div>
 
 @code {
-    /// <summary>How many characters of a text block's text its label shows.</summary>
-    private const int ExcerptLength = 60;
-
-    private const string Separator = " › ";
 
     private ElementReference _input;
     private ElementReference _list;
@@ -64,7 +60,7 @@
 
     protected override void OnParametersSet()
     {
-        _candidates = [.. CandidatesOf(Book.Root, []).Where(candidate => candidate.Key != ExcludeKey)];
+        _candidates = [.. CandidatesOf(Book.Root).Where(candidate => candidate.Key != ExcludeKey)];
         Filter();
     }
 
@@ -128,30 +124,30 @@
         }
     }
 
-    /// <summary>The headings below <paramref name="node"/> (with their path) and its text blocks, in book order.</summary>
-    private IEnumerable<Candidate> CandidatesOf(OutlineNode node, List<string> path)
+    /// <summary>
+    /// The headings below <paramref name="node"/> (with their path) and its text blocks (section › start of the text),
+    /// in book order; labelled as the references' tooltips are (<see cref="RefLabels"/>).
+    /// </summary>
+    private IEnumerable<Candidate> CandidatesOf(OutlineNode node)
     {
-        var section = path.Count > 0 ? path[^1] : Book.Title;
+        var section = RefLabels.SectionTitle(Book, node, L);
         foreach (var item in node.Items)
         {
             switch (item)
             {
                 case OutlineNode child:
-                    List<string> childPath = [.. path, child.Title.Length > 0 ? child.Title : L["OutlineUntitled"].Value];
-                    yield return new Candidate(child.Key, string.Join(Separator, childPath), true);
-                    foreach (var candidate in CandidatesOf(child, childPath))
+                    yield return new Candidate(child.Key, RefLabels.Path(child, L), true);
+                    foreach (var candidate in CandidatesOf(child))
                     {
                         yield return candidate;
                     }
 
                     break;
                 case TextBlock textBlock:
-                    yield return new Candidate(textBlock.Key, section + Separator + Excerpt(textBlock.Text), false);
+                    yield return new Candidate(
+                        textBlock.Key, section + RefLabels.Separator + RefLabels.Excerpt(textBlock.Text, RefLabels.TitleExcerptLength), false);
                     break;
             }
         }
     }
-
-    /// <summary>The start of the text as the editor shows it (without emphasis markers), on one line.</summary>
-    private static string Excerpt(string content) => RefLabels.Excerpt(content, ExcerptLength);
 }

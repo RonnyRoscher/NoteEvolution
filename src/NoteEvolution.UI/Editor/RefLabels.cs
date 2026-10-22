@@ -39,10 +39,13 @@ public static class RefLabels
         };
     }
 
-    /// <summary>The start of the text as the editor shows it (without emphasis markers), on one line, at most <paramref name="length"/> characters and "…".</summary>
+    /// <summary>
+    /// The start of the text as the editor shows it (without emphasis markers), on one line, at most
+    /// <paramref name="length"/> characters and "…"; a reference in it shows as "→".
+    /// </summary>
     internal static string Excerpt(string content, int length)
     {
-        var text = string.Concat(InlineMarkdown.Parse(BlockTextEscape.Unescape(content)).Select(run => run.Text))
+        var text = string.Concat(InlineMarkdown.Parse(BlockTextEscape.Unescape(content)).Select(run => WithoutRefs(run.Text)))
             .Replace("\\*", "*").Replace("\\_", "_").ReplaceLineEndings(" ").Trim();
         return text.Length <= length ? text : text[..length].TrimEnd() + "…";
     }
@@ -54,7 +57,7 @@ public static class RefLabels
             case { Heading: { } heading }:
                 return new RefLabel(l["RefLabelHeading", TitleOf(heading, l)], Path(heading, l), false);
             case { TextBlock: { } textBlock }:
-                var section = textBlock.Section.Block is null ? book.Title : TitleOf(textBlock.Section, l);
+                var section = SectionTitle(book, textBlock.Section, l);
                 var path = textBlock.Section.Block is null ? book.Title : Path(textBlock.Section, l);
                 return new RefLabel(
                     l["RefLabelText", section, Excerpt(textBlock.Text, LabelExcerptLength)],
@@ -65,11 +68,26 @@ public static class RefLabels
         }
     }
 
-    private static string TitleOf(OutlineNode heading, IStringLocalizer<Strings> l) =>
+    /// <summary>The text with each reference as "→".</summary>
+    private static string WithoutRefs(string text)
+    {
+        foreach (var reference in BlockRefs.Find(text).Reverse())
+        {
+            text = text[..reference.Start] + "→" + text[(reference.Start + reference.Length)..];
+        }
+
+        return text;
+    }
+
+    /// <summary>The title of the section a text block of <paramref name="section"/> belongs to; the book's title at the top.</summary>
+    internal static string SectionTitle(Book book, OutlineNode section, IStringLocalizer<Strings> l) =>
+        section.Block is null ? book.Title : TitleOf(section, l);
+
+    internal static string TitleOf(OutlineNode heading, IStringLocalizer<Strings> l) =>
         heading.Title.Length > 0 ? heading.Title : l["OutlineUntitled"];
 
     /// <summary>The titles of the heading and the headings above it, from the top.</summary>
-    private static string Path(OutlineNode heading, IStringLocalizer<Strings> l)
+    internal static string Path(OutlineNode heading, IStringLocalizer<Strings> l)
     {
         var titles = new List<string>();
         for (var node = heading; node?.Block is not null; node = node.Parent)

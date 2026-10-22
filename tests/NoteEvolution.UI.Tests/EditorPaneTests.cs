@@ -674,7 +674,7 @@ public class EditorPaneTests : UiTestContext
         (BookPath,
             "title:: Alpha\ntype:: book\n\n" +
             "- # Eins\n" +
-            "\t- Erster Text, der so lang ist, dass er gekürzt wird\n" +
+            "\t- Erster ((" + HeadingId + ")) Text, der so lang ist, dass er gekürzt wird\n" +
             "\t  id:: " + FirstId + "\n" +
             "\t- Siehe ((" + HeadingId + ")) und ((" + FirstId + ")) und ((" + MissingId + "))\n" +
             "- # Zwei\n" +
@@ -699,11 +699,77 @@ public class EditorPaneTests : UiTestContext
         Assert.Equal(
             [
                 (HeadingId, "→ Zwei", "Zwei", false),
-                (FirstId, "→ Eins: Erster Text, der so lang ist, dass er ge…", "Eins › Erster Text, der so lang ist, dass er gekürzt wird", false),
+                (HeadingId, "→ Zwei", "Zwei", false),
+                // A reference in the target's text shows as "→" in its label.
+                (FirstId, "→ Eins: Erster → Text, der so lang ist, dass er…", "Eins › Erster → Text, der so lang ist, dass er gekürzt wird", false),
                 (MissingId, Text("RefLabelMissing"), Text("RefTitleMissing"), true),
             ],
             refs.Select(n => ((string)n["attrs"]!["id"]!, (string)n["attrs"]!["label"]!, (string)n["attrs"]!["title"]!,
                 (bool)n["attrs"]!["missing"]!)));
+    }
+
+    /// <summary>The heading node with <paramref name="title"/> in an editor document.</summary>
+    private static JsonNode HeadingNode(JsonNode doc, string title) =>
+        Blocks(doc).Single(n => (string?)n!["type"] == "heading" && (string?)n["content"]?[0]?["text"] == title)!;
+
+    [Fact]
+    public async Task Pane_OwnSave_RenamedTarget_PushesTheNewLabel_DocumentKept()
+    {
+        using var tv = WithRefs();
+        var (_, cut) = await RenderAsync(tv);
+        var doc = Doc(Editor.Json);
+        HeadingNode(doc, "Zwei")["content"] = new JsonArray(new JsonObject { ["type"] = "text", ["text"] = "Zwei neu" });
+
+        await ChangeAsync(cut, doc);
+        await cut.InvokeAsync(() => State.FlushEditor!());
+
+        Assert.Contains("- # Zwei neu\n", tv.Read(BookPath));
+        var pushed = Assert.Single(Editor.RefLabels);
+        Assert.Equal(new RefLabel("→ Zwei neu", "Zwei neu", false), pushed[Guid.Parse(HeadingId)]);
+        Assert.True(pushed[Guid.Parse(MissingId)].Missing);
+        Assert.Single(Editor.Documents);
+
+        // Another save that changes no label and no reference pushes nothing.
+        SetText(doc, 2, "Dritter Text, geändert");
+        await ChangeAsync(cut, doc);
+        await cut.InvokeAsync(() => State.FlushEditor!());
+
+        Assert.Single(Editor.RefLabels);
+    }
+
+    [Fact]
+    public async Task Pane_OwnSave_TypedReference_IsPushedToBecomeANode()
+    {
+        using var tv = WithRefs();
+        var (_, cut) = await RenderAsync(tv);
+        var doc = Doc(Editor.Json);
+        SetText(doc, 2, "Dritter Text ((" + FirstId + "))");
+
+        await ChangeAsync(cut, doc);
+        await cut.InvokeAsync(() => State.FlushEditor!());
+
+        Assert.Contains("\t- Dritter Text ((" + FirstId + "))\n", tv.Read(BookPath));
+        var pushed = Assert.Single(Editor.RefLabels);
+        Assert.StartsWith("→ Eins: Erster", pushed[Guid.Parse(FirstId)].Text);
+        Assert.Single(Editor.Documents);
+    }
+
+    [Fact]
+    public async Task Pane_DeletedTarget_ShowsTheReferenceAsMissing()
+    {
+        using var tv = WithRefs();
+        var (_, cut) = await RenderAsync(tv);
+        var doc = Doc(Editor.Json);
+        Blocks(doc).RemoveAt(At(doc, 0));
+
+        await ChangeAsync(cut, doc);
+        await cut.InvokeAsync(() => State.FlushEditor!());
+
+        Assert.DoesNotContain("Erster", tv.Read(BookPath));
+        var pushed = Assert.Single(Editor.RefLabels);
+        Assert.Equal(new RefLabel(Text("RefLabelMissing"), Text("RefTitleMissing"), true), pushed[Guid.Parse(FirstId)]);
+        Assert.False(pushed[Guid.Parse(HeadingId)].Missing);
+        Assert.Single(Editor.Documents);
     }
 
     [Fact]

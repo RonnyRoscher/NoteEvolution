@@ -130,4 +130,12 @@ public interface IEditorInterop : IAsyncDisposable
     /// editor does not show are ignored.
     /// </summary>
     Task SetBlockDatesAsync(IReadOnlyDictionary<Guid, BlockDateLabel?> dates);
+
+    /// <summary>
+    /// Sets the labels of the shown cross references by target id without replacing the document (spec 2.3
+    /// "Aktualität"): reference nodes take the new labels, and a reference typed as text becomes a reference node
+    /// (unless the cursor is inside it). The cursor and the undo history stay, and no
+    /// <see cref="IEditorCallbacks.OnDocumentChanged"/> is raised. Ids the editor does not show are ignored.
+    /// </summary>
+    Task SetRefLabelsAsync(IReadOnlyDictionary<Guid, RefLabel> labels);
 }
