@@ -58,7 +58,9 @@ geändert 19.10.2026 14:32“). Die Daten stehen als `created::` und `updated::`
 bekommen beide, eine Änderung von Text oder Status setzt `updated` (Verschieben zählt nicht). Bestehende Blöcke ohne
 Daten bleiben so, bis sie geändert werden. Über der Gliederung steht **„Zuletzt geändert“**: die 20 zuletzt geänderten
 Textblöcke mit Datum, dem ersten Satz der Abschnitts-Zusammenfassung (sonst dem Textanfang) und dem Abschnitt; ein
-Klick springt hin. Der Schieber zwischen Liste und Gliederung stellt die Höhe ein (auch mit Pfeil hoch/runter); die
+Klick springt hin. Mehrere Blöcke desselben Abschnitts, die am selben Tag zuletzt geändert wurden, stehen als ein
+Eintrag „N Blöcke“ da; ein Klick springt zur Überschrift. Rechts in der Zeile „GLIEDERUNG“ schaltet ein kleiner Knopf
+die Abdeckung ein und aus. Der Schieber zwischen Liste und Gliederung stellt die Höhe ein (auch mit Pfeil hoch/runter); die
 Liste lässt sich mit ▾/▸ einklappen. Höhe und Klappzustand bleiben nach einem Neustart erhalten.
 
 Am unteren Rand der Markierung stehen die Abschnittsknöpfe und die Quellen:
@@ -78,7 +80,11 @@ Ist „Verwendete ausblenden“ eingeschaltet, erscheint die Notiz stattdessen a
 Der Reiter **Journal** ist beim Start ausgewählt und zeigt jede Journal-Datei als eine Karte (ein Tag, mit Datum
 und „In Logseq öffnen“); ihre Hauptpunkte stehen darin als Kästen mit Linie, jeder mit seinen Knöpfen untereinander
 rechts neben dem Text (darüber ✓, wenn verwendet) und seinen Unterpunkten darunter. „Suche“ und „Relevant“ zeigen
-weiter einzelne Hauptpunkte als Treffer. Im Journal steht „Springen zum Tag“ in der Filterzeile hinter „Von“/„Bis“.
+weiter einzelne Hauptpunkte als Treffer; auch dort stehen die Knöpfe des Hauptpunkts rechts neben dem Text. Im
+Journal steht „Springen zum Tag“ in der Filterzeile („Von“/„Bis“ sind vorerst ausgeblendet). Rechts oben auf jeder
+Tageskarte markieren zwei Häkchen den Tag als **„nicht relevant“** (für das gewählte Buch; in der Datei als
+`not-relevant-for:: [[Buch]]`) oder **„später“** (`later:: true`); die Filter „‚nicht relevant‘ ausblenden“ und
+„‚später‘ ausblenden“ blenden solche Tage aus und bleiben nach einem Neustart erhalten.
 
 Zum Übernehmen hat jede Notiz einen geteilten Knopf, ebenso jeder Unteranstrich mit mehr als einer Zeile (mehr als
 80 Zeichen, ein Zeilenumbruch oder eigene Unteranstriche), der kein Punkt einer Aufzählung ist („1.“, „2)“, „a)“, „–“,
@@ -245,8 +251,9 @@ verglichen; dadurch weiß jede Überschrift, worum es in ihren Unterabschnitten 
   `--limit N` für einen kurzen Lauf).
 
 **Systemanzeige:** Rechts in der Kopfzeile stehen Prozessorlast, belegter Arbeitsspeicher und freier Platz auf dem
-Laufwerk des Vaults („CPU 63 % · RAM 9,8/15,8 GB · Frei 112 GB“, alle 2 s; der Tooltip zeigt den Anteil von Ollama
-und NoteEvolution). Über 90 % CPU oder unter 1 GB freiem Arbeitsspeicher erscheint der Wert in der Warnfarbe.
+Laufwerk des Vaults, dazu den Anteil von NoteEvolution und die Größe der Analysedateien des Vaults (`vectors.db` und
+`understanding.db`): „CPU 63 % (App 12 %) · RAM 9,8/15,8 GB (App 0,6 GB) · Frei 112 GB · Analyse 38 MB“, alle 2 s;
+der Tooltip zeigt zusätzlich den Anteil von Ollama. Über 90 % CPU oder unter 1 GB freiem Arbeitsspeicher erscheint der Wert in der Warnfarbe.
 Abschaltbar in den Einstellungen.
 
 ## Manuelle Abnahme
@@ -332,7 +339,11 @@ Assistenten und Prüfung
 - [ ] Verknüpfungsprüfung beim Start und auf Abruf (fehlende `used-in` werden ergänzt, Waisen und kaputte Quellen
       werden gelistet).
 - [ ] `[handled]`-Assistent: einen Eintrag abwählen, umwandeln, Datei prüfen.
-- [ ] Entwurfs-Assistent auf einer schlichten Gliederung: Überschrift umschalten, umwandeln, Buchliste und Datei prüfen.
+- [ ] Entwurfs-Assistent auf einer schlichten Gliederung: Überschrift umschalten, umwandeln, Buchliste und Datei prüfen;
+      alle Textblöcke und Unterpunkte haben danach `status:: relevant`, Überschriften nicht.
+- [ ] `[handled]`-Assistent: der ganze Notiztext steht da; eine Stelle wählen zeigt ihren Text und Abschnitt daneben.
+- [ ] Journal: „nicht relevant“ bei einem Tag setzen und wieder entfernen: die Datei ist danach unverändert; mit einem
+      anderen Buch gesetzt bleibt der Eintrag des ersten Buchs erhalten; „später“ unabhängig davon. Filter blenden aus.
 
 Lokale KI (Modell installiert, Test-Vault mit einigen Dutzend Notizen und einem Buch)
 - [ ] Ohne Modell: das Angebot beim Öffnen des Vaults ablehnen; die Kopfzeile zeigt „KI: Modell fehlt“, der Reiter
