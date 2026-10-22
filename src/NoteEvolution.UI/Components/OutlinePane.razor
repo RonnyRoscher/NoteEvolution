@@ -23,13 +23,15 @@ else
         {
             <RowSplitter Height="Settings.RecentListHeight" HeightChanged="h => Settings.RecentListHeight = h" DragEnded="SaveSettings" />
         }
-        <div class="ne-outline-label">@L["Outline"]</div>
+        <div class="ne-outline-head">
+            <div class="ne-outline-label">@L["Outline"]</div>
+            <button type="button" class="ne-outline-coverage-toggle" aria-pressed="@(Settings.ShowCoverage ? "true" : "false")"
+                    @onclick="ToggleCoverage">@L["OutlineCoverageToggle"]</button>
+        </div>
         @if (_error is not null)
         {
             <div class="ne-outline-error" role="alert">@_error</div>
         }
-        <button type="button" class="ne-outline-coverage-toggle" aria-pressed="@(Settings.ShowCoverage ? "true" : "false")"
-                @onclick="ToggleCoverage">@L["OutlineCoverageToggle"]</button>
         @* Only the tree scrolls: the list, the splitter, the label and the toggle above it stay in view. *@
         <div class="ne-outline-scroll">
             <ul class="ne-outline-tree">

@@ -444,6 +444,15 @@ html, body {
     overflow: hidden;
 }
 
+/* The title row: the label at the left, the coverage toggle at the right. */
+.ne-outline-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    flex: none;
+}
+
 /* "Gliederung" below the "Zuletzt geändert" list, styled as a pane title. */
 .ne-outline-label {
     flex: none;
@@ -533,8 +542,10 @@ html, body {
 }
 
 .ne-outline-coverage-toggle {
-    align-self: flex-start;
-    margin: 4px 0;
+    flex: none;
+    margin: 4px 4px 0 0;
+    padding: 1px 8px;
+    font-size: 12px;
 }
 
 .ne-outline-coverage-toggle[aria-pressed="true"] {
