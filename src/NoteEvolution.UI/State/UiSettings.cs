@@ -64,6 +64,12 @@ public sealed class UiSettings
     /// <summary>The notes pane hides notes that are already used in a book.</summary>
     public bool HideUsed { get; set; }
 
+    /// <summary>The journal hides days marked "nicht relevant" for the current book (<c>not-relevant-for::</c>).</summary>
+    public bool HideNotRelevant { get; set; }
+
+    /// <summary>The journal hides days marked "später" (<c>later:: true</c>).</summary>
+    public bool HideLater { get; set; }
+
     /// <summary>The outline shows a coverage bar next to each heading (spec 6.2).</summary>
     public bool ShowCoverage { get; set; }
 

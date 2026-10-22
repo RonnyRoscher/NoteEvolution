@@ -52,6 +52,10 @@ public class RecentListCollapseTests : UiTestContext
         Assert.All(order, cssClass => Assert.True(At(cssClass) >= 0, cssClass));
         Assert.Equal(order, order.OrderBy(At));
         Assert.Equal(Text("Outline"), cut.Find(".ne-outline-label").TextContent);
+        // The toggle shares the title row with the label, after it.
+        var toggle = cut.Find(".ne-outline-coverage-toggle");
+        Assert.Equal("ne-outline-head", toggle.ParentElement!.ClassName);
+        Assert.Equal("ne-outline-label", toggle.PreviousElementSibling!.ClassName);
         Assert.Contains(Text("RecentTitle"), cut.Find(".ne-recent-toggle").TextContent);
     }
 

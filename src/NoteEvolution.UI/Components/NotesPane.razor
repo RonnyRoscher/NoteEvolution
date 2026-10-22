@@ -12,7 +12,7 @@
 }
 else
 {
-    var filter = new NoteFilter(Settings.HideUsed, _from, _to);
+    var filter = Filter();
     <div class="ne-notes-pane">
         @* The head stays in place; only what is below it scrolls (with the search field on top). *@
         <div class="ne-notes-head">
@@ -28,12 +28,18 @@ else
             </div>
             <div class="ne-notes-filters">
                 <label class="ne-filter-hide"><input type="checkbox" class="ne-hide-used" checked="@Settings.HideUsed" @onchange="OnHideUsed" /> @L["NotesHideUsed"]</label>
+                @* "Von"/"Bis" are switched off; to bring them back, restore the _from/_to fields and pass them in Filter().
                 <label class="ne-filter-date"><span>@L["NotesFrom"]</span>
                     <input type="date" class="ne-filter-from" value="@Format(_from)" @onchange="e => _from = Parse(e)" /></label>
                 <label class="ne-filter-date"><span>@L["NotesTo"]</span>
                     <input type="date" class="ne-filter-to" value="@Format(_to)" @onchange="e => _to = Parse(e)" /></label>
+                *@
                 @if (_tab == Tab.Journal)
                 {
+                    <label class="ne-filter-hide"><input type="checkbox" class="ne-hide-not-relevant" checked="@Settings.HideNotRelevant" disabled="@(State.CurrentBook is null)"
+                                                         @onchange="e => SaveSetting(() => Settings.HideNotRelevant = e.Value is true)" /> @L["NotesHideNotRelevant"]</label>
+                    <label class="ne-filter-hide"><input type="checkbox" class="ne-hide-later" checked="@Settings.HideLater"
+                                                         @onchange="e => SaveSetting(() => Settings.HideLater = e.Value is true)" /> @L["NotesHideLater"]</label>
                     <label class="ne-filter-date ne-journal-jump-label"><span>@L["NotesJumpTo"]</span>
                         <input type="date" class="ne-journal-jump" value="@Format(_jump)" @onchange="e => _jump = Parse(e)" /></label>
                 }
@@ -65,7 +71,7 @@ else
             }
             else
             {
-                <JournalTab Filter="filter" Jump="_jump" Revision="_revision" RevealKey="_revealKey" RevealSequence="_revealSequence" />
+                <JournalTab Filter="filter" Marks="MarkFilter()" Jump="_jump" Revision="_revision" RevealKey="_revealKey" RevealSequence="_revealSequence" />
             }
         </div>
     </div>
@@ -84,8 +90,6 @@ else
     private VaultSession? _session;
     private Tab _tab = Tab.Search;
     private string _query = "";
-    private DateOnly? _from;
-    private DateOnly? _to;
 
     /// <summary>The Journal tab starts at this day (its field is in the filter row).</summary>
     private DateOnly? _jump;
@@ -144,7 +148,7 @@ else
             return;
         }
 
-        if (note.Date is not null && session.Notes.Journal(new NoteFilter(Settings.HideUsed, _from, _to)).Any(entry => entry.Key == note.Key))
+        if (note.Date is not null && !MarkFilter().Hides(note.Page) && session.Notes.Journal(Filter()).Any(entry => entry.Key == note.Key))
         {
             _tab = Tab.Journal;
             _jump = note.Date;
@@ -215,9 +219,18 @@ else
         }
     }
 
-    private void OnHideUsed(ChangeEventArgs e)
+    /// <summary>The filter of all tabs ("Von"/"Bis" are switched off, see the filter row).</summary>
+    private NoteFilter Filter() => new(Settings.HideUsed, null, null);
+
+    /// <summary>The Journal tab's filter of marked days; "nicht relevant" counts for the current book.</summary>
+    private DayMarkFilter MarkFilter() => new(Settings.HideNotRelevant, Settings.HideLater, State.CurrentBook?.LinkName);
+
+    private void OnHideUsed(ChangeEventArgs e) => SaveSetting(() => Settings.HideUsed = e.Value is true);
+
+    /// <summary>Applies a change of the filter settings and stores them.</summary>
+    private void SaveSetting(Action change)
     {
-        Settings.HideUsed = e.Value is true;
+        change();
         try
         {
             Settings.Save(Platform.UserDataDirectory);

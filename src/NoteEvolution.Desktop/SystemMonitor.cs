@@ -22,6 +22,13 @@ internal sealed class SystemMonitor(TimeProvider time) : ISystemMonitor
     private long _processesAt;
     private Dictionary<int, TimeSpan>? _processTimes;
 
+    /// <summary>How long the size of the analysis files is used before it is measured again.</summary>
+    private static readonly TimeSpan AnalysisInterval = TimeSpan.FromSeconds(30);
+
+    private string? _analysisRoot;
+    private long _analysisAt;
+    private long _analysisBytes;
+
     public SystemSnapshot Read(string? vaultRoot)
     {
         lock (_gate)
@@ -47,8 +54,28 @@ internal sealed class SystemMonitor(TimeProvider time) : ISystemMonitor
 
             return new SystemSnapshot(
                 cpu, memory?.UsedGb, memory?.TotalGb, DiskFree(vaultRoot),
-                shares.OllamaCpu, shares.OllamaRam, shares.AppCpu, shares.AppRam, onBattery);
+                shares.OllamaCpu, shares.OllamaRam, shares.AppCpu, shares.AppRam, onBattery, AnalysisBytes(vaultRoot));
         }
+    }
+
+    /// <summary>The size of the vault's analysis files, measured at most every 30 s (and at once for another vault).</summary>
+    private long? AnalysisBytes(string? vaultRoot)
+    {
+        if (vaultRoot is null)
+        {
+            _analysisRoot = null;
+            return null;
+        }
+
+        var now = time.GetTimestamp();
+        if (_analysisRoot != vaultRoot || time.GetElapsedTime(_analysisAt, now) >= AnalysisInterval)
+        {
+            _analysisRoot = vaultRoot;
+            _analysisAt = now;
+            _analysisBytes = SystemReadings.AnalysisBytes(vaultRoot);
+        }
+
+        return _analysisBytes;
     }
 
     private readonly record struct Shares(double? OllamaCpu, double? OllamaRam, double? AppCpu, double? AppRam);

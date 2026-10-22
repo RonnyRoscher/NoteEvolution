@@ -1,4 +1,5 @@
 using NoteEvolution.Core.Assistants;
+using NoteEvolution.Core.Books;
 using NoteEvolution.Core.Model;
 using NoteEvolution.Core.Storage;
 using NoteEvolution.TestSupport;
@@ -188,10 +189,74 @@ public class DraftConverterTests
             "- # Teil\n" +
             "  - ## Kapitel\n" +
             "    - Ein Satz.\n" +
+            "      status:: relevant\n" +
             "  - ## Fest\n" +
             "    - ### Unter fest\n" +
-            "      - Text\n",
+            "      - Text\n" +
+            "        status:: relevant\n",
             s.ReadDraft());
+    }
+
+    [Fact]
+    public void Apply_MarksTextBlocksAndSubPointsRelevant_NotHeadings()
+    {
+        using var s = new Setup("- Teil\n  - Kapitel\n    - Ein Satz.\n      - Unterpunkt\n");
+
+        s.Converter.Apply(s.Page, s.Converter.Propose(s.Page));
+
+        Assert.Equal(
+            "type:: book\n\n- # Teil\n  - ## Kapitel\n    - Ein Satz.\n      status:: relevant\n" +
+            "      - Unterpunkt\n        status:: relevant\n",
+            s.ReadDraft());
+        var book = Book.Load(s.Page);
+        var text = s.Page.Roots.Single().Children.Single().Children.Single();
+        Assert.Equal(BlockStatus.Relevant, BlockStatuses.Of(text));
+        Assert.Equal(BlockStatus.Relevant, BlockStatuses.Of(text.Children.Single()));
+        Assert.All(book.FindTextBlock(text.Key)!.Paragraphs, p => Assert.Equal(BlockStatus.Relevant, p.Status));
+    }
+
+    [Fact]
+    public void Apply_KeepsExistingStatus()
+    {
+        using var s = new Setup("- Teil\n  - Satz A.\n    status:: fertig\n  - Satz B.\n");
+
+        s.Converter.Apply(s.Page, s.Converter.Propose(s.Page));
+
+        Assert.Equal(
+            "type:: book\n\n- # Teil\n  - Satz A.\n    status:: fertig\n  - Satz B.\n    status:: relevant\n",
+            s.ReadDraft());
+    }
+
+    [Fact]
+    public void Apply_NotizBlockWithoutStatus_KeepsNoStatusLine()
+    {
+        using var s = new Setup("- Teil\n  - Eine Notiz #notiz\n");
+
+        s.Converter.Apply(s.Page, s.Converter.Propose(s.Page));
+
+        Assert.Equal("type:: book\n\n- # Teil\n  - Eine Notiz #notiz\n", s.ReadDraft());
+    }
+
+    [Fact]
+    public void Apply_BlankBlock_GetsNoStatusLine()
+    {
+        using var s = new Setup("- Teil\n  - Satz.\n  -\n");
+
+        s.Converter.Apply(s.Page, s.Converter.Propose(s.Page));
+
+        var draft = s.ReadDraft();
+        Assert.Single(System.Text.RegularExpressions.Regex.Matches(draft, "status::"));
+        Assert.EndsWith("status:: relevant\n  -\n", draft);
+    }
+
+    [Fact]
+    public void Apply_PageAlreadyBook_GetsNoStatus()
+    {
+        using var s = new Setup("type:: book\n\n- Teil\n  - Kind\n");
+
+        s.Converter.Apply(s.Page, s.Converter.Propose(s.Page));
+
+        Assert.Equal("type:: book\n\n- # Teil\n  - Kind\n", s.ReadDraft());
     }
 
     [Fact]
@@ -204,7 +269,7 @@ public class DraftConverterTests
 
         s.Converter.Apply(s.Page, proposal);
 
-        Assert.Equal("type:: book\n\n- Teil\n  - # Kapitel\n    - ## Kind\n", s.ReadDraft());
+        Assert.Equal("type:: book\n\n- Teil\n  status:: relevant\n  - # Kapitel\n    - ## Kind\n", s.ReadDraft());
     }
 
     [Fact]
@@ -239,7 +304,9 @@ public class DraftConverterTests
 
         Assert.Equal(
             "type:: book\n\n" +
-            before.Replace("- Teil", "- # Teil").Replace("- Kapitel", "- ## Kapitel"),
+            before.Replace("- Teil", "- # Teil").Replace("- Kapitel", "- ## Kapitel")
+                .Replace("doppelten Leerzeichen\n", "doppelten Leerzeichen\n      status:: relevant\n")
+                .Replace("- Zweites Kind\n", "- Zweites Kind\n    status:: relevant\n"),
             s.ReadDraft());
     }
 
@@ -254,7 +321,7 @@ public class DraftConverterTests
 
         s.Converter.Apply(s.Page, proposal);
 
-        Assert.Equal("type:: book\n\n- # Teil\n  Fortsetzung\n  - Kind\n", s.ReadDraft());
+        Assert.Equal("type:: book\n\n- # Teil\n  Fortsetzung\n  - Kind\n    status:: relevant\n", s.ReadDraft());
     }
 
     [Fact]
@@ -264,7 +331,7 @@ public class DraftConverterTests
 
         s.Converter.Apply(s.Page, s.Converter.Propose(s.Page));
 
-        Assert.Equal("type:: book\r\n\r\n- # Teil\r\n  - Kind\r\n", s.ReadDraft());
+        Assert.Equal("type:: book\r\n\r\n- # Teil\r\n  - Kind\r\n    status:: relevant\r\n", s.ReadDraft());
     }
 
     [Fact]
@@ -275,7 +342,7 @@ public class DraftConverterTests
         s.Converter.Apply(s.Page, s.Converter.Propose(s.Page));
 
         Assert.Equal("book", s.Page.GetPageProperty("type"));
-        Assert.Equal("title:: Entwurf\ntags:: x\ntype:: book\n\n- # Teil\n  - Kind\n", s.ReadDraft());
+        Assert.Equal("title:: Entwurf\ntags:: x\ntype:: book\n\n- # Teil\n  - Kind\n    status:: relevant\n", s.ReadDraft());
     }
 
     [Fact]
@@ -285,7 +352,7 @@ public class DraftConverterTests
 
         s.Converter.Apply(s.Page, s.Converter.Propose(s.Page));
 
-        Assert.Equal("type:: book\n\n- # Teil\n  - Kind\n", s.ReadDraft());
+        Assert.Equal("type:: book\n\n- # Teil\n  - Kind\n    status:: relevant\n", s.ReadDraft());
     }
 
     [Fact]

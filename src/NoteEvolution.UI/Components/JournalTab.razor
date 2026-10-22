@@ -1,4 +1,5 @@
 @using NoteEvolution.Core.Model
+@using NoteEvolution.Core.Storage
 @using NoteEvolution.Core.Vaults
 @implements IDisposable
 @inject AppState State
@@ -8,7 +9,8 @@
 
 @* The "Journal" tab: one card per journal page (a day), newest first, from a chosen day on; its root blocks inside. *@
 @{
-    var visible = Days(_entries.Where(note => Jump is not { } jump || note.Date <= jump));
+    var visible = VisibleDays(_entries.Where(note => Jump is not { } jump || note.Date <= jump));
+    var book = Marks.Book;
 
     // A day with a card whose "Wohin damit?" list is open stays, also beyond the days shown so far.
     var shown = visible.Where((day, index) => index < _shown || day.Any(note => State.WhereToOpenNotes.Contains(note.Key)));
@@ -26,9 +28,24 @@
             <section @key="page.FilePath" class="ne-journal-day">
                 <header class="ne-journal-day-head">
                     <span class="ne-journal-day-date">@DayLabel(day[0])</span>
+                    @* The day's marks, stored as page properties of its file (DayMarks); "nicht relevant" is per book. *@
+                    <label class="ne-day-mark" title="@(book is null ? L["JournalDayNotRelevantNoBook"] : L["JournalDayNotRelevantTitle"])">
+                        <input @key="(page.FilePath, _markRefresh)" data-mark-refresh="@_markRefresh" type="checkbox" class="ne-day-not-relevant" checked="@(book is not null && DayMarks.IsNotRelevant(page, book))"
+                               disabled="@(book is null)" @onchange="e => Mark(page, p => DayMarks.SetNotRelevant(p, book!, e.Value is true))" />
+                        @L["JournalDayNotRelevant"]
+                    </label>
+                    <label class="ne-day-mark" title="@L["JournalDayLaterTitle"]">
+                        <input @key="(page.FilePath, _markRefresh)" data-mark-refresh="@_markRefresh" type="checkbox" class="ne-day-later" checked="@DayMarks.IsLater(page)"
+                               @onchange="e => Mark(page, p => DayMarks.SetLater(p, e.Value is true))" />
+                        @L["JournalDayLater"]
+                    </label>
                     <button type="button" class="ne-journal-day-logseq" title="@L["JournalDayLogseqTitle", DayLabel(day[0])]"
                             aria-label="@L["JournalDayLogseqTitle", DayLabel(day[0])]" @onclick="() => OpenInLogseq(day)">@L["NoteOpenLogseq"]</button>
                 </header>
+                @if (_message is { } message && string.Equals(message.Path, page.FilePath, StringComparison.OrdinalIgnoreCase))
+                {
+                    <div class="ne-note-message ne-note-error" role="alert">@L[message.Key]</div>
+                }
                 @foreach (var note in day)
                 {
                     <NoteCard @key="note.Key" Note="note" InDay="true" Highlighted="note.Key == _highlightKey"
@@ -60,7 +77,22 @@
     private ITimer? _highlightTimer;
     private bool _disposed;
 
+    /// <summary>
+    /// The day whose mark was refused or failed last, with the message key; it goes when the entries are read again for a
+    /// <see cref="Revision"/> after <c>ClearAfter</c> (a merged external change brings one revision of its own).
+    /// </summary>
+    private (string Path, string Key, int ClearAfter)? _message;
+
+    /// <summary>
+    /// Counts the toggles that were not saved as clicked. The mark inputs are keyed by it, so they are created again: a
+    /// <c>checked</c> value that did not change in the model would otherwise leave the clicked state in the DOM.
+    /// </summary>
+    private int _markRefresh;
+
     [Parameter, EditorRequired] public NoteFilter Filter { get; set; } = default!;
+
+    /// <summary>Which marked days are hidden; its book is the one "nicht relevant" is set for (none: that mark is disabled).</summary>
+    [Parameter, EditorRequired] public DayMarkFilter Marks { get; set; } = default!;
 
     /// <summary>The day the list starts at (newer days are hidden); the date field sits in the notes pane's filter row.</summary>
     [Parameter] public DateOnly? Jump { get; set; }
@@ -92,9 +124,12 @@
         {
             _last = (Filter, Revision);
             _shown = PageSize;
-            var notes = State.Session?.Notes;
-            (_entries, _keptOnly) = WhereToPins.Merge(_entries, notes?.Journal(Filter) ?? [], note => note.Key, State.WhereToOpenNotes);
-            _entries = [.. _entries.Select(note => _keptOnly.Contains(note.Key) ? notes?.Get(note.Key) : note).OfType<NoteBlock>()];
+            if (_message is { } message && Revision > message.ClearAfter)
+            {
+                _message = null;
+            }
+
+            ReadEntries();
         }
 
         if (Jump != _lastJump)
@@ -110,6 +145,13 @@
         }
     }
 
+    private void ReadEntries()
+    {
+        var notes = State.Session?.Notes;
+        (_entries, _keptOnly) = WhereToPins.Merge(_entries, notes?.Journal(Filter) ?? [], note => note.Key, State.WhereToOpenNotes);
+        _entries = [.. _entries.Select(note => _keptOnly.Contains(note.Key) ? notes?.Get(note.Key) : note).OfType<NoteBlock>()];
+    }
+
     public void Dispose()
     {
         _disposed = true;
@@ -123,7 +165,7 @@
             return;
         }
 
-        _shown = Math.Max(_shown, Days(_entries.Where(note => note.Date <= day)).FindIndex(d => d.Any(note => note.Key == key)) + 1);
+        _shown = Math.Max(_shown, VisibleDays(_entries.Where(note => note.Date <= day)).FindIndex(d => d.Any(note => note.Key == key)) + 1);
         _highlightKey = key;
         _focusRequest++;
         _highlightTimer?.Dispose();
@@ -147,6 +189,70 @@
             .Select(day => day.ToList())
             .OrderByDescending(day => day[0].Date ?? DateOnly.MinValue),
     ];
+
+    /// <summary>The <see cref="Days"/> that <see cref="Marks"/> does not hide.</summary>
+    private List<List<NoteBlock>> VisibleDays(IEnumerable<NoteBlock> notes) => [.. Days(notes).Where(day => !Marks.Hides(day[0].Page))];
+
+    /// <summary>
+    /// Sets or clears a mark of the day's page (<paramref name="change"/> returns <c>true</c> if it changed the page) and saves
+    /// it through the session like other note writes. A read-only page or an open conflict is refused before anything
+    /// changes; an external change is merged by the session; after any other failure the page is read from its file again.
+    /// </summary>
+    private void Mark(Page shown, Func<Page, bool> change)
+    {
+        _message = null;
+        if (State.Session is not { } session)
+        {
+            return;
+        }
+
+        var page = session.Vault.FindPageByPath(shown.FilePath) ?? shown;
+        if (page.IsReadOnly)
+        {
+            Refused(page, "JournalDayReadOnly");
+            return;
+        }
+
+        if (session.HasOpenConflict(page.FilePath))
+        {
+            Refused(page, "NoteAdoptConflict");
+            return;
+        }
+
+        if (!change(page))
+        {
+            // The file already has the clicked state (the view was behind): show the page's state.
+            _markRefresh++;
+            return;
+        }
+
+        if (session.TrySave(page, out var error))
+        {
+            return;
+        }
+
+        if (session.HasOpenConflict(page.FilePath))
+        {
+            Refused(page, "NoteAdoptConflict");
+        }
+        else if (error is FileChangedExternallyException)
+        {
+            Refused(page, "JournalDayExternalChange", ownRevisions: 1);
+        }
+        else
+        {
+            PageReload.FromDisk(session, page);
+            ReadEntries();
+            Refused(page, "JournalDayFailed");
+        }
+    }
+
+    /// <summary>Shows <paramref name="key"/> at the day and recreates the mark inputs (see <see cref="_markRefresh"/>).</summary>
+    private void Refused(Page page, string key, int ownRevisions = 0)
+    {
+        _message = (page.FilePath, key, Revision + ownRevisions);
+        _markRefresh++;
+    }
 
     private static string DayLabel(NoteBlock note) =>
         note.Date is { } date ? date.ToString("dd.MM.yyyy", CultureInfo.InvariantCulture) : note.Page.Name;

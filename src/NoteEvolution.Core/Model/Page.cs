@@ -177,6 +177,34 @@ public sealed class Page
         RepairEndings();
     }
 
+    /// <summary>
+    /// Removes the first page property line named <paramref name="key"/> (case-insensitive). If it was the first line,
+    /// no page property remains and a blank line follows, that blank line goes too: the inverse of
+    /// <see cref="SetPageProperty"/> on a page without page properties, so the file is restored byte for byte.
+    /// </summary>
+    /// <returns><c>true</c> if a line was removed.</returns>
+    public bool RemovePageProperty(string key)
+    {
+        var index = _prefixLines.FindIndex(l =>
+            LogseqSyntax.TryParseProperty(l.Text) is { } property && string.Equals(property.Key, key, StringComparison.OrdinalIgnoreCase));
+        if (index < 0)
+        {
+            return false;
+        }
+
+        _prefixLines.RemoveAt(index);
+        if (index == 0 && _prefixLines is [{ Text.Length: 0 }, ..]
+            && !_prefixLines.Any(l => LogseqSyntax.TryParseProperty(l.Text) is not null))
+        {
+            _prefixLines.RemoveAt(0);
+        }
+
+        // Known edge case: in a file of prefix lines only whose last line had no ending, SetPageProperty gave it one; that stays.
+        PrefixChanged();
+        RepairEndings();
+        return true;
+    }
+
     /// <summary>Records the current state as saved: <c>BaseLines = Lines</c> and not dirty, for every block.</summary>
     public void MarkSaved()
     {

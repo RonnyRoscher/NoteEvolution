@@ -526,7 +526,7 @@ public class WhereToTests : UiTestContext
         var cut = RenderCard(session);
 
         // One adopt button (labelled with the way it adopts, first "Am Cursor"), its arrow, then "Wohin damit?".
-        var split = cut.Find(".ne-note-actions > .ne-adopt-split");
+        var split = cut.Find(".ne-adopt-column > .ne-adopt-split");
         Assert.Equal(
             [
                 ("ne-note-adopt", Text("AdoptAtCursor"), Text("AdoptAtCursorTitle")),

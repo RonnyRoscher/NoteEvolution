@@ -1,5 +1,6 @@
 using Bunit;
 using NoteEvolution.Core.Storage;
+using NoteEvolution.Core.Vaults;
 using NoteEvolution.TestSupport;
 using NoteEvolution.UI.Components;
 using NoteEvolution.UI.State;
@@ -83,7 +84,13 @@ public class NoteRevealTests : UiTestContext
     {
         using var tv = Create();
         var cut = await RenderPaneAsync(tv);
-        cut.Find(".ne-filter-from").Change("2026-10-01");
+
+        // The September day is marked "später" and the journal hides such days.
+        var session = State.Session!;
+        var september = session.Vault.FindBlockById(Guid.Parse(SeptemberId))!.Value.Page;
+        Assert.True(DayMarks.SetLater(september, true));
+        Assert.True(session.TrySave(september, out _));
+        Settings.HideLater = true;
 
         await RevealAsync(cut, SeptemberId);
 

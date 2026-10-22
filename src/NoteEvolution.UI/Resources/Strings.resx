@@ -410,6 +410,14 @@
   <data name="NotesHideUsed" xml:space="preserve">
     <value>Verwendete ausblenden</value>
   </data>
+  <data name="NotesHideNotRelevant" xml:space="preserve">
+    <value>‚nicht relevant' ausblenden</value>
+    <comment>Filter im Journal; gilt für das aktuelle Buch</comment>
+  </data>
+  <data name="NotesHideLater" xml:space="preserve">
+    <value>‚später' ausblenden</value>
+    <comment>Filter im Journal</comment>
+  </data>
   <data name="NotesFrom" xml:space="preserve">
     <value>Von</value>
   </data>
@@ -548,6 +556,32 @@
   <data name="JournalDayLogseqTitle" xml:space="preserve">
     <value>Tag {0} in Logseq öffnen</value>
     <comment>{0} = Datum des Journaltags</comment>
+  </data>
+  <data name="JournalDayNotRelevant" xml:space="preserve">
+    <value>nicht relevant</value>
+    <comment>Markierung eines Journaltags, gilt für das aktuelle Buch</comment>
+  </data>
+  <data name="JournalDayNotRelevantTitle" xml:space="preserve">
+    <value>Dieser Tag ist für das aktuelle Buch nicht relevant</value>
+  </data>
+  <data name="JournalDayNotRelevantNoBook" xml:space="preserve">
+    <value>Erst ein Buch wählen</value>
+  </data>
+  <data name="JournalDayLater" xml:space="preserve">
+    <value>später</value>
+    <comment>Markierung eines Journaltags, gilt für alle Bücher</comment>
+  </data>
+  <data name="JournalDayLaterTitle" xml:space="preserve">
+    <value>Diesen Tag später ansehen (für alle Bücher)</value>
+  </data>
+  <data name="JournalDayReadOnly" xml:space="preserve">
+    <value>Diese Journaldatei ist nicht sicher lesbar. Die Markierung wurde nicht gespeichert.</value>
+  </data>
+  <data name="JournalDayExternalChange" xml:space="preserve">
+    <value>Die Journaldatei wurde gleichzeitig von einem anderen Programm geändert. Die Änderung wurde eingelesen und mit der Markierung zusammengeführt.</value>
+  </data>
+  <data name="JournalDayFailed" xml:space="preserve">
+    <value>Die Markierung konnte nicht gespeichert werden. Angezeigt wird der Stand der Datei.</value>
   </data>
   <data name="NoteReadOnlyHint" xml:space="preserve">
     <value>Diese Notizdatei ist nicht sicher lesbar. Übernehmen ist nicht möglich.</value>
@@ -758,6 +792,9 @@
   <data name="HandledPlaceLabel" xml:space="preserve">
     <value>Fundstelle im Buch</value>
   </data>
+  <data name="HandledNote" xml:space="preserve">
+    <value>Notiz</value>
+  </data>
   <data name="HandledPlaceUnknown" xml:space="preserve">
     <value>Stelle unbekannt</value>
   </data>
@@ -778,7 +815,7 @@
     <comment>{0} = Seitenname</comment>
   </data>
   <data name="DraftConfirm" xml:space="preserve">
-    <value>Die Seite „{0}“ wird zum Buch. Vorher wird eine Sicherung angelegt; nur die Überschriften-Markierungen und der Seitentyp werden ergänzt.</value>
+    <value>Die Seite „{0}“ wird zum Buch. Vorher wird eine Sicherung angelegt; ergänzt werden die Überschriften-Markierungen, der Seitentyp und bei allen Textblöcken der Status „relevant“ (relevante Texte erscheinen erst nach einem anderen Status im PDF).</value>
     <comment>{0} = Seitenname</comment>
   </data>
   <data name="DraftConfirmYes" xml:space="preserve">
@@ -1183,8 +1220,12 @@
     <value>Sprachmodell fortsetzen</value>
   </data>
   <data name="SysMeter" xml:space="preserve">
-    <value>CPU {0} % · RAM {1}/{2} GB · Frei {3} GB</value>
-    <comment>Systemanzeige in der Kopfzeile: {0} = Prozessorauslastung, {1}/{2} = Arbeitsspeicher belegt/gesamt, {3} = freier Platz auf dem Laufwerk des Vaults; unbekannte Werte „–“</comment>
+    <value>CPU {0} % (App {1} %) · RAM {2}/{3} GB (App {4} GB) · Frei {5} GB</value>
+    <comment>Systemanzeige in der Kopfzeile: {0} = Prozessorauslastung, {1} = Anteil von NoteEvolution, {2}/{3} = Arbeitsspeicher belegt/gesamt, {4} = Speicher von NoteEvolution, {5} = freier Platz auf dem Laufwerk des Vaults; unbekannte Werte „–“</comment>
+  </data>
+  <data name="SysMeterAnalysis" xml:space="preserve">
+    <value> · Analyse {0}</value>
+    <comment>Anhang der Systemanzeige: {0} = Größe der Analyse-Dateien des Vaults mit Einheit (z. B. „38 MB“); entfällt ohne Vault</comment>
   </data>
   <data name="SysMeterTooltip" xml:space="preserve">
     <value>Ollama: CPU {0} %, RAM {1} GB
@@ -1280,5 +1321,9 @@ NoteEvolution: CPU {2} %, RAM {3} GB</value>
   <data name="RecentYesterday" xml:space="preserve">
     <value>gestern {0}</value>
     <comment>{0} = Uhrzeit</comment>
+  </data>
+  <data name="RecentBlocks" xml:space="preserve">
+    <value>{0} Blöcke</value>
+    <comment>Zuletzt geändert: Anzahl der an einem Tag geänderten Textblöcke eines Abschnitts (mindestens 2)</comment>
   </data>
 </root>

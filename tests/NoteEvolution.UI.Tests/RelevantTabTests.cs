@@ -689,19 +689,6 @@ public class RelevantTabPlacedTests : UiTestContext
     }
 
     [Fact]
-    public async Task Relevant_Filters_ApplyToPlacedGroup()
-    {
-        await OpenPlacedAsync();
-        var cut = OpenTab();
-        cut.WaitForAssertion(() => Assert.Equal(2, PlacedTexts(cut).Count));
-
-        // Only notes from 2 March on.
-        cut.Find(".ne-filter-from").Change("2026-03-02");
-
-        AdvanceUntil(cut, () => Assert.Equal([DreamNote], PlacedTexts(cut)), RelevantTab.Debounce);
-    }
-
-    [Fact]
     public async Task Relevant_PlacedTooltip_ReasonAndFit()
     {
         await OpenPlacedAsync();
