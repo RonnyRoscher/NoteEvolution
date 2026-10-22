@@ -14,9 +14,6 @@ namespace NoteEvolution.Core.Books;
 /// </summary>
 public static class ManuscriptEditor
 {
-    /// <summary>The properties a block converted to a heading hands on to the first text block under it.</summary>
-    private static readonly string[] CarriedKeys = ["id", "source", BlockStatuses.Key];
-
     /// <summary>
     /// Adds a new empty element after <paramref name="current"/>: for a heading of level n a level-n heading after its
     /// whole section, for a text block a text block directly after it, for a detail a detail of the same depth after
@@ -204,7 +201,8 @@ public static class ManuscriptEditor
     /// where all UI text lives); <c>null</c> if it can (or the element already has that level). There is no level
     /// outside 0–6. A text block or detail cannot become a heading above the level of its section (it would take over
     /// sections not its own), except in the prologue. A heading cannot go above the level of its parent heading + 1 (that
-    /// is outdenting), nor so deep that a sub-heading would fall below H6. Text is always possible.
+    /// is outdenting), nor so deep that a sub-heading would fall below H6, nor so high that a sub-heading of an irregular
+    /// outline (one that is not deeper) would rise above H1. Text is always possible.
     /// </summary>
     /// <exception cref="ArgumentException">The element is not in the book.</exception>
     public static string? LevelBlocked(Book book, BookElement element, int level)
@@ -238,8 +236,9 @@ public static class ManuscriptEditor
             return "LevelBlockedOutOfParent";
         }
 
-        return DeepestLevel(node) + level - node.Level > OutlineEditor.MaxLevel
-            ? "LevelBlockedBelowH6"
+        var difference = level - node.Level;
+        return DeepestLevel(node) + difference > OutlineEditor.MaxLevel ? "LevelBlockedBelowH6"
+            : ShallowestLevel(node) + difference < 1 ? "LevelBlockedAboveH1"
             : null;
     }
 
@@ -250,10 +249,11 @@ public static class ManuscriptEditor
     /// sub-points as details. The heading stands in the block's place, a detail's heading right after its text block;
     /// it takes over the section's items that follow there up to the next heading that is not deeper (above the
     /// section's level these are the section's own following text blocks, at its level also its following sub-sections,
-    /// and the heading then follows the section). The block's <c>id::</c>, <c>source::</c> and status (also from a
-    /// <c>#notiz</c> tag) go to the first text block: the block itself keeps them with the further text, else the first
-    /// sub-point takes them if it has none of its own, else the block stays as an empty text block with them; a block
-    /// with none of them and no further text goes. Each text block made gets both dates (<c>updated::</c> only if it has
+    /// and the heading then follows the section). The block's properties (<c>id::</c>, <c>source::</c>, the status, also
+    /// from a <c>#notiz</c> tag, and any other, <c>created::</c> included) go to the first text block: the block itself
+    /// keeps them with the further text, else the first sub-point takes them if it has none of the same keys, else the
+    /// block stays as an empty text block with them. A block with no further text and no properties but its dates goes
+    /// (a heading has no dates). Each text block made gets both dates (<c>updated::</c> only if it has
     /// <c>created::</c>), a detail's text block <c>updated::</c>; the heading gets none.
     /// </summary>
     /// <returns>The key of the new heading.</returns>
@@ -294,23 +294,18 @@ public static class ManuscriptEditor
             Block.ValidateContent(further);
         }
 
-        var carried = new List<BlockProperty>();
-        foreach (var key in CarriedKeys)
-        {
-            if (block.GetProperty(key) is { } value)
-            {
-                carried.Add(new BlockProperty(key, value));
-            }
-        }
-
+        // Every property line goes to the first text block; the tag as a status.
+        var carried = block.Properties.ToList();
         if (hasTag && block.GetProperty(BlockStatuses.Key) is null)
         {
             carried.Add(new BlockProperty(BlockStatuses.Key, BlockStatuses.FileValue(BlockStatus.Remark)!));
         }
 
+        // Dates alone need no text block: they belong to the text, which is the heading's title now.
+        var needsCarrier = carried.Any(property => !IsDate(property.Key));
         var subPoints = block.Children.ToList();
-        // The first sub-point takes the carried properties only if it has none of its own.
-        var keepBlock = further is not null || (carried.Count > 0 && (subPoints.Count == 0 || Carries(subPoints[0])));
+        var keepBlock = further is not null
+                        || (needsCarrier && (subPoints.Count == 0 || Collides(subPoints[0], carried)));
         var following = section.Items
             .SkipWhile(item => item != textBlock)
             .Skip(1)
@@ -337,9 +332,10 @@ public static class ManuscriptEditor
             StampAsTextBlock(block, now);
             page.MoveBlock(block, heading, position++);
         }
-        else if (carried.Count > 0)
+        else if (needsCarrier)
         {
-            foreach (var property in carried)
+            // updated:: is stamped anew below.
+            foreach (var property in carried.Where(property => !IsKey(property, BlockDates.UpdatedKey)))
             {
                 subPoints[0].SetProperty(property.Key, property.Value);
             }
@@ -391,9 +387,20 @@ public static class ManuscriptEditor
         Shift(node, level - node.Level);
     }
 
-    /// <summary>Whether <paramref name="block"/> has an <c>id::</c>, <c>source::</c> or status (also a <c>#notiz</c> tag) of its own.</summary>
-    private static bool Carries(Block block) =>
-        CarriedKeys.Any(key => block.GetProperty(key) is not null) || NoteTag.Has(block.Content);
+    private static bool IsKey(BlockProperty property, string key) => property.Key.Equals(key, StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsDate(string key) =>
+        key.Equals(BlockDates.CreatedKey, StringComparison.OrdinalIgnoreCase)
+        || key.Equals(BlockDates.UpdatedKey, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Whether the sub-point <paramref name="block"/> has a property of <paramref name="carried"/> of its own (but
+    /// <c>updated::</c>, which is stamped anew), or a <c>#notiz</c> tag where a status is carried: it cannot take them.
+    /// </summary>
+    private static bool Collides(Block block, List<BlockProperty> carried) =>
+        carried.Any(property => !IsKey(property, BlockDates.UpdatedKey)
+                                && (block.GetProperty(property.Key) is not null
+                                    || (IsKey(property, BlockStatuses.Key) && NoteTag.Has(block.Content))));
 
     /// <summary>Stamps a block that is a text block now: both dates for a new one, <c>updated::</c> if it has <c>created::</c>.</summary>
     private static void StampAsTextBlock(Block block, DateTimeOffset now)
@@ -424,6 +431,9 @@ public static class ManuscriptEditor
 
     /// <summary>The deepest level of a heading in the subtree of <paramref name="node"/>, the node included.</summary>
     private static int DeepestLevel(OutlineNode node) => node.Children.Select(DeepestLevel).Append(node.Level).Max();
+
+    /// <summary>The highest level (smallest number) of a heading in the subtree of <paramref name="node"/>, the node included.</summary>
+    private static int ShallowestLevel(OutlineNode node) => node.Children.Select(ShallowestLevel).Append(node.Level).Min();
 
     /// <summary>
     /// Whether <see cref="Wrap"/> is possible: <c>false</c> for a detail, for no head (the whole book), for an unknown

@@ -144,6 +144,54 @@ public class SectionBarLevelTests : UiTestContext
     }
 
     [Fact]
+    public async Task SubPointToHeading_AfterItsTextBlock_UndoRestoresBytes()
+    {
+        var cut = await RenderAsync();
+        var session = State.Session!;
+        var before = File.ReadAllBytes(Path.Combine(_vault.Root, BookPath));
+
+        await MoveToAsync(cut, "Ein Punkt");
+        await ClickAsync(cut, 2);
+
+        // The heading follows its text block, which is changed; the following text block goes under the heading.
+        Assert.Equal(
+            BookText.Replace(
+                "\t- Erster Text\n\t\t- Ein Punkt\n\t- Zweiter Text\n",
+                $"\t- Erster Text\n\t  updated:: {Stamp}\n\t- ## Ein Punkt\n\t\t- Zweiter Text\n"),
+            _vault.Read(BookPath));
+        Assert.Equal(KeyOf("## Ein Punkt"), State.Cursor!.Key);
+        cut.WaitForAssertion(() => Assert.Equal("H2", Pressed(cut)));
+
+        Assert.True(session.TryUndo(out var error), error?.ToString());
+        Assert.Equal(before, File.ReadAllBytes(Path.Combine(_vault.Root, BookPath)));
+    }
+
+    [Fact]
+    public async Task OneLineBlockWithId_EmptyTextBlockCarriesIt_UndoRestoresBytes()
+    {
+        const string id = "11111111-1111-1111-1111-111111111111";
+        const string text = "title:: Alpha\ntype:: book\n\n- # Eins\n\t- Kapitel\n\t  id:: " + id + "\n";
+        var path = Path.Combine(_vault.Root, BookPath);
+        File.WriteAllText(path, text);
+        var cut = await RenderAsync();
+        var session = State.Session!;
+        var before = File.ReadAllBytes(path);
+
+        await MoveToAsync(cut, "Kapitel");
+        await ClickAsync(cut, 2);
+
+        // Cross references to the block keep a target: an empty text block under the heading takes its id::.
+        Assert.Equal(
+            "title:: Alpha\ntype:: book\n\n- # Eins\n\t- ## Kapitel\n\t\t-\n\t\t  id:: " + id + "\n" +
+            $"\t\t  created:: {Stamp}\n\t\t  updated:: {Stamp}\n",
+            _vault.Read(BookPath));
+        Assert.Equal(KeyOf("## Kapitel"), Book.FindTextBlockById(Guid.Parse(id))!.Section.Key);
+
+        Assert.True(session.TryUndo(out var error), error?.ToString());
+        Assert.Equal(before, File.ReadAllBytes(path));
+    }
+
+    [Fact]
     public async Task HeadingLevel_ShiftsSubHeadings_UndoRestoresBytes()
     {
         var cut = await RenderAsync();

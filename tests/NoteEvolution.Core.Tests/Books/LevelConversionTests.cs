@@ -179,6 +179,47 @@ public class LevelConversionTests
     }
 
     [Fact]
+    public void ToHeading_OtherProperty_EmptyTextBlockKeepsItAndCreated()
+    {
+        const string text = $"type:: book\n\n- Kapitel\n  tags:: wichtig\n  created:: {Old}\n  updated:: {Old}\n";
+        var book = Load(text);
+
+        ManuscriptEditor.ToHeading(book, KeyOf(book, "Kapitel"), 2, Now);
+
+        // Any property but the dates needs a text block; the original created:: stays with it.
+        Assert.Equal(
+            $"type:: book\n\n- ## Kapitel\n\t-\n\t  tags:: wichtig\n\t  created:: {Old}\n\t  updated:: {Stamp}\n",
+            Serialize(book));
+    }
+
+    [Fact]
+    public void ToHeading_OtherPropertyAndCreated_GoToTheFirstSubPoint()
+    {
+        const string text =
+            $"type:: book\n\n- Kapitel\n  tags:: wichtig\n  created:: {Old}\n  updated:: {Old}\n\t- Punkt\n\t  collapsed:: true\n\t\t- tiefer\n";
+        var book = Load(text);
+
+        ManuscriptEditor.ToHeading(book, KeyOf(book, "Kapitel"), 1, Now);
+
+        Assert.Equal(
+            "type:: book\n\n- # Kapitel\n\t- Punkt\n\t  collapsed:: true\n\t  tags:: wichtig\n" +
+            $"\t  created:: {Old}\n\t  updated:: {Stamp}\n\t\t- tiefer\n",
+            Serialize(book));
+    }
+
+    [Fact]
+    public void ToHeading_OnlyDates_NoTextBlockLeft()
+    {
+        const string text = $"type:: book\n\n- Kapitel\n  created:: {Old}\n  updated:: {Old}\n";
+        var book = Load(text);
+
+        ManuscriptEditor.ToHeading(book, KeyOf(book, "Kapitel"), 2, Now);
+
+        // The dates belong to the text, which is the title now; a heading has none.
+        Assert.Equal("type:: book\n\n- ## Kapitel\n", Serialize(book));
+    }
+
+    [Fact]
     public void ToHeading_NothingToCarry_NoTextBlockLeft()
     {
         const string text = "type:: book\n\n- Vorspann\n- Mehr\n- # Eins\n";
@@ -239,6 +280,24 @@ public class LevelConversionTests
         Assert.Throws<ArgumentException>(() => ManuscriptEditor.SetHeadingLevel(book, KeyOf(book, "##### 5"), 3));
 
         Assert.Equal(LevelSix, Serialize(book));
+    }
+
+    [Fact]
+    public void SetHeadingLevel_IrregularOutline_NoSubHeadingAboveH1()
+    {
+        // A warned outline: the sub-heading is not deeper than its parent.
+        const string text = "type:: book\n\n- ## A\n\t- # B\n";
+        var book = Load(text);
+        Assert.NotEmpty(book.Warnings);
+        var a = ElementOf(book, "## A");
+
+        Assert.Equal("LevelBlockedAboveH1", ManuscriptEditor.LevelBlocked(book, a, 1));
+        Assert.Throws<ArgumentException>(() => ManuscriptEditor.SetHeadingLevel(book, a.Key, 1));
+        Assert.Equal(text, Serialize(book));
+
+        Assert.Null(ManuscriptEditor.LevelBlocked(book, a, 3));
+        ManuscriptEditor.SetHeadingLevel(book, a.Key, 3);
+        Assert.Equal("type:: book\n\n- ### A\n\t- ## B\n", Serialize(book));
     }
 
     [Fact]

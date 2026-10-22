@@ -44,7 +44,7 @@
                 var current = ManuscriptCommands.LevelAt(State);
             }
             <span class="ne-sec-levels" role="group" aria-label="@L["SectionLevels"]">
-                @for (var level = 0; level <= MaxLevel; level++)
+                @for (var level = 0; level <= OutlineEditor.MaxLevel; level++)
                 {
                     var target = level;
                     var reason = ManuscriptCommands.LevelBlocked(State, target);
@@ -143,9 +143,6 @@
         ("ne-sec-wrap", SectionCommand.Wrap, "SectionWrap", false),
         ("ne-sec-remark", SectionCommand.AddRemark, "SectionAddRemark", false),
     ];
-
-    /// <summary>The deepest heading level of a level button (H6).</summary>
-    private const int MaxLevel = 6;
 
     /// <summary>The options of the status selection in their order: the status and its resource key.</summary>
     private static readonly (BlockStatus Status, string Key)[] Statuses =
