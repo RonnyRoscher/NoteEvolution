@@ -69,6 +69,37 @@ public class SystemReadingsTests
     }
 
     [Fact]
+    public void SystemReadings_AnalysisBytes_SumsFilesAndToleratesMissingOrLocked()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ne-analysis-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            // No folder at all: 0.
+            Assert.Equal(0, SystemReadings.AnalysisBytes(root));
+
+            var folder = Directory.CreateDirectory(Path.Combine(root, ".noteevolution")).FullName;
+            File.WriteAllBytes(Path.Combine(folder, "vectors.db"), new byte[1000]);
+            File.WriteAllBytes(Path.Combine(folder, "vectors.db-wal"), new byte[200]);
+            File.WriteAllBytes(Path.Combine(folder, "understanding.db-shm"), new byte[30]);
+            File.WriteAllBytes(Path.Combine(folder, "other.db"), new byte[5000]);
+
+            // Missing files (understanding.db, vectors.db-shm, ...) count as 0; other files do not count.
+            Assert.Equal(1230, SystemReadings.AnalysisBytes(root));
+
+            // A file held open exclusively is no error.
+            using var locked = new FileStream(Path.Combine(folder, "vectors.db"), FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+            Assert.InRange(SystemReadings.AnalysisBytes(root), 230, 1230);
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, true);
+            }
+        }
+    }
+
+    [Fact]
     public void SystemReadings_PowerSupplyStatus()
     {
         Assert.True(SystemReadings.OnBattery(["Discharging"]));

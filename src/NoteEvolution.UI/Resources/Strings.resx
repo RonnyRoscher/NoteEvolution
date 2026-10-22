@@ -1183,8 +1183,12 @@
     <value>Sprachmodell fortsetzen</value>
   </data>
   <data name="SysMeter" xml:space="preserve">
-    <value>CPU {0} % · RAM {1}/{2} GB · Frei {3} GB</value>
-    <comment>Systemanzeige in der Kopfzeile: {0} = Prozessorauslastung, {1}/{2} = Arbeitsspeicher belegt/gesamt, {3} = freier Platz auf dem Laufwerk des Vaults; unbekannte Werte „–“</comment>
+    <value>CPU {0} % (App {1} %) · RAM {2}/{3} GB (App {4} GB) · Frei {5} GB</value>
+    <comment>Systemanzeige in der Kopfzeile: {0} = Prozessorauslastung, {1} = Anteil von NoteEvolution, {2}/{3} = Arbeitsspeicher belegt/gesamt, {4} = Speicher von NoteEvolution, {5} = freier Platz auf dem Laufwerk des Vaults; unbekannte Werte „–“</comment>
+  </data>
+  <data name="SysMeterAnalysis" xml:space="preserve">
+    <value> · Analyse {0}</value>
+    <comment>Anhang der Systemanzeige: {0} = Größe der Analyse-Dateien des Vaults mit Einheit (z. B. „38 MB“); entfällt ohne Vault</comment>
   </data>
   <data name="SysMeterTooltip" xml:space="preserve">
     <value>Ollama: CPU {0} %, RAM {1} GB

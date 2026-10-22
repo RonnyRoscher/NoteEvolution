@@ -11,10 +11,12 @@ namespace NoteEvolution.UI.Platform;
 /// <param name="OllamaRamGb">The memory of Ollama's processes, in GB.</param>
 /// <param name="AppCpuPercent">The processor share of NoteEvolution since the previous reading, 0–100.</param>
 /// <param name="AppRamGb">The memory of NoteEvolution, in GB.</param>
+/// <param name="AnalysisBytes">The size of the vault's analysis files (vectors and understanding, with their journals), in bytes; <c>null</c> without a vault.</param>
 /// <param name="OnBattery">The computer runs on battery; <c>null</c> when that cannot be told.</param>
 public sealed record SystemSnapshot(
     double? CpuPercent, double? RamUsedGb, double? RamTotalGb, double? DiskFreeGb,
-    double? OllamaCpuPercent, double? OllamaRamGb, double? AppCpuPercent, double? AppRamGb, bool? OnBattery);
+    double? OllamaCpuPercent, double? OllamaRamGb, double? AppCpuPercent, double? AppRamGb, bool? OnBattery,
+    long? AnalysisBytes = null);
 
 /// <summary>Reads the computer's load for the header's system meter and the language model's battery pause.</summary>
 public interface ISystemMonitor

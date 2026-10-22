@@ -141,6 +141,35 @@ public static class SystemReadings
         return onBattery;
     }
 
+    /// <summary>
+    /// The size of the vault's analysis files in bytes: <c>vectors.db</c> and <c>understanding.db</c> in
+    /// <c>.noteevolution</c> with their <c>-wal</c>/<c>-shm</c> files. A missing or unreadable (locked) file counts as 0.
+    /// </summary>
+    public static long AnalysisBytes(string vaultRoot)
+    {
+        long sum = 0;
+        foreach (var name in new[] { "vectors.db", "understanding.db" })
+        {
+            foreach (var suffix in new[] { "", "-wal", "-shm" })
+            {
+                try
+                {
+                    var file = new FileInfo(Path.Combine(vaultRoot, ".noteevolution", name + suffix));
+                    if (file.Exists)
+                    {
+                        sum += file.Length;
+                    }
+                }
+                catch (Exception)
+                {
+                    // locked or vanished meanwhile: counts as 0
+                }
+            }
+        }
+
+        return sum;
+    }
+
     /// <summary><paramref name="bytes"/> in GB (<see cref="BytesPerGb"/>).</summary>
     public static double Gigabytes(long bytes) => bytes / BytesPerGb;
 }
