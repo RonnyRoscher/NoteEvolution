@@ -122,6 +122,22 @@ public class DayMarksTests
     }
 
     [Fact]
+    public void HandEditedDuplicates_AreRead_AndUncheckRemovesAllOfThem()
+    {
+        var later = Parse("later:: true\nlater:: true\n\n- Eintrag\n");
+        Assert.True(DayMarks.SetLater(later, false));
+        Assert.Equal("- Eintrag\n", Text(later));
+
+        var page = Parse($"title:: Tag\nnot-relevant-for:: [[{Alpha}]]\nnot-relevant-for:: [[{Beta}]], [[{Alpha}]]\n\n- Eintrag\n");
+        Assert.True(DayMarks.IsNotRelevant(page, Beta));
+
+        DayMarks.SetNotRelevant(page, Alpha, false);
+        Assert.Equal($"title:: Tag\nnot-relevant-for:: [[{Beta}]]\n\n- Eintrag\n", Text(page));
+        DayMarks.SetNotRelevant(page, Beta, false);
+        Assert.Equal("title:: Tag\n\n- Eintrag\n", Text(page));
+    }
+
+    [Fact]
     public void Filter_HidesMarkedDays_NotRelevantOnlyForItsBook()
     {
         var page = Parse($"later:: true\nnot-relevant-for:: [[{Alpha}]]\n\n- Eintrag\n");

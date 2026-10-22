@@ -19,12 +19,15 @@ public static class DayMarks
     /// <summary>The canonical <c>not-relevant-for::</c> value: <c>[[A]], [[B]]</c>.</summary>
     public static string FormatBooks(IEnumerable<string> books) => UsedInValue.Format(books.Select(b => new UsedInEntry(b, null)));
 
+    /// <summary>The books of all <c>not-relevant-for::</c> lines (a hand-edited file may hold several).</summary>
+    public static IReadOnlyList<string> NotRelevantBooks(Page page) =>
+        [.. Values(page, NotRelevantKey).SelectMany(ParseBooks).Distinct(StringComparer.OrdinalIgnoreCase)];
+
     public static bool IsNotRelevant(Page page, string bookLinkName) =>
-        page.GetPageProperty(NotRelevantKey) is { } value
-        && ParseBooks(value).Contains(bookLinkName, StringComparer.OrdinalIgnoreCase);
+        NotRelevantBooks(page).Contains(bookLinkName, StringComparer.OrdinalIgnoreCase);
 
     public static bool IsLater(Page page) =>
-        string.Equals(page.GetPageProperty(LaterKey)?.Trim(), "true", StringComparison.OrdinalIgnoreCase);
+        Values(page, LaterKey).Any(v => string.Equals(v.Trim(), "true", StringComparison.OrdinalIgnoreCase));
 
     /// <summary>
     /// Adds or removes <paramref name="bookLinkName"/> in <c>not-relevant-for::</c>; the other books' entries stay, and
@@ -38,7 +41,7 @@ public static class DayMarks
             return false;
         }
 
-        var books = ParseBooks(page.GetPageProperty(NotRelevantKey) ?? "").ToList();
+        var books = NotRelevantBooks(page).ToList();
         if (notRelevant)
         {
             books.Add(bookLinkName);
@@ -48,11 +51,13 @@ public static class DayMarks
             books.RemoveAll(b => string.Equals(b, bookLinkName, StringComparison.OrdinalIgnoreCase));
         }
 
-        if (books.Count == 0)
+        // Duplicate lines are merged into one; a single line is replaced in place, so the rest of the file stays as it was.
+        if (books.Count == 0 || Values(page, NotRelevantKey).Count() > 1)
         {
-            page.RemovePageProperty(NotRelevantKey);
+            RemoveAll(page, NotRelevantKey);
         }
-        else
+
+        if (books.Count > 0)
         {
             page.SetPageProperty(NotRelevantKey, FormatBooks(books));
         }
@@ -75,10 +80,21 @@ public static class DayMarks
         }
         else
         {
-            page.RemovePageProperty(LaterKey);
+            RemoveAll(page, LaterKey);
         }
 
         return true;
+    }
+
+    private static IEnumerable<string> Values(Page page, string key) =>
+        page.PageProperties.Where(p => string.Equals(p.Key, key, StringComparison.OrdinalIgnoreCase)).Select(p => p.Value);
+
+    /// <summary>Removes every line of <paramref name="key"/>, also hand-edited duplicates.</summary>
+    private static void RemoveAll(Page page, string key)
+    {
+        while (page.RemovePageProperty(key))
+        {
+        }
     }
 }
 

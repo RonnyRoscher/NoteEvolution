@@ -30,12 +30,12 @@
                     <span class="ne-journal-day-date">@DayLabel(day[0])</span>
                     @* The day's marks, stored as page properties of its file (DayMarks); "nicht relevant" is per book. *@
                     <label class="ne-day-mark" title="@(book is null ? L["JournalDayNotRelevantNoBook"] : L["JournalDayNotRelevantTitle"])">
-                        <input type="checkbox" class="ne-day-not-relevant" checked="@(book is not null && DayMarks.IsNotRelevant(page, book))"
+                        <input @key="(page.FilePath, _markRefresh)" data-mark-refresh="@_markRefresh" type="checkbox" class="ne-day-not-relevant" checked="@(book is not null && DayMarks.IsNotRelevant(page, book))"
                                disabled="@(book is null)" @onchange="e => Mark(page, p => DayMarks.SetNotRelevant(p, book!, e.Value is true))" />
                         @L["JournalDayNotRelevant"]
                     </label>
                     <label class="ne-day-mark" title="@L["JournalDayLaterTitle"]">
-                        <input type="checkbox" class="ne-day-later" checked="@DayMarks.IsLater(page)"
+                        <input @key="(page.FilePath, _markRefresh)" data-mark-refresh="@_markRefresh" type="checkbox" class="ne-day-later" checked="@DayMarks.IsLater(page)"
                                @onchange="e => Mark(page, p => DayMarks.SetLater(p, e.Value is true))" />
                         @L["JournalDayLater"]
                     </label>
@@ -77,8 +77,17 @@
     private ITimer? _highlightTimer;
     private bool _disposed;
 
-    /// <summary>The day whose mark was refused or failed last, with the message key.</summary>
-    private (string Path, string Key)? _message;
+    /// <summary>
+    /// The day whose mark was refused or failed last, with the message key; it goes when the entries are read again for a
+    /// <see cref="Revision"/> after <c>ClearAfter</c> (a merged external change brings one revision of its own).
+    /// </summary>
+    private (string Path, string Key, int ClearAfter)? _message;
+
+    /// <summary>
+    /// Counts the toggles that were not saved as clicked. The mark inputs are keyed by it, so they are created again: a
+    /// <c>checked</c> value that did not change in the model would otherwise leave the clicked state in the DOM.
+    /// </summary>
+    private int _markRefresh;
 
     [Parameter, EditorRequired] public NoteFilter Filter { get; set; } = default!;
 
@@ -115,6 +124,11 @@
         {
             _last = (Filter, Revision);
             _shown = PageSize;
+            if (_message is { } message && Revision > message.ClearAfter)
+            {
+                _message = null;
+            }
+
             ReadEntries();
         }
 
@@ -195,35 +209,49 @@
         var page = session.Vault.FindPageByPath(shown.FilePath) ?? shown;
         if (page.IsReadOnly)
         {
-            _message = (page.FilePath, "JournalDayReadOnly");
+            Refused(page, "JournalDayReadOnly");
             return;
         }
 
         if (session.HasOpenConflict(page.FilePath))
         {
-            _message = (page.FilePath, "NoteAdoptConflict");
+            Refused(page, "NoteAdoptConflict");
             return;
         }
 
-        if (!change(page) || session.TrySave(page, out var error))
+        if (!change(page))
+        {
+            // The file already has the clicked state (the view was behind): show the page's state.
+            _markRefresh++;
+            return;
+        }
+
+        if (session.TrySave(page, out var error))
         {
             return;
         }
 
         if (session.HasOpenConflict(page.FilePath))
         {
-            _message = (page.FilePath, "NoteAdoptConflict");
+            Refused(page, "NoteAdoptConflict");
         }
         else if (error is FileChangedExternallyException)
         {
-            _message = (page.FilePath, "JournalDayExternalChange");
+            Refused(page, "JournalDayExternalChange", ownRevisions: 1);
         }
         else
         {
             PageReload.FromDisk(session, page);
             ReadEntries();
-            _message = (page.FilePath, "JournalDayFailed");
+            Refused(page, "JournalDayFailed");
         }
+    }
+
+    /// <summary>Shows <paramref name="key"/> at the day and recreates the mark inputs (see <see cref="_markRefresh"/>).</summary>
+    private void Refused(Page page, string key, int ownRevisions = 0)
+    {
+        _message = (page.FilePath, key, Revision + ownRevisions);
+        _markRefresh++;
     }
 
     private static string DayLabel(NoteBlock note) =>

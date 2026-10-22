@@ -199,6 +199,7 @@ public sealed class Page
             _prefixLines.RemoveAt(0);
         }
 
+        // Known edge case: in a file of prefix lines only whose last line had no ending, SetPageProperty gave it one; that stays.
         PrefixChanged();
         RepairEndings();
         return true;

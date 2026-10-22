@@ -167,15 +167,43 @@ public class JournalDayMarksTests : UiTestContext
         await OpenAsync(tv);
         var cut = RenderJournal();
 
-        LaterBox(cut, "02.10.2026").Change(true);
+        var later = LaterBox(cut, "02.10.2026");
+        later.Change(true);
         Assert.Equal(Text("JournalDayReadOnly"), Message(cut, "02.10.2026"));
-        NotRelevantBox(cut, "02.10.2026").Change(true);
+        AssertRecreated(later, LaterBox(cut, "02.10.2026"));
+        var notRelevant = NotRelevantBox(cut, "02.10.2026");
+        notRelevant.Change(true);
 
         Assert.Equal(Text("JournalDayReadOnly"), Message(cut, "02.10.2026"));
+        AssertRecreated(notRelevant, NotRelevantBox(cut, "02.10.2026"));
         Assert.Equal(broken, tv.Read("journals/2026_10_02.md"));
         Assert.False(LaterBox(cut, "02.10.2026").HasAttribute("checked"));
         Assert.False(NotRelevantBox(cut, "02.10.2026").HasAttribute("checked"));
     }
+
+    [Fact]
+    public async Task Message_GoesWhenTheEntriesAreReadAgain()
+    {
+        using var tv = TestVault.Create(
+            (AlphaPath, "title:: Alpha\ntype:: book\n\n- # Eins\n"),
+            ("journals/2026_10_02.md", "- Kaputt\n```\nnicht geschlossen\n"),
+            (October, OctoberText));
+        var session = await OpenAsync(tv);
+        var cut = RenderJournal();
+        LaterBox(cut, "02.10.2026").Change(true);
+        Assert.Equal(Text("JournalDayReadOnly"), Message(cut, "02.10.2026"));
+
+        // Another program changes another day: the pane reads the entries again for the new revision.
+        var path = Path.Combine(tv.Root, October.Replace('/', Path.DirectorySeparatorChar));
+        File.AppendAllText(path, "- Von außen\n");
+        await cut.InvokeAsync(() => session.HandleExternalChange(path));
+
+        cut.WaitForAssertion(() => Assert.Null(Message(cut, "02.10.2026")));
+    }
+
+    /// <summary>A toggle that was not saved as clicked recreates the input (so the DOM cannot keep the clicked state).</summary>
+    private static void AssertRecreated(IElement before, IElement after) =>
+        Assert.NotEqual(before.GetAttribute("data-mark-refresh"), after.GetAttribute("data-mark-refresh"));
 
     [Fact]
     public async Task OpenConflict_RefusesWithoutChanges()
@@ -189,10 +217,12 @@ public class JournalDayMarksTests : UiTestContext
         session.HandleExternalChange(page.FilePath);
         Assert.True(session.HasOpenConflict(page.FilePath));
         var cut = RenderJournal();
+        var later = LaterBox(cut, "01.10.2026");
 
-        LaterBox(cut, "01.10.2026").Change(true);
+        later.Change(true);
 
         Assert.Equal(Text("NoteAdoptConflict"), Message(cut, "01.10.2026"));
+        AssertRecreated(later, LaterBox(cut, "01.10.2026"));
         Assert.Equal("- Extern geändert\n\t- Unterpunkt\n", tv.Read(October));
         Assert.Null(session.Vault.FindPageByPath(path)!.GetPageProperty("later"));
     }
@@ -220,10 +250,12 @@ public class JournalDayMarksTests : UiTestContext
         var path = Path.Combine(tv.Root, October.Replace('/', Path.DirectorySeparatorChar));
 
         // A read-only file cannot be replaced: the write fails after its retries.
+        var later = LaterBox(cut, "01.10.2026");
         File.SetAttributes(path, FileAttributes.ReadOnly);
         try
         {
-            LaterBox(cut, "01.10.2026").Change(true);
+            later.Change(true);
+            AssertRecreated(later, LaterBox(cut, "01.10.2026"));
         }
         finally
         {
