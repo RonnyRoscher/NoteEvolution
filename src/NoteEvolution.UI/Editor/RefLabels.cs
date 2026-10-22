@@ -22,17 +22,20 @@ public static class RefLabels
     /// <summary>
     /// The label of a reference by its target id, from the book's <see cref="CrossRefIndex"/>: "→ Titel" for a heading
     /// (tooltip: its path), "→ Abschnitt: Textanfang …" for a text block (tooltip: the section's path › the start of the
-    /// text), "→ Verweis fehlt" with <see cref="RefLabel.Missing"/> for an id the book has no target for.
+    /// text), "→ Verweis fehlt" with <see cref="RefLabel.Missing"/> for an id neither the book nor
+    /// <paramref name="knownElsewhere"/> knows. <c>null</c> for a block known elsewhere that is no target of the book (a
+    /// note): that is no cross reference and stays plain text (spec 2.1).
     /// </summary>
-    public static Func<Guid, RefLabel> Of(Book book, IStringLocalizer<Strings> l)
+    /// <param name="knownElsewhere">Whether the vault has a block with the id; <c>null</c>: none is known elsewhere.</param>
+    public static Func<Guid, RefLabel?> Of(Book book, IStringLocalizer<Strings> l, Func<Guid, bool>? knownElsewhere = null)
     {
-        var index = CrossRefIndex.Of(book);
-        var labels = new Dictionary<Guid, RefLabel>();
+        var index = CrossRefIndex.Of(book, knownElsewhere);
+        var labels = new Dictionary<Guid, RefLabel?>();
         return id =>
         {
             if (!labels.TryGetValue(id, out var label))
             {
-                labels[id] = label = Label(book, index.Target(id), l);
+                labels[id] = label = index.IsForeign(id) ? null : Label(book, index.Target(id), l);
             }
 
             return label;

@@ -292,6 +292,20 @@ public class EditorDocMapperTests
     }
 
     [Fact]
+    public void ToJson_ReferenceWithoutLabel_IsPlainText_KeepsItsMarkdown()
+    {
+        // No label: a block outside the book (a note), no cross reference; it stays text and joins the text around it.
+        var note = Guid.Parse("0190a000-0000-7000-8000-0000000000aa");
+        var text = $"Siehe (({note.ToString("D").ToUpperInvariant()})) und {A}";
+        RefLabel? LabelOrNone(Guid id) => id == note ? null : Label(id);
+        var json = EditorDocMapper.ToJson(OneBlock(text), refOf: LabelOrNone);
+
+        Assert.Equal([$"Siehe {BlockRefs.Format(note)} und ", $"<ref {RefA}>"], Inline(FirstPara(JsonNode.Parse(json)!)));
+        var back = (SnapshotTextBlock)EditorDocMapper.FromJson(json, Scope, false).Nodes.Single();
+        Assert.Equal(text, back.Text);
+    }
+
+    [Fact]
     public void FromJson_ChangedLabels_SameSnapshot()
     {
         var snapshot = OneBlock($"Siehe {A} und **{B}**");

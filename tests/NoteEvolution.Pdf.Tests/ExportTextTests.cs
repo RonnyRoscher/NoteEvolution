@@ -24,5 +24,5 @@ public class ExportTextTests
     public void Clean_KeepBlockRefs_KeepsWellFormedRefsOnly() =>
         Assert.Equal(
             "Siehe ((6650A1C2-1b7e-4c1d-9a0f-2b3c4d5e6f70)) hier",
-            ExportText.Clean("Siehe ((6650A1C2-1b7e-4c1d-9a0f-2b3c4d5e6f70)) ((abc-1)) hier", keepBlockRefs: true));
+            ExportText.Clean("Siehe ((6650A1C2-1b7e-4c1d-9a0f-2b3c4d5e6f70)) ((abc-1)) hier", keepBlockRef: _ => true));
 }

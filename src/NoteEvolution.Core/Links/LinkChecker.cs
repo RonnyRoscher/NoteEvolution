@@ -77,7 +77,7 @@ public sealed class LinkChecker(IVault vault, ILinkService links, IPageWriter wr
         }
 
         return new LinkCheckReport(
-            missing, FindOrphans(), broken, [.. vault.Books.SelectMany(book => CrossRefIndex.Of(book).Missing)]);
+            missing, FindOrphans(), broken, [.. vault.Books.SelectMany(book => CrossRefIndex.Of(book, KnownInVault).Missing)]);
     }
 
     /// <summary>
@@ -111,7 +111,7 @@ public sealed class LinkChecker(IVault vault, ILinkService links, IPageWriter wr
 
             // Only what is still missing now: a target may have come back since the check.
             var current = Book.Load(book.Page);
-            var stillMissing = CrossRefIndex.Of(current).Missing.Select(m => (m.ElementKey, m.TargetId)).ToHashSet();
+            var stillMissing = CrossRefIndex.Of(current, KnownInVault).Missing.Select(m => (m.ElementKey, m.TargetId)).ToHashSet();
             var byElement = report.MissingCrossRefs
                 .Where(m => stillMissing.Contains((m.ElementKey, m.TargetId)))
                 .GroupBy(m => m.ElementKey)
@@ -239,6 +239,9 @@ public sealed class LinkChecker(IVault vault, ILinkService links, IPageWriter wr
 
         return orphans;
     }
+
+    /// <summary>Whether the vault has a block with this id: a reference to a note or journal block is not missing.</summary>
+    private bool KnownInVault(Guid id) => vault.FindBlockById(id) is not null;
 
     private (Page Page, Block Block)? FindNote(Guid noteId) =>
         vault.FindBlockById(noteId) is { } found && !Book.IsBook(found.Page) ? found : null;

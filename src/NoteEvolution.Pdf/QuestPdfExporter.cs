@@ -12,14 +12,15 @@ public sealed class QuestPdfExporter : IPdfExporter
     private const float BodySize = 11;
     private const float Points = 72f / 25.4f;
 
-    public PdfExportReport Export(Book book, Guid? scopeKey, PdfOptions options, Stream output)
+    public PdfExportReport Export(
+        Book book, Guid? scopeKey, PdfOptions options, Stream output, Func<Guid, bool>? knownElsewhere = null)
     {
         ArgumentNullException.ThrowIfNull(book);
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(output);
         QuestPdfSetup.EnsureInitialized();
 
-        using var content = PdfContent.Build(book, scopeKey);
+        using var content = PdfContent.Build(book, scopeKey, knownElsewhere);
         var (pageSize, margin) = options.Size switch
         {
             PdfPageSize.A4 => (PageSizes.A4, 25f * Points),
@@ -165,6 +166,9 @@ public sealed class QuestPdfExporter : IPdfExporter
             return;
         }
 
+        // Deliberately two adjacent link annotations to the same target (one more per line a long title wraps onto):
+        // QuestPDF cannot link a page number span, and a single inline element holding the whole reference cannot wrap
+        // (a title longer than a line fails the layout).
         Emphasize(text.SectionLink(reference.Label + " ", sectionId), run);
         // Bottom keeps the element's baseline on the line's (within a fraction of a point).
         text.Element(TextInjectedElementAlignment.Bottom).SectionLink(sectionId).Text(page =>

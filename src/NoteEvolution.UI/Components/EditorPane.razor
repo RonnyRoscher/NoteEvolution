@@ -576,7 +576,7 @@
         {
             var dates = DatesOf(fresh, book);
             var refs = RefsOf(fresh, book);
-            var json = EditorDocMapper.ToJson(fresh, key => dates.GetValueOrDefault(key), RefLabels.Of(book, L));
+            var json = EditorDocMapper.ToJson(fresh, key => dates.GetValueOrDefault(key), LabelsOf(book));
             await Editor.SetDocumentAsync(json, _showChips, keepCursor: sameTarget);
             _shownDates = dates;
             _shownRefs = refs;
@@ -697,16 +697,32 @@
         _shownDates = dates;
     }
 
-    /// <summary>The references in the texts of the snapshot, with their labels from the book (<see cref="RefLabels"/>).</summary>
+    /// <summary>
+    /// The cross references in the texts of the snapshot, with their labels from the book (<see cref="RefLabels"/>).
+    /// A reference to a block outside the book (a note) is none: it stays text, the editor gets no label to turn it into
+    /// a reference node.
+    /// </summary>
     private ShownRefs RefsOf(SectionSnapshot snapshot, Book book)
     {
-        var labelOf = RefLabels.Of(book, L);
-        var order = snapshot.Nodes.OfType<SnapshotTextBlock>()
-            .SelectMany(t => t.Paragraphs.Select(p => p.Text).Prepend(t.Text))
-            .SelectMany(text => BlockRefs.Find(text).Select(r => r.Id))
-            .ToList();
-        return new ShownRefs(order, order.Distinct().ToDictionary(id => id, labelOf));
+        var labelOf = LabelsOf(book);
+        var labels = new Dictionary<Guid, RefLabel>();
+        var order = new List<Guid>();
+        foreach (var id in snapshot.Nodes.OfType<SnapshotTextBlock>()
+                     .SelectMany(t => t.Paragraphs.Select(p => p.Text).Prepend(t.Text))
+                     .SelectMany(text => BlockRefs.Find(text).Select(r => r.Id)))
+        {
+            if (labels.ContainsKey(id) || labelOf(id) is { } label && labels.TryAdd(id, label))
+            {
+                order.Add(id);
+            }
+        }
+
+        return new ShownRefs(order, labels);
     }
+
+    /// <summary>The reference labels of the book; an id the session's vault knows outside the book is no reference.</summary>
+    private Func<Guid, RefLabel?> LabelsOf(Book book) =>
+        RefLabels.Of(book, L, State.Session?.Vault is { } vault ? id => vault.FindBlockById(id) is not null : null);
 
     /// <summary>
     /// Gives the kept document the current reference labels (a target renamed or deleted in its own save) and lets it

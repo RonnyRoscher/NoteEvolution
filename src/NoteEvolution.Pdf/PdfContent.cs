@@ -47,10 +47,10 @@ internal sealed partial class PdfContent : IDisposable
     [GeneratedRegex(@"^[A-Za-z][A-Za-z0-9+.-]*://")]
     private static partial Regex RemoteRegex();
 
-    private PdfContent(Book book)
+    private PdfContent(Book book, Func<Guid, bool>? knownElsewhere)
     {
         _book = book;
-        _refs = CrossRefIndex.Of(book);
+        _refs = CrossRefIndex.Of(book, knownElsewhere);
         Title = book.Title;
         Dedication = book.Dedication;
         _bookDirectory = Path.GetDirectoryName(Path.GetFullPath(book.Page.FilePath)) ?? "";
@@ -65,11 +65,12 @@ internal sealed partial class PdfContent : IDisposable
     public IReadOnlyList<string> Warnings => _warnings;
 
     /// <exception cref="ArgumentException"><paramref name="scopeKey"/> names no outline node of the book.</exception>
-    public static PdfContent Build(Book book, Guid? scopeKey)
+    /// <param name="knownElsewhere">Whether an id names a block in the vault; see <see cref="CrossRefIndex.Of"/>.</param>
+    public static PdfContent Build(Book book, Guid? scopeKey, Func<Guid, bool>? knownElsewhere = null)
     {
         var scope = book.FindNode(scopeKey ?? Guid.Empty)
             ?? throw new ArgumentException($"Kein Gliederungsknoten mit dem Schlüssel {scopeKey}.", nameof(scopeKey));
-        var content = new PdfContent(book);
+        var content = new PdfContent(book, knownElsewhere);
         try
         {
             if (scope.Level > 0)
@@ -184,7 +185,8 @@ internal sealed partial class PdfContent : IDisposable
 
     private void AddParagraph(string text)
     {
-        var clean = ExportText.Clean(text, keepBlockRefs: true);
+        // A reference to a block outside the cross references (a note) goes, as before them (spec 2.1).
+        var clean = ExportText.Clean(text, id => !_refs.IsForeign(id));
         if (clean.Length > 0)
         {
             Add(new ParagraphElement([.. InlineMarkdown.Parse(clean).SelectMany(SplitRefs)]));

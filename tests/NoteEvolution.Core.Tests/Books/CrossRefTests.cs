@@ -128,4 +128,17 @@ public class CrossRefTests
         Assert.Null(index.Target(Sub));
         Assert.Empty(index.To(Sub));
     }
+
+    [Fact]
+    public void KnownElsewhere_IsForeign_NotMissing()
+    {
+        var book = Load(Doc);
+        var index = CrossRefIndex.Of(book, id => id == Unknown || id == A);
+        Assert.Equal([Sub], index.Missing.Select(s => s.TargetId));
+        Assert.True(index.IsForeign(Unknown));
+        // A target of the book is never foreign, whatever else knows its id.
+        Assert.False(index.IsForeign(A));
+        Assert.False(index.IsForeign(Sub));
+        Assert.False(CrossRefIndex.Of(book).IsForeign(Unknown));
+    }
 }

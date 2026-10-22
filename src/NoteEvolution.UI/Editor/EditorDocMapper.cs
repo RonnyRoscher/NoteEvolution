@@ -31,9 +31,10 @@ public static class EditorDocMapper
 {
     /// <param name="snapshot">The book section to show.</param>
     /// <param name="datesOf">The dates label of a text block by its key; <c>null</c> (or a <c>null</c> label): none.</param>
-    /// <param name="refOf">The label of a reference by its target id; <c>null</c>: the reference text as its label.</param>
+    /// <param name="refOf">The label of a reference by its target id; <c>null</c>: the reference text as its label. A
+    /// <c>null</c> label: no cross reference (a block outside the book, spec 2.1), the reference stays plain text.</param>
     public static string ToJson(
-        SectionSnapshot snapshot, Func<Guid, BlockDateLabel?>? datesOf = null, Func<Guid, RefLabel>? refOf = null)
+        SectionSnapshot snapshot, Func<Guid, BlockDateLabel?>? datesOf = null, Func<Guid, RefLabel?>? refOf = null)
     {
         refOf ??= id => new RefLabel(BlockRefs.Format(id), "", false);
         var content = new JsonArray();
@@ -94,7 +95,7 @@ public static class EditorDocMapper
         return result;
     }
 
-    private static JsonObject TextBlock(SnapshotTextBlock text, BlockDateLabel? dates, Func<Guid, RefLabel> refOf)
+    private static JsonObject TextBlock(SnapshotTextBlock text, BlockDateLabel? dates, Func<Guid, RefLabel?> refOf)
     {
         var paragraphs = new JsonArray(Para(null, text.Text, 0, false, BlockStatus.Draft, refOf));
         foreach (var paragraph in text.Paragraphs)
@@ -129,7 +130,7 @@ public static class EditorDocMapper
         return new JsonObject { ["type"] = "textBlock", ["attrs"] = attrs, ["content"] = paragraphs };
     }
 
-    private static JsonObject Para(Guid? key, string markdown, int depth, bool isNote, BlockStatus status, Func<Guid, RefLabel> refOf)
+    private static JsonObject Para(Guid? key, string markdown, int depth, bool isNote, BlockStatus status, Func<Guid, RefLabel?> refOf)
     {
         var attrs = new JsonObject
         {
@@ -141,7 +142,7 @@ public static class EditorDocMapper
         AddStatus(attrs, status);
         var result = new JsonObject { ["type"] = "para", ["attrs"] = attrs };
         var content = new JsonArray();
-        foreach (var run in Display(markdown))
+        foreach (var (run, id, label) in Shown(markdown, refOf))
         {
             if (run.Text == "\n")
             {
@@ -150,15 +151,14 @@ public static class EditorDocMapper
             }
 
             JsonObject item;
-            if (RefOf(run) is { } id)
+            if (id is { } refId && label is not null)
             {
-                var label = refOf(id);
                 item = new JsonObject
                 {
                     ["type"] = "blockRef",
                     ["attrs"] = new JsonObject
                     {
-                        ["id"] = id.ToString("D"),
+                        ["id"] = refId.ToString("D"),
                         ["label"] = label.Text,
                         ["title"] = label.Title,
                         ["missing"] = label.Missing,
@@ -192,6 +192,33 @@ public static class EditorDocMapper
         if (content.Count > 0)
         {
             result["content"] = content;
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// The runs of <see cref="Display"/>, each cross reference with its label; a reference without label (no cross
+    /// reference, see <see cref="ToJson"/>) is text and joins the text around it.
+    /// </summary>
+    private static List<(InlineRun Run, Guid? Id, RefLabel? Label)> Shown(string markdown, Func<Guid, RefLabel?> refOf)
+    {
+        var result = new List<(InlineRun Run, Guid? Id, RefLabel? Label)>();
+        foreach (var run in Display(markdown))
+        {
+            if (run.Text != "\n" && RefOf(run) is { } id && refOf(id) is { } label)
+            {
+                result.Add((run, id, label));
+            }
+            else if (run.Text != "\n" && result.Count > 0 && result[^1] is { Id: null } last && last.Run.Text != "\n"
+                     && last.Run.Bold == run.Bold && last.Run.Italic == run.Italic)
+            {
+                result[^1] = (last.Run with { Text = last.Run.Text + run.Text }, null, null);
+            }
+            else
+            {
+                result.Add((run, null, null));
+            }
         }
 
         return result;

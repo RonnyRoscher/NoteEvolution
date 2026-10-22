@@ -708,6 +708,37 @@ public class EditorPaneTests : UiTestContext
                 (bool)n["attrs"]!["missing"]!)));
     }
 
+    [Fact]
+    public async Task Pane_ReferenceToANote_StaysText_FileUnchanged()
+    {
+        // Spec 2.1: a reference to a block outside the book (here a note) is no cross reference; it stays text.
+        using var tv = TestVault.Create(
+            (BookPath,
+                "title:: Alpha\ntype:: book\n\n" +
+                "- # Eins\n" +
+                "\t- Erster Text ((" + NoteId + ")) hier und ((" + MissingId + "))\n" +
+                "\t- Zweiter Text\n"),
+            (NotesPath, "- Notiz\n  id:: " + NoteId + "\n"));
+        var (_, cut) = await RenderAsync(tv);
+
+        Assert.Equal([MissingId], RefNodes().Select(n => (string)n["attrs"]!["id"]!));
+        Assert.Contains(
+            "Erster Text ((" + NoteId + ")) hier und ",
+            Blocks(Doc(Editor.Json)).SelectMany(n => n!["content"]?.AsArray() ?? []).SelectMany(p => p!["content"]?.AsArray() ?? [])
+                .Select(n => (string?)n!["text"]));
+
+        // Saving another block leaves the reference as it is and gives the editor no label to turn it into a node.
+        var doc = Doc(Editor.Json);
+        SetText(doc, 1, "Zweiter Text, geändert");
+        await ChangeAsync(cut, doc);
+        await cut.InvokeAsync(() => State.FlushEditor!());
+
+        var saved = tv.Read(BookPath);
+        Assert.Contains("Zweiter Text, geändert", saved);
+        Assert.Contains("\t- Erster Text ((" + NoteId + ")) hier und ((" + MissingId + "))\n", saved);
+        Assert.All(Editor.RefLabels, pushed => Assert.DoesNotContain(Guid.Parse(NoteId), pushed.Keys));
+    }
+
     /// <summary>The heading node with <paramref name="title"/> in an editor document.</summary>
     private static JsonNode HeadingNode(JsonNode doc, string title) =>
         Blocks(doc).Single(n => (string?)n!["type"] == "heading" && (string?)n["content"]?[0]?["text"] == title)!;

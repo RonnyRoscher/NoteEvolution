@@ -308,6 +308,21 @@ public class LinkCheckerTests
     }
 
     [Fact]
+    public void CrossRefToAJournalBlock_NotReported_NotRemoved()
+    {
+        // Spec 2.1: a reference to a block outside the book (here a journal note) stays text, as before.
+        var book = BookWith($"\t- Siehe (({Note1})) und (({Gone})) hier\n");
+        using var s = new LinkSetup(book, Journal());
+        var checker = Checker(s);
+
+        var report = checker.Analyze();
+
+        Assert.Equal([Guid.Parse(Gone)], report.MissingCrossRefs.Select(m => m.TargetId));
+        Assert.Equal(1, checker.RemoveMissingCrossRefs(report));
+        Assert.Equal(BookWith($"\t- Siehe (({Note1})) und hier\n"), s.ReadBook());
+    }
+
+    [Fact]
     public void RemoveMissingCrossRefs_RemovesThem_KeepsTheText_SavesTheBook()
     {
         using var s = new LinkSetup(CrossRefBook);

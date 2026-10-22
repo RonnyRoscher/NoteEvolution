@@ -23,14 +23,17 @@ public static partial class ExportText
 
     /// <summary>
     /// <c>[[x]]</c> becomes <c>x</c>; <c>#[[x]]</c>, <c>#tag</c> and <c>((uuid))</c> are removed; runs of spaces
-    /// shrink to one and every line is trimmed. Line breaks stay. With <paramref name="keepBlockRefs"/> well-formed
-    /// block references stay (the PDF renders them as cross references); other text in double parentheses still goes.
+    /// shrink to one and every line is trimmed. Line breaks stay. Well-formed block references whose id
+    /// <paramref name="keepBlockRef"/> accepts stay (the PDF renders them as cross references); other text in double
+    /// parentheses still goes.
     /// </summary>
-    public static string Clean(string content, bool keepBlockRefs = false)
+    public static string Clean(string content, Func<Guid, bool>? keepBlockRef = null)
     {
         var text = BracketTagRegex().Replace(content, "");
         text = BlockRefRegex().Replace(
-            text, m => keepBlockRefs && BlockRefs.LengthAt(m.Value, 0) == m.Length ? m.Value : "");
+            text,
+            m => keepBlockRef is not null && BlockRefs.LengthAt(m.Value, 0) == m.Length
+                 && keepBlockRef(BlockRefs.Find(m.Value)[0].Id) ? m.Value : "");
         text = PageLinkRegex().Replace(text, "$1");
         text = TagRegex().Replace(text, "");
         text = RepeatedSpacesRegex().Replace(text, " ");

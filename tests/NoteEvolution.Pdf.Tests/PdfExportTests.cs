@@ -11,10 +11,10 @@ namespace NoteEvolution.Pdf.Tests;
 public class PdfExportTests
 {
     private static (byte[] Bytes, PdfExportReport Report) Export(
-        Book book, Guid? scope = null, PdfPageSize size = PdfPageSize.A4)
+        Book book, Guid? scope = null, PdfPageSize size = PdfPageSize.A4, Func<Guid, bool>? knownElsewhere = null)
     {
         using var stream = new MemoryStream();
-        var report = new QuestPdfExporter().Export(book, scope, new PdfOptions(size), stream);
+        var report = new QuestPdfExporter().Export(book, scope, new PdfOptions(size), stream, knownElsewhere);
         return (stream.ToArray(), report);
     }
 
@@ -308,8 +308,10 @@ public class PdfExportTests
         Assert.DoesNotContain("Liebe und Wahrheit", text);
         Assert.DoesNotContain("Angst baut Widerstand", text);
 
-        // A reference to a block outside the scope names its target, without page.
+        // A reference to a block outside the scope names its target, without page; that is the only "Vertrauen":
+        // the heading of the left-out chapter is neither in the table of contents nor in the body.
         Assert.Contains("sowie → Vertrauen.", text);
+        Assert.Single(Regex.Matches(text, "Vertrauen"));
     }
 
     [Fact]
@@ -377,6 +379,25 @@ public class PdfExportTests
 
         Assert.Contains("Auch → Verweise und → (Verweis fehlt) zählen.", pages[4]);
         Assert.DoesNotContain("Ausgelassener Block", string.Join("\n", pages));
+    }
+
+    [Fact]
+    public void Export_RefToABlockKnownOutsideTheBook_LeftOutAsBefore()
+    {
+        // Spec 2.1: a reference to a note is no cross reference; only an id nobody knows is missing.
+        var note = Guid.Parse(PdfSamples.MissingTargetId);
+        var pages = PageTexts(Export(PdfSamples.Load(PdfSamples.BookWithRefs), knownElsewhere: id => id == note).Bytes);
+
+        Assert.Contains("Auch → Verweise und zählen.", pages[4]);
+        Assert.DoesNotContain("(Verweis fehlt)", pages[4]);
+    }
+
+    [Fact]
+    public void Export_RefToAnIdUnknownEverywhere_IsMissing()
+    {
+        var pages = PageTexts(Export(PdfSamples.Load(PdfSamples.BookWithRefs), knownElsewhere: _ => false).Bytes);
+
+        Assert.Contains("und → (Verweis fehlt) zählen.", pages[4]);
     }
 
     [Fact]

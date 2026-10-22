@@ -13,16 +13,25 @@ public sealed class CrossRefIndex
     private readonly List<CrossRefSource> _sources = [];
     private readonly Dictionary<Guid, List<CrossRefSource>> _byTarget = [];
     private readonly List<CrossRefSource> _missing = [];
+    private readonly Func<Guid, bool> _knownElsewhere;
 
-    private CrossRefIndex()
+    private CrossRefIndex(Func<Guid, bool> knownElsewhere)
     {
+        _knownElsewhere = knownElsewhere;
     }
 
+    /// <summary>The references whose id is neither a target of the book nor known elsewhere, in book order.</summary>
     public IReadOnlyList<CrossRefSource> Missing => _missing;
 
-    public static CrossRefIndex Of(Book book)
+    /// <param name="book">The book whose references are resolved.</param>
+    /// <param name="knownElsewhere">
+    /// Whether an id names a block somewhere in the vault (e.g. <see cref="NoteEvolution.Core.Vaults.IVault.FindBlockById"/>). A reference to
+    /// such a block that is no target of the book (a note, a journal block) is not part of the cross references
+    /// (spec 2.1): it is <see cref="IsForeign"/>, never missing. <c>null</c>: no id is known elsewhere.
+    /// </param>
+    public static CrossRefIndex Of(Book book, Func<Guid, bool>? knownElsewhere = null)
     {
-        var index = new CrossRefIndex();
+        var index = new CrossRefIndex(knownElsewhere ?? (_ => false));
         index.Visit(book.Root);
         foreach (var source in index._sources)
         {
@@ -35,7 +44,7 @@ public sealed class CrossRefIndex
 
                 list.Add(source);
             }
-            else
+            else if (!index._knownElsewhere(source.TargetId))
             {
                 index._missing.Add(source);
             }
@@ -45,6 +54,12 @@ public sealed class CrossRefIndex
     }
 
     public CrossRefTarget? Target(Guid id) => _targets.GetValueOrDefault(id);
+
+    /// <summary>
+    /// Whether a reference to <paramref name="id"/> names a block outside the cross references: no target of the book,
+    /// but known elsewhere. Such a reference stays plain text, as before cross references.
+    /// </summary>
+    public bool IsForeign(Guid id) => !_targets.ContainsKey(id) && _knownElsewhere(id);
 
     /// <summary>The sources referring to <paramref name="targetId"/> in book order.</summary>
     public IReadOnlyList<CrossRefSource> To(Guid targetId) =>

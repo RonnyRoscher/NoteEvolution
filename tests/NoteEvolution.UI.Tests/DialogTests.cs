@@ -913,8 +913,11 @@ public class DialogTests : UiTestContext
         return (session, target);
     }
 
+    private const string PdfNoteId = "0190a000-0000-7000-8000-0000000000aa";
+
     private static TestVault PdfVault() => TestVault.Create(
-        ("pages/Buch - Alpha.md", "title:: Alpha\ntype:: book\n\n- # Eins\n\t- Erster Text\n- # Zwei\n"));
+        ("pages/Buch - Alpha.md", "title:: Alpha\ntype:: book\n\n- # Eins\n\t- Erster Text\n- # Zwei\n"),
+        (JournalPath, $"- Notiz\n  id:: {PdfNoteId}\n"));
 
     [Fact]
     public async Task PdfExportDialog_ShowsWarningsAfterExport()
@@ -933,6 +936,9 @@ public class DialogTests : UiTestContext
         var call = Assert.Single(_exporter.Calls);
         Assert.Null(call.Scope);
         Assert.Equal(PdfPageSize.A4, call.Options.Size);
+        // The exporter can tell a reference to a note (left out as before) from one to an unknown id (missing).
+        Assert.True(call.KnownElsewhere!(Guid.Parse(PdfNoteId)));
+        Assert.False(call.KnownElsewhere(Guid.NewGuid()));
     }
 
     [Fact]
@@ -1416,13 +1422,14 @@ public class DialogTests : UiTestContext
 
     private sealed class FakePdfExporter : IPdfExporter
     {
-        public List<(Guid? Scope, PdfOptions Options)> Calls { get; } = [];
+        public List<(Guid? Scope, PdfOptions Options, Func<Guid, bool>? KnownElsewhere)> Calls { get; } = [];
 
         public IReadOnlyList<string> Warnings { get; set; } = [];
 
         public Exception? Failure { get; set; }
 
-        public PdfExportReport Export(Book book, Guid? scopeKey, PdfOptions options, Stream output)
+        public PdfExportReport Export(
+            Book book, Guid? scopeKey, PdfOptions options, Stream output, Func<Guid, bool>? knownElsewhere = null)
         {
             output.Write("%PDF-fake"u8);
             if (Failure is not null)
@@ -1430,7 +1437,7 @@ public class DialogTests : UiTestContext
                 throw Failure;
             }
 
-            Calls.Add((scopeKey, options));
+            Calls.Add((scopeKey, options, knownElsewhere));
             return new PdfExportReport(Warnings);
         }
     }
