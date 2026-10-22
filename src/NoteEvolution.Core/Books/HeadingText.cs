@@ -10,6 +10,13 @@ internal static class HeadingText
     public static string TitleOf(string content, int level) => content.Split('\n', 2)[0][(level + 1)..];
 
     /// <summary>
+    /// The heading's text without its <paramref name="level"/> hashes and the space after them (an empty heading may
+    /// lack that space); further lines are kept.
+    /// </summary>
+    public static string WithoutMarks(string content, int level) =>
+        content.Length > level && content[level] == ' ' ? content[(level + 1)..] : content[level..];
+
+    /// <summary>
     /// <paramref name="content"/> with its first line replaced by <paramref name="level"/> hashes and
     /// <paramref name="title"/>; further lines are kept.
     /// </summary>

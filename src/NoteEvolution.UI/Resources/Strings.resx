@@ -722,6 +722,19 @@
   <data name="LinkCheckJumpFailed" xml:space="preserve">
     <value>Der Block konnte nicht angezeigt werden.</value>
   </data>
+  <data name="LinkCheckCrossRefs" xml:space="preserve">
+    <value>Querverweise ohne Ziel</value>
+  </data>
+  <data name="LinkCheckCrossRefsHint" xml:space="preserve">
+    <value>Diese Stellen verweisen auf einen Block, den es nicht mehr gibt. Ein Klick springt zur Stelle; „Verweise entfernen“ nimmt die Verweise heraus und lässt den übrigen Text stehen.</value>
+  </data>
+  <data name="LinkCheckCrossRefsRemove" xml:space="preserve">
+    <value>Verweise entfernen</value>
+  </data>
+  <data name="LinkCheckCrossRefsRemoved" xml:space="preserve">
+    <value>{0} Querverweise ohne Ziel entfernt.</value>
+    <comment>{0} = Anzahl</comment>
+  </data>
   <data name="LinkCheckBookMissing" xml:space="preserve">
     <value>Buch „{0}“ nicht gefunden</value>
     <comment>{0} = Seitenname des Buchs</comment>

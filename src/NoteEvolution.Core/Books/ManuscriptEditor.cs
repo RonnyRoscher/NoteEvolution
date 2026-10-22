@@ -110,24 +110,29 @@ public static class ManuscriptEditor
         book.FindNode(headingKey) is { Block: not null } node && CanOutdent(node);
 
     /// <summary>
-    /// Removes the heading but keeps its content: its child blocks (text blocks and sub-sections) take its place in
-    /// the surrounding section, in order, and every moved sub-heading gets the level of the surrounding section + 1
-    /// (its own sub-headings the levels below).
+    /// Removes the heading but keeps its content: its title (with any further lines of the heading's text) becomes a
+    /// text block in its place, which takes over the heading's <c>id::</c> so that cross references to the heading keep
+    /// resolving; its child blocks (text blocks and sub-sections) follow in the surrounding section, in order, and every
+    /// moved sub-heading gets the level of the surrounding section + 1 (its own sub-headings the levels below). A heading
+    /// with an empty title and no id leaves no text block. The heading's other properties go with it.
     /// </summary>
+    /// <param name="now">With a time, the new text block gets both dates; without, none.</param>
     /// <returns>
     /// What was done, for a targeted undo (<see cref="RemovedHeading.RestoreInto"/>), with the key to reveal afterwards
-    /// (<see cref="RemovedHeading.Reveal"/>): the first moved item, else the element before the heading in the file,
-    /// else <see cref="Guid.Empty"/>.
+    /// (<see cref="RemovedHeading.Reveal"/>): the new text block, else the first moved item, else the element before the
+    /// heading in the file, else <see cref="Guid.Empty"/>.
     /// </returns>
     /// <exception cref="ArgumentException">Unknown heading.</exception>
-    public static RemovedHeading RemoveHeading(Book book, Guid headingKey)
+    public static RemovedHeading RemoveHeading(Book book, Guid headingKey, DateTimeOffset? now = null)
     {
         var node = OutlineEditor.FindHeading(book, headingKey, nameof(headingKey));
         var heading = node.Block!;
         var page = book.Page;
         var parent = heading.Parent;
         var children = heading.Children.ToList();
-        var reveal = children.FirstOrDefault()?.Key
+        var titleBlock = TitleBlock(heading, node.Level, now);
+        var reveal = titleBlock?.Key
+                     ?? children.FirstOrDefault()?.Key
                      ?? page.AllBlocks().TakeWhile(block => block != heading).LastOrDefault()?.Key
                      ?? Guid.Empty;
 
@@ -146,12 +151,47 @@ public static class ManuscriptEditor
         }
 
         page.RemoveBlock(heading);
+        if (titleBlock is not null)
+        {
+            page.InsertBlock(parent, index, titleBlock);
+        }
+
         foreach (var child in node.Children)
         {
             OutlineEditor.Relevel(child, node.Parent!.Level + 1);
         }
 
-        return new RemovedHeading(reveal, heading, parent?.Key, index, [.. children.Select(child => child.Key)], MovedBlocks(moved, levels));
+        return new RemovedHeading(
+            reveal,
+            heading,
+            parent?.Key,
+            index,
+            titleBlock?.Key,
+            [.. children.Select(child => child.Key)],
+            MovedBlocks(moved, levels));
+    }
+
+    /// <summary>
+    /// The detached text block made from a heading's title for <see cref="RemoveHeading"/>: the heading's text without
+    /// its hashes, with the heading's raw <c>id::</c> and, with <paramref name="now"/>, both dates; <c>null</c> for an
+    /// empty title without id.
+    /// </summary>
+    private static Block? TitleBlock(Block heading, int level, DateTimeOffset? now)
+    {
+        var content = HeadingText.WithoutMarks(heading.Content, level);
+        var id = heading.GetProperty("id");
+        if (string.IsNullOrWhiteSpace(content) && id is null)
+        {
+            return null;
+        }
+
+        var block = Block.CreateDetached(content, id is null ? null : [new BlockProperty("id", id)]);
+        if (now is { } time)
+        {
+            BlockDates.StampNew(block, time);
+        }
+
+        return block;
     }
 
     /// <summary>

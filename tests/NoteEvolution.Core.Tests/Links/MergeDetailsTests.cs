@@ -334,14 +334,47 @@ public class MergeDetailsTests
         Assert.Equal(book, s.ReadBook());
     }
 
-    [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public void MergeDetails_IdOfADetailReferencedElsewhere_Refused_NothingChanged(bool inNotes)
+    [Fact]
+    public void MergeDetails_ReferenceToAMergedDetailInTheBook_RetargetedToTheTextBlock_UndoRestoresBytes()
+    {
+        // A detail is no reference target, so the reference was missing; it now points to the text block (which gets an
+        // id for it), and an unrelated reference stays byte-identical.
+        var book =
+            Head + "\t- Text A\n\t\t- Absatz\n" + $"\t\t  id:: {B2}\n" + $"\t- Siehe (({B2})) und (({B1}))\n" +
+            "\t- Ziel\n" + $"\t  id:: {B1}\n";
+        using var s = new LinkSetup(book);
+
+        s.Links.MergeDetails(s.Book, s.Text("Text A").Key);
+
+        var text = s.ReadBook();
+        var id = s.Text("Text A\n\nAbsatz").Block.Id!.Value;
+        Assert.Equal(
+            Head + "\t- Text A\n" + $"\t  id:: {id:D}\n" + "\n\t  Absatz\n" + $"\t- Siehe (({id:D})) und (({B1}))\n" +
+            "\t- Ziel\n" + $"\t  id:: {B1}\n",
+            text);
+        Assert.Empty(CrossRefIndex.Of(s.Book).Missing);
+
+        s.Undo.Undo();
+
+        Assert.Equal(book, s.ReadBook());
+    }
+
+    [Fact]
+    public void MergeDetails_NoReferences_NoIdAdded()
+    {
+        using var s = new LinkSetup(NestedBook);
+
+        s.Links.MergeDetails(s.Book, s.Text("Text A").Key);
+
+        Assert.DoesNotContain("id::", s.ReadBook());
+    }
+
+    [Fact]
+    public void MergeDetails_IdOfADetailReferencedInAnotherPage_Refused_NothingChanged()
     {
         var reference = $"Siehe (({B2}))";
-        var book = Head + "\t- Text A\n\t\t- Absatz\n" + $"\t\t  id:: {B2}\n" + (inNotes ? "" : $"\t- {reference}\n");
-        var journal = inNotes ? $"- {reference}\n" : LinkSetup.DefaultJournal;
+        var book = Head + "\t- Text A\n\t\t- Absatz\n" + $"\t\t  id:: {B2}\n";
+        var journal = $"- {reference}\n";
         using var s = new LinkSetup(book, journal);
 
         Assert.Throws<MergeRefusedException>(() => s.Links.MergeDetails(s.Book, s.Text("Text A").Key));

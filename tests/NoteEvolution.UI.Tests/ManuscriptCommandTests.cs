@@ -154,7 +154,7 @@ public class ManuscriptCommandTests : UiTestContext
     }
 
     [Fact]
-    public async Task RemoveHeading_RevealsFirstMovedItem()
+    public async Task RemoveHeading_TitleBecomesADatedTextBlock_Revealed()
     {
         await OpenSessionAsync(_vault);
         CursorAt("## Eins-A");
@@ -162,10 +162,12 @@ public class ManuscriptCommandTests : UiTestContext
         Assert.Null(await RunAsync(SectionCommand.RemoveHeading));
 
         AssertBook(
-            BookText.Replace("\t- ## Eins-A\n\t\t- Unter Text\n", "\t- Unter Text\n"),
+            BookText.Replace(
+                "\t- ## Eins-A\n\t\t- Unter Text\n",
+                "\t- Eins-A\n\t  created:: " + Stamp + "\n\t  updated:: " + Stamp + "\n\t- Unter Text\n"),
             ["\t- ## Eins-A", "\t\t- Unter Text"],
-            ["\t- Unter Text"]);
-        AssertRevealed(KeyOf("Unter Text"), ElementKind.TextBlock);
+            ["\t- Eins-A", "\t  created:: " + Stamp, "\t  updated:: " + Stamp, "\t- Unter Text"]);
+        AssertRevealed(KeyOf("Eins-A"), ElementKind.TextBlock);
         Assert.Equal(KeyOf("# Eins"), State.CurrentSectionKey);
     }
 
@@ -491,6 +493,8 @@ public class ManuscriptCommandTests : UiTestContext
         await cut.InvokeAsync(() => Editor.Callbacks!.OnCursorChanged(CursorOf("## Eins-A")));
         await cut.InvokeAsync(() => Editor.Callbacks!.OnSectionCommand(SectionCommand.RemoveHeading));
         Assert.Equal(KeyOf("# Eins"), State.CurrentSectionKey);
+        // The cursor moves from the text block made from the title (which undo takes away) to a moved one.
+        await cut.InvokeAsync(() => Editor.Callbacks!.OnCursorChanged(CursorOf("Unter Text")));
         var cursor = State.Cursor;
 
         // Undo puts the heading back around the text block under the unmoved cursor: its section is current again.

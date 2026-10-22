@@ -359,7 +359,7 @@ public static class ManuscriptCommands
                     reveal = element.Key;
                     break;
                 case SectionCommand.RemoveHeading:
-                    removed = ManuscriptEditor.RemoveHeading(book, element.Key);
+                    removed = ManuscriptEditor.RemoveHeading(book, element.Key, session.Clock.Now);
                     reveal = removed.Reveal;
                     break;
                 case SectionCommand.Wrap:

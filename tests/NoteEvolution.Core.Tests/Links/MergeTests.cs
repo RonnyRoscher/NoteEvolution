@@ -1,4 +1,5 @@
 using System.Text;
+using NoteEvolution.Core.Books;
 using NoteEvolution.Core.Links;
 using NoteEvolution.Core.Storage;
 using NoteEvolution.TestSupport;
@@ -332,15 +333,13 @@ public class MergeTests
         Assert.Equal(book, s.ReadBook());
     }
 
-    [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public void Merge_IdOfARemovedBlockReferencedElsewhere_Refused_NothingChanged(bool inNotes)
+    [Fact]
+    public void Merge_IdOfARemovedBlockReferencedInAnotherPage_Refused_NothingChanged()
     {
-        // Text B's id would go: a block reference to it in another page, or in another block of the book, refuses.
+        // Text B's id would go: a block reference to it in another page refuses (references in the book are retargeted).
         var reference = $"Siehe (({B2.ToUpperInvariant()}))";
-        var book = inNotes ? LinkedBook : LinkedBook.Replace("\t- Anderer Text\n", $"\t- Anderer Text, {reference}\n");
-        var journal = inNotes ? LinkedJournal + $"- {reference}\r\n" : LinkedJournal;
+        var book = LinkedBook;
+        var journal = LinkedJournal + $"- {reference}\r\n";
         using var s = new LinkSetup(book, journal);
 
         Assert.Throws<MergeRefusedException>(
@@ -351,6 +350,81 @@ public class MergeTests
         Assert.False(s.Book.Page.IsDirty);
         Assert.False(s.Journal.IsDirty);
         Assert.False(s.Undo.CanUndo);
+    }
+
+    [Fact]
+    public void Merge_ThreeBlocks_ReferencesToTheRemovedTarget_RetargetedInTheWholeBook_AlsoInAMergedBlock()
+    {
+        // Review Focus 2: Text B is a reference target and goes; the referring "Siehe" block is merged too.
+        const string other = "4c5d6e7f-8091-4a2b-9c3d-4e5f60718293";
+        var book =
+            "title:: Buch: Test\ntype:: book\n\n- # Kapitel\n" +
+            "\t- Text A\n" +
+            $"\t  id:: {B1}\n" +
+            "\t- Text B\n" +
+            $"\t  id:: {B2}\n" +
+            $"\t- Siehe (({B2.ToUpperInvariant()})) dort\n" +
+            "- # Zweites\n" +
+            $"\t- Auch (({B2})), nicht (({other}))\n" +
+            "\t  updated:: 2026-01-01T10:00\n" +
+            "\t  zweite Zeile\n";
+        using var s = new LinkSetup(book, clock: new FakeClock(StampNow));
+
+        s.Links.MergeTextBlocks(
+            s.Book, [[s.Text("Text A").Key, s.Text("Text B").Key, s.Text($"Siehe (({B2.ToUpperInvariant()})) dort").Key]]);
+
+        // The other block is not stamped: retargeting is no edit of its text; its other lines stay byte-identical.
+        var expected =
+            "title:: Buch: Test\ntype:: book\n\n- # Kapitel\n" +
+            "\t- Text A\n" +
+            $"\t  id:: {B1}\n" +
+            "\t  updated:: 2026-10-19T14:32\n" +
+            "\n" +
+            "\t  Text B\n" +
+            "\n" +
+            $"\t  Siehe (({B1})) dort\n" +
+            "- # Zweites\n" +
+            $"\t- Auch (({B1})), nicht (({other}))\n" +
+            "\t  updated:: 2026-01-01T10:00\n" +
+            "\t  zweite Zeile\n";
+        Assert.Equal(expected, s.ReadBook());
+        AssertChangedLines(book, s.ReadBook(), removed: [6, 7, 8, 10], added: [6, 7, 8, 9, 10, 12]);
+        var index = CrossRefIndex.Of(s.Book);
+        Assert.Equal(Guid.Parse(other), Assert.Single(index.Missing).TargetId);
+        Assert.Equal(2, index.To(Guid.Parse(B1)).Count);
+
+        s.Undo.Undo();
+
+        Assert.Equal(book, s.ReadBook());
+        Assert.False(s.Undo.CanUndo);
+    }
+
+    [Fact]
+    public void Merge_FirstWithoutId_TakesOverTheTargetsId_ReferencesKeepResolving_OtherRemovedIdRetargeted()
+    {
+        // The first block has no id: it takes over Text B's, so references to B stay as they are; C's id goes.
+        var book =
+            "title:: Buch: Test\ntype:: book\n\n- # Kapitel\n" +
+            "\t- Text A\n" +
+            "\t- Text B\n" +
+            $"\t  id:: {B2}\n" +
+            "\t- Text C\n" +
+            $"\t  id:: {B3}\n" +
+            $"\t- Siehe (({B2})) und (({B3}))\n";
+        using var s = new LinkSetup(book);
+
+        s.Links.MergeTextBlocks(s.Book, [[s.Text("Text A").Key, s.Text("Text B").Key, s.Text("Text C").Key]]);
+
+        Assert.Equal(
+            "title:: Buch: Test\ntype:: book\n\n- # Kapitel\n" +
+            $"\t- Text A\n\t  id:: {B2}\n\n\t  Text B\n\n\t  Text C\n" +
+            $"\t- Siehe (({B2})) und (({B2}))\n",
+            s.ReadBook());
+        Assert.Empty(CrossRefIndex.Of(s.Book).Missing);
+
+        s.Undo.Undo();
+
+        Assert.Equal(book, s.ReadBook());
     }
 
     [Fact]

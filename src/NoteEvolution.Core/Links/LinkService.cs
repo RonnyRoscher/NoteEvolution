@@ -451,6 +451,10 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
                     page.RemoveBlock(block);
                 }
             }
+
+            // References to a removed block now point to its group's first block, which has an id whenever one goes.
+            RetargetReferences(
+                page, merges.Zip(plans).SelectMany(m => m.Second.RemovedIds.Select(id => (id, m.First[0].Id!.Value))));
         });
 
         return merges[0][0].Key;
@@ -522,9 +526,45 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
 
                 page.RemoveBlock(detail);
             }
+
+            // A detail is no reference target, but a reference to a merged one is kept valid: it points to the text block,
+            // which gets an id only for that.
+            if (ReferencesAny(page, plan.RemovedIds))
+            {
+                var textBlockId = textBlock.EnsureId();
+                RetargetReferences(page, plan.RemovedIds.Select(id => (id, textBlockId)));
+            }
         });
 
         return head.Key;
+    }
+
+    /// <summary>Whether a block text of <paramref name="page"/> refers (<c>((id))</c>) to one of <paramref name="ids"/>.</summary>
+    private static bool ReferencesAny(Page page, IReadOnlyCollection<Guid> ids) =>
+        ids.Count > 0 && page.AllBlocks().Any(block => BlockRefs.Find(block.Content).Any(r => ids.Contains(r.Id)));
+
+    /// <summary>
+    /// Points the references <c>((id))</c> in the block texts of <paramref name="page"/> from each removed id to its
+    /// remaining one; other lines of those blocks stay byte-identical. No <c>updated::</c>: this is no edit of the text.
+    /// </summary>
+    private static void RetargetReferences(Page page, IEnumerable<(Guid From, Guid To)> moves)
+    {
+        var map = moves
+            .Where(move => move.From != move.To)
+            .DistinctBy(move => move.From)
+            .ToDictionary(move => move.From, move => move.To);
+        if (map.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var block in page.AllBlocks().ToList())
+        {
+            if (BlockRefs.Find(block.Content).Any(r => map.ContainsKey(r.Id)))
+            {
+                block.SetContent(BlockRefs.Retarget(block.Content, map));
+            }
+        }
     }
 
     /// <summary>
@@ -680,7 +720,8 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
     /// <summary>
     /// Refuses a merge when a block reference <c>((id))</c> to one of <paramref name="removedIds"/> stands anywhere in
     /// the vault (page lines before the first block, block texts, property values) other than in a <c>used-in::</c>
-    /// value (which the merge rewrites) or a <c>source::</c> value of the book itself.
+    /// value (which the merge rewrites), a <c>source::</c> value of the book itself, or a block text of the book (whose
+    /// cross references the merge retargets).
     /// </summary>
     /// <exception cref="MergeRefusedException">Such a reference exists.</exception>
     private void EnsureUnreferenced(Book book, IReadOnlyList<Guid> removedIds)
@@ -702,7 +743,7 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
 
             if (page.PrefixLines.Any(line => Mentions(line.Text))
                 || page.AllBlocks().Any(block =>
-                    Mentions(block.Content) || block.Properties.Any(property => !Rewritten(property) && Mentions(property.Value))))
+                    (!isBook && Mentions(block.Content)) || block.Properties.Any(property => !Rewritten(property) && Mentions(property.Value))))
             {
                 throw new MergeRefusedException($"The id of a block that would go is referenced in '{page.FilePath}'.");
             }

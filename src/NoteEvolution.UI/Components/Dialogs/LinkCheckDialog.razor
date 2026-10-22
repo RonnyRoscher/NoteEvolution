@@ -26,7 +26,12 @@
         {
             <p class="ne-linkcheck-missing" role="alert">@L["LinkCheckStillMissing", _report.Missing.Count]</p>
         }
-        @if (_report.Orphans.Count == 0 && _report.Broken.Count == 0 && _report.Missing.Count == 0)
+        @if (_crossRefsRemoved > 0)
+        {
+            <p class="ne-linkcheck-crossrefs-removed" role="status">@L["LinkCheckCrossRefsRemoved", _crossRefsRemoved]</p>
+        }
+        @if (_report.Orphans.Count == 0 && _report.Broken.Count == 0 && _report.Missing.Count == 0
+             && _report.MissingCrossRefs.Count == 0)
         {
             <p class="ne-linkcheck-clean">@L["LinkCheckClean"]</p>
         }
@@ -65,13 +70,33 @@
                 @foreach (var broken in _report.Broken)
                 {
                     <li>
-                        <button type="button" class="ne-linkcheck-goto" @onclick="() => GoToAsync(broken)">
+                        <button type="button" class="ne-linkcheck-goto"
+                                @onclick="() => GoToAsync(broken.BookLinkName, broken.TextBlockKey)">
                             <span class="ne-linkcheck-book">@broken.BookLinkName</span>
-                            <span class="ne-linkcheck-block">@BlockText(broken)</span>
+                            <span class="ne-linkcheck-block">@BlockText(broken.TextBlockKey)</span>
                         </button>
                     </li>
                 }
             </ul>
+        }
+
+        @if (_report.MissingCrossRefs.Count > 0)
+        {
+            <h3 class="ne-linkcheck-crossrefs-title">@L["LinkCheckCrossRefs"]</h3>
+            <p class="ne-dialog-hint">@L["LinkCheckCrossRefsHint"]</p>
+            <ul class="ne-linkcheck-crossrefs">
+                @foreach (var source in _report.MissingCrossRefs)
+                {
+                    var bookName = BookOf(source.ElementKey);
+                    <li class="ne-linkcheck-crossref">
+                        <button type="button" class="ne-linkcheck-goto" @onclick="() => GoToAsync(bookName, source.ElementKey)">
+                            <span class="ne-linkcheck-book">@bookName</span>
+                            <span class="ne-linkcheck-block">@BlockText(source.ElementKey)</span>
+                        </button>
+                    </li>
+                }
+            </ul>
+            <button type="button" class="ne-linkcheck-crossrefs-remove" @onclick="RemoveCrossRefsAsync">@L["LinkCheckCrossRefsRemove"]</button>
         }
     }
     </ChildContent>
@@ -83,6 +108,7 @@
 @code {
     private LinkCheckReport? _report;
     private int _fixed;
+    private int _crossRefsRemoved;
     private string? _message;
 
     [Parameter] public EventCallback OnClose { get; set; }
@@ -184,10 +210,71 @@
     }
 
     /// <summary>
-    /// Reveals the book block whose <c>source::</c> is broken in the editor (switching the book if needed) and closes
-    /// the dialog. The editor saves its pending text first.
+    /// Removes the cross references without target from the book texts (the rest of the text stays) and saves the
+    /// books. The editor saves its pending text first; a book with an open conflict refuses (R26).
     /// </summary>
-    private async Task GoToAsync(BrokenSource broken)
+    private async Task RemoveCrossRefsAsync()
+    {
+        _message = null;
+        if (State.Session is not { } session || _report is not { } report)
+        {
+            return;
+        }
+
+        try
+        {
+            if (State.FlushEditor is { } flush)
+            {
+                await flush();
+            }
+        }
+        catch (Exception ex)
+        {
+            // The editor's text may not be saved, so the book is not changed behind it.
+            Logger.LogError(ex, "Saving the editor before removing cross references failed");
+            _message = L["LinkCheckResolveFailed"];
+            return;
+        }
+
+        var pages = report.MissingCrossRefs
+            .Select(source => session.Vault.FindBlockByKey(source.ElementKey)?.Page)
+            .OfType<Page>().Distinct().ToList();
+        if (pages.Any(page => session.HasOpenConflict(page.FilePath)))
+        {
+            _message = L["LinkCheckConflict"];
+            return;
+        }
+
+        try
+        {
+            _crossRefsRemoved = session.Checker.RemoveMissingCrossRefs(report);
+        }
+        catch (FileChangedExternallyException ex)
+        {
+            // A book file changed in the meantime: bring the change in, then the user decides again.
+            Logger.LogWarning(ex, "A book changed externally before removing cross references");
+            foreach (var page in pages)
+            {
+                session.HandleExternalChange(page.FilePath);
+            }
+
+            _message = L["LinkCheckExternalChange"];
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
+        {
+            Logger.LogWarning(ex, "Removing cross references without target failed");
+            _message = L["LinkCheckResolveFailed"];
+        }
+
+        _report = session.Checker.Analyze();
+        State.Notify();
+    }
+
+    /// <summary>
+    /// Reveals a book block (with a broken <c>source::</c> or a cross reference without target) in the editor
+    /// (switching the book if needed) and closes the dialog. The editor saves its pending text first.
+    /// </summary>
+    private async Task GoToAsync(string? bookLinkName, Guid blockKey)
     {
         try
         {
@@ -203,17 +290,23 @@
             return;
         }
 
-        if (State.Session?.Vault.FindBook(broken.BookLinkName) is not { } book)
+        if (bookLinkName is null || State.Session?.Vault.FindBook(bookLinkName) is not { } book)
         {
             _message = L["LinkCheckJumpFailed"];
             return;
         }
 
         State.CurrentBook = book;
-        State.RevealElement(TargetOf(book, broken.TextBlockKey));
+        State.RevealElement(TargetOf(book, blockKey));
         State.Notify();
         await OnClose.InvokeAsync();
     }
+
+    /// <summary>The link name of the book holding the block with <paramref name="blockKey"/>; <c>null</c> if none does.</summary>
+    private string? BookOf(Guid blockKey) =>
+        State.Session?.Vault is { } vault && vault.FindBlockByKey(blockKey) is { } found
+            ? vault.Books.FirstOrDefault(book => ReferenceEquals(book.Page, found.Page))?.LinkName
+            : null;
 
     /// <summary>
     /// The heading or text block with <paramref name="blockKey"/>, for a paragraph (detail) its text block;
@@ -250,6 +343,6 @@
             ? L["LinkCheckBookMissing", orphan.Entry.PageName]
             : L["LinkCheckBlockMissing", orphan.Entry.PageName];
 
-    private string BlockText(BrokenSource broken) =>
-        State.Session?.Vault.FindBlockByKey(broken.TextBlockKey) is { } found ? Excerpt.FirstLine(found.Block.Content) : "";
+    private string BlockText(Guid blockKey) =>
+        State.Session?.Vault.FindBlockByKey(blockKey) is { } found ? Excerpt.FirstLine(found.Block.Content) : "";
 }

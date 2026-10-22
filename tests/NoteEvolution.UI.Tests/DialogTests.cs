@@ -381,6 +381,36 @@ public class DialogTests : UiTestContext
     }
 
     [Fact]
+    public async Task LinkCheckDialog_CrossRefsWithoutTarget_ListedWithTheirPlace_RemoveKeepsTheText()
+    {
+        const string gone = "0190c000-0000-7000-8000-00000000dead";
+        using var tv = TestVault.Create(
+            ("pages/Buch - Alpha.md",
+                "title:: Alpha\ntype:: book\n\n" +
+                "- # Eins\n" +
+                $"\t- Siehe (({gone})) dort\n" +
+                "\t- Anderer Text\n"));
+        await OpenSessionAsync(tv);
+
+        var cut = Render<LinkCheckDialog>();
+
+        Assert.Equal(Text("LinkCheckCrossRefs"), cut.Find(".ne-linkcheck-crossrefs-title").TextContent);
+        Assert.Equal("Querverweise ohne Ziel", Text("LinkCheckCrossRefs"));
+        var item = cut.Find(".ne-linkcheck-crossref");
+        Assert.Contains("Buch - Alpha", item.TextContent);
+        Assert.Contains("Siehe", item.TextContent);
+        Assert.Empty(cut.FindAll(".ne-linkcheck-clean"));
+
+        cut.Find(".ne-linkcheck-crossrefs-remove").Click();
+
+        Assert.Equal(
+            "title:: Alpha\ntype:: book\n\n- # Eins\n\t- Siehe dort\n\t- Anderer Text\n", tv.Read("pages/Buch - Alpha.md"));
+        cut.WaitForAssertion(() => Assert.Empty(cut.FindAll(".ne-linkcheck-crossref")));
+        Assert.Single(cut.FindAll(".ne-linkcheck-clean"));
+        Assert.Contains("1", cut.Find(".ne-linkcheck-crossrefs-removed").TextContent);
+    }
+
+    [Fact]
     public void Shell_OpeningAVaultWithLinkProblems_ShowsTheLinkCheck()
     {
         using var tv = LinkVault();

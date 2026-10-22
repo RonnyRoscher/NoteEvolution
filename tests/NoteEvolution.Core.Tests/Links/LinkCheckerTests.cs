@@ -1,3 +1,4 @@
+using NoteEvolution.Core.Format;
 using NoteEvolution.Core.Links;
 using NoteEvolution.Core.Storage;
 
@@ -21,7 +22,7 @@ public class LinkCheckerTests
     private static string Journal(string usedIn = "") =>
         "- Notiz\n" + $"  id:: {Note1}\n" + (usedIn.Length > 0 ? $"  used-in:: {usedIn}\n" : "");
 
-    private static LinkChecker Checker(LinkSetup s) => new(s.Vault, s.Links);
+    private static LinkChecker Checker(LinkSetup s) => new(s.Vault, s.Links, s.Writer);
 
     [Fact]
     public void Analyze_SourceWithoutUsedIn_ReportedAndFixed()
@@ -278,5 +279,82 @@ public class LinkCheckerTests
         Assert.Equal(journal, s.ReadJournal());
         Assert.Null(s.Note("Notiz").Id);
         Assert.Empty(s.Pending.Load());
+    }
+
+    // ---- Cross references without target ----
+
+    private static readonly string CrossRefBook = BookWith(
+        "\t- Ziel\n" +
+        $"\t  id:: {Block1}\n" +
+        $"\t- Siehe (({Block1})) und (({Gone})) hier\n" +
+        "\t  zweite Zeile\n" +
+        $"\t\t- Absatz (({Gone}))\n");
+
+    [Fact]
+    public void Analyze_CrossRefWithoutTarget_ReportedWithItsPlace()
+    {
+        using var s = new LinkSetup(CrossRefBook);
+
+        var report = Checker(s).Analyze();
+
+        var siehe = s.Text($"Siehe (({Block1})) und (({Gone})) hier\nzweite Zeile");
+        Assert.Equal(
+            [(siehe.Key, Guid.Parse(Gone)), (siehe.Paragraphs.Single().Block.Key, Guid.Parse(Gone))],
+            report.MissingCrossRefs.Select(m => (m.ElementKey, m.TargetId)));
+        Assert.All(report.MissingCrossRefs, m => Assert.Same(siehe.Block, m.TextBlock.Block));
+        Assert.Empty(report.Missing);
+        Assert.Empty(report.Orphans);
+        Assert.Empty(report.Broken);
+    }
+
+    [Fact]
+    public void RemoveMissingCrossRefs_RemovesThem_KeepsTheText_SavesTheBook()
+    {
+        using var s = new LinkSetup(CrossRefBook);
+        var checker = Checker(s);
+
+        Assert.Equal(2, checker.RemoveMissingCrossRefs(checker.Analyze()));
+
+        Assert.Equal(
+            BookWith(
+                "\t- Ziel\n" +
+                $"\t  id:: {Block1}\n" +
+                $"\t- Siehe (({Block1})) und hier\n" +
+                "\t  zweite Zeile\n" +
+                "\t\t- Absatz\n"),
+            s.ReadBook());
+        Assert.False(s.Book.Page.IsDirty);
+        Assert.Empty(checker.Analyze().MissingCrossRefs);
+        Assert.Equal(0, checker.RemoveMissingCrossRefs(checker.Analyze()));
+    }
+
+    [Fact]
+    public void RemoveMissingCrossRefs_TargetBackMeanwhile_KeepsTheReference()
+    {
+        using var s = new LinkSetup(CrossRefBook);
+        var checker = Checker(s);
+        var report = checker.Analyze();
+        s.Text("Ziel").Block.SetProperty("id", Gone);
+        s.Writer.Save(s.Book.Page);
+        var book = s.ReadBook();
+
+        Assert.Equal(0, checker.RemoveMissingCrossRefs(report));
+
+        Assert.Equal(book, s.ReadBook());
+    }
+
+    [Fact]
+    public void RemoveMissingCrossRefs_SaveFails_PageUnchanged_Throws()
+    {
+        using var s = new LinkSetup(CrossRefBook);
+        var checker = Checker(s);
+        var report = checker.Analyze();
+        s.Writer.FailNext(s.Book.Page.FilePath);
+
+        Assert.Throws<IOException>(() => checker.RemoveMissingCrossRefs(report));
+
+        Assert.Equal(CrossRefBook, s.ReadBook());
+        Assert.Equal(CrossRefBook, System.Text.Encoding.UTF8.GetString(PageSerializer.Serialize(s.Book.Page)));
+        Assert.False(s.Book.Page.IsDirty);
     }
 }

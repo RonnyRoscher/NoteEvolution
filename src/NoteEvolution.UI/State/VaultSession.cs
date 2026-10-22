@@ -141,7 +141,7 @@ public sealed class VaultSession : IDisposable
         Writer = new PageWriter(vault, _backups, registry);
         Undo = new UndoManager();
         Links = new LinkService(vault, Writer, Undo, new PendingStore(vault.Root), clock);
-        Checker = new LinkChecker(vault, Links);
+        Checker = new LinkChecker(vault, Links, Writer);
         Changes = new ExternalChangeHandler(vault);
         Handled = new HandledConverter(Notes, Writer, Links);
         Drafts = new DraftConverter(_backups, Writer);
