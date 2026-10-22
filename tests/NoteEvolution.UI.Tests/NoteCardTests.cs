@@ -92,8 +92,27 @@ public class NoteCardTests : UiTestContext
 
         // "Unterpunkt Träume" is a single short line: it is adopted with its note, whose buttons stay.
         Assert.Single(cut.FindAll(".ne-note-child"));
-        Assert.Empty(cut.FindAll(".ne-adopt-column, .ne-note-child-adopt, .ne-note-child-whereto"));
+        Assert.Empty(cut.FindAll(".ne-note-child .ne-adopt-column, .ne-note-child-adopt, .ne-note-child-whereto"));
         Assert.Single(cut.FindAll(".ne-note-adopt"));
+    }
+
+    [Fact]
+    public async Task NoteCard_MainButtons_StandInSideColumnNextToText()
+    {
+        using var tv = Create();
+        var session = await OpenAlphaAsync(tv);
+
+        var cut = RenderCard(Note(session, "Gedächtnis braucht"));
+
+        // Outside a day the main element's buttons stand at the right of its text, as in a day card; no footer row of them.
+        var column = cut.Find(".ne-note-card > .ne-note-body > .ne-adopt-column");
+        Assert.Equal("ne-note-text", column.PreviousElementSibling!.ClassName);
+        Assert.NotNull(column.QuerySelector(".ne-note-adopt"));
+        Assert.Empty(cut.FindAll(".ne-note-actions .ne-note-adopt, .ne-note-actions .ne-note-whereto"));
+        // The status marks stay in the head; Logseq stays below.
+        Assert.Empty(column.QuerySelectorAll(".ne-note-dot, .ne-note-used"));
+        Assert.NotNull(cut.Find(".ne-note-head"));
+        Assert.NotNull(cut.Find(".ne-note-actions > .ne-note-logseq"));
     }
 
     [Fact]

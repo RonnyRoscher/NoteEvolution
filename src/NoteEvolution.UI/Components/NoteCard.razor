@@ -41,15 +41,19 @@
     }
     <div class="ne-note-body">
         <div class="ne-note-text">@Note.Block.Content</div>
-        @if (InDay)
-        {
-            @* In a day the buttons stand stacked at the right of the text, as for sub-bullets (a grid, see app.css). *@
-            <div class="ne-adopt-column">
+        @* The main element's buttons stand stacked at the right of the text, as for sub-bullets (a grid, see app.css);
+           in a day they carry the status marks too, elsewhere those stay in the head. *@
+        <div class="ne-adopt-column">
+            @if (InDay)
+            {
                 @StatusDot()
                 @UsedMark(usageCount)
-                @AdoptSplit(Note.Block, "ne-note-adopt")
-                @WhereToButton()
-            </div>
+            }
+            @AdoptSplit(Note.Block, "ne-note-adopt")
+            @WhereToButton()
+        </div>
+        @if (InDay)
+        {
             @Hint()
             @Results()
         }
@@ -59,8 +63,6 @@
     {
         @Hint()
         <footer class="ne-note-actions">
-            @AdoptSplit(Note.Block, "ne-note-adopt")
-            @WhereToButton()
             <button type="button" class="ne-note-logseq" @onclick="OpenInLogseq">@L["NoteOpenLogseq"]</button>
         </footer>
         @Results()
