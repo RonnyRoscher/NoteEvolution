@@ -636,9 +636,10 @@
     /// <summary>Scrolls to the element <see cref="AppState.RevealElement"/> asked for, now that the book is shown.</summary>
     private async Task RevealPendingAsync()
     {
+        var offset = State.PendingRevealOffset;
         if (State.TakePendingReveal() is { } elementKey)
         {
-            await Editor.RevealAsync(elementKey);
+            await Editor.RevealAsync(elementKey, offset);
         }
     }
 

@@ -392,8 +392,9 @@ public static class ManuscriptEditor
     /// <c>#notiz</c> tag, <c>\*</c> and <c>\_</c> as one character, a line break as one. It is the first place where
     /// a reference shows at that offset with the text around it unchanged (also in its emphasis); out of range is clamped.
     /// </summary>
+    /// <returns>The offset; <c>null</c> if there is no such place (not expected), and the caller decides where to go.</returns>
     /// <exception cref="ArgumentException">The element is a heading or not in the book.</exception>
-    public static int ContentOffset(Book book, Guid elementKey, int shownOffset)
+    public static int? ContentOffset(Book book, Guid elementKey, int shownOffset)
     {
         var element = ReferringElement(book, elementKey);
         Func<string, string> editorText = element.Kind == ElementKind.TextBlock ? BlockTextEscape.Unescape : BookSnapshot.ParagraphText;
@@ -413,8 +414,8 @@ public static class ManuscriptEditor
             }
         }
 
-        // Not expected: every shown offset has such a place. The end at least keeps the text as it is.
-        return content.Length;
+        // Not expected: every shown offset has such a place.
+        return null;
     }
 
     /// <summary>The text block or detail that may hold a reference.</summary>

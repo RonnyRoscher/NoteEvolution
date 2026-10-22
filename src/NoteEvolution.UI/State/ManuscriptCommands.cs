@@ -148,12 +148,15 @@ public static class ManuscriptCommands
     /// heading or without an element at the cursor nothing changes; an invalid target shows <c>SectionCommandFailed</c>.
     /// The reference and an <c>id::</c> the target gets are saved together with one undo action
     /// (<paramref name="undoDescription"/>) that is refused once the page changed after the command. The element is
-    /// revealed, the book view is taken from the vault again and <see cref="AppState.Notify"/> is raised.
+    /// revealed with the cursor right after the reference and the range level kept; the book view is taken from the
+    /// vault again and <see cref="AppState.Notify"/> is raised. Should no place in the Markdown show the cursor's offset
+    /// (not expected), a warning is logged and the reference goes at the end of the text.
     /// </summary>
     /// <returns>The message to show, or <c>null</c> if the reference was inserted (or nothing changed) without remark.</returns>
     public static async Task<AdoptMessage?> InsertReferenceAsync(AppState state, Guid targetKey, string undoDescription, ILogger logger)
     {
         Guid? reveal = null;
+        var after = 0;
         try
         {
             var (message, session, book) = await PrepareAsync(state, logger);
@@ -165,7 +168,15 @@ public static class ManuscriptCommands
             (message, reveal) = RunStatus(session, book, () =>
             {
                 var offset = ManuscriptEditor.ContentOffset(book, element.Key, cursor.Offset);
-                ManuscriptEditor.InsertReference(book, element.Key, offset, targetKey, session.Clock.Now);
+                if (offset is null)
+                {
+                    // The end of the text at least keeps the text around the reference as it is.
+                    logger.LogWarning(
+                        "No place in the Markdown of {Element} shows offset {Offset}; the reference goes at the end", element.Key, cursor.Offset);
+                }
+
+                after = offset is null ? int.MaxValue : cursor.Offset + BlockRefs.Format(Guid.Empty).Length;
+                ManuscriptEditor.InsertReference(book, element.Key, offset ?? int.MaxValue, targetKey, session.Clock.Now);
                 return element.Key;
             }, undoDescription, logger);
             return message;
@@ -176,7 +187,8 @@ public static class ManuscriptCommands
             state.RefreshBook();
             if (reveal is { } key)
             {
-                state.RevealElement(key);
+                // The cursor goes right after the reference (all its characters are shown); the range stays.
+                state.RevealElement(key, after, keepRange: true);
             }
 
             state.Notify();

@@ -109,11 +109,11 @@ public interface IEditorInterop : IAsyncDisposable
     Task SetDocumentAsync(string docJson, bool showChips, bool keepCursor);
 
     /// <summary>
-    /// Puts the cursor at the start of the element's text, scrolls it into view and gives the editor the focus (unless
-    /// a text field has it); <see cref="Guid.Empty"/> is the start of the book. An element the editor does not show is
-    /// ignored.
+    /// Puts the cursor at the start of the element's text, or <paramref name="offset"/> characters into it (clamped to
+    /// the text), scrolls it into view and gives the editor the focus (unless a text field has it);
+    /// <see cref="Guid.Empty"/> is the start of the book. An element the editor does not show is ignored.
     /// </summary>
-    Task RevealAsync(Guid elementKey);
+    Task RevealAsync(Guid elementKey, int offset = 0);
 
     /// <summary>
     /// Marks the nodes of the range (<see cref="RangeInfo.Nodes"/>); the editor draws a box per contiguous piece and

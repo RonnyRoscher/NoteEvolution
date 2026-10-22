@@ -47,6 +47,9 @@ public abstract class UiTestContext : BunitContext
 
         // The height of the list above a row splitter, or of the container with `true` (index.html); 0 means unknown.
         JSInterop.Setup<double>("neLayout.paneHeight", _ => true).SetResult(0);
+
+        // Keeps the selected option of a list in view (index.html).
+        JSInterop.SetupVoid("neLayout.scrollOptionIntoView", _ => true).SetVoidResult();
     }
 
     /// <summary>The editor every rendered <c>EditorPane</c> talks to.</summary>

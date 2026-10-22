@@ -158,6 +158,18 @@
     [Parameter]
     public EventCallback<Guid> OnReference { get; set; }
 
+    /// <summary>
+    /// The search closes once a reference is not possible (the cursor on a heading, the book locked), so it does not
+    /// open again by itself and take the focus when it is possible again.
+    /// </summary>
+    protected override void OnParametersSet()
+    {
+        if (Locked || !ManuscriptCommands.CanInsertReference(State))
+        {
+            _picking = false;
+        }
+    }
+
     /// <summary>Closes the search and passes the chosen target on.</summary>
     private async Task PickAsync(Guid targetKey)
     {

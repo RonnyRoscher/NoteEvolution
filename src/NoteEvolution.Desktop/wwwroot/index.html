@@ -147,6 +147,11 @@
                 const element = container ? splitter?.parentElement : splitter?.previousElementSibling;
                 return element ? element.getBoundingClientRect().height : 0;
             },
+            // Called by the search for a cross reference target (ReferencePicker.razor): keeps the option with the
+            // index in view while the arrow keys move the selection.
+            scrollOptionIntoView(list, index) {
+                list?.querySelectorAll('[role="option"]')[index]?.scrollIntoView({ block: 'nearest' });
+            },
         };
 
         // The arrow keys on a row splitter change the list's height (RowSplitter.razor); they must not also scroll a

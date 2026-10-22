@@ -102,6 +102,12 @@ public partial class ReferencePickerTests : UiTestContext
         cut.WaitForAssertion(() => Assert.NotEmpty(cut.FindAll(".ne-ref-picker")));
         await MoveToAsync(cut, "## Unter");
         cut.WaitForAssertion(() => Assert.Empty(cut.FindAll(".ne-ref-picker")));
+
+        // Back in a text block it stays closed (it would take the focus from the editor).
+        await MoveToAsync(cut, "Dritter Text");
+        cut.WaitForAssertion(() => Assert.False(cut.Find(".ne-sec-ref").HasAttribute("disabled")));
+        Assert.Empty(cut.FindAll(".ne-ref-picker"));
+        Assert.Equal("false", cut.Find(".ne-sec-ref").GetAttribute("aria-expanded"));
     }
 
     [Fact]
@@ -142,6 +148,9 @@ public partial class ReferencePickerTests : UiTestContext
 
         // The editor shows "Erster fetter Text"; offset 9 is after "Erster fe".
         await MoveToAsync(cut, "Erster **fetter** Text", 9);
+        await cut.InvokeAsync(() => Editor.Callbacks!.OnSectionCommand(SectionCommand.RangeUp));
+        var level = State.RangeLevel;
+        Assert.NotEqual(0, level);
         await OpenAsync(cut);
         await cut.InvokeAsync(() => cut.Find(".ne-ref-query").Input("zwei"));
         cut.WaitForAssertion(() => Assert.Equal(["Unter › Zweiter Text", "Zwei", "Zwei › Dritter Text"], Options(cut)));
@@ -151,6 +160,11 @@ public partial class ReferencePickerTests : UiTestContext
         cut.WaitForAssertion(() => Assert.Equal("Zwei › Dritter Text", Selected(cut)));
         await KeyAsync(cut, "ArrowUp");
         cut.WaitForAssertion(() => Assert.Equal("Zwei", Selected(cut)));
+
+        // Each arrow key keeps the selected option in view; at the end of the list it stays on the last one.
+        Assert.Equal(
+            [1, 2, 2, 1],
+            JSInterop.Invocations["neLayout.scrollOptionIntoView"].Select(call => (int)call.Arguments[1]!));
         await KeyAsync(cut, "Enter");
 
         // The heading gets an id:: (no date), the reference goes in inside the bold text, its text block is stamped.
@@ -163,7 +177,12 @@ public partial class ReferencePickerTests : UiTestContext
             after);
         cut.WaitForAssertion(() => Assert.Empty(cut.FindAll(".ne-ref-picker")));
         Assert.Equal(Text("UndoReference"), session.Undo.NextDescription);
-        Assert.Equal([KeyOf($"Erster **fe(({id}))tter** Text")], Editor.Reveals);
+        // The cursor goes right after the reference (9 + its 40 characters); the range keeps its level.
+        var element = KeyOf($"Erster **fe(({id}))tter** Text");
+        cut.WaitForAssertion(() => Assert.Equal([element], Editor.Reveals));
+        Assert.Equal([49], Editor.RevealOffsets);
+        Assert.Equal((element, 49), (State.Cursor!.Key, State.Cursor.Offset));
+        Assert.Equal(level, State.RangeLevel);
         Assert.Empty(cut.FindAll(".ne-editor-error"));
 
         // One undo takes back the reference and the id.

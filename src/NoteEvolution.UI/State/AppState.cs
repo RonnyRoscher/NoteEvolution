@@ -160,6 +160,9 @@ public sealed class AppState
     /// </summary>
     public Guid? PendingReveal { get; private set; }
 
+    /// <summary>Where in the text of <see cref="PendingReveal"/> the cursor goes, in characters as the editor shows them.</summary>
+    public int PendingRevealOffset { get; private set; }
+
     /// <summary>The note the notes pane should show (e.g. after a click on a source chip).</summary>
     public Guid? FocusedNoteKey { get; set; }
 
@@ -253,13 +256,18 @@ public sealed class AppState
     /// <summary>
     /// Asks the editor to scroll to the element of <see cref="CurrentBook"/> with <paramref name="elementKey"/> (a
     /// heading, text block or detail; <see cref="Guid.Empty"/> = the start of the book) and to put the cursor at its
-    /// start. Its section becomes the current section and the cursor is taken to be there; an element the book does not
-    /// have changes neither. The range goes back to level 0. The editor reveals it once it shows the book
-    /// (<see cref="PendingReveal"/>). The caller calls <see cref="Notify"/>.
+    /// start, or at <paramref name="offset"/> in its text as the editor shows it (the editor clamps it to the text). Its
+    /// section becomes the current section and the cursor is taken to be there; an element the book does not have
+    /// changes neither. The range goes back to level 0 unless <paramref name="keepRange"/>. The editor reveals it once it
+    /// shows the book (<see cref="PendingReveal"/>). The caller calls <see cref="Notify"/>.
     /// </summary>
-    public void RevealElement(Guid elementKey)
+    public void RevealElement(Guid elementKey, int offset = 0, bool keepRange = false)
     {
-        RangeLevel = 0;
+        if (!keepRange)
+        {
+            RangeLevel = 0;
+        }
+
         if (CurrentBook is { } book)
         {
             if (elementKey == Guid.Empty)
@@ -270,11 +278,12 @@ public sealed class AppState
             else if (BookElements.Find(book, elementKey) is { } element)
             {
                 CurrentSectionKey = BookElements.SectionOf(book, element);
-                Cursor = new CursorInfo(element.Kind, element.Key, BookElements.TextBlockOf(book, element)?.Key, 0);
+                Cursor = new CursorInfo(element.Kind, element.Key, BookElements.TextBlockOf(book, element)?.Key, offset);
             }
         }
 
         PendingReveal = elementKey;
+        PendingRevealOffset = offset;
         RevealRequested?.Invoke(elementKey);
     }
 

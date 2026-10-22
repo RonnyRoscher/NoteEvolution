@@ -20,6 +20,9 @@ public sealed class FakeEditorInterop : IEditorInterop
     /// <summary>The keys passed to <see cref="RevealAsync"/>, in order.</summary>
     public List<Guid> Reveals { get; } = [];
 
+    /// <summary>The offsets passed to <see cref="RevealAsync"/>, in the order of <see cref="Reveals"/>.</summary>
+    public List<int> RevealOffsets { get; } = [];
+
     /// <summary>The lists passed to <see cref="SetMarkedAsync"/>, in order.</summary>
     public List<IReadOnlyList<MarkedNode>> Marked { get; } = [];
 
@@ -75,9 +78,10 @@ public sealed class FakeEditorInterop : IEditorInterop
         }
     }
 
-    public Task RevealAsync(Guid elementKey)
+    public Task RevealAsync(Guid elementKey, int offset = 0)
     {
         Reveals.Add(elementKey);
+        RevealOffsets.Add(offset);
         Calls.Add($"reveal:{elementKey}");
         return Task.CompletedTask;
     }

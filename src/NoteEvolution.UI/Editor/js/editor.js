@@ -857,22 +857,24 @@ export function createEditor(host, dotnet, options = {}) {
         },
         /**
          * Puts the cursor at the start of the text of the heading, text block or detail with the key (null: the start
-         * of the document) and scrolls it into view; an unknown key does nothing.
+         * of the document), or textOffset characters into that text (clamped to it), and scrolls it into view; an
+         * unknown key does nothing.
          */
-        reveal(key) {
+        reveal(key, textOffset = 0) {
             const doc = editor.state.doc;
-            let target = key ? null : { pos: 0, at: TextSelection.atStart(doc).from };
+            let target = key ? null : { pos: 0, at: TextSelection.atStart(doc).from, size: 0 };
             doc.forEach((node, offset) => {
                 if (target) {
                     return;
                 }
                 if (node.attrs.key === key) {
                     // A heading's title starts inside it, a text block's text inside its first paragraph.
-                    target = { pos: offset, at: offset + (node.type.name === 'heading' ? 1 : 2) };
+                    const heading = node.type.name === 'heading';
+                    target = { pos: offset, at: offset + (heading ? 1 : 2), size: (heading ? node : node.firstChild).content.size };
                 } else if (node.type.name === 'textBlock') {
                     node.forEach((para, paraOffset, index) => {
                         if (!target && index > 0 && para.attrs.key === key) {
-                            target = { pos: offset + 1 + paraOffset, at: offset + 2 + paraOffset };
+                            target = { pos: offset + 1 + paraOffset, at: offset + 2 + paraOffset, size: para.content.size };
                         }
                     });
                 }
@@ -880,7 +882,8 @@ export function createEditor(host, dotnet, options = {}) {
             if (!target) {
                 return;
             }
-            editor.view.dispatch(editor.state.tr.setSelection(TextSelection.create(doc, target.at)));
+            const at = target.at + Math.max(0, Math.min(textOffset || 0, target.size));
+            editor.view.dispatch(editor.state.tr.setSelection(TextSelection.create(doc, at)));
             // The user types on right there; a text field that has the focus meanwhile (e.g. renaming an outline
             // heading after a double click) keeps it.
             const active = document.activeElement;
