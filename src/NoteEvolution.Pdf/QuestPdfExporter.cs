@@ -63,7 +63,7 @@ public sealed class QuestPdfExporter : IPdfExporter
             document.Page(page =>
             {
                 Numbered(page);
-                page.Content().Column(column => ComposeBody(column, content.Elements, contentHeight));
+                page.Content().Column(column => ComposeBody(column, content, contentHeight));
             });
         }).GeneratePdf(output);
 
@@ -100,11 +100,10 @@ public sealed class QuestPdfExporter : IPdfExporter
         }
     }
 
-    private static void ComposeBody(
-        ColumnDescriptor column, IReadOnlyList<PdfElement> elements, float contentHeight)
+    private static void ComposeBody(ColumnDescriptor column, PdfContent content, float contentHeight)
     {
         var first = true;
-        foreach (var element in elements)
+        foreach (var element in content.Elements)
         {
             switch (element)
             {
@@ -123,19 +122,17 @@ public sealed class QuestPdfExporter : IPdfExporter
                     ComposeHeading(column, heading, 13, 8, 6);
                     break;
                 case ParagraphElement paragraph:
-                    column.Item().PaddingBottom(8).Text(text =>
+                    Anchored(column, paragraph).PaddingBottom(8).Text(text =>
                     {
                         foreach (var run in paragraph.Runs)
                         {
-                            var span = text.Span(run.Text);
-                            if (run.Bold)
+                            if (run.RefTarget is { } target)
                             {
-                                span.Bold();
+                                ComposeRef(text, run, content.Ref(target));
                             }
-
-                            if (run.Italic)
+                            else
                             {
-                                span.Italic();
+                                Emphasize(text.Span(run.Text), run);
                             }
                         }
                     });
@@ -143,11 +140,51 @@ public sealed class QuestPdfExporter : IPdfExporter
                 case ImageElement image:
                     // Full text width, but never taller than the page: tall images shrink instead of failing. Without
                     // EnsureSpace the area-fitting image would also shrink to whatever is left of the current page.
-                    column.Item().PaddingBottom(8).EnsureSpace(contentHeight / 4).AlignCenter().Image(image.Image).FitArea();
+                    Anchored(column, image).PaddingBottom(8).EnsureSpace(contentHeight / 4).AlignCenter().Image(image.Image).FitArea();
                     break;
             }
 
             first = false;
+        }
+    }
+
+    /// <summary>A new column item, as the section of a referenced text block if the element starts one.</summary>
+    private static IContainer Anchored(ColumnDescriptor column, PdfElement element) =>
+        element.Anchor is { } sectionId ? column.Item().Section(sectionId) : column.Item();
+
+    /// <summary>
+    /// Spec 2.5: "→ Titel (S. n)", all of it a link to the target; "→ Titel" alone (no page, no link) for a target
+    /// outside the export. A page number span cannot be a link, so "(S. n)" is a small linked inline element; the
+    /// title stays a linked span, so a long one wraps like the text around it (an inline element cannot wrap).
+    /// </summary>
+    private static void ComposeRef(TextDescriptor text, PdfRun run, (string Label, string? SectionId) reference)
+    {
+        if (reference.SectionId is not { } sectionId)
+        {
+            Emphasize(text.Span(reference.Label), run);
+            return;
+        }
+
+        Emphasize(text.SectionLink(reference.Label + " ", sectionId), run);
+        // Bottom keeps the element's baseline on the line's (within a fraction of a point).
+        text.Element(TextInjectedElementAlignment.Bottom).SectionLink(sectionId).Text(page =>
+        {
+            Emphasize(page.Span("(S. "), run);
+            Emphasize(page.BeginPageNumberOfSection(sectionId), run);
+            Emphasize(page.Span(")"), run);
+        });
+    }
+
+    private static void Emphasize(TextSpanDescriptor span, PdfRun run)
+    {
+        if (run.Bold)
+        {
+            span.Bold();
+        }
+
+        if (run.Italic)
+        {
+            span.Italic();
         }
     }
 

@@ -2,6 +2,9 @@ using System.Text.RegularExpressions;
 using NoteEvolution.Core.Books;
 using NoteEvolution.TestSupport;
 using UglyToad.PdfPig;
+using UglyToad.PdfPig.Actions;
+using UglyToad.PdfPig.Annotations;
+using UglyToad.PdfPig.Content;
 
 namespace NoteEvolution.Pdf.Tests;
 
@@ -20,7 +23,44 @@ public class PdfExportTests
     private static List<string> PageTexts(byte[] bytes)
     {
         using var pdf = PdfDocument.Open(bytes);
-        return [.. pdf.GetPages().Select(p => Normalize(string.Join(" ", p.GetWords().Select(w => w.Text))))];
+        return [.. pdf.GetPages().Select(p => Normalize(Text(ReadingOrder(p))))];
+    }
+
+    /// <summary>The words with a space between them, except where one word directly continues the one before it.</summary>
+    private static string Text(List<Word> words)
+    {
+        var sb = new System.Text.StringBuilder();
+        for (var i = 0; i < words.Count; i++)
+        {
+            var touches = i > 0 && Math.Abs(words[i].BoundingBox.Bottom - words[i - 1].BoundingBox.Bottom) < 1
+                && Math.Abs(words[i].BoundingBox.Left - words[i - 1].BoundingBox.Right) < 0.5;
+            sb.Append(i == 0 || touches ? "" : " ").Append(words[i].Text);
+        }
+
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// The words of the page line by line from the top, left to right: a linked cross reference is drawn after the
+    /// rest of its paragraph, so the content stream order is not the reading order.
+    /// </summary>
+    private static List<Word> ReadingOrder(Page page)
+    {
+        var lines = new List<List<Word>>();
+        foreach (var word in page.GetWords().OrderByDescending(w => w.BoundingBox.Bottom))
+        {
+            // Words of one line share their baseline up to a fraction of a point.
+            if (lines.Count > 0 && Math.Abs(lines[^1][0].BoundingBox.Bottom - word.BoundingBox.Bottom) < 1)
+            {
+                lines[^1].Add(word);
+            }
+            else
+            {
+                lines.Add([word]);
+            }
+        }
+
+        return [.. lines.SelectMany(line => line.OrderBy(w => w.BoundingBox.Left))];
     }
 
     private static string AllText(byte[] bytes) => string.Join("\n", PageTexts(bytes));
@@ -134,11 +174,12 @@ public class PdfExportTests
     }
 
     [Fact]
-    public void Export_CleansLinksTagsAndRefs_EmphasisMarkersDisappear()
+    public void Export_CleansLinksAndTags_ResolvesRefs_EmphasisMarkersDisappear()
     {
         var text = ExportAndRead(PdfSamples.SpecBookWithTwoChapters);
 
-        Assert.Contains("Ein Satz mit Seitenlink und sowie .", text);
+        // The reference points to a text block in "Vertrauen", which starts on page 3.
+        Assert.Contains("Ein Satz mit Seitenlink und sowie → Vertrauen (S. 3).", text);
         Assert.DoesNotContain("[[", text);
         Assert.DoesNotContain("((", text);
         Assert.DoesNotContain("**", text);
@@ -265,7 +306,10 @@ public class PdfExportTests
         Assert.Contains(PdfSamples.ChapterTwoTitle, text);
         Assert.Contains("Text im Unterabschnitt.", text);
         Assert.DoesNotContain("Liebe und Wahrheit", text);
-        Assert.DoesNotContain("Vertrauen", text);
+        Assert.DoesNotContain("Angst baut Widerstand", text);
+
+        // A reference to a block outside the scope names its target, without page.
+        Assert.Contains("sowie → Vertrauen.", text);
     }
 
     [Fact]
@@ -305,5 +349,87 @@ public class PdfExportTests
 
         Assert.Equal(2, pages.Count);
         Assert.DoesNotContain("Inhaltsverzeichnis", string.Join("\n", pages));
+    }
+
+    [Fact]
+    public void Export_RefToHeading_ShowsTitleAndPage()
+    {
+        var pages = PageTexts(Export(PdfSamples.Load(PdfSamples.BookWithRefs)).Bytes);
+
+        // Title page, table of contents, then one page per chapter: Abendroutine is on page 3.
+        Assert.StartsWith("Abendroutine", pages[2]);
+        Assert.Contains("Siehe → Abendroutine (S. 3) und", pages[4]);
+    }
+
+    [Fact]
+    public void Export_RefToTextBlock_ShowsSectionTitleAndPageOfTheBlock()
+    {
+        var pages = PageTexts(Export(PdfSamples.Load(PdfSamples.BookWithRefs)).Bytes);
+
+        Assert.Contains("Am Morgen langsam beginnen.", pages[3]);
+        Assert.Contains("und → Morgenroutine (S. 4).", pages[4]);
+    }
+
+    [Fact]
+    public void Export_RefToExcludedOrMissingTarget_HasNoPage()
+    {
+        var pages = PageTexts(Export(PdfSamples.Load(PdfSamples.BookWithRefs)).Bytes);
+
+        Assert.Contains("Auch → Verweise und → (Verweis fehlt) zählen.", pages[4]);
+        Assert.DoesNotContain("Ausgelassener Block", string.Join("\n", pages));
+    }
+
+    [Fact]
+    public void Export_Refs_LinkToTheirTargetPage_OnlyWhenTheTargetIsExported()
+    {
+        using var pdf = PdfDocument.Open(Export(PdfSamples.Load(PdfSamples.BookWithRefs)).Bytes);
+        var page = pdf.GetPage(5);
+
+        var links = page.GetAnnotations().Where(a => a.Type == AnnotationType.Link)
+            .GroupBy(l => Assert.IsAssignableFrom<AbstractGoToAction>(l.Action).Destination.PageNumber)
+            .OrderBy(g => g.Key)
+            .ToList();
+        var words = ReadingOrder(page);
+
+        // Links to the pages of the exported targets only; none for the excluded or the missing one.
+        Assert.Equal([3, 4], links.Select(g => g.Key));
+        foreach (var (link, title) in links.Zip(new[] { "Abendroutine", "Morgenroutine" }))
+        {
+            // The linked area covers the whole reference, from the arrow to the parenthesis after the page number,
+            // without gaps.
+            var start = words.FindIndex(w => w.Text == title) - 1;
+            var end = words.FindIndex(start, w => w.Text.Contains(')'));
+            Assert.Equal("→", words[start].Text);
+            var parts = link.Select(l => l.Rectangle).OrderBy(r => r.Left).ToList();
+            Assert.InRange(words[start].BoundingBox.Left, parts[0].Left - 1, parts[0].Left + 1);
+            Assert.InRange(words[end].BoundingBox.Right, parts[^1].Right - 1, parts[^1].Right + 1);
+            Assert.All(parts.Zip(parts.Skip(1)), pair => Assert.InRange(pair.Second.Left - pair.First.Right, -1, 1));
+        }
+
+        // The linked reference sits on the line of the text around it.
+        var siehe = words.Single(w => w.Text == "Siehe");
+        Assert.InRange(words.First(w => w.Text == "→").BoundingBox.Bottom, siehe.BoundingBox.Bottom - 0.5, siehe.BoundingBox.Bottom + 0.5);
+    }
+
+    [Fact]
+    public void Export_RefWithTitleLongerThanALine_StillExports()
+    {
+        var title = string.Join(" ", Enumerable.Repeat("Sehr langer Kapiteltitel", 12));
+        var book = PdfSamples.Load(
+            "title:: Langbuch\ntype:: book\n\n" +
+            $"- # {title}\n  id:: {PdfSamples.HeadingTargetId}\n" +
+            $"- # Verweise\n\t- Siehe **(({PdfSamples.HeadingTargetId}))** dort.\n");
+
+        var text = AllText(Export(book, size: PdfPageSize.A5).Bytes);
+
+        Assert.Contains("(S. 3) dort.", text);
+    }
+
+    [Fact]
+    public void Export_BookWithoutRefs_HasNoLinksInTheBody()
+    {
+        using var pdf = PdfDocument.Open(Export(PdfSamples.Load(PdfSamples.BookWithNoteSubtree)).Bytes);
+
+        Assert.Empty(pdf.GetPage(3).GetAnnotations());
     }
 }
