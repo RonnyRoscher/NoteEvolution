@@ -108,7 +108,8 @@ public sealed partial class DraftConverter(BackupService backups, IPageWriter wr
     /// <summary>
     /// Writes the proposal: backup first (<see cref="BackupService.CreateBackup"/>), then <c>"#" * level + " "</c> before
     /// the first line of every non-fixed heading node (further lines stay), then <c>type:: book</c> (an existing
-    /// <c>type::</c> with another value is overwritten), then the page is saved. If nothing would change (no new
+    /// <c>type::</c> with another value is overwritten) and, when the page was no book yet, <c>status:: relevant</c> on
+    /// every non-heading block without a status, then the page is saved. If nothing would change (no new
     /// heading and the type is already <c>book</c>) the page is left alone: no backup, no save.
     /// </summary>
     /// <exception cref="ReadOnlyPageException">The page is read-only; checked before anything else.</exception>
@@ -175,9 +176,26 @@ public sealed partial class DraftConverter(BackupService backups, IPageWriter wr
         if (!alreadyBook)
         {
             page.SetPageProperty("type", "book");
+            MarkTextsRelevant(proposal);
         }
 
         writer.Save(page);
+    }
+
+    /// <summary>
+    /// Initializing a book: every non-heading block (text blocks and their sub-points) without a status gets
+    /// <c>status:: relevant</c>. A block with a <c>status::</c> line or the <c>#notiz</c> tag keeps its status.
+    /// </summary>
+    private static void MarkTextsRelevant(DraftProposal proposal)
+    {
+        foreach (var node in proposal.AllNodes())
+        {
+            var block = node.Block;
+            if (!node.IsHeading && BlockStatuses.Of(block) == BlockStatus.Draft && block.GetProperty(BlockStatuses.Key) is null)
+            {
+                block.SetProperty(BlockStatuses.Key, BlockStatuses.FileValue(BlockStatus.Relevant)!);
+            }
+        }
     }
 
     private static DraftNode Build(Block block, DraftNode? parent)
