@@ -5,8 +5,8 @@
 @inject IStringLocalizer<Strings> L
 
 @* The bar at the bottom of the marking (spec 2, 3): the range buttons with the range head, the structure commands of
-   the cursor element, the commands on the marked range, „Bemerkung anfügen“, „Verweis einfügen“ (cross references
-   spec 2.2) and the status selection of the cursor element (status spec 2) and the notes the range is based on (package B, spec 2, 4, 5).
+   the cursor element, the commands on the marked range, „Bemerkung anfügen“, the level buttons „Text · H1 … H6“ and
+   „Verweis einfügen“ (cross references spec 4, 2.2) and the status selection of the cursor element (status spec 2) and the notes the range is based on (package B, spec 2, 4, 5).
    EditorPane places it where the editor reports the marking's bottom; the bar renders with every render of EditorPane
    (its element is an object parameter), which follows the state and the conflicts. *@
 <div class="ne-section-bar" hidden="@(!Visible)" style="top: @(Top.ToString(CultureInfo.InvariantCulture))px">
@@ -38,6 +38,22 @@
                 <button type="button" class="@css" disabled="@(Locked || !ManuscriptCommands.CanRun(State, command))"
                         @onclick="() => OnCommand.InvokeAsync(command)">@L[key]</button>
             }
+            @* The level of the element at the cursor (cross references spec 4): the current one is pressed, a level it
+               cannot take is greyed out and names the reason. *@
+            @{
+                var current = ManuscriptCommands.LevelAt(State);
+            }
+            <span class="ne-sec-levels" role="group" aria-label="@L["SectionLevels"]">
+                @for (var level = 0; level <= MaxLevel; level++)
+                {
+                    var target = level;
+                    var reason = ManuscriptCommands.LevelBlocked(State, target);
+                    <button type="button" class="ne-sec-level" aria-pressed="@(current == target ? "true" : "false")"
+                            title="@(reason is null ? LevelTitle(target, current) : L[reason])"
+                            disabled="@(Locked || (current != target && !ManuscriptCommands.CanSetLevel(State, target)))"
+                            @onclick="() => LevelChosenAsync(target, current)">@LevelLabel(target)</button>
+                }
+            </span>
             @* A cross reference goes in at the cursor of a text block or detail; the search opens above the bar. *@
             @{
                 var canReference = !Locked && ManuscriptCommands.CanInsertReference(State);
@@ -128,6 +144,9 @@
         ("ne-sec-remark", SectionCommand.AddRemark, "SectionAddRemark", false),
     ];
 
+    /// <summary>The deepest heading level of a level button (H6).</summary>
+    private const int MaxLevel = 6;
+
     /// <summary>The options of the status selection in their order: the status and its resource key.</summary>
     private static readonly (BlockStatus Status, string Key)[] Statuses =
     [
@@ -189,6 +208,10 @@
     [Parameter]
     public EventCallback<Guid> OnReference { get; set; }
 
+    /// <summary>Converts the element at the cursor to the chosen level (0 = Text, 1–6 = H1–H6).</summary>
+    [Parameter]
+    public EventCallback<int> OnLevel { get; set; }
+
     /// <summary>
     /// The search closes once a reference is not possible (the cursor on a heading, the book locked), so it does not
     /// open again by itself and take the focus when it is possible again.
@@ -214,6 +237,20 @@
         _picking = false;
         await OnReference.InvokeAsync(targetKey);
     }
+
+    /// <summary>Passes a chosen level on; the current level does nothing.</summary>
+    private Task LevelChosenAsync(int level, int? current) =>
+        level == current ? Task.CompletedTask : OnLevel.InvokeAsync(level);
+
+    private string LevelLabel(int level) => level == 0 ? L["SectionLevelText"] : L["SectionLevelHeading", level];
+
+    /// <summary>The tooltip of a level button the element can take, or of its current level.</summary>
+    private string LevelTitle(int level, int? current) => (level == current, level) switch
+    {
+        (true, _) => L["SectionLevelCurrent"],
+        (false, 0) => L["SectionLevelTextTitle"],
+        _ => L["SectionLevelHeadingTitle", level],
+    };
 
     /// <summary>Passes the chosen status on; afterwards the selection shows the status the element has then.</summary>
     private async Task ChangeStatusAsync(ChangeEventArgs args)

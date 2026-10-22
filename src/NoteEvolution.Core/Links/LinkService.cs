@@ -188,15 +188,12 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
 
         // Everything is built detached first, so that a text that would not stay one block throws before anything changed.
         var text = NoteTag.Has(note.Content) ? NoteTag.Remove(note.Content) : note.Content;
-        var lines = text.Split('\n', 2);
-        // A note line that is a heading itself gives only its title (no "## # Titel").
-        var title = HeadingMarks().Replace(lines[0].Trim(), "").Trim();
+        var (title, further) = HeadingText.Split(text);
         var heading = Block.CreateDetached(HeadingText.WithTitle("", level, title.Length > 0 ? title : untitledTitle));
         var adopted = new List<(Block Note, Block Copy)>();
-        if (lines.Length > 1 && !string.IsNullOrWhiteSpace(lines[1]))
+        if (further is not null)
         {
-            var further = lines[1].Trim();
-            if (HeadingMarks().IsMatch(further))
+            if (HeadingText.StartsAsHeading(further))
             {
                 // As a text block of its own it would be read as a heading, and the note would not be linked.
                 throw new ArgumentException("The note block's further text would start with a heading.", nameof(noteBlockKey));
@@ -1505,10 +1502,6 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
 
         throw new ArgumentException("The block does not belong to this page.", nameof(block));
     }
-
-    /// <summary>The <c>#</c> marks that make a line a heading (<c>"# "</c> to <c>"###### "</c>).</summary>
-    [GeneratedRegex("^#{1,6} +")]
-    private static partial Regex HeadingMarks();
 
     private static string Hash(string content) => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(content)));
 

@@ -1663,6 +1663,22 @@ html, body {
     position: relative;
 }
 
+/* The level buttons „Text · H1 … H6“ form one group; the current level is pressed. */
+.ne-sec-levels {
+    display: inline-flex;
+    gap: 2px;
+}
+
+.ne-shell .ne-sec-level {
+    padding: 3px 6px;
+}
+
+.ne-shell .ne-sec-level[aria-pressed="true"] {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--accent-fg);
+}
+
 .ne-ref-picker {
     position: absolute;
     left: 0;

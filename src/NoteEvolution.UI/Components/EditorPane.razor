@@ -37,7 +37,7 @@
     {
         <SectionBar Top="_barTop" Visible="_barVisible" Element="State.CurrentElement" Locked="ReadOnlyReason is not null"
                     OnCommand="OnSectionCommand" OnStatus="OnStatusChosen"
-                    OnReference="OnReferenceChosen" />
+                    OnReference="OnReferenceChosen" OnLevel="OnLevelChosen" />
     }
 </div>
 
@@ -326,6 +326,16 @@
     public async Task OnReferenceChosen(Guid targetKey)
     {
         _saver.Message = await ManuscriptCommands.InsertReferenceAsync(State, targetKey, L["UndoReference"], Logger);
+        StateHasChanged();
+    }
+
+    /// <summary>
+    /// Converts the element at the cursor to the level chosen in the section bar (<see cref="ManuscriptCommands.SetLevelAsync"/>)
+    /// and shows its message; the element stays the active one.
+    /// </summary>
+    public async Task OnLevelChosen(int level)
+    {
+        _saver.Message = await ManuscriptCommands.SetLevelAsync(State, level, L["UndoLevel"], Logger);
         StateHasChanged();
     }
 

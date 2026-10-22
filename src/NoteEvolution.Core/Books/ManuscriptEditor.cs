@@ -14,6 +14,9 @@ namespace NoteEvolution.Core.Books;
 /// </summary>
 public static class ManuscriptEditor
 {
+    /// <summary>The properties a block converted to a heading hands on to the first text block under it.</summary>
+    private static readonly string[] CarriedKeys = ["id", "source", BlockStatuses.Key];
+
     /// <summary>
     /// Adds a new empty element after <paramref name="current"/>: for a heading of level n a level-n heading after its
     /// whole section, for a text block a text block directly after it, for a detail a detail of the same depth after
@@ -194,6 +197,233 @@ public static class ManuscriptEditor
 
         return block;
     }
+
+    /// <summary>
+    /// Why the level button <paramref name="level"/> (0 = Text, 1–6 = H1–H6) cannot convert <paramref name="element"/>
+    /// (spec 4.2), for its tooltip: the resource key of the German reason (<c>LevelBlocked…</c> in the UI's strings,
+    /// where all UI text lives); <c>null</c> if it can (or the element already has that level). There is no level
+    /// outside 0–6. A text block or detail cannot become a heading above the level of its section (it would take over
+    /// sections not its own), except in the prologue. A heading cannot go above the level of its parent heading + 1 (that
+    /// is outdenting), nor so deep that a sub-heading would fall below H6. Text is always possible.
+    /// </summary>
+    /// <exception cref="ArgumentException">The element is not in the book.</exception>
+    public static string? LevelBlocked(Book book, BookElement element, int level)
+    {
+        if (BookElements.Find(book, element.Key) != element)
+        {
+            throw new ArgumentException($"There is no such {element.Kind} in the book.", nameof(element));
+        }
+
+        if (level is < 0 or > OutlineEditor.MaxLevel)
+        {
+            return "LevelBlockedNoSuchLevel";
+        }
+
+        if (element.Kind != ElementKind.Heading)
+        {
+            var section = BookElements.TextBlockOf(book, element)!.Section;
+            return level > 0 && level < section.Level
+                ? "LevelBlockedAboveSection"
+                : null;
+        }
+
+        var node = book.FindNode(element.Key)!;
+        if (level == 0 || level == node.Level)
+        {
+            return null;
+        }
+
+        if (level < node.Parent!.Level + 1)
+        {
+            return "LevelBlockedOutOfParent";
+        }
+
+        return DeepestLevel(node) + level - node.Level > OutlineEditor.MaxLevel
+            ? "LevelBlockedBelowH6"
+            : null;
+    }
+
+    /// <summary>
+    /// Makes the text block or detail <paramref name="elementKey"/> a heading of <paramref name="level"/> (spec 4.2). The
+    /// block's first line (as the editor shows it, without heading marks and a <c>#notiz</c> tag) is the title; the
+    /// further text becomes the first text block under it, and each direct sub-point a text block with its deeper
+    /// sub-points as details. The heading stands in the block's place, a detail's heading right after its text block;
+    /// it takes over the section's items that follow there up to the next heading that is not deeper (above the
+    /// section's level these are the section's own following text blocks, at its level also its following sub-sections,
+    /// and the heading then follows the section). The block's <c>id::</c>, <c>source::</c> and status (also from a
+    /// <c>#notiz</c> tag) go to the first text block: the block itself keeps them with the further text, else the first
+    /// sub-point takes them if it has none of its own, else the block stays as an empty text block with them; a block
+    /// with none of them and no further text goes. Each text block made gets both dates (<c>updated::</c> only if it has
+    /// <c>created::</c>), a detail's text block <c>updated::</c>; the heading gets none.
+    /// </summary>
+    /// <returns>The key of the new heading.</returns>
+    /// <exception cref="ArgumentException">
+    /// The element is a heading or not in the book, <see cref="LevelBlocked"/> refuses the level, or the further text
+    /// would not stay one block.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// A block has no place for properties (an open code fence, which makes the page read-only); the page is then left
+    /// partly converted and must be read again.
+    /// </exception>
+    public static Guid ToHeading(Book book, Guid elementKey, int level, DateTimeOffset now)
+    {
+        var element = BookElements.Find(book, elementKey) is { Kind: not ElementKind.Heading } found
+            ? found
+            : throw new ArgumentException("Only a text block or a detail of the book becomes a heading.", nameof(elementKey));
+        if (level == 0)
+        {
+            throw new ArgumentException("Text is no heading level.", nameof(level));
+        }
+
+        if (LevelBlocked(book, element, level) is { } reason)
+        {
+            throw new ArgumentException(reason, nameof(level));
+        }
+
+        var page = book.Page;
+        var block = BlockOf(book, element);
+        var textBlock = BookElements.TextBlockOf(book, element)!;
+        var section = textBlock.Section;
+
+        var hasTag = NoteTag.Has(block.Content);
+        var (title, further) = HeadingText.Split(BlockTextEscape.Unescape(hasTag ? NoteTag.Remove(block.Content) : block.Content));
+        if (further is not null)
+        {
+            // Escaped anew as the editor saves it, so that no line of it reads as structure as the first one of a block.
+            further = BlockTextEscape.Escape(further);
+            Block.ValidateContent(further);
+        }
+
+        var carried = new List<BlockProperty>();
+        foreach (var key in CarriedKeys)
+        {
+            if (block.GetProperty(key) is { } value)
+            {
+                carried.Add(new BlockProperty(key, value));
+            }
+        }
+
+        if (hasTag && block.GetProperty(BlockStatuses.Key) is null)
+        {
+            carried.Add(new BlockProperty(BlockStatuses.Key, BlockStatuses.FileValue(BlockStatus.Remark)!));
+        }
+
+        var subPoints = block.Children.ToList();
+        // The first sub-point takes the carried properties only if it has none of its own.
+        var keepBlock = further is not null || (carried.Count > 0 && (subPoints.Count == 0 || Carries(subPoints[0])));
+        var following = section.Items
+            .SkipWhile(item => item != textBlock)
+            .Skip(1)
+            .TakeWhile(item => item is TextBlock || item is OutlineNode { Level: var l } && l > level)
+            .Select(item => item is TextBlock followingText ? followingText.Block : ((OutlineNode)item).Block!)
+            .ToList();
+
+        // Above the section's level the heading goes into the section after the text block, at its level after the section.
+        var (parent, index) = level > section.Level
+            ? (section.Block, IndexOf(page, textBlock.Block) + 1)
+            : (section.Block!.Parent, IndexOf(page, section.Block) + 1);
+        var heading = Block.CreateDetached(HeadingText.WithTitle("", level, title));
+        page.InsertBlock(parent, index, heading);
+
+        var position = 0;
+        if (keepBlock)
+        {
+            block.SetContent(further ?? "");
+            foreach (var property in carried.Where(property => property.Key == BlockStatuses.Key && block.GetProperty(property.Key) is null))
+            {
+                block.SetProperty(property.Key, property.Value);
+            }
+
+            StampAsTextBlock(block, now);
+            page.MoveBlock(block, heading, position++);
+        }
+        else if (carried.Count > 0)
+        {
+            foreach (var property in carried)
+            {
+                subPoints[0].SetProperty(property.Key, property.Value);
+            }
+        }
+
+        foreach (var subPoint in subPoints)
+        {
+            StampAsTextBlock(subPoint, now);
+            page.MoveBlock(subPoint, heading, position++);
+        }
+
+        if (!keepBlock)
+        {
+            page.RemoveBlock(block);
+        }
+
+        foreach (var item in following)
+        {
+            page.MoveBlock(item, heading, position++);
+        }
+
+        if (element.Kind == ElementKind.Detail)
+        {
+            BlockDates.StampChanged(textBlock.Block, now);
+        }
+
+        return heading.Key;
+    }
+
+    /// <summary>
+    /// Gives the heading <paramref name="headingKey"/> the level <paramref name="level"/> (1–6, spec 4.2); every heading
+    /// of its subtree shifts by the same difference, so the outline below it stays as it is. Only the <c>#</c> marks
+    /// change.
+    /// </summary>
+    /// <exception cref="ArgumentException">Unknown heading, or <see cref="LevelBlocked"/> refuses the level (also Text).</exception>
+    public static void SetHeadingLevel(Book book, Guid headingKey, int level)
+    {
+        var node = OutlineEditor.FindHeading(book, headingKey, nameof(headingKey));
+        if (level == 0)
+        {
+            throw new ArgumentException("Text is no heading level; the heading is removed instead.", nameof(level));
+        }
+
+        if (LevelBlocked(book, new BookElement(ElementKind.Heading, headingKey), level) is { } reason)
+        {
+            throw new ArgumentException(reason, nameof(level));
+        }
+
+        Shift(node, level - node.Level);
+    }
+
+    /// <summary>Whether <paramref name="block"/> has an <c>id::</c>, <c>source::</c> or status (also a <c>#notiz</c> tag) of its own.</summary>
+    private static bool Carries(Block block) =>
+        CarriedKeys.Any(key => block.GetProperty(key) is not null) || NoteTag.Has(block.Content);
+
+    /// <summary>Stamps a block that is a text block now: both dates for a new one, <c>updated::</c> if it has <c>created::</c>.</summary>
+    private static void StampAsTextBlock(Block block, DateTimeOffset now)
+    {
+        if (block.GetProperty(BlockDates.CreatedKey) is null)
+        {
+            BlockDates.StampNew(block, now);
+        }
+        else
+        {
+            BlockDates.StampChanged(block, now);
+        }
+    }
+
+    /// <summary>Changes the level of <paramref name="node"/> and every heading below it by <paramref name="difference"/>.</summary>
+    private static void Shift(OutlineNode node, int difference)
+    {
+        if (difference != 0)
+        {
+            node.Block!.SetContent(HeadingText.WithLevel(node.Block.Content, node.Level, node.Level + difference));
+        }
+
+        foreach (var child in node.Children)
+        {
+            Shift(child, difference);
+        }
+    }
+
+    /// <summary>The deepest level of a heading in the subtree of <paramref name="node"/>, the node included.</summary>
+    private static int DeepestLevel(OutlineNode node) => node.Children.Select(DeepestLevel).Append(node.Level).Max();
 
     /// <summary>
     /// Whether <see cref="Wrap"/> is possible: <c>false</c> for a detail, for no head (the whole book), for an unknown

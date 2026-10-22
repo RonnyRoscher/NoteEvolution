@@ -284,6 +284,50 @@
     <value>Fügt an der Cursorstelle einen Verweis auf eine Überschrift oder einen Textblock dieses Buchs ein</value>
     <comment>Titel des Knopfs „Verweis einfügen“ in der Leiste am aktuellen Block</comment>
   </data>
+  <data name="SectionLevels" xml:space="preserve">
+    <value>Ebene</value>
+    <comment>Name der Knopfgruppe „Text · H1 … H6“ in der Leiste am aktuellen Block (für Screenreader)</comment>
+  </data>
+  <data name="SectionLevelText" xml:space="preserve">
+    <value>Text</value>
+    <comment>Ebenen-Knopf: der Block wird Text (eine Überschrift wird entfernt, ihr Titel wird ein Textblock)</comment>
+  </data>
+  <data name="SectionLevelHeading" xml:space="preserve">
+    <value>H{0}</value>
+    <comment>Ebenen-Knopf für die Überschriftenebene {0} (1 bis 6)</comment>
+  </data>
+  <data name="SectionLevelCurrent" xml:space="preserve">
+    <value>Die aktuelle Ebene des Blocks</value>
+    <comment>Titel des hervorgehobenen Ebenen-Knopfs</comment>
+  </data>
+  <data name="SectionLevelTextTitle" xml:space="preserve">
+    <value>Macht aus der Überschrift Text: Ihr Titel wird ein Textblock, ihr Inhalt rückt in den übergeordneten Abschnitt</value>
+    <comment>Titel des Ebenen-Knopfs „Text“ an einer Überschrift</comment>
+  </data>
+  <data name="SectionLevelHeadingTitle" xml:space="preserve">
+    <value>Wandelt den Block in eine Überschrift der Ebene {0} um</value>
+    <comment>Titel eines Ebenen-Knopfs H1 bis H6, dessen Umwandlung möglich ist</comment>
+  </data>
+  <data name="LevelBlockedNoSuchLevel" xml:space="preserve">
+    <value>Diese Ebene gibt es nicht: Überschriften reichen von H1 bis H6</value>
+    <comment>Titel eines ausgegrauten Ebenen-Knopfs (kommt in der Leiste nicht vor, nur H1 bis H6 haben Knöpfe)</comment>
+  </data>
+  <data name="LevelBlockedAboveSection" xml:space="preserve">
+    <value>Auf dieser Ebene stünde die Überschrift über ihrem Abschnitt und würde Abschnitte übernehmen, die nicht zu ihr gehören</value>
+    <comment>Titel eines ausgegrauten Ebenen-Knopfs an einem Textblock oder Unterpunkt (Ebene höher als sein Abschnitt)</comment>
+  </data>
+  <data name="LevelBlockedOutOfParent" xml:space="preserve">
+    <value>Auf dieser Ebene fiele die Überschrift aus dem Abschnitt ihrer übergeordneten Überschrift; dafür gibt es Ausrücken</value>
+    <comment>Titel eines ausgegrauten Ebenen-Knopfs an einer Überschrift (höher als ihre übergeordnete Überschrift + 1)</comment>
+  </data>
+  <data name="LevelBlockedBelowH6" xml:space="preserve">
+    <value>Auf dieser Ebene käme eine Unterüberschrift unter H6</value>
+    <comment>Titel eines ausgegrauten Ebenen-Knopfs an einer Überschrift, deren Unterüberschriften tiefer als H6 rutschten</comment>
+  </data>
+  <data name="UndoLevel" xml:space="preserve">
+    <value>Ebene ändern</value>
+    <comment>Name der Aktion für „Rückgängig“ nach einem Ebenen-Knopf</comment>
+  </data>
   <data name="UndoReference" xml:space="preserve">
     <value>Verweis einfügen</value>
     <comment>Name der Aktion für „Rückgängig“ nach „Verweis einfügen“</comment>
