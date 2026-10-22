@@ -1322,4 +1322,8 @@ NoteEvolution: CPU {2} %, RAM {3} GB</value>
     <value>gestern {0}</value>
     <comment>{0} = Uhrzeit</comment>
   </data>
+  <data name="RecentBlocks" xml:space="preserve">
+    <value>{0} Blöcke</value>
+    <comment>Zuletzt geändert: Anzahl der an einem Tag geänderten Textblöcke eines Abschnitts (mindestens 2)</comment>
+  </data>
 </root>

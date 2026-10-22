@@ -48,7 +48,8 @@ public class RecentChangesTests : UiTestContext
     [Fact]
     public void Of_NewestFirst_AtMost20()
     {
-        var blocks = string.Concat(Enumerable.Range(0, 25).Select(i => Block($"Text {i}", $"2026-10-01T10:{i:00}")));
+        // One day each: blocks of a section changed on the same day would form a single entry.
+        var blocks = string.Concat(Enumerable.Range(0, 25).Select(i => Block($"Text {i}", $"2026-09-{i + 1:00}T10:00")));
         var book = BookOf(Vault("- # Eins\n" + Indented(blocks)));
 
         var changes = Of(book);
@@ -107,6 +108,102 @@ public class RecentChangesTests : UiTestContext
 
         Assert.Equal("Eins › Eins-A", changes[0].SectionPath);
         Assert.Equal("Alpha", changes[1].SectionPath);
+    }
+
+    [Fact]
+    public void Of_BlocksOfOneSectionOnOneDay_FormOneEntry()
+    {
+        var book = BookOf(Vault("- # Eins\n" + Indented(
+            Block("Erster Text", "2026-10-01T09:00") + Block("Zweiter Text", "2026-10-01T11:30") + Block("Dritter", "2026-10-02T08:00"))));
+
+        var changes = Of(book);
+
+        Assert.Equal(2, changes.Count);
+        Assert.Equal(1, changes[0].Count);
+        Assert.Equal("Dritter", changes[0].Excerpt);
+        Assert.Equal(changes[0].TextBlockKey, changes[0].RevealKey);
+        Assert.Equal(2, changes[1].Count);
+        Assert.Equal(new DateTime(2026, 10, 1, 11, 30, 0), changes[1].Updated);
+        Assert.Equal("Erster Text", changes[1].Excerpt);
+        Assert.Equal(book.Root.Children.Single().Key, changes[1].RevealKey);
+    }
+
+    [Fact]
+    public void Of_SameBlocksOnDifferentDays_StaySeparate()
+    {
+        var book = BookOf(Vault("- # Eins\n" + Indented(Block("A", "2026-10-01T23:50") + Block("B", "2026-10-02T00:10"))));
+
+        var changes = Of(book);
+
+        Assert.Equal(2, changes.Count);
+        Assert.All(changes, c => Assert.Equal(1, c.Count));
+    }
+
+    [Fact]
+    public void Of_DifferentSections_StaySeparate_AncestorsDoNotGroup()
+    {
+        var book = BookOf(Vault(
+            "- # Eins\n" + Indented(Block("A", "2026-10-01T09:00"))
+            + "\t- ## Eins-A\n" + Indented(Indented(Block("B", "2026-10-01T10:00")))
+            + "- # Zwei\n" + Indented(Block("C", "2026-10-01T11:00"))));
+
+        var changes = Of(book);
+
+        Assert.Equal(3, changes.Count);
+        Assert.All(changes, c => Assert.Equal(1, c.Count));
+    }
+
+    [Fact]
+    public void Of_Limit_CountsEntriesNotBlocks()
+    {
+        var blocks = string.Concat(Enumerable.Range(0, 30).Select(i => Block($"Text {i}", $"2026-10-01T10:{i:00}")));
+        var other = string.Concat(Enumerable.Range(2, 25).Select(d => Block($"Tag {d}", $"2026-09-{d:00}T10:00")));
+        var book = BookOf(Vault("- # Eins\n" + Indented(blocks) + "- # Zwei\n" + Indented(other)));
+
+        var changes = Of(book);
+
+        Assert.Equal(20, changes.Count);
+        Assert.Equal(30, changes[0].Count);
+        Assert.Equal(19, changes.Skip(1).Count(c => c.Count == 1));
+    }
+
+    [Fact]
+    public void Of_GroupSummary_FirstSentence_ElseFirstBlocksExcerpt()
+    {
+        var book = BookOf(Vault("- # Eins\n" + Indented(Block("Erster", "2026-10-01T09:00") + Block("Zweiter", "2026-10-01T10:00"))));
+
+        var plain = Assert.Single(Of(book));
+        var summarized = Assert.Single(Of(book, _ => "Es geht um Schlaf. Mehr."));
+
+        Assert.Equal("Erster", plain.Summary);
+        Assert.Equal("Es geht um Schlaf.", summarized.Summary);
+    }
+
+    [Fact]
+    public void Of_PrologueGroup_UsesBookTitle_RevealsFirstBlock()
+    {
+        var book = BookOf(Vault(Block("Vor A", "2026-10-01T09:00") + Block("Vor B", "2026-10-01T10:00") + "- # Eins\n"));
+
+        var change = Assert.Single(Of(book));
+
+        Assert.Equal(2, change.Count);
+        Assert.Equal("Alpha", change.SectionPath);
+        Assert.Equal(book.Root.TextBlocks.First().Key, change.RevealKey);
+    }
+
+    [Fact]
+    public async Task List_GroupShowsCount_ClickRevealsHeading()
+    {
+        using var tv = Vault("- # Eins\n" + Indented(Block("Erster Text", "2026-10-03T10:00") + Block("Zweiter Text", "2026-10-03T12:00")));
+        await OpenSessionAsync(tv);
+        var cut = Render<OutlinePane>();
+
+        var item = Assert.Single(cut.FindAll(".ne-recent-item"));
+
+        Assert.Contains("2 Blöcke", item.TextContent);
+        item.Click();
+
+        Assert.Equal(State.CurrentBook!.Root.Children.Single().Key, State.PendingReveal);
     }
 
     [Fact]

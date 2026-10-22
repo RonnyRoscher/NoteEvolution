@@ -7,10 +7,18 @@ using NoteEvolution.UI.Resources;
 namespace NoteEvolution.UI.State;
 
 /// <summary>
-/// One entry of the "Zuletzt geändert" list: a text block, when it changed, where it is and what it is about.
-/// <paramref name="Summary"/> is the first sentence of its section's summary, else the block's <paramref name="Excerpt"/>.
+/// One entry of the "Zuletzt geändert" list: a text block, or the blocks of one section changed on one day
+/// (<paramref name="Count"/> &gt; 1), when it changed, where it is and what it is about.
+/// <paramref name="Summary"/> is the first sentence of the section's summary, else the (first) block's <paramref name="Excerpt"/>.
+/// <paramref name="TextBlockKey"/> is the (first) block; <paramref name="HeadingKey"/> the section's heading for a group
+/// of a headed section, else <c>null</c>.
 /// </summary>
-public sealed record RecentChange(Guid TextBlockKey, DateTime Updated, string SectionPath, string Summary, string Excerpt);
+public sealed record RecentChange(
+    Guid TextBlockKey, DateTime Updated, string SectionPath, string Summary, string Excerpt, int Count = 1, Guid? HeadingKey = null)
+{
+    /// <summary>What a click reveals: the heading of a group, else the block.</summary>
+    public Guid RevealKey => HeadingKey ?? TextBlockKey;
+}
 
 /// <summary>The most recently changed text blocks of a book (spec "Blockdaten" 4.1).</summary>
 public static class RecentChanges
@@ -22,26 +30,32 @@ public static class RecentChanges
     private const string PathSeparator = " › ";
 
     /// <summary>
-    /// The <paramref name="limit"/> text blocks with the newest <c>updated::</c> date, newest first (blocks without one
-    /// are left out). <paramref name="sectionSummary"/> gives a section's summary or <c>null</c>; it is asked only for
-    /// the sections of the listed blocks.
+    /// The <paramref name="limit"/> newest entries, newest first: the text blocks with an <c>updated::</c> date (blocks
+    /// without one are left out), those of one section changed on the same local calendar day as one entry.
+    /// <paramref name="sectionSummary"/> gives a section's summary or <c>null</c>; it is asked only for the sections of
+    /// the listed entries.
     /// </summary>
     public static IReadOnlyList<RecentChange> Of(Book book, Func<OutlineNode, string?> sectionSummary, int limit = 20)
     {
-        var newest = AllTextBlocks(book.Root)
+        var groups = AllTextBlocks(book.Root)
             .Where(block => block.Updated is not null)
-            .OrderByDescending(block => block.Updated)
+            .GroupBy(block => (block.Section, Day: block.Updated!.Value.Date))
+            .Select(group => (Blocks: group.ToList(), Latest: group.Max(block => block.Updated!.Value)))
+            .OrderByDescending(group => group.Latest)
             .Take(limit);
-        return [.. newest.Select(block =>
+        return [.. groups.Select(group =>
         {
-            var excerpt = Excerpt.FirstLine(block.Text, ExcerptLength);
-            var summary = sectionSummary(block.Section);
+            var first = group.Blocks[0];
+            var excerpt = Excerpt.FirstLine(first.Text, ExcerptLength);
+            var summary = sectionSummary(first.Section);
             return new RecentChange(
-                block.Key,
-                block.Updated!.Value,
-                PathOf(book, block.Section),
+                first.Key,
+                group.Latest,
+                PathOf(book, first.Section),
                 string.IsNullOrWhiteSpace(summary) ? excerpt : SummaryText.FirstSentence(summary, SummaryLength),
-                excerpt);
+                excerpt,
+                group.Blocks.Count,
+                group.Blocks.Count > 1 && first.Section.Parent is not null ? first.Section.Key : null);
         })];
     }
 
