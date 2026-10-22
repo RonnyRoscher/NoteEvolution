@@ -83,19 +83,32 @@ public sealed class LinkChecker(IVault vault, ILinkService links, IPageWriter wr
     /// <summary>
     /// Removes the block references of <see cref="LinkCheckReport.MissingCrossRefs"/> whose target is still gone from
     /// their texts (with one adjacent space, the rest of the text stays; <see cref="BlockRefs.Remove"/>) and saves each
-    /// changed book through the page writer. Read-only books are left out. No <c>updated::</c>: the text is unchanged
-    /// but for a reference that led nowhere.
+    /// changed book through the page writer. Only books with entries in the report are looked at; read-only ones are
+    /// left out. No <c>updated::</c>: the text is unchanged but for a reference that led nowhere.
     /// </summary>
     /// <returns>The number of references removed.</returns>
     /// <exception cref="IOException">
     /// Saving failed (or another exception of <see cref="IPageWriter.Save"/>): that book's blocks are put back as they
     /// were, books saved before stay saved.
     /// </exception>
-    public int RemoveMissingCrossRefs(LinkCheckReport report)
+    public int RemoveMissingCrossRefs(LinkCheckReport report) => RemoveMissingCrossRefs(report, out _);
+
+    /// <inheritdoc cref="RemoveMissingCrossRefs(LinkCheckReport)"/>
+    /// <param name="report">The check whose missing cross references go.</param>
+    /// <param name="readOnly">The number of the report's entries left in place because their book is read-only.</param>
+    public int RemoveMissingCrossRefs(LinkCheckReport report, out int readOnly)
     {
         var removed = 0;
-        foreach (var book in vault.Books.Where(book => !book.Page.IsReadOnly))
+        readOnly = 0;
+        var keys = report.MissingCrossRefs.Select(m => m.ElementKey).ToHashSet();
+        foreach (var book in vault.Books.Where(book => book.Page.AllBlocks().Any(b => keys.Contains(b.Key))))
         {
+            if (book.Page.IsReadOnly)
+            {
+                readOnly += report.MissingCrossRefs.Count(m => book.Page.AllBlocks().Any(b => b.Key == m.ElementKey));
+                continue;
+            }
+
             // Only what is still missing now: a target may have come back since the check.
             var current = Book.Load(book.Page);
             var stillMissing = CrossRefIndex.Of(current).Missing.Select(m => (m.ElementKey, m.TargetId)).ToHashSet();

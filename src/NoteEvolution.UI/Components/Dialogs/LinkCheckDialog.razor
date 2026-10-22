@@ -247,7 +247,11 @@
 
         try
         {
-            _crossRefsRemoved = session.Checker.RemoveMissingCrossRefs(report);
+            _crossRefsRemoved = session.Checker.RemoveMissingCrossRefs(report, out var readOnly);
+            if (readOnly > 0)
+            {
+                _message = L["LinkCheckCrossRefsReadOnly", readOnly];
+            }
         }
         catch (FileChangedExternallyException ex)
         {
@@ -267,6 +271,8 @@
         }
 
         _report = session.Checker.Analyze();
+        // The book pages changed: the editor and the outline take the new snapshot.
+        State.RefreshBook();
         State.Notify();
     }
 

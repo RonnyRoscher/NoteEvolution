@@ -344,6 +344,22 @@ public class LinkCheckerTests
     }
 
     [Fact]
+    public void RemoveMissingCrossRefs_ReadOnlyBook_LeftInPlace_Counted()
+    {
+        var book = CrossRefBook + "- ```\n  offen\n";
+        using var s = new LinkSetup(book);
+        Assert.True(s.Book.Page.IsReadOnly);
+        var checker = Checker(s);
+        var report = checker.Analyze();
+        Assert.Equal(2, report.MissingCrossRefs.Count);
+
+        Assert.Equal(0, checker.RemoveMissingCrossRefs(report, out var readOnly));
+
+        Assert.Equal(2, readOnly);
+        Assert.Equal(book, s.ReadBook());
+    }
+
+    [Fact]
     public void RemoveMissingCrossRefs_SaveFails_PageUnchanged_Throws()
     {
         using var s = new LinkSetup(CrossRefBook);

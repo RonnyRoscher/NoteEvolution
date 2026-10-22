@@ -16,6 +16,7 @@ public sealed class RemovedHeading
     private readonly Guid? _parentKey;
     private readonly int _index;
     private readonly Guid? _titleKey;
+    private readonly IReadOnlyList<RawLine> _titleLines;
     private readonly IReadOnlyList<Guid> _childKeys;
     private readonly IReadOnlyList<MovedBlock> _moved;
 
@@ -25,6 +26,7 @@ public sealed class RemovedHeading
         Guid? parentKey,
         int index,
         Guid? titleKey,
+        IReadOnlyList<RawLine> titleLines,
         IReadOnlyList<Guid> childKeys,
         IReadOnlyList<MovedBlock> moved)
     {
@@ -33,6 +35,7 @@ public sealed class RemovedHeading
         _parentKey = parentKey;
         _index = index;
         _titleKey = titleKey;
+        _titleLines = titleLines;
         _childKeys = childKeys;
         _moved = moved;
     }
@@ -47,7 +50,8 @@ public sealed class RemovedHeading
     /// Whether <see cref="RestoreInto"/> can undo the command on <paramref name="page"/>: the heading is not on it again,
     /// its former parent still is, every moved child (by key) still has that parent, and every other moved block still
     /// on the page still has the parent the command left it with (so all of them are still inside the moved subtrees).
-    /// Other edits of the page, also of the moved blocks' text, do not matter.
+    /// The text block made from the title is gone, or still in the heading's place exactly as the command made it (its
+    /// lines unchanged, no details). Other edits of the page, also of the moved blocks' text, do not matter.
     /// </summary>
     public bool CanRestore(Page page)
     {
@@ -62,9 +66,11 @@ public sealed class RemovedHeading
             return false;
         }
 
-        // The text block made from the title may be gone; if it is there, it is still in the heading's place and has no
-        // details of its own, which removing it would lose.
-        if (_titleKey is { } titleKey && Find(page, titleKey) is { } title && (title.Parent != parent || title.Children.Count > 0))
+        // The text block made from the title may be gone; if it is there, it is still in the heading's place, exactly as
+        // the command made it and without details of its own: removing it must not lose anything typed or added there.
+        if (_titleKey is { } titleKey
+            && Find(page, titleKey) is { } title
+            && (title.Parent != parent || title.Children.Count > 0 || !title.Lines.SequenceEqual(_titleLines)))
         {
             return false;
         }
@@ -74,10 +80,9 @@ public sealed class RemovedHeading
     }
 
     /// <summary>
-    /// Removes the text block made from the title (an edit of it is lost: the heading comes back with its original
-    /// lines), puts the heading back with its original lines where the moved children are now (without children: where
-    /// that text block was, else at its old index), moves the children back below it in their order and gives the moved
-    /// sub-headings their former levels.
+    /// Removes the text block made from the title (still as the command made it), puts the heading back with its
+    /// original lines where the moved children are now (without children: where that text block was, else at its old
+    /// index), moves the children back below it in their order and gives the moved sub-headings their former levels.
     /// A moved block still exactly as the command left it gets its original lines back; in any other the text stays
     /// and only the heading level changes back. Changed blocks are marked dirty.
     /// </summary>

@@ -477,6 +477,39 @@ public class ManuscriptEditorTests
     }
 
     [Fact]
+    public void RemoveHeading_RestoreInto_TitleTextBlockEditedOrGotADetail_Refused_PageUnchanged()
+    {
+        // Typed into the text block made from the title: undo would lose the text.
+        var edited = Load(Text);
+        var removed = ManuscriptEditor.RemoveHeading(edited, KeyOf(edited, "## Eins-A"));
+        BlockOf(edited, "Eins-A").SetContent("Eins-A und mehr");
+        AssertRefused(edited, removed);
+
+        // A detail added to it would go with it.
+        var detail = Load(Text);
+        removed = ManuscriptEditor.RemoveHeading(detail, KeyOf(detail, "## Eins-A"));
+        var reloaded = Book.Load(detail.Page);
+        ManuscriptEditor.InsertChild(reloaded, BookElements.Find(reloaded, KeyOf(detail, "Eins-A"))!);
+        AssertRefused(detail, removed);
+
+        // Deleted, it is no reason to refuse.
+        var deleted = Load(Text);
+        removed = ManuscriptEditor.RemoveHeading(deleted, KeyOf(deleted, "## Eins-A"));
+        deleted.Page.RemoveBlock(BlockOf(deleted, "Eins-A"));
+        Assert.True(removed.CanRestore(deleted.Page));
+        removed.RestoreInto(deleted.Page);
+        Assert.Equal(Text, Serialize(deleted));
+
+        static void AssertRefused(Book book, RemovedHeading removed)
+        {
+            var before = Serialize(book);
+            Assert.False(removed.CanRestore(book.Page));
+            Assert.Throws<InvalidOperationException>(() => removed.RestoreInto(book.Page));
+            Assert.Equal(before, Serialize(book));
+        }
+    }
+
+    [Fact]
     public void RemoveHeading_RestoreInto_TextOfDeeperMovedBlockEdited_StillRestored()
     {
         var book = Load(Text);

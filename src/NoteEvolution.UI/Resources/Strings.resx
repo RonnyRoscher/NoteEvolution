@@ -735,6 +735,10 @@
     <value>{0} Querverweise ohne Ziel entfernt.</value>
     <comment>{0} = Anzahl</comment>
   </data>
+  <data name="LinkCheckCrossRefsReadOnly" xml:space="preserve">
+    <value>{0} Querverweise ohne Ziel stehen in einem Buch, das nicht sicher lesbar ist, und wurden nicht entfernt.</value>
+    <comment>{0} = Anzahl</comment>
+  </data>
   <data name="LinkCheckBookMissing" xml:space="preserve">
     <value>Buch „{0}“ nicht gefunden</value>
     <comment>{0} = Seitenname des Buchs</comment>

@@ -167,6 +167,7 @@ public static class ManuscriptEditor
             parent?.Key,
             index,
             titleBlock?.Key,
+            titleBlock is null ? [] : [.. titleBlock.Lines],
             [.. children.Select(child => child.Key)],
             MovedBlocks(moved, levels));
     }

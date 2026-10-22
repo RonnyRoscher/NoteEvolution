@@ -598,8 +598,10 @@ public static class ManuscriptCommands
 
     /// <summary>
     /// Undoes removing a heading (<see cref="RemovedHeading.RestoreInto"/>) and saves the page: the heading comes back
-    /// around the blocks it held, also after later edits elsewhere or in those blocks' text. Refused (no change) when
-    /// the heading's former parent is gone, a moved block is gone or was moved elsewhere, or the heading is back.
+    /// around the blocks it held, also after later edits elsewhere or in those blocks' text, and the text block made
+    /// from its title goes. Refused (no change) when the heading's former parent is gone, a moved block is gone or was
+    /// moved elsewhere, the heading is back, or the title's text block was edited, got details or was moved elsewhere
+    /// (undo would lose that).
     /// </summary>
     private sealed class RemoveHeadingUndo(string description, VaultSession session, string path, RemovedHeading removed) : IUndoAction
     {

@@ -411,6 +411,22 @@ public class DialogTests : UiTestContext
     }
 
     [Fact]
+    public async Task LinkCheckDialog_CrossRefsInAReadOnlyBook_NotRemoved_SaysHowMany()
+    {
+        const string gone = "0190c000-0000-7000-8000-00000000dead";
+        var text = "title:: Alpha\ntype:: book\n\n- # Eins\n" + $"\t- Siehe (({gone})) dort\n" + "- ```\n  offen\n";
+        using var tv = TestVault.Create(("pages/Buch - Alpha.md", text));
+        await OpenSessionAsync(tv);
+        var cut = Render<LinkCheckDialog>();
+
+        cut.Find(".ne-linkcheck-crossrefs-remove").Click();
+
+        Assert.Equal(text, tv.Read("pages/Buch - Alpha.md"));
+        cut.WaitForAssertion(() => Assert.Equal(string.Format(Text("LinkCheckCrossRefsReadOnly"), 1), cut.Find(".ne-dialog-error").TextContent));
+        Assert.Single(cut.FindAll(".ne-linkcheck-crossref"));
+    }
+
+    [Fact]
     public void Shell_OpeningAVaultWithLinkProblems_ShowsTheLinkCheck()
     {
         using var tv = LinkVault();
