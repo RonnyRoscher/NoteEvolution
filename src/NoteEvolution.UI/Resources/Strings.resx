@@ -211,6 +211,20 @@
   <data name="SectionSourcesOneOpen" xml:space="preserve">
     <value>1 Quelle ▾</value>
   </data>
+  <data name="SectionBackRefs" xml:space="preserve">
+    <value>↩ {0} Verweise hierher ▸</value>
+    <comment>Zugeklappte Verweise auf das Element am Cursor; {0} = Anzahl</comment>
+  </data>
+  <data name="SectionBackRefsOpen" xml:space="preserve">
+    <value>↩ {0} Verweise hierher ▾</value>
+    <comment>Aufgeklappte Verweise auf das Element am Cursor; {0} = Anzahl</comment>
+  </data>
+  <data name="SectionBackRefsOne" xml:space="preserve">
+    <value>↩ 1 Verweis hierher ▸</value>
+  </data>
+  <data name="SectionBackRefsOneOpen" xml:space="preserve">
+    <value>↩ 1 Verweis hierher ▾</value>
+  </data>
   <data name="SectionNoSources" xml:space="preserve">
     <value>Keine Quellen</value>
   </data>

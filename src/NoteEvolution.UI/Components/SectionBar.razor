@@ -15,6 +15,7 @@
          && State.CurrentRange is { } range)
     {
         var sources = SourcesOf(book, range);
+        var backRefs = BackRefsOf(book, element);
         <div class="ne-sec-buttons">
             @* Moving the range changes no file, so it stays possible while the book is locked. *@
             <button type="button" class="ne-range-up" title="@L["RangeUpTitle"]" disabled="@(!State.CanRangeUp)"
@@ -64,6 +65,25 @@
             </select>
         </div>
         <div class="ne-sec-sources-area">
+            @* The places referring to the heading or text block at the cursor (cross references spec 2.3). *@
+            @if (backRefs.Count > 0)
+            {
+                <span class="ne-sec-backrefs-area">
+                    <button type="button" class="ne-sec-backrefs" aria-expanded="@(_backExpanded ? "true" : "false")"
+                            @onclick="() => _backExpanded = !_backExpanded">@BackRefsText(backRefs.Count)</button>
+                    @if (_backExpanded)
+                    {
+                        <div class="ne-sec-source-list ne-sec-backref-list">
+                            @foreach (var back in backRefs)
+                            {
+                                var label = BackRefLabel(book, back);
+                                <button type="button" class="ne-sec-source ne-sec-backref" title="@label"
+                                        @onclick="() => RevealBackRef(back)">@label</button>
+                            }
+                        </div>
+                    }
+                </span>
+            }
             @if (sources.Count == 0)
             {
                 <span class="ne-sec-no-sources">@L["SectionNoSources"]</span>
@@ -120,6 +140,14 @@
 
     /// <summary>Whether the list of sources is open; it stays so while the range changes.</summary>
     private bool _expanded;
+
+    /// <summary>Whether the list of places referring to the element at the cursor is open.</summary>
+    private bool _backExpanded;
+
+    /// <summary>The cross reference index of <see cref="_indexBook"/>; the book is an immutable snapshot, so it is kept until the instance changes.</summary>
+    private CrossRefIndex? _index;
+
+    private Book? _indexBook;
 
     /// <summary>Whether the search for the target of a cross reference is open.</summary>
     private bool _picking;
@@ -204,6 +232,49 @@
             : L["RangeHeading", L["OutlineUntitled"].Value],
         { Kind: ElementKind.TextBlock } => L["RangeTextBlock"],
         _ => L["RangeDetail"],
+    };
+
+    /// <summary>The references to the heading or text block <paramref name="element"/> (by its <c>id::</c>), in book order.</summary>
+    private IReadOnlyList<CrossRefSource> BackRefsOf(Book book, BookElement element)
+    {
+        Guid? id = element.Kind switch
+        {
+            ElementKind.Heading => book.FindNode(element.Key)?.Block?.Id,
+            ElementKind.TextBlock => book.FindTextBlock(element.Key)?.Block.Id,
+            _ => null,
+        };
+        if (id is not { } targetId)
+        {
+            return [];
+        }
+
+        if (!ReferenceEquals(_indexBook, book))
+        {
+            _index = CrossRefIndex.Of(book);
+            _indexBook = book;
+        }
+
+        return _index!.To(targetId);
+    }
+
+    /// <summary>"Abschnitt › Textanfang" of the text block holding the reference.</summary>
+    private string BackRefLabel(Book book, CrossRefSource source) =>
+        RefLabels.SectionTitle(book, source.TextBlock.Section, L) + RefLabels.Separator
+        + RefLabels.Excerpt(source.TextBlock.Text, RefLabels.TitleExcerptLength);
+
+    private void RevealBackRef(CrossRefSource source)
+    {
+        // history: record the jump from the cursor's element to the referring place here (Task 7).
+        State.RevealElement(source.ElementKey);
+        State.Notify();
+    }
+
+    private string BackRefsText(int count) => (count, _backExpanded) switch
+    {
+        (1, false) => L["SectionBackRefsOne"],
+        (1, true) => L["SectionBackRefsOneOpen"],
+        (_, false) => L["SectionBackRefs", count],
+        _ => L["SectionBackRefsOpen", count],
     };
 
     private string SourcesText(int count) => (count, _expanded) switch

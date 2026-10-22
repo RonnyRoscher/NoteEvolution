@@ -1556,7 +1556,8 @@ html, body {
 }
 
 .ne-sec-buttons button,
-.ne-sec-sources {
+.ne-sec-sources,
+.ne-sec-backrefs {
     white-space: nowrap;
 }
 
@@ -1601,6 +1602,11 @@ html, body {
 .ne-range-own {
     flex-shrink: 0;
     white-space: pre;
+}
+
+/* The places referring here sit left of the sources; their list opens upwards like the sources' list. */
+.ne-sec-backrefs-area {
+    position: relative;
 }
 
 .ne-sec-no-sources {
