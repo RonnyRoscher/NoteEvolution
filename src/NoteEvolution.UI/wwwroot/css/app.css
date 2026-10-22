@@ -805,6 +805,23 @@ html, body {
     flex: 1;
 }
 
+/* The day's marks "nicht relevant" and "später", at the right of its head. */
+.ne-day-mark {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    cursor: pointer;
+}
+
+.ne-day-mark:has(> input:disabled) {
+    cursor: default;
+    opacity: 0.5;
+}
+
+.ne-day-mark > input {
+    margin: 0;
+}
+
 .ne-note-card.ne-note-in-day {
     padding: 2px 0 2px 8px;
     background: transparent;

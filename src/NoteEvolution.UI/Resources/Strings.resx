@@ -410,6 +410,14 @@
   <data name="NotesHideUsed" xml:space="preserve">
     <value>Verwendete ausblenden</value>
   </data>
+  <data name="NotesHideNotRelevant" xml:space="preserve">
+    <value>‚nicht relevant' ausblenden</value>
+    <comment>Filter im Journal; gilt für das aktuelle Buch</comment>
+  </data>
+  <data name="NotesHideLater" xml:space="preserve">
+    <value>‚später' ausblenden</value>
+    <comment>Filter im Journal</comment>
+  </data>
   <data name="NotesFrom" xml:space="preserve">
     <value>Von</value>
   </data>
@@ -548,6 +556,32 @@
   <data name="JournalDayLogseqTitle" xml:space="preserve">
     <value>Tag {0} in Logseq öffnen</value>
     <comment>{0} = Datum des Journaltags</comment>
+  </data>
+  <data name="JournalDayNotRelevant" xml:space="preserve">
+    <value>nicht relevant</value>
+    <comment>Markierung eines Journaltags, gilt für das aktuelle Buch</comment>
+  </data>
+  <data name="JournalDayNotRelevantTitle" xml:space="preserve">
+    <value>Dieser Tag ist für das aktuelle Buch nicht relevant</value>
+  </data>
+  <data name="JournalDayNotRelevantNoBook" xml:space="preserve">
+    <value>Erst ein Buch wählen</value>
+  </data>
+  <data name="JournalDayLater" xml:space="preserve">
+    <value>später</value>
+    <comment>Markierung eines Journaltags, gilt für alle Bücher</comment>
+  </data>
+  <data name="JournalDayLaterTitle" xml:space="preserve">
+    <value>Diesen Tag später ansehen (für alle Bücher)</value>
+  </data>
+  <data name="JournalDayReadOnly" xml:space="preserve">
+    <value>Diese Journaldatei ist nicht sicher lesbar. Die Markierung wurde nicht gespeichert.</value>
+  </data>
+  <data name="JournalDayExternalChange" xml:space="preserve">
+    <value>Die Journaldatei wurde gleichzeitig von einem anderen Programm geändert. Die Änderung wurde eingelesen und mit der Markierung zusammengeführt.</value>
+  </data>
+  <data name="JournalDayFailed" xml:space="preserve">
+    <value>Die Markierung konnte nicht gespeichert werden. Angezeigt wird der Stand der Datei.</value>
   </data>
   <data name="NoteReadOnlyHint" xml:space="preserve">
     <value>Diese Notizdatei ist nicht sicher lesbar. Übernehmen ist nicht möglich.</value>

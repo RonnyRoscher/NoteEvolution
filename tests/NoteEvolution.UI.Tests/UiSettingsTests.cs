@@ -20,6 +20,8 @@ public class UiSettingsTests
             FontSizePt = 15,
             LineWidthCh = 82,
             HideUsed = true,
+            HideNotRelevant = true,
+            HideLater = true,
             LogseqHintShown = true,
         };
 
@@ -36,6 +38,8 @@ public class UiSettingsTests
         Assert.Equal(15, loaded.FontSizePt);
         Assert.Equal(82, loaded.LineWidthCh);
         Assert.True(loaded.HideUsed);
+        Assert.True(loaded.HideNotRelevant);
+        Assert.True(loaded.HideLater);
         Assert.True(loaded.LogseqHintShown);
     }
 
@@ -133,6 +137,8 @@ public class UiSettingsTests
         Assert.Equal(12, settings.FontSizePt);
         Assert.Equal(70, settings.LineWidthCh);
         Assert.False(settings.HideUsed);
+        Assert.False(settings.HideNotRelevant);
+        Assert.False(settings.HideLater);
         Assert.False(settings.LogseqHintShown);
     }
 }

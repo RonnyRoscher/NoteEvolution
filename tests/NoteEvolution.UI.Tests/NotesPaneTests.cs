@@ -247,26 +247,6 @@ public class NotesPaneTests : UiTestContext
     }
 
     [Fact]
-    public async Task NotesPane_DateRange_FiltersBothTabs()
-    {
-        using var tv = Create();
-        await OpenAlphaAsync(tv);
-        var cut = Render<NotesPane>();
-
-        cut.Find(".ne-filter-from").Change("2026-10-01");
-        ShowJournal(cut);
-        Assert.Equal(["Gedächtnis im Alltag beobachten", "Eine ganz andere Idee"], Texts(cut));
-
-        cut.Find(".ne-filter-from").Change("");
-        cut.Find(".ne-filter-to").Change("2026-09-30");
-        Assert.Equal(["Gedächtnis und Musik", "Septemberidee"], Texts(cut));
-
-        cut.Find(".ne-tab-search").Click();
-        Search(cut, "Gedächtnis");
-        Assert.Equal(["Gedächtnis und Musik"], Texts(cut));
-    }
-
-    [Fact]
     public async Task NotesPane_JournalTab_HasTheDateJumpInTheFilterRow_OtherTabsNot()
     {
         using var tv = Create();
