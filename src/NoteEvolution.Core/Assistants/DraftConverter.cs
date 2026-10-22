@@ -87,7 +87,8 @@ public sealed class DraftProposal
 
 /// <summary>
 /// Assistant for an existing plain outline: proposes which blocks are headings, and after the user's changes
-/// prefixes those with <c>#</c> marks and sets <c>type:: book</c>. Nothing else in the file changes.
+/// prefixes those with <c>#</c> marks and sets <c>type:: book</c>. Besides that, only
+/// text blocks without a status get <c>status:: relevant</c>; the rest of the file is untouched.
 /// </summary>
 public sealed partial class DraftConverter(BackupService backups, IPageWriter writer)
 {
@@ -191,7 +192,7 @@ public sealed partial class DraftConverter(BackupService backups, IPageWriter wr
         foreach (var node in proposal.AllNodes())
         {
             var block = node.Block;
-            if (!node.IsHeading && BlockStatuses.Of(block) == BlockStatus.Draft && block.GetProperty(BlockStatuses.Key) is null)
+            if (!node.IsHeading && !string.IsNullOrWhiteSpace(block.Content) && BlockStatuses.Of(block) == BlockStatus.Draft && block.GetProperty(BlockStatuses.Key) is null)
             {
                 block.SetProperty(BlockStatuses.Key, BlockStatuses.FileValue(BlockStatus.Relevant)!);
             }

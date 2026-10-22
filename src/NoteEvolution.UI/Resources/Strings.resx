@@ -815,7 +815,7 @@
     <comment>{0} = Seitenname</comment>
   </data>
   <data name="DraftConfirm" xml:space="preserve">
-    <value>Die Seite „{0}“ wird zum Buch. Vorher wird eine Sicherung angelegt; nur die Überschriften-Markierungen und der Seitentyp werden ergänzt.</value>
+    <value>Die Seite „{0}“ wird zum Buch. Vorher wird eine Sicherung angelegt; ergänzt werden die Überschriften-Markierungen, der Seitentyp und bei allen Textblöcken der Status „relevant“ (relevante Texte erscheinen erst nach einem anderen Status im PDF).</value>
     <comment>{0} = Seitenname</comment>
   </data>
   <data name="DraftConfirmYes" xml:space="preserve">

@@ -36,7 +36,7 @@ else
                 *@
                 @if (_tab == Tab.Journal)
                 {
-                    <label class="ne-filter-hide"><input type="checkbox" class="ne-hide-not-relevant" checked="@Settings.HideNotRelevant"
+                    <label class="ne-filter-hide"><input type="checkbox" class="ne-hide-not-relevant" checked="@Settings.HideNotRelevant" disabled="@(State.CurrentBook is null)"
                                                          @onchange="e => SaveSetting(() => Settings.HideNotRelevant = e.Value is true)" /> @L["NotesHideNotRelevant"]</label>
                     <label class="ne-filter-hide"><input type="checkbox" class="ne-hide-later" checked="@Settings.HideLater"
                                                          @onchange="e => SaveSetting(() => Settings.HideLater = e.Value is true)" /> @L["NotesHideLater"]</label>

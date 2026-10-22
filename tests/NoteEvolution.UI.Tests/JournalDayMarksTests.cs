@@ -269,6 +269,24 @@ public class JournalDayMarksTests : UiTestContext
     }
 
     [Fact]
+    public async Task HideNotRelevantFilter_WithoutBook_IsDisabled()
+    {
+        using var tv = Create();
+        var session = await OpenAsync(tv, book: null);
+        var cut = RenderJournal();
+
+        Assert.True(cut.Find(".ne-hide-not-relevant").HasAttribute("disabled"));
+        Assert.False(cut.Find(".ne-hide-later").HasAttribute("disabled"));
+
+        await cut.InvokeAsync(() =>
+        {
+            State.CurrentBook = session.Vault.FindBook("Buch - Beta");
+            State.Notify();
+        });
+        cut.WaitForAssertion(() => Assert.False(cut.Find(".ne-hide-not-relevant").HasAttribute("disabled")));
+    }
+
+    [Fact]
     public async Task Filters_HideMarkedDays_AndArePersisted()
     {
         using var tv = Create();

@@ -228,6 +228,28 @@ public class DraftConverterTests
     }
 
     [Fact]
+    public void Apply_NotizBlockWithoutStatus_KeepsNoStatusLine()
+    {
+        using var s = new Setup("- Teil\n  - Eine Notiz #notiz\n");
+
+        s.Converter.Apply(s.Page, s.Converter.Propose(s.Page));
+
+        Assert.Equal("type:: book\n\n- # Teil\n  - Eine Notiz #notiz\n", s.ReadDraft());
+    }
+
+    [Fact]
+    public void Apply_BlankBlock_GetsNoStatusLine()
+    {
+        using var s = new Setup("- Teil\n  - Satz.\n  -\n");
+
+        s.Converter.Apply(s.Page, s.Converter.Propose(s.Page));
+
+        var draft = s.ReadDraft();
+        Assert.Single(System.Text.RegularExpressions.Regex.Matches(draft, "status::"));
+        Assert.EndsWith("status:: relevant\n  -\n", draft);
+    }
+
+    [Fact]
     public void Apply_PageAlreadyBook_GetsNoStatus()
     {
         using var s = new Setup("type:: book\n\n- Teil\n  - Kind\n");
