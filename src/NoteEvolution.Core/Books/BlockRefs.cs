@@ -24,6 +24,15 @@ public static partial class BlockRefs
         return refs;
     }
 
+    [GeneratedRegex(@"\G\(\([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\)\)")]
+    private static partial Regex RefAtRegex();
+
+    /// <summary>The length of the reference that starts at <paramref name="index"/> of <paramref name="text"/>; 0 if none starts there.</summary>
+    public static int LengthAt(string text, int index) =>
+        index + 1 < text.Length && text[index] == '(' && text[index + 1] == '(' && RefAtRegex().Match(text, index) is { Success: true } m
+            ? m.Length
+            : 0;
+
     public static string Format(Guid id) => "((" + id.ToString("D") + "))";
 
     /// <summary>Replaces references whose id is a key of <paramref name="map"/> with a reference to the mapped id.</summary>

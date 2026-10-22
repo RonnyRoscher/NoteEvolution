@@ -21,20 +21,28 @@ namespace NoteEvolution.UI.Editor;
 /// A text block may also carry <c>dates</c> and <c>datesTitle</c> (its created/updated dates, see
 /// <see cref="BlockDateText"/>); they are only shown, <see cref="FromJson"/> ignores them.
 /// </para>
+/// <para>
+/// A block reference <c>((id))</c> in a paragraph is an inline atom <c>blockRef{id, label, title, missing}</c> (with the
+/// marks of the text around it, see <see cref="RefLabels"/>); it is one unit of the shown text and is written back as
+/// <c>((id))</c>, its label, title and missing are only shown.
+/// </para>
 /// </summary>
 public static class EditorDocMapper
 {
     /// <param name="snapshot">The book section to show.</param>
     /// <param name="datesOf">The dates label of a text block by its key; <c>null</c> (or a <c>null</c> label): none.</param>
-    public static string ToJson(SectionSnapshot snapshot, Func<Guid, BlockDateLabel?>? datesOf = null)
+    /// <param name="refOf">The label of a reference by its target id; <c>null</c>: the reference text as its label.</param>
+    public static string ToJson(
+        SectionSnapshot snapshot, Func<Guid, BlockDateLabel?>? datesOf = null, Func<Guid, RefLabel>? refOf = null)
     {
+        refOf ??= id => new RefLabel(BlockRefs.Format(id), "", false);
         var content = new JsonArray();
         foreach (var node in snapshot.Nodes)
         {
             content.Add(node switch
             {
                 SnapshotHeading heading => Heading(heading),
-                SnapshotTextBlock text => TextBlock(text, datesOf?.Invoke(text.Key)),
+                SnapshotTextBlock text => TextBlock(text, datesOf?.Invoke(text.Key), refOf),
                 _ => throw new ArgumentException($"Unknown snapshot node {node.GetType().Name}.", nameof(snapshot)),
             });
         }
@@ -42,7 +50,7 @@ public static class EditorDocMapper
         if (content.Count == 0)
         {
             // The document needs a block; one to type in. It is only written once it is typed in.
-            content.Add(TextBlock(new SnapshotTextBlock(Guid.CreateVersion7(), null, "", [], []), null));
+            content.Add(TextBlock(new SnapshotTextBlock(Guid.CreateVersion7(), null, "", [], []), null, refOf));
         }
 
         return new JsonObject { ["type"] = "doc", ["content"] = content }.ToJsonString();
@@ -86,12 +94,12 @@ public static class EditorDocMapper
         return result;
     }
 
-    private static JsonObject TextBlock(SnapshotTextBlock text, BlockDateLabel? dates)
+    private static JsonObject TextBlock(SnapshotTextBlock text, BlockDateLabel? dates, Func<Guid, RefLabel> refOf)
     {
-        var paragraphs = new JsonArray(Para(null, text.Text, 0, false, BlockStatus.Draft));
+        var paragraphs = new JsonArray(Para(null, text.Text, 0, false, BlockStatus.Draft, refOf));
         foreach (var paragraph in text.Paragraphs)
         {
-            paragraphs.Add(Para(paragraph.Key, paragraph.Text, paragraph.Depth, paragraph.IsNote, paragraph.Status));
+            paragraphs.Add(Para(paragraph.Key, paragraph.Text, paragraph.Depth, paragraph.IsNote, paragraph.Status, refOf));
         }
 
         var sources = new JsonArray();
@@ -121,7 +129,7 @@ public static class EditorDocMapper
         return new JsonObject { ["type"] = "textBlock", ["attrs"] = attrs, ["content"] = paragraphs };
     }
 
-    private static JsonObject Para(Guid? key, string markdown, int depth, bool isNote, BlockStatus status)
+    private static JsonObject Para(Guid? key, string markdown, int depth, bool isNote, BlockStatus status, Func<Guid, RefLabel> refOf)
     {
         var attrs = new JsonObject
         {
@@ -141,7 +149,27 @@ public static class EditorDocMapper
                 continue;
             }
 
-            var item = new JsonObject { ["type"] = "text", ["text"] = run.Text };
+            JsonObject item;
+            if (RefOf(run) is { } id)
+            {
+                var label = refOf(id);
+                item = new JsonObject
+                {
+                    ["type"] = "blockRef",
+                    ["attrs"] = new JsonObject
+                    {
+                        ["id"] = id.ToString("D"),
+                        ["label"] = label.Text,
+                        ["title"] = label.Title,
+                        ["missing"] = label.Missing,
+                    },
+                };
+            }
+            else
+            {
+                item = new JsonObject { ["type"] = "text", ["text"] = run.Text };
+            }
+
             var marks = new JsonArray();
             if (run.Bold)
             {
@@ -228,8 +256,10 @@ public static class EditorDocMapper
                     runs.Add(new InlineRun("\n", false, false));
                     break;
                 case "text":
-                    var marks = (item["marks"] as JsonArray ?? []).Select(m => (string?)m?["type"]).ToList();
-                    runs.Add(new InlineRun((string?)item["text"] ?? "", marks.Contains("bold"), marks.Contains("italic")));
+                    runs.Add(Marked(item, (string?)item["text"] ?? ""));
+                    break;
+                case "blockRef" when Guid.TryParse(Attr<string?>(item, "id", null), out var id):
+                    runs.Add(Marked(item, BlockRefs.Format(id)));
                     break;
             }
         }
@@ -241,6 +271,17 @@ public static class EditorDocMapper
 
         return Write(runs);
     }
+
+    /// <summary>A run of <paramref name="text"/> with the bold and italic marks of the editor node.</summary>
+    private static InlineRun Marked(JsonObject item, string text)
+    {
+        var marks = (item["marks"] as JsonArray ?? []).Select(m => (string?)m?["type"]).ToList();
+        return new InlineRun(text, marks.Contains("bold"), marks.Contains("italic"));
+    }
+
+    /// <summary>The target of a run of <see cref="Display"/> that is a block reference; <c>null</c> for text.</summary>
+    private static Guid? RefOf(InlineRun run) =>
+        run.Text.Length > 0 && BlockRefs.LengthAt(run.Text, 0) == run.Text.Length ? BlockRefs.Find(run.Text)[0].Id : null;
 
     /// <summary>Formats the runs with every <c>*</c>/<c>_</c> escaped, then drops the escapes the reading does not need.</summary>
     private static string Write(List<InlineRun> runs)
@@ -272,8 +313,10 @@ public static class EditorDocMapper
     }
 
     /// <summary>
-    /// What the editor shows of a Markdown text: the runs, with <c>\*</c> and <c>\_</c> as bare characters and each
-    /// line break as a run of its own (<c>"\n"</c>, no emphasis).
+    /// What the editor shows of a Markdown text: the runs, with <c>\*</c> and <c>\_</c> as bare characters, each
+    /// line break as a run of its own (<c>"\n"</c>, no emphasis) and each block reference as a run of its own, written
+    /// as <see cref="BlockRefs.Format"/> writes it (the editor shows the id, not how its letters were cased; see
+    /// <see cref="RefOf"/>).
     /// </summary>
     private static List<InlineRun> Display(string markdown)
     {
@@ -288,9 +331,22 @@ public static class EditorDocMapper
                     result.Add(new InlineRun("\n", false, false));
                 }
 
-                if (lines[i].Length > 0)
+                var line = lines[i];
+                var start = 0;
+                foreach (var reference in BlockRefs.Find(line))
                 {
-                    result.Add(run with { Text = lines[i] });
+                    if (reference.Start > start)
+                    {
+                        result.Add(run with { Text = line[start..reference.Start] });
+                    }
+
+                    result.Add(run with { Text = BlockRefs.Format(reference.Id) });
+                    start = reference.Start + reference.Length;
+                }
+
+                if (start < line.Length)
+                {
+                    result.Add(run with { Text = line[start..] });
                 }
             }
         }

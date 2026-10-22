@@ -176,4 +176,33 @@ public class ManuscriptEditorRefTests
         // "Erste Zeile\nzweite Zeile": offset 12 is the start of the second line.
         Assert.Equal(13, ManuscriptEditor.ContentOffset(book, KeyOf(book, "Erste *Zeile\nzweite* Zeile"), 12));
     }
+
+    [Fact]
+    public void ContentOffset_CountsAReferenceAsOnePosition()
+    {
+        // The editor shows "Zweiter ", the reference (one position), "Text ", a second reference.
+        var text = Text.Replace("\t- Zweiter Text\n", $"\t- Zweiter {R(A)}Text {R(B)}\n");
+        var book = Load(text);
+        var key = KeyOf(book, $"Zweiter {R(A)}Text {R(B)}");
+
+        Assert.Equal(8, ManuscriptEditor.ContentOffset(book, key, 8));
+        Assert.Equal(48, ManuscriptEditor.ContentOffset(book, key, 9));
+        Assert.Equal(50, ManuscriptEditor.ContentOffset(book, key, 11));
+        Assert.Equal(53, ManuscriptEditor.ContentOffset(book, key, 14));
+        Assert.Equal(93, ManuscriptEditor.ContentOffset(book, key, 15));
+        // Out of range is clamped to the end.
+        Assert.Equal(93, ManuscriptEditor.ContentOffset(book, key, 50));
+    }
+
+    [Fact]
+    public void ContentOffset_ReferenceInsideBold()
+    {
+        var text = Text.Replace("Text **fett** eins", $"Text **fe{R(A)}tt** eins");
+        var book = Load(text);
+        var key = KeyOf(book, $"Text **fe{R(A)}tt** eins");
+
+        // "Text fe", the reference, "tt eins": right after the reference is still inside the bold text.
+        Assert.Equal(49, ManuscriptEditor.ContentOffset(book, key, 8));
+        Assert.Equal(50, ManuscriptEditor.ContentOffset(book, key, 9));
+    }
 }

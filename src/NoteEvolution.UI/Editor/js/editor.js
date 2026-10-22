@@ -127,6 +127,77 @@ const Para = Node.create({
     },
 });
 
+/**
+ * A cross reference ((id)) to a heading or text block of the book (spec 2.3): one non-editable inline unit that shows
+ * its label ("→ Titel", "→ Verweis fehlt" with missing) and the target's path as its tooltip. C# writes it back as
+ * ((id)); label, title and missing come from the book and are only shown. A click calls options.onClicked(id).
+ */
+const BlockRef = Node.create({
+    name: 'blockRef',
+    group: 'inline',
+    inline: true,
+    atom: true,
+    selectable: true,
+    addOptions() {
+        return { onClicked: () => {} };
+    },
+    addAttributes() {
+        return {
+            id: { default: null, parseHTML: el => el.getAttribute('data-ref'), renderHTML: attrs => ({ 'data-ref': attrs.id }) },
+            label: { default: '', parseHTML: el => el.textContent, rendered: false },
+            title: { default: '', parseHTML: el => el.getAttribute('title') ?? '', rendered: false },
+            missing: { default: false, parseHTML: el => el.classList.contains('missing'), rendered: false },
+        };
+    },
+    parseHTML() {
+        return [{ tag: 'span[data-ref]' }];
+    },
+    renderHTML({ node, HTMLAttributes }) {
+        const attrs = { ...HTMLAttributes, class: node.attrs.missing ? 'ne-ref missing' : 'ne-ref' };
+        if (node.attrs.title) {
+            attrs.title = node.attrs.title;
+        }
+        return ['span', attrs, node.attrs.label];
+    },
+    // Copied as plain text, a reference is what the book file holds.
+    renderText: ({ node }) => `((${node.attrs.id}))`,
+    addNodeView() {
+        return ({ node }) => {
+            const dom = document.createElement('span');
+            dom.className = node.attrs.missing ? 'ne-ref missing' : 'ne-ref';
+            dom.contentEditable = 'false';
+            dom.setAttribute('data-ref', node.attrs.id ?? '');
+            dom.textContent = node.attrs.label;
+            if (node.attrs.title) {
+                dom.title = node.attrs.title;
+            }
+            dom.addEventListener('click', () => this.options.onClicked(node.attrs.id));
+            return { dom };
+        };
+    },
+});
+
+/**
+ * Backspace right after a reference or Delete right before it removes the reference whole (the browser's own deletion
+ * would act on the label's characters).
+ */
+function deleteReference(state, dispatch, forward) {
+    const { selection } = state;
+    if (!selection.empty) {
+        return false;
+    }
+    const $pos = selection.$from;
+    const node = forward ? $pos.nodeAfter : $pos.nodeBefore;
+    if (!node || node.type.name !== 'blockRef') {
+        return false;
+    }
+    if (dispatch) {
+        const from = forward ? $pos.pos : $pos.pos - node.nodeSize;
+        dispatch(state.tr.delete(from, from + node.nodeSize).scrollIntoView());
+    }
+    return true;
+}
+
 /** A text block with its dates at the top right, its source chips below and a handle to drag it. */
 class TextBlockView {
     constructor(node, options) {
@@ -390,11 +461,14 @@ const Keys = Extension.create({
             Tab: inHeadingOr('Indent', run(shiftDepth(1))),
             'Shift-Tab': inHeadingOr('Outdent', run(shiftDepth(-1))),
             Backspace: () => {
-                const { selection } = this.editor.state;
-                return selection.empty && selection.$from.parentOffset === 0 && inHeading(this.editor.state)
-                    ? section('RemoveHeading')()
-                    : false;
+                const { state, view } = this.editor;
+                const { selection } = state;
+                if (selection.empty && selection.$from.parentOffset === 0 && inHeading(state)) {
+                    return section('RemoveHeading')();
+                }
+                return deleteReference(state, view.dispatch, false);
             },
+            Delete: () => deleteReference(this.editor.state, this.editor.view.dispatch, true),
             'Mod-Shift-n': section('ToggleRemark'),
             'Mod-Shift-N': section('ToggleRemark'),
             'Alt-ArrowUp': section('RangeUp'),
@@ -681,8 +755,8 @@ function dropTarget(view, event) {
 
 /**
  * Creates the editor in host. dotnet receives DocumentChanged(json), CursorChanged(kind, key, textBlockKey, offset),
- * SectionCommand(name), SectionBoxMoved(barTop, visible), ChipClicked(noteId), ChipRemoved(blockKey, noteId) and
- * NoteDropped(afterKey). options.barHeight is the height of the section bar C# shows at the marking box's bottom
+ * SectionCommand(name), SectionBoxMoved(barTop, visible), ChipClicked(noteId), ChipRemoved(blockKey, noteId),
+ * ReferenceClicked(id) and NoteDropped(afterKey). options.barHeight is the height of the section bar C# shows at the marking box's bottom
  * (.ne-section-bar in the .ne-editor-pane) until the bar can be measured; the bar may wrap into more lines, so its
  * actual height is followed (the gap below the marking, --bar-height, and the scroll distance from the bottom).
  */
@@ -782,6 +856,7 @@ export function createEditor(host, dotnet, options = {}) {
             }),
             Para,
             Text,
+            BlockRef.configure({ onClicked: id => call('ReferenceClicked', id) }),
             Bold,
             Italic,
             HardBreak.extend({

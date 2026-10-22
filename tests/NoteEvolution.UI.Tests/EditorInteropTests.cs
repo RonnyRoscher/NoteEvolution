@@ -118,6 +118,18 @@ public class EditorInteropTests
     }
 
     [Fact]
+    public async Task ReferenceClicked_Forwarded_InvalidIdIgnored()
+    {
+        var interop = await InitAsync();
+
+        await interop.ReferenceClicked(Key);
+        await interop.ReferenceClicked("keine-id");
+        await interop.ReferenceClicked(null);
+
+        Assert.Equal([Guid.Parse(Key)], _callbacks.References);
+    }
+
+    [Fact]
     public async Task SectionBoxMoved_Forwarded()
     {
         var interop = await InitAsync();
@@ -202,6 +214,14 @@ public class EditorInteropTests
         public Task OnChipClicked(Guid noteId) => Task.CompletedTask;
 
         public Task OnChipRemoved(Guid textBlockKey, Guid noteId) => Task.CompletedTask;
+
+        public List<Guid> References { get; } = [];
+
+        public Task OnReferenceClicked(Guid targetId)
+        {
+            References.Add(targetId);
+            return Task.CompletedTask;
+        }
 
         public Task OnNoteDropped(Guid noteBlockKey, Guid? afterTextBlockKey) => Task.CompletedTask;
     }

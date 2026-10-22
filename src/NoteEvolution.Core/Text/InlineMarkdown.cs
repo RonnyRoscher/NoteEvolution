@@ -1,4 +1,5 @@
 using System.Text;
+using NoteEvolution.Core.Books;
 
 namespace NoteEvolution.Core.Text;
 
@@ -33,7 +34,8 @@ public static class InlineMarkdown
     /// <summary>
     /// Splits block content at a character offset of its text as the editor shows it: after
     /// <see cref="BlockTextEscape.Unescape"/>, without emphasis markers, <c>"\n"</c> counting as 1 and <c>\*</c> or
-    /// <c>\_</c> as the one character they show. Emphasis across the offset is closed in <c>Before</c> and reopened in
+    /// <c>\_</c> as the one character they show, a block reference <c>((id))</c> as one (the editor shows it as one
+    /// node). Emphasis across the offset is closed in <c>Before</c> and reopened in
     /// <c>After</c>; each half is written with <see cref="Format"/> and <see cref="BlockTextEscape.Escape"/>, so that it
     /// reads back as its part of the text. At offset 0 or at the end the content is returned unchanged as the one
     /// non-empty half.
@@ -79,15 +81,20 @@ public static class InlineMarkdown
 
     /// <summary>
     /// The characters the editor shows for <paramref name="text"/> (editor text, already unescaped), each with its
-    /// emphasis; <c>\*</c> and <c>\_</c> show as the bare character.
+    /// emphasis; <c>\*</c> and <c>\_</c> show as the bare character, a block reference <c>((id))</c> (one node in the
+    /// editor) as one unit: its text, lower case.
     /// </summary>
-    internal static List<(char Char, bool Bold, bool Italic)> ShownChars(string text)
+    internal static List<(string Char, bool Bold, bool Italic)> ShownChars(string text)
     {
-        var result = new List<(char, bool, bool)>();
+        var result = new List<(string, bool, bool)>();
         foreach (var run in Parse(text))
         {
             for (var i = 0; i < run.Text.Length; i += ShownCharLength(run.Text, i))
-                result.Add((run.Text[i + ShownCharLength(run.Text, i) - 1], run.Bold, run.Italic));
+            {
+                var length = ShownCharLength(run.Text, i);
+                var shown = length > 2 ? run.Text.Substring(i, length).ToLowerInvariant() : run.Text[i + length - 1].ToString();
+                result.Add((shown, run.Bold, run.Italic));
+            }
         }
         return result;
     }
@@ -110,8 +117,14 @@ public static class InlineMarkdown
         return i;
     }
 
+    /// <summary>
+    /// The length in <paramref name="text"/> of the shown character at <paramref name="i"/>: 2 for <c>\*</c> and
+    /// <c>\_</c>, the whole reference for a block reference (the editor shows it as one node), else 1.
+    /// </summary>
     private static int ShownCharLength(string text, int i) =>
-        text[i] == '\\' && i + 1 < text.Length && text[i + 1] is '*' or '_' ? 2 : 1;
+        text[i] == '\\' && i + 1 < text.Length && text[i + 1] is '*' or '_' ? 2
+        : BlockRefs.LengthAt(text, i) is > 0 and var length ? length
+        : 1;
 
     /// <summary>
     /// Nested form with stars (that is how emphasis is usually typed), else with underscores for italic where a

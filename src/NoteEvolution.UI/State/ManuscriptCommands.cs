@@ -175,7 +175,8 @@ public static class ManuscriptCommands
                         "No place in the Markdown of {Element} shows offset {Offset}; the reference goes at the end", element.Key, cursor.Offset);
                 }
 
-                after = offset is null ? int.MaxValue : cursor.Offset + BlockRefs.Format(Guid.Empty).Length;
+                // The editor shows the reference as one node: one position of its text.
+                after = offset is null ? int.MaxValue : cursor.Offset + 1;
                 ManuscriptEditor.InsertReference(book, element.Key, offset ?? int.MaxValue, targetKey, session.Clock.Now);
                 return element.Key;
             }, undoDescription, logger);
@@ -187,7 +188,7 @@ public static class ManuscriptCommands
             state.RefreshBook();
             if (reveal is { } key)
             {
-                // The cursor goes right after the reference (all its characters are shown); the range stays.
+                // The cursor goes right after the reference; the range stays.
                 state.RevealElement(key, after, keepRange: true);
             }
 

@@ -279,6 +279,22 @@
     <value>Nichts gefunden</value>
     <comment>In der Suche nach dem Ziel eines Verweises, wenn nichts passt</comment>
   </data>
+  <data name="RefLabelHeading" xml:space="preserve">
+    <value>→ {0}</value>
+    <comment>Ein Verweis auf eine Überschrift im Text; {0} = ihr Titel</comment>
+  </data>
+  <data name="RefLabelText" xml:space="preserve">
+    <value>→ {0}: {1}</value>
+    <comment>Ein Verweis auf einen Textblock im Text; {0} = der Abschnitt, {1} = der Anfang des Texts</comment>
+  </data>
+  <data name="RefLabelMissing" xml:space="preserve">
+    <value>→ Verweis fehlt</value>
+    <comment>Ein Verweis, dessen Ziel es im Buch nicht mehr gibt</comment>
+  </data>
+  <data name="RefTitleMissing" xml:space="preserve">
+    <value>Das Ziel dieses Verweises gibt es im Buch nicht mehr.</value>
+    <comment>Tooltip eines Verweises ohne Ziel</comment>
+  </data>
   <data name="RangeUp" xml:space="preserve">
     <value>Bereich ▲</value>
   </data>

@@ -389,8 +389,9 @@ public static class ManuscriptEditor
     /// <summary>
     /// The offset in the content of the text block or detail <paramref name="elementKey"/> (as <see cref="InsertReference"/>
     /// takes it) for an offset in its text as the editor shows it: without emphasis markers, line escapes and a
-    /// <c>#notiz</c> tag, <c>\*</c> and <c>\_</c> as one character, a line break as one. It is the first place where
-    /// a reference shows at that offset with the text around it unchanged (also in its emphasis); out of range is clamped.
+    /// <c>#notiz</c> tag, <c>\*</c> and <c>\_</c> as one character, a line break and a block reference (one node in the
+    /// editor) as one. It is the first place where a reference shows at that offset with the text around it unchanged
+    /// (also in its emphasis); out of range is clamped.
     /// </summary>
     /// <returns>The offset; <c>null</c> if there is no such place (not expected), and the caller decides where to go.</returns>
     /// <exception cref="ArgumentException">The element is a heading or not in the book.</exception>
@@ -404,11 +405,12 @@ public static class ManuscriptEditor
         var probe = BlockRefs.Format(Guid.Empty);
         for (var m = 0; m <= content.Length; m++)
         {
+            // The reference shows as one unit (one node in the editor).
             var trial = InlineMarkdown.ShownChars(editorText(WithReference(content, m, probe)));
-            if (trial.Count == shown.Count + probe.Length
+            if (trial.Count == shown.Count + 1
                 && trial.Take(at).SequenceEqual(shown.Take(at))
-                && trial.Skip(at).Take(probe.Length).Select(c => c.Char).SequenceEqual(probe)
-                && trial.Skip(at + probe.Length).SequenceEqual(shown.Skip(at)))
+                && trial[at].Char == probe
+                && trial.Skip(at + 1).SequenceEqual(shown.Skip(at)))
             {
                 return m;
             }

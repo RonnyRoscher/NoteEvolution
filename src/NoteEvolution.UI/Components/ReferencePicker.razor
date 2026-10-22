@@ -1,5 +1,5 @@
 @using NoteEvolution.Core.Books
-@using NoteEvolution.Core.Text
+@using NoteEvolution.UI.Editor
 @using Microsoft.JSInterop
 @inject IStringLocalizer<Strings> L
 @inject IJSRuntime JS
@@ -153,10 +153,5 @@
     }
 
     /// <summary>The start of the text as the editor shows it (without emphasis markers), on one line.</summary>
-    private static string Excerpt(string content)
-    {
-        var text = string.Concat(InlineMarkdown.Parse(BlockTextEscape.Unescape(content)).Select(run => run.Text))
-            .Replace("\\*", "*").Replace("\\_", "_").ReplaceLineEndings(" ").Trim();
-        return text.Length <= ExcerptLength ? text : text[..ExcerptLength].TrimEnd() + "…";
-    }
+    private static string Excerpt(string content) => RefLabels.Excerpt(content, ExcerptLength);
 }

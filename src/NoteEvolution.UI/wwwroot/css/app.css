@@ -1415,6 +1415,30 @@ html, body {
     padding-left: 0 !important;
 }
 
+/* A cross reference in the text (spec 2.3): one small unit, a click jumps to its target; red without a target. */
+.ne-ref {
+    padding: 0 0.25em;
+    border-radius: 4px;
+    background: var(--bg-pane);
+    color: var(--accent);
+    font-family: var(--font-ui);
+    font-size: 0.85em;
+    cursor: pointer;
+    user-select: none;
+}
+
+.ne-ref:hover {
+    text-decoration: underline;
+}
+
+.ne-ref.missing {
+    color: var(--danger);
+}
+
+.ne-ref.ProseMirror-selectednode {
+    outline: 1px solid var(--accent);
+}
+
 /* Manuscript look: continuous text, blocks only spaced, sources as a margin mark, chips on request. */
 .mode-manuscript .ne-block {
     padding-bottom: 0.8em;

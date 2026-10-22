@@ -113,6 +113,10 @@ public sealed class TipTapInterop(IJSRuntime js, AppState state) : IEditorIntero
             ? _callbacks.OnChipRemoved(key, id)
             : Task.CompletedTask;
 
+    [JSInvokable]
+    public Task ReferenceClicked(string? targetId) =>
+        _callbacks is not null && Guid.TryParse(targetId, out var id) ? _callbacks.OnReferenceClicked(id) : Task.CompletedTask;
+
     /// <summary>
     /// Something was dropped into the editor from outside. Only a note card counts: it records itself in
     /// <see cref="AppState.DraggedNoteKey"/> while it is dragged (R27); anything else (a file, text from another

@@ -177,11 +177,11 @@ public partial class ReferencePickerTests : UiTestContext
             after);
         cut.WaitForAssertion(() => Assert.Empty(cut.FindAll(".ne-ref-picker")));
         Assert.Equal(Text("UndoReference"), session.Undo.NextDescription);
-        // The cursor goes right after the reference (9 + its 40 characters); the range keeps its level.
+        // The cursor goes right after the reference (9 + the one position the editor gives it); the range keeps its level.
         var element = KeyOf($"Erster **fe(({id}))tter** Text");
         cut.WaitForAssertion(() => Assert.Equal([element], Editor.Reveals));
-        Assert.Equal([49], Editor.RevealOffsets);
-        Assert.Equal((element, 49), (State.Cursor!.Key, State.Cursor.Offset));
+        Assert.Equal([10], Editor.RevealOffsets);
+        Assert.Equal((element, 10), (State.Cursor!.Key, State.Cursor.Offset));
         Assert.Equal(level, State.RangeLevel);
         Assert.Empty(cut.FindAll(".ne-editor-error"));
 

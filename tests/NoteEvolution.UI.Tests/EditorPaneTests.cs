@@ -665,6 +665,73 @@ public class EditorPaneTests : UiTestContext
         Assert.Equal(Text("EditorReadOnly"), cut.Find(".ne-editor-hint").TextContent);
     }
 
+    private const string HeadingId = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+
+    private const string MissingId = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
+
+    /// <summary>Alpha with references: to the heading "Zwei", to the text block "Erster Text" and to a missing block.</summary>
+    private static TestVault WithRefs() => TestVault.Create(
+        (BookPath,
+            "title:: Alpha\ntype:: book\n\n" +
+            "- # Eins\n" +
+            "\t- Erster Text, der so lang ist, dass er gekürzt wird\n" +
+            "\t  id:: " + FirstId + "\n" +
+            "\t- Siehe ((" + HeadingId + ")) und ((" + FirstId + ")) und ((" + MissingId + "))\n" +
+            "- # Zwei\n" +
+            "  id:: " + HeadingId + "\n" +
+            "\t- Dritter Text\n"));
+
+    /// <summary>The blockRef nodes of the shown document, in order.</summary>
+    private List<JsonNode> RefNodes() =>
+        [.. Blocks(Doc(Editor.Json)).Where(n => (string?)n!["type"] == "textBlock")
+            .SelectMany(n => n!["content"]!.AsArray())
+            .SelectMany(p => p!["content"]?.AsArray() ?? [])
+            .Where(n => (string?)n!["type"] == "blockRef")
+            .Select(n => n!)];
+
+    [Fact]
+    public async Task Pane_ShowsReferencesWithLabels()
+    {
+        using var tv = WithRefs();
+        await RenderAsync(tv);
+
+        var refs = RefNodes();
+        Assert.Equal(
+            [
+                (HeadingId, "→ Zwei", "Zwei", false),
+                (FirstId, "→ Eins: Erster Text, der so lang ist, dass er ge…", "Eins › Erster Text, der so lang ist, dass er gekürzt wird", false),
+                (MissingId, Text("RefLabelMissing"), Text("RefTitleMissing"), true),
+            ],
+            refs.Select(n => ((string)n["attrs"]!["id"]!, (string)n["attrs"]!["label"]!, (string)n["attrs"]!["title"]!,
+                (bool)n["attrs"]!["missing"]!)));
+    }
+
+    [Fact]
+    public async Task Pane_ReferenceClick_RevealsTheTarget()
+    {
+        using var tv = WithRefs();
+        var (_, cut) = await RenderAsync(tv);
+        var zwei = Section("Zwei").Key;
+        var first = Section("Eins").TextBlocks.First().Key;
+
+        await cut.InvokeAsync(() => Editor.Callbacks!.OnReferenceClicked(Guid.Parse(HeadingId)));
+
+        cut.WaitForAssertion(() => Assert.Equal([zwei], Editor.Reveals));
+        Assert.Equal(zwei, State.CurrentSectionKey);
+        Assert.Equal(zwei, State.Cursor!.Key);
+
+        await cut.InvokeAsync(() => Editor.Callbacks!.OnReferenceClicked(Guid.Parse(FirstId)));
+
+        cut.WaitForAssertion(() => Assert.Equal([zwei, first], Editor.Reveals));
+        Assert.Equal((first, 0), (State.Cursor!.Key, State.Cursor.Offset));
+
+        // A missing target goes nowhere.
+        await cut.InvokeAsync(() => Editor.Callbacks!.OnReferenceClicked(Guid.Parse(MissingId)));
+
+        Assert.Equal([zwei, first], Editor.Reveals);
+        Assert.Equal(first, State.Cursor!.Key);
+    }
+
     [Fact]
     public async Task Pane_ChipClick_RevealsNote_CursorIsTracked_FlushUnregisteredOnDispose()
     {

@@ -343,6 +343,23 @@
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// A click on a cross reference jumps to its target (spec 2.3): the heading or text block becomes the element at the
+    /// cursor and is revealed (<see cref="AppState.RevealElement"/>). A reference without a target goes nowhere.
+    /// </summary>
+    public Task OnReferenceClicked(Guid targetId)
+    {
+        if (State.CurrentBook is not { } book || CrossRefIndex.Of(book).Target(targetId) is not { } target)
+        {
+            return Task.CompletedTask;
+        }
+
+        // history: record the jump from the cursor's element to the target here (Task 7).
+        State.RevealElement(target.Heading?.Key ?? target.TextBlock!.Key);
+        State.Notify();
+        return Task.CompletedTask;
+    }
+
     /// <summary>Removes the note from the block's sources and the usage from the note, after saving the pending text.</summary>
     public async Task OnChipRemoved(Guid textBlockKey, Guid noteId)
     {
@@ -551,7 +568,8 @@
         try
         {
             var dates = DatesOf(fresh, book);
-            await Editor.SetDocumentAsync(EditorDocMapper.ToJson(fresh, key => dates.GetValueOrDefault(key)), _showChips, keepCursor: sameTarget);
+            var json = EditorDocMapper.ToJson(fresh, key => dates.GetValueOrDefault(key), RefLabels.Of(book, L));
+            await Editor.SetDocumentAsync(json, _showChips, keepCursor: sameTarget);
             _shownDates = dates;
         }
         finally

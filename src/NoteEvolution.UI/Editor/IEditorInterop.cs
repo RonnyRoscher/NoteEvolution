@@ -85,6 +85,9 @@ public interface IEditorCallbacks
     /// <summary>The × of a source chip was clicked.</summary>
     Task OnChipRemoved(Guid textBlockKey, Guid noteId);
 
+    /// <summary>A cross reference was clicked; <paramref name="targetId"/> is the <c>id::</c> it refers to.</summary>
+    Task OnReferenceClicked(Guid targetId);
+
     /// <summary>
     /// A note card was dropped into the editor. <paramref name="afterTextBlockKey"/> is the key of the text block the
     /// drop point follows, or of the heading it directly follows (the start of that section), or <c>null</c> for the
