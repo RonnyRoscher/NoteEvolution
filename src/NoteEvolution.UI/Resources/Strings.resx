@@ -758,6 +758,9 @@
   <data name="HandledPlaceLabel" xml:space="preserve">
     <value>Fundstelle im Buch</value>
   </data>
+  <data name="HandledNote" xml:space="preserve">
+    <value>Notiz</value>
+  </data>
   <data name="HandledPlaceUnknown" xml:space="preserve">
     <value>Stelle unbekannt</value>
   </data>

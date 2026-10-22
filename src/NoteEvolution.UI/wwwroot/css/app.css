@@ -1818,6 +1818,42 @@ html, body {
     margin: 2px 0 4px 26px;
 }
 
+.ne-handled-detail {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 2px 0 4px 26px;
+}
+
+.ne-handled-note,
+.ne-handled-preview {
+    flex: 1 1 220px;
+    min-width: 0;
+    padding: 4px 8px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-size: 13px;
+}
+
+.ne-handled-note summary {
+    color: var(--fg-muted);
+    cursor: pointer;
+}
+
+.ne-handled-note-text,
+.ne-handled-preview-text {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.ne-handled-note-children {
+    margin-left: 16px;
+}
+
+.ne-handled-preview-path {
+    color: var(--fg-muted);
+    font-size: 12px;
+}
 .ne-handled-page,
 .ne-handled-readonly {
     color: var(--fg-muted);

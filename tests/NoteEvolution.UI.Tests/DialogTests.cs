@@ -582,6 +582,76 @@ public class DialogTests : UiTestContext
     }
 
     [Fact]
+    public async Task Handled_ShowsTheFullNoteWithSubPoints()
+    {
+        using var tv = TestVault.Create(
+            ("pages/Buch - Alpha.md", "title:: Alpha\ntype:: book\n\n- # Eins\n"),
+            (NotesPath, "- [handled] Hauptpunkt\n\t- Unterpunkt A\n\t\t- Tiefer B\n- Drei\n"));
+        await OpenSessionAsync(tv);
+        var cut = Render<HandledWizard>();
+
+        var note = cut.Find(".ne-handled-note");
+        Assert.True(note.HasAttribute("open"));
+        Assert.Contains("Hauptpunkt", note.TextContent);
+        Assert.Contains("Unterpunkt A", note.TextContent);
+        Assert.Contains("Tiefer B", note.TextContent);
+        Assert.Empty(cut.FindAll(".ne-handled-preview"));
+    }
+
+    [Fact]
+    public async Task Handled_ChosenPlace_ShowsItsTextAndPath()
+    {
+        var tv = PlacementVault();
+        await OpenWithAiAsync(tv);
+        var cut = Render<HandledWizard>();
+        WaitForPlaces(cut, () => Assert.Equal(2, cut.FindAll(".ne-handled-place").Count));
+        Assert.Empty(cut.FindAll(".ne-handled-preview"));
+
+        var place = Place(cut, 0);
+        place.Change(OptionFor(place, SleepText));
+
+        var preview = cut.Find(".ne-handled-preview");
+        Assert.Equal(SleepText, preview.QuerySelector(".ne-handled-preview-text")!.TextContent);
+        Assert.Equal("Eins", preview.QuerySelector(".ne-handled-preview-path")!.TextContent);
+    }
+
+    [Fact]
+    public async Task Handled_ChangingThePlace_UpdatesThePreview_UnknownClearsIt()
+    {
+        var tv = PlacementVault();
+        await OpenWithAiAsync(tv);
+        var cut = Render<HandledWizard>();
+        WaitForPlaces(cut, () => Assert.Equal(2, cut.FindAll(".ne-handled-place").Count));
+
+        Place(cut, 0).Change(OptionFor(Place(cut, 0), SleepText));
+        Assert.Equal(SleepText, cut.Find(".ne-handled-preview-text").TextContent);
+
+        Place(cut, 0).Change(OptionFor(Place(cut, 0), "Suppe kochen"));
+        Assert.Equal("Suppe kochen mit Gemüse", cut.Find(".ne-handled-preview-text").TextContent);
+
+        Place(cut, 0).Change("");
+        Assert.Empty(cut.FindAll(".ne-handled-preview"));
+    }
+
+    [Fact]
+    public async Task Handled_LongPlaceText_IsCutAt400()
+    {
+        var tv = TestVault.Create(
+            ("pages/Buch - Alpha.md", $"title:: Alpha\ntype:: book\n\n- # Eins\n\t- {SleepText} {new string('x', 600)}\n"),
+            (NotesPath, "- [handled] Schlaf und Träume\n- Drei\n"));
+        _aiVaults.Add(tv);
+        await OpenWithAiAsync(tv);
+        var cut = Render<HandledWizard>();
+        WaitForPlaces(cut, () => Assert.Single(cut.FindAll(".ne-handled-place")));
+
+        Place(cut, 0).Change(OptionFor(Place(cut, 0), SleepText));
+
+        var text = cut.Find(".ne-handled-preview-text").TextContent;
+        Assert.Equal(400, text.Length);
+        Assert.EndsWith("…", text);
+    }
+
+    [Fact]
     public async Task Handled_DefaultUnknownPlace_AsBefore()
     {
         var tv = PlacementVault();

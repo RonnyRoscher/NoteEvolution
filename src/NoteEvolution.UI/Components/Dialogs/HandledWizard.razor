@@ -76,6 +76,19 @@
                             }
                         </select>
                     }
+                    <div class="ne-handled-detail">
+                        <details class="ne-handled-note" open>
+                            <summary>@L["HandledNote"]</summary>
+                            <div class="ne-handled-note-text">@NoteText(note.Block)</div>
+                        </details>
+                        @if (PreviewOf(key) is { } preview)
+                        {
+                            <div class="ne-handled-preview">
+                                <div class="ne-handled-preview-path">@preview.Path</div>
+                                <div class="ne-handled-preview-text">@preview.Text</div>
+                            </div>
+                        }
+                    </div>
                 </li>
             }
         </ul>
@@ -260,6 +273,57 @@
                     $"{Excerpt.FirstLine(book.FindTextBlock(hit.TextBlockKey)!.Text, ExcerptLength)} – {SearchTab.Percent(hit.Score, best)} %")),
         ];
     }
+
+    /// <summary>The longest text of the chosen place that is shown.</summary>
+    private const int PreviewLength = 400;
+
+    private sealed record Preview(string Path, string Text);
+
+    /// <summary>The text and section path of the place chosen for the note, from the chosen book; none for an unknown place.</summary>
+    private Preview? PreviewOf(Guid noteKey)
+    {
+        if (!_placeChoice.TryGetValue(noteKey, out var textBlockKey)
+            || State.Session?.Vault.FindBook(_bookName ?? "")?.FindTextBlock(textBlockKey) is not { } textBlock)
+        {
+            return null;
+        }
+
+        var text = textBlock.Text.Trim();
+        return new Preview(HeadingPath(textBlock.Section), text.Length <= PreviewLength ? text : text[..(PreviewLength - 1)] + "…");
+    }
+
+    /// <summary>The titles from the book's top level down to <paramref name="section"/>, joined; empty for the root (prologue).</summary>
+    private static string HeadingPath(OutlineNode section)
+    {
+        var titles = new List<string>();
+        for (var node = section; node is { Level: > 0 }; node = node.Parent)
+        {
+            titles.Add(node.Title);
+        }
+
+        titles.Reverse();
+        return string.Join(" / ", titles);
+    }
+
+    /// <summary>The content of a note block and, indented, of its sub-points.</summary>
+    private static RenderFragment NoteText(Block block) => builder =>
+    {
+        builder.OpenElement(0, "div");
+        builder.AddAttribute(1, "class", "ne-handled-note-line");
+        builder.AddContent(2, block.Content);
+        builder.CloseElement();
+        if (block.Children.Count > 0)
+        {
+            builder.OpenElement(3, "div");
+            builder.AddAttribute(4, "class", "ne-handled-note-children");
+            foreach (var child in block.Children)
+            {
+                builder.AddContent(5, NoteText(child));
+            }
+
+            builder.CloseElement();
+        }
+    };
 
     private void Select(Guid key, bool on)
     {
