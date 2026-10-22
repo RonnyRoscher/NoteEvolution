@@ -102,6 +102,24 @@ public class CrossRefTests
     }
 
     [Fact]
+    public void Of_ReferenceInASubPoint_IsIndexedOnceUnderTheParagraph()
+    {
+        var book = Load(
+            "title:: T\ntype:: book\n\n" +
+            "- # H\n" +
+            $"\t- Ziel\n\t  id:: {A}\n" +
+            $"\t- Eigener Text {R(A)}\n" +
+            $"\t\t- Unterpunkt {R(A)} und {R(A)}\n");
+
+        var sources = CrossRefIndex.Of(book).To(A);
+
+        Assert.Equal(3, sources.Count);
+        var textBlock = book.Root.Items.OfType<OutlineNode>().Single().Items.OfType<TextBlock>().Last();
+        Assert.Equal(1, sources.Count(s => s.ElementKey == textBlock.Key));
+        Assert.Equal(2, sources.Count(s => s.ElementKey == textBlock.Paragraphs.Single().Block.Key));
+    }
+
+    [Fact]
     public void Missing_ListsUnknownIdsAndSubPointTargets()
     {
         var book = Load(Doc);

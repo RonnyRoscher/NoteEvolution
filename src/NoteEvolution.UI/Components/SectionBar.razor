@@ -144,6 +144,9 @@
     /// <summary>Whether the list of places referring to the element at the cursor is open.</summary>
     private bool _backExpanded;
 
+    /// <summary>The element the list of references was opened for.</summary>
+    private Guid? _backKey;
+
     /// <summary>The cross reference index of <see cref="_indexBook"/>; the book is an immutable snapshot, so it is kept until the instance changes.</summary>
     private CrossRefIndex? _index;
 
@@ -192,6 +195,13 @@
     /// </summary>
     protected override void OnParametersSet()
     {
+        // The list of references belongs to one element: it closes when the marked element changes.
+        if (Element?.Key != _backKey)
+        {
+            _backKey = Element?.Key;
+            _backExpanded = false;
+        }
+
         if (Locked || !ManuscriptCommands.CanInsertReference(State))
         {
             _picking = false;
@@ -234,7 +244,7 @@
         _ => L["RangeDetail"],
     };
 
-    /// <summary>The references to the heading or text block <paramref name="element"/> (by its <c>id::</c>), in book order.</summary>
+    /// <summary>The elements referring to the heading or text block <paramref name="element"/> (by its <c>id::</c>), once each, in book order.</summary>
     private IReadOnlyList<CrossRefSource> BackRefsOf(Book book, BookElement element)
     {
         Guid? id = element.Kind switch
@@ -254,7 +264,8 @@
             _indexBook = book;
         }
 
-        return _index!.To(targetId);
+        // Each referring element once, in book order, however often it names the target.
+        return [.. _index!.To(targetId).DistinctBy(source => source.ElementKey)];
     }
 
     /// <summary>"Abschnitt › Textanfang" of the text block holding the reference.</summary>

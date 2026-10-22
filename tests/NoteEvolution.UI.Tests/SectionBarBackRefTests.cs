@@ -115,10 +115,30 @@ public class SectionBarBackRefTests : UiTestContext
         cut.WaitForAssertion(() => Assert.Equal(3, _vault.Read(BookPath).Split(TargetId).Length - 1));
 
         await MoveToAsync(cut, "Erster Text");
-        cut.WaitForAssertion(() => Assert.Equal(Text("SectionBackRefsOpen", 2), cut.Find(".ne-sec-backrefs").TextContent.Trim()));
+        cut.WaitForAssertion(() => Assert.Equal(Text("SectionBackRefs", 2), cut.Find(".ne-sec-backrefs").TextContent.Trim()));
+        cut.Find(".ne-sec-backrefs").Click();
         var entries = cut.FindAll(".ne-sec-backref").Select(e => e.TextContent.Trim()).ToList();
         Assert.Equal(2, entries.Count);
         Assert.Equal("Eins › Zweiter → Text", entries[0]);
         Assert.StartsWith("Zwei › Vierter", entries[1]);
+    }
+
+    [Fact]
+    public async Task BackRefs_TwoReferencesInOneBlock_CountOnce_ListCollapsesWithTheElement()
+    {
+        var text = BookText.Replace($"Zweiter (({TargetId})) Text", $"Zweiter (({TargetId})) und (({TargetId})) Text");
+        File.WriteAllText(Path.Combine(_vault.Root, BookPath), text);
+        var cut = await RenderAsync();
+        await MoveToAsync(cut, "Erster Text");
+        cut.WaitForAssertion(() => Assert.Equal(Text("SectionBackRefsOne"), cut.Find(".ne-sec-backrefs").TextContent.Trim()));
+        cut.Find(".ne-sec-backrefs").Click();
+        Assert.Single(cut.FindAll(".ne-sec-backref"));
+
+        // Another element with references starts collapsed.
+        await MoveToAsync(cut, "Dritter Text");
+        cut.WaitForAssertion(() => Assert.Empty(cut.FindAll(".ne-sec-backref-list")));
+        await MoveToAsync(cut, "Erster Text");
+        cut.WaitForAssertion(() => Assert.Equal(Text("SectionBackRefsOne"), cut.Find(".ne-sec-backrefs").TextContent.Trim()));
+        Assert.Empty(cut.FindAll(".ne-sec-backref-list"));
     }
 }
