@@ -28,6 +28,7 @@ public abstract class UiTestContext : BunitContext
 
     protected UiTestContext()
     {
+        State = new AppState(Time);
         Services.AddLocalization();
         Services.AddLogging();
         Services.AddSingleton<IPlatformServices>(Platform);
@@ -50,6 +51,9 @@ public abstract class UiTestContext : BunitContext
 
         // Keeps the selected option of a list in view (index.html).
         JSInterop.SetupVoid("neLayout.scrollOptionIntoView", _ => true).SetVoidResult();
+
+        // The header registers for Alt+Left/Right, which index.html catches in the whole window.
+        JSInterop.SetupVoid("neNav.register", _ => true).SetVoidResult();
     }
 
     /// <summary>The editor every rendered <c>EditorPane</c> talks to.</summary>
@@ -62,7 +66,8 @@ public abstract class UiTestContext : BunitContext
 
     protected UiSettings Settings { get; } = new();
 
-    protected AppState State { get; } = new();
+    /// <summary>The app state; its cursor dwell (the back/forward history) runs on <see cref="Time"/>.</summary>
+    protected AppState State { get; }
 
     protected FakeClock Clock { get; } = new(new DateTimeOffset(2026, 10, 6, 9, 0, 0, TimeSpan.FromHours(2)));
 

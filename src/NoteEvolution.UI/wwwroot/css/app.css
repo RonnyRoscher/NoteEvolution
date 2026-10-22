@@ -108,6 +108,13 @@ html, body {
     flex: 1;
 }
 
+/* Back and forward between the active blocks (spec 3), left of undo */
+.ne-nav-back,
+.ne-nav-forward {
+    padding-left: 6px;
+    padding-right: 6px;
+}
+
 .ne-book-select {
     flex: 0 1 180px;
     min-width: 0;

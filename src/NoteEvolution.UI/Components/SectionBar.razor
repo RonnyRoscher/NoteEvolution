@@ -103,7 +103,7 @@
                             }
                             else
                             {
-                                <button type="button" class="ne-sec-source" @onclick="() => State.RevealNote(source.NoteId)">@source.Label</button>
+                                <button type="button" class="ne-sec-source" @onclick="() => RevealSource(source.NoteId)">@source.Label</button>
                             }
                         }
                     </div>
@@ -273,10 +273,25 @@
         RefLabels.SectionTitle(book, source.TextBlock.Section, L) + RefLabels.Separator
         + RefLabels.Excerpt(source.TextBlock.Text, RefLabels.TitleExcerptLength);
 
+    /// <summary>A jump to the referring element, in the back/forward history.</summary>
     private void RevealBackRef(CrossRefSource source)
     {
-        // history: record the jump from the cursor's element to the referring place here (Task 7).
-        State.RevealElement(source.ElementKey);
+        State.JumpTo(source.ElementKey);
+        State.Notify();
+    }
+
+    /// <summary>
+    /// Brings the source's note into view in the notes pane. A jump (spec 3) that leaves the active block where it is:
+    /// the block goes into the back/forward history at once.
+    /// </summary>
+    private void RevealSource(Guid noteId)
+    {
+        if (State.Position is { } here)
+        {
+            State.RecordJump(here);
+        }
+
+        State.RevealNote(noteId);
         State.Notify();
     }
 

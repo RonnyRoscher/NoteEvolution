@@ -85,6 +85,12 @@
   <data name="Undo" xml:space="preserve">
     <value>Rückgängig</value>
   </data>
+  <data name="NavBack" xml:space="preserve">
+    <value>Zurück (Alt+←)</value>
+  </data>
+  <data name="NavForward" xml:space="preserve">
+    <value>Vor (Alt+→)</value>
+  </data>
   <data name="PdfExport" xml:space="preserve">
     <value>PDF-Export</value>
   </data>

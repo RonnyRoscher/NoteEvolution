@@ -222,9 +222,10 @@
     private static string Pct(int count, int scale) =>
         (100.0 * count / scale).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture) + "%";
 
+    /// <summary>Reveals the entry's section in the editor, a jump in the back/forward history.</summary>
     private void Select(OutlineNode node)
     {
-        State.RevealElement(node.Key);
+        State.JumpTo(node.Key);
         State.Notify();
     }
 }

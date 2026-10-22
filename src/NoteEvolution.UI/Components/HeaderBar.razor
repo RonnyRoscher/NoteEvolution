@@ -3,8 +3,10 @@
 @using NoteEvolution.Core.Model
 @using Microsoft.Extensions.DependencyInjection
 @using NoteEvolution.AI.Understanding
+@using Microsoft.JSInterop
 @implements IDisposable
 @inject AppState State
+@inject IJSRuntime JS
 @inject UiSettings Settings
 @inject IPlatformServices Platform
 @inject IStringLocalizer<Strings> L
@@ -46,6 +48,11 @@
         </select>
     }
 
+    @* Back and forward between the active blocks (spec 3); Alt+Left/Right in the whole window (index.html). *@
+    <button type="button" class="ne-nav-back" disabled="@(!State.CanGoBack)" title="@L["NavBack"]" aria-label="@L["NavBack"]"
+            @onclick="GoBack">◀</button>
+    <button type="button" class="ne-nav-forward" disabled="@(!State.CanGoForward)" title="@L["NavForward"]" aria-label="@L["NavForward"]"
+            @onclick="GoForward">▶</button>
     <button type="button" class="ne-undo" disabled="@(!CanUndo)" title="@_session?.Undo.NextDescription"
             @onclick="Undo">@L["Undo"]</button>
     @if (_undoError is not null)
@@ -178,10 +185,10 @@
     /// <summary>Why the last undo was refused or failed; shown until the next undoable operation.</summary>
     private string? _undoError;
 
-    [Parameter] public EventCallback OnOpenVault { get; set; }
+    /// <summary>The header as index.html calls it for Alt+Left/Right; created on the first render.</summary>
+    private DotNetObjectReference<HeaderBar>? _self;
 
-    /// <summary>Raised after a book was chosen in the selection (and made the current book).</summary>
-    [Parameter] public EventCallback<Book> OnBookSelected { get; set; }
+    [Parameter] public EventCallback OnOpenVault { get; set; }
 
     /// <summary>Raised when a page that is no book yet was chosen; the current book stays until it is converted.</summary>
     [Parameter] public EventCallback<Page> OnConvertPage { get; set; }
@@ -220,8 +227,18 @@
         }
     }
 
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _self = DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("neNav.register", _self);
+        }
+    }
+
     public void Dispose()
     {
+        _self?.Dispose();
         State.Changed -= OnStateChanged;
         Unsubscribe();
         if (_ai is not null)
@@ -424,11 +441,40 @@
             return;
         }
 
-        State.CurrentBook = book;
-        State.CurrentSectionKey = book.Root.Key;
-        State.Cursor = null;
+        // A jump in the back/forward history; the shell remembers the book (AppState.BookSelected).
+        State.SelectBook(book);
         State.Notify();
-        await OnBookSelected.InvokeAsync(book);
+    }
+
+    /// <summary>Alt+Left (<c>back</c>) or Alt+Right (<c>forward</c>), caught by index.html in the whole window; others are ignored.</summary>
+    [JSInvokable]
+    public Task Navigate(string direction) => direction switch
+    {
+        "back" => InvokeAsync(GoBack),
+        "forward" => InvokeAsync(GoForward),
+        _ => Task.CompletedTask,
+    };
+
+    private Task GoBack() => GoAsync(State.GoBackAsync, State.CanGoBack);
+
+    private Task GoForward() => GoAsync(State.GoForwardAsync, State.CanGoForward);
+
+    private async Task GoAsync(Func<Task> go, bool can)
+    {
+        if (!can)
+        {
+            return;
+        }
+
+        try
+        {
+            await go();
+        }
+        catch (Exception ex)
+        {
+            // The editor's text could not be saved: the view stays where it is.
+            Logger.LogError(ex, "Saving the editor before going back or forward failed");
+        }
     }
 
     private async Task OpenHandled()

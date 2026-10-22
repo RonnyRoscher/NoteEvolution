@@ -351,7 +351,8 @@
 
     /// <summary>
     /// A click on a cross reference jumps to its target (spec 2.3): the heading or text block becomes the element at the
-    /// cursor and is revealed (<see cref="AppState.RevealElement"/>). A reference without a target goes nowhere.
+    /// cursor and is revealed, a jump in the back/forward history (<see cref="AppState.JumpTo"/>). A reference without a
+    /// target goes nowhere.
     /// </summary>
     public Task OnReferenceClicked(Guid targetId)
     {
@@ -360,8 +361,7 @@
             return Task.CompletedTask;
         }
 
-        // history: record the jump from the cursor's element to the target here (Task 7).
-        State.RevealElement(target.Heading?.Key ?? target.TextBlock!.Key);
+        State.JumpTo(target.Heading?.Key ?? target.TextBlock!.Key);
         State.Notify();
         return Task.CompletedTask;
     }

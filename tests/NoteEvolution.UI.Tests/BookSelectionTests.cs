@@ -125,6 +125,20 @@ public class BookSelectionTests : UiTestContext
     }
 
     [Fact]
+    public void BackIntoTheOtherBook_IsRemembered()
+    {
+        using var tv = Mixed();
+        var cut = RenderShellWith(tv);
+        var beta = State.Session!.Vault.Books.Single(b => b.Title == "Beta");
+        cut.Find(".ne-book-select").Change(beta.LinkName);
+
+        cut.Find(".ne-nav-back").Click();
+
+        cut.WaitForAssertion(() => Assert.Equal("Alpha", State.CurrentBook!.Title));
+        Assert.Equal("pages/Buch - Alpha.md", UiSettings.Load(Platform.UserDataDirectory).LastBookOf(tv.Root));
+    }
+
+    [Fact]
     public void Startup_SelectsTheRememberedBook()
     {
         using var tv = Mixed();

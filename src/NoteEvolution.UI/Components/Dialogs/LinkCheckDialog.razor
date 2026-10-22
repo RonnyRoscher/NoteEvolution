@@ -302,8 +302,7 @@
             return;
         }
 
-        State.CurrentBook = book;
-        State.RevealElement(TargetOf(book, blockKey));
+        State.JumpTo(TargetOf(book, blockKey), book);
         State.Notify();
         await OnClose.InvokeAsync();
     }

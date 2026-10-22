@@ -19,7 +19,7 @@
 <div class="ne-shell" data-theme="@ThemeAttribute" style="--font-size: @(Settings.FontSizePt)pt; --line-width: @(Settings.LineWidthCh)ch;">
     <HeaderBar OnOpenVault="PickVaultAsync" OnPdfExport="() => Show(Dialog.Pdf)" OnLinkCheck="() => Show(Dialog.LinkCheck)"
                OnSettings="() => Show(Dialog.Settings)" OnHandledWizard="() => Show(Dialog.Handled)" OnDraftWizard="() => ShowDraft(null)"
-               OnBookSelected="RememberBook" OnConvertPage="ShowDraft" />
+               OnConvertPage="ShowDraft" />
 
     @if (_hintVisible)
     {
@@ -399,6 +399,7 @@
         _ = _language?.RefreshAsync(CancellationToken.None);
         State.Changed += OnStateChanged;
         State.AiModelDialogRequested += OnAiModelDialogRequested;
+        State.BookSelected += RememberBook;
         // The host page's splash screen (index.html) says what the start waits for and fades out after it (the last
         // vault is open, or there is none). It is only a display, so the start never waits for it.
         try
@@ -432,6 +433,7 @@
     {
         State.Changed -= OnStateChanged;
         State.AiModelDialogRequested -= OnAiModelDialogRequested;
+        State.BookSelected -= RememberBook;
         if (_subscribed is not null)
         {
             _subscribed.PagesChanged -= OnPagesChanged;

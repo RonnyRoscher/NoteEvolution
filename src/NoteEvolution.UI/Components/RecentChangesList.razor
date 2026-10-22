@@ -125,7 +125,7 @@
 
     private void Reveal(RecentChange item)
     {
-        State.RevealElement(item.RevealKey);
+        State.JumpTo(item.RevealKey);
         State.Notify();
     }
 }

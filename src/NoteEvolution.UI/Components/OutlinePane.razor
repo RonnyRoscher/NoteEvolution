@@ -240,11 +240,11 @@ else
 
     /// <summary>
     /// Scrolls the editor to the node's heading (the prologue: the start of the book) and puts the cursor there; the
-    /// node becomes the current section. A second click reveals it again.
+    /// node becomes the current section. A second click reveals it again. A jump in the back/forward history.
     /// </summary>
     internal void Select(OutlineNode node)
     {
-        State.RevealElement(node.Key);
+        State.JumpTo(node.Key);
         State.Notify();
     }
 
