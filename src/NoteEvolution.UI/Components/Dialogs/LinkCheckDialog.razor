@@ -96,7 +96,20 @@
                     </li>
                 }
             </ul>
-            <button type="button" class="ne-linkcheck-crossrefs-remove" @onclick="RemoveCrossRefsAsync">@L["LinkCheckCrossRefsRemove"]</button>
+            @if (_confirmingRemoval)
+            {
+                @* The removal cannot be undone (like the checker's other fixes): it asks first. *@
+                var count = _report.MissingCrossRefs.Count;
+                <p class="ne-linkcheck-crossrefs-confirm" role="alert">
+                    @(count == 1 ? L["LinkCheckCrossRefsConfirmOne"] : L["LinkCheckCrossRefsConfirm", count])
+                </p>
+                <button type="button" class="ne-linkcheck-crossrefs-yes" @onclick="RemoveCrossRefsAsync">@L["Yes"]</button>
+                <button type="button" class="ne-linkcheck-crossrefs-no" @onclick="() => _confirmingRemoval = false">@L["Cancel"]</button>
+            }
+            else
+            {
+                <button type="button" class="ne-linkcheck-crossrefs-remove" @onclick="() => _confirmingRemoval = true">@L["LinkCheckCrossRefsRemove"]</button>
+            }
         }
     }
     </ChildContent>
@@ -109,6 +122,7 @@
     private LinkCheckReport? _report;
     private int _fixed;
     private int _crossRefsRemoved;
+    private bool _confirmingRemoval;
     private string? _message;
 
     [Parameter] public EventCallback OnClose { get; set; }
@@ -215,6 +229,7 @@
     /// </summary>
     private async Task RemoveCrossRefsAsync()
     {
+        _confirmingRemoval = false;
         _message = null;
         if (State.Session is not { } session || _report is not { } report)
         {

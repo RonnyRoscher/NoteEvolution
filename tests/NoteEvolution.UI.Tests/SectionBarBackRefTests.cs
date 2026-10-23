@@ -124,6 +124,22 @@ public class SectionBarBackRefTests : UiTestContext
     }
 
     [Fact]
+    public async Task BackRefs_FromASubPoint_ShowsTheSubPointsOwnText()
+    {
+        var text = BookText.Replace("\t- Dritter Text\n", $"\t- Dritter Text\n\t\t- Unterpunkt (({TargetId})) hier #notiz\n");
+        File.WriteAllText(Path.Combine(_vault.Root, BookPath), text);
+        var cut = await RenderAsync();
+        await MoveToAsync(cut, "Erster Text");
+        cut.WaitForAssertion(() => Assert.Equal(Text("SectionBackRefs", 2), cut.Find(".ne-sec-backrefs").TextContent.Trim()));
+
+        cut.Find(".ne-sec-backrefs").Click();
+
+        Assert.Equal(
+            ["Eins › Zweiter → Text", "Zwei › Unterpunkt → hier"],
+            cut.FindAll(".ne-sec-backref").Select(e => e.TextContent.Trim()));
+    }
+
+    [Fact]
     public async Task BackRefs_TwoReferencesInOneBlock_CountOnce_ListCollapsesWithTheElement()
     {
         var text = BookText.Replace($"Zweiter (({TargetId})) Text", $"Zweiter (({TargetId})) und (({TargetId})) Text");

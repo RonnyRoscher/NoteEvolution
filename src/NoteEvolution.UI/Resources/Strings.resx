@@ -351,6 +351,10 @@
     <value>Nichts gefunden</value>
     <comment>In der Suche nach dem Ziel eines Verweises, wenn nichts passt</comment>
   </data>
+  <data name="RefPickerMore" xml:space="preserve">
+    <value>… und {0} weitere – Suche eingrenzen</value>
+    <comment>Am Ende der Liste in der Suche nach dem Ziel eines Verweises, wenn mehr Treffer passen als gezeigt werden; {0} = Anzahl der nicht gezeigten</comment>
+  </data>
   <data name="RefLabelHeading" xml:space="preserve">
     <value>→ {0}</value>
     <comment>Ein Verweis auf eine Überschrift im Text; {0} = ihr Titel</comment>
@@ -725,6 +729,9 @@
   <data name="Cancel" xml:space="preserve">
     <value>Abbrechen</value>
   </data>
+  <data name="Yes" xml:space="preserve">
+    <value>Ja</value>
+  </data>
   <data name="Save" xml:space="preserve">
     <value>Speichern</value>
   </data>
@@ -840,6 +847,14 @@
   </data>
   <data name="LinkCheckCrossRefsRemove" xml:space="preserve">
     <value>Verweise entfernen</value>
+  </data>
+  <data name="LinkCheckCrossRefsConfirm" xml:space="preserve">
+    <value>{0} Verweise entfernen? Das lässt sich nicht rückgängig machen.</value>
+    <comment>Rückfrage vor „Verweise entfernen“ in der Linkprüfung; {0} = Anzahl (mehr als einer)</comment>
+  </data>
+  <data name="LinkCheckCrossRefsConfirmOne" xml:space="preserve">
+    <value>1 Verweis entfernen? Das lässt sich nicht rückgängig machen.</value>
+    <comment>Rückfrage vor „Verweise entfernen“ in der Linkprüfung, ein Verweis</comment>
   </data>
   <data name="LinkCheckCrossRefsRemoved" xml:space="preserve">
     <value>{0} Querverweise ohne Ziel entfernt.</value>

@@ -1,4 +1,5 @@
 @using NoteEvolution.Core.Books
+@using NoteEvolution.Core.Text
 @using NoteEvolution.Core.Vaults
 @using NoteEvolution.UI.Editor
 @inject AppState State
@@ -302,10 +303,18 @@
         return [.. _index!.To(targetId).DistinctBy(source => source.ElementKey)];
     }
 
-    /// <summary>"Abschnitt › Textanfang" of the text block holding the reference.</summary>
-    private string BackRefLabel(Book book, CrossRefSource source) =>
-        RefLabels.SectionTitle(book, source.TextBlock.Section, L) + RefLabels.Separator
-        + RefLabels.Excerpt(source.TextBlock.Text, RefLabels.TitleExcerptLength);
+    /// <summary>
+    /// "Abschnitt › Textanfang" of the element holding the reference: the text block's text, or a sub-point's own text
+    /// (without its <c>#notiz</c> tag).
+    /// </summary>
+    private string BackRefLabel(Book book, CrossRefSource source)
+    {
+        var text = source.TextBlock.Paragraphs.FirstOrDefault(p => p.Block.Key == source.ElementKey) is { } paragraph
+            ? NoteTag.Remove(paragraph.Block.Content)
+            : source.TextBlock.Text;
+        return RefLabels.SectionTitle(book, source.TextBlock.Section, L) + RefLabels.Separator
+               + RefLabels.Excerpt(text, RefLabels.TitleExcerptLength);
+    }
 
     /// <summary>A jump to the referring element, in the back/forward history.</summary>
     private void RevealBackRef(CrossRefSource source)

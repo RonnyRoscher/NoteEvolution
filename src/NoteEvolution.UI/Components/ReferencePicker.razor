@@ -23,6 +23,10 @@
                     class="ne-ref-option @(candidate.IsHeading ? "ne-ref-heading" : "ne-ref-text") @(i == _selected ? "ne-ref-selected" : "")"
                     title="@candidate.Label" @onclick="() => OnPick.InvokeAsync(candidate.Key)">@candidate.Label</button>
         }
+        @if (_hidden > 0)
+        {
+            <span class="ne-ref-none ne-ref-more">@L["RefPickerMore", _hidden]</span>
+        }
     </div>
 </div>
 
@@ -34,7 +38,13 @@
     /// <summary>The arrow keys moved the selection: it is scrolled into view after the render.</summary>
     private bool _scrollPending;
     private List<Candidate> _candidates = [];
+    /// <summary>The matches shown: at most <see cref="MaxShown"/>, so a large book does not render thousands of options.</summary>
     private List<Candidate> _matches = [];
+
+    /// <summary>How many further matches are not shown (typing narrows the list).</summary>
+    private int _hidden;
+
+    private const int MaxShown = 200;
     private string _query = "";
     private int _selected;
     private bool _focused;
@@ -97,9 +107,11 @@
     private void Filter()
     {
         var query = _query.Trim();
-        _matches = query.Length == 0
+        var all = query.Length == 0
             ? _candidates
             : [.. _candidates.Where(candidate => candidate.Label.Contains(query, StringComparison.CurrentCultureIgnoreCase))];
+        _matches = all.Count > MaxShown ? all[..MaxShown] : all;
+        _hidden = all.Count - _matches.Count;
         _selected = Math.Clamp(_selected, 0, Math.Max(0, _matches.Count - 1));
     }
 

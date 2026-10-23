@@ -401,10 +401,20 @@ public class DialogTests : UiTestContext
         Assert.Contains("Siehe", item.TextContent);
         Assert.Empty(cut.FindAll(".ne-linkcheck-clean"));
 
+        // Removing cannot be undone: it asks first, and "Abbrechen" changes nothing.
         cut.Find(".ne-linkcheck-crossrefs-remove").Click();
+        Assert.Equal("1 Verweis entfernen? Das lässt sich nicht rückgängig machen.", cut.Find(".ne-linkcheck-crossrefs-confirm").TextContent);
+        cut.Find(".ne-linkcheck-crossrefs-no").Click();
+        Assert.Empty(cut.FindAll(".ne-linkcheck-crossrefs-confirm"));
+        Assert.Contains($"(({gone}))", tv.Read("pages/Buch - Alpha.md"));
+
+        cut.Find(".ne-linkcheck-crossrefs-remove").Click();
+        Assert.Equal("Ja", cut.Find(".ne-linkcheck-crossrefs-yes").TextContent);
+        cut.Find(".ne-linkcheck-crossrefs-yes").Click();
 
         Assert.Equal(
             "title:: Alpha\ntype:: book\n\n- # Eins\n\t- Siehe dort\n\t- Anderer Text\n", tv.Read("pages/Buch - Alpha.md"));
+        Assert.Empty(cut.FindAll(".ne-linkcheck-crossrefs-confirm"));
         cut.WaitForAssertion(() => Assert.Empty(cut.FindAll(".ne-linkcheck-crossref")));
         Assert.Single(cut.FindAll(".ne-linkcheck-clean"));
         Assert.Contains("1", cut.Find(".ne-linkcheck-crossrefs-removed").TextContent);
@@ -420,6 +430,7 @@ public class DialogTests : UiTestContext
         var cut = Render<LinkCheckDialog>();
 
         cut.Find(".ne-linkcheck-crossrefs-remove").Click();
+        cut.Find(".ne-linkcheck-crossrefs-yes").Click();
 
         Assert.Equal(text, tv.Read("pages/Buch - Alpha.md"));
         cut.WaitForAssertion(() => Assert.Equal(string.Format(Text("LinkCheckCrossRefsReadOnly"), 1), cut.Find(".ne-dialog-error").TextContent));

@@ -123,6 +123,34 @@ public partial class ReferencePickerTests : UiTestContext
     }
 
     [Fact]
+    public void Picker_ShowsAtMost200Matches_FilterFirst()
+    {
+        var text = "title:: Alpha\ntype:: book\n\n- # Eins\n" + string.Concat(Enumerable.Range(1, 250).Select(i => $"\t- Text {i}\n"));
+        var book = Book.Load(LogseqParser.Parse("Buch - Alpha.md", System.Text.Encoding.UTF8.GetBytes(text)));
+
+        var cut = Render<ReferencePicker>(p => p.Add(x => x.Book, book));
+
+        // 251 candidates: the first 200 are shown, the rest is counted; typing narrows it.
+        Assert.Equal(200, cut.FindAll(".ne-ref-option").Count);
+        Assert.Equal(string.Format(Text("RefPickerMore"), 51), cut.Find(".ne-ref-more").TextContent.Trim());
+        cut.Find(".ne-ref-query").Input("Text 24");
+        Assert.Equal(
+            ["Eins › Text 24", "Eins › Text 240", "Eins › Text 241", "Eins › Text 242", "Eins › Text 243", "Eins › Text 244",
+             "Eins › Text 245", "Eins › Text 246", "Eins › Text 247", "Eins › Text 248", "Eins › Text 249"],
+            cut.FindAll(".ne-ref-option").Select(o => o.TextContent.Trim()));
+        Assert.Empty(cut.FindAll(".ne-ref-more"));
+
+        // The arrow keys stop at the last option shown.
+        cut.Find(".ne-ref-query").Input("");
+        for (var i = 0; i < 210; i++)
+        {
+            cut.Find(".ne-ref-query").KeyDown("ArrowDown");
+        }
+
+        Assert.Equal("Eins › Text 199", cut.Find(".ne-ref-option.ne-ref-selected").TextContent.Trim());
+    }
+
+    [Fact]
     public async Task Picker_ListsHeadingsAndTextBlocks_FiltersIgnoringCase()
     {
         var cut = await RenderAsync();
