@@ -78,7 +78,8 @@ Am unteren Rand der Markierung stehen die Abschnittsknöpfe und die Quellen:
 nimmt es zurück. Alle Tastenkürzel listet der Knopf **„Tastenkürzel“** in der Kopfzeile.
 
 **Quellen suchen** (nur mit lokaler KI, auf einem Textblock oder Detail): zeigt die bis zu fünf Notizen, die dem
-eigenen Text des Blocks am ähnlichsten sind, mit Datum, Auszug und Prozentwert; schon anderswo verwendete Notizen
+eigenen Text des Blocks am ähnlichsten sind, mit Datum, ganzem Text samt Unterpunkten und Prozentwert (über die
+ganze Breite der Leiste); schon anderswo verwendete Notizen
 stehen mit „verwendet“ dabei (Tooltip: in welchen Büchern), die bisherigen Quellen des Blocks fehlen. „Als Quelle
 verknüpfen“ verknüpft wie der `[handled]`-Assistent: der Block bekommt `source::`, die Notiz
 `used-in:: [[Buch]] ((id))`; das × am Quellen-Chip nimmt es zurück.
@@ -285,10 +286,9 @@ verglichen; dadurch weiß jede Überschrift, worum es in ihren Unterabschnitten 
   `--limit N` für einen kurzen Lauf).
 
 **Systemanzeige:** Rechts in der Kopfzeile stehen Prozessorlast, belegter Arbeitsspeicher und freier Platz auf dem
-Laufwerk des Vaults, dazu den Anteil von NoteEvolution und, wenn es läuft, von Ollama (alle Prozesse `ollama…`
-und `llama-server`, das das Modell rechnet) sowie die Größe der
-Analysedateien des Vaults (`vectors.db` und `understanding.db`): „CPU 63 % (App 12 % · Ollama 40 %) · RAM 9,8/15,8 GB
-(App 0,6 · Ollama 4,9 GB) · Frei 112 GB · Analyse 38 MB“, alle 2 s. Über 90 % CPU oder unter 1 GB freiem Arbeitsspeicher erscheint der Wert in der Warnfarbe.
+Laufwerk des Vaults, dazu als „App“ den Anteil von NoteEvolution zusammen mit Ollama, wenn es läuft (alle Prozesse
+`ollama…` und `llama-server`, das das Modell rechnet), sowie die Größe der Analysedateien des Vaults (`vectors.db` und
+`understanding.db`): „CPU 63 % (App 53 %) · RAM 9,8/15,8 GB (App 5,5 GB) · Frei 112 GB · Analyse 38 MB“, alle 2 s. Über 90 % CPU oder unter 1 GB freiem Arbeitsspeicher erscheint der Wert in der Warnfarbe.
 Abschaltbar in den Einstellungen.
 
 ## Manuelle Abnahme
@@ -441,8 +441,8 @@ Querverweise und Navigation
       Buchwechsel; bei offenem Dialog tut Alt+Pfeil nichts.
 - [ ] PDF: ein Verweis steht als „→ Titel (S. n)“ mit richtiger Seitenzahl; Klick auf Titel und Seitenzahl springt
       im PDF-Betrachter zur Stelle.
-- [ ] Systemanzeige mit laufendem Ollama: Anteil in Klammern neben App, kein Tooltip; ohne Ollama fehlt der Teil.
-      Während das Modell rechnet, entsprechen CPU und RAM von Ollama etwa `llama-server.exe` im Task-Manager.
+- [ ] Systemanzeige: „App“ entspricht etwa NoteEvolution plus `ollama*.exe` und `llama-server.exe` im Task-Manager
+      (CPU und RAM jeweils zusammengezählt); kein Tooltip.
 - [ ] Gliederung: oberste Zeile mit Buchtitel und Wortzahl des ganzen Buchs. Notizbereich: „N Notizen“, mit
       „Verwendete ausblenden“ „M von N Notizen“.
 - [ ] In einer langen Gliederung im Editor zu einem weit entfernten Abschnitt scrollen und hineinklicken: die

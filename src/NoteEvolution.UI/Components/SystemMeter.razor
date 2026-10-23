@@ -6,7 +6,8 @@
 @inject IServiceProvider Services
 @inject IStringLocalizer<Strings> L
 
-@* The system meter in the header (spec 11.2): "CPU 63 % (App 12 % · Ollama 40 %) · RAM 9,8/15,8 GB (App 0,6 · Ollama 4,9 GB) · Frei 112 GB · Analyse 38 MB"; without Ollama its parts are left out. *@
+@* The system meter in the header (spec 11.2): "CPU 63 % (App 53 %) · RAM 9,8/15,8 GB (App 5,5 GB) · Frei 112 GB · Analyse 38 MB";
+   "App" is NoteEvolution and Ollama together (its language model works for the app). *@
 @if (Settings.SystemMeterVisible && _snapshot is { } snapshot)
 {
     <span class="ne-sysmeter@(IsWarning(snapshot) ? " ne-sysmeter-warn" : "")">@Text(snapshot)</span>
@@ -107,10 +108,8 @@
 
     private string Text(SystemSnapshot s)
     {
-        var line = s.OllamaCpuPercent is null && s.OllamaRamGb is null
-            ? L["SysMeter", Whole(s.CpuPercent), Whole(s.AppCpuPercent), Decimal(s.RamUsedGb), Decimal(s.RamTotalGb), Decimal(s.AppRamGb), Whole(s.DiskFreeGb)].Value
-            : L["SysMeterOllama", Whole(s.CpuPercent), Whole(s.AppCpuPercent), Whole(s.OllamaCpuPercent), Decimal(s.RamUsedGb), Decimal(s.RamTotalGb),
-                Decimal(s.AppRamGb), Decimal(s.OllamaRamGb), Whole(s.DiskFreeGb)].Value;
+        var line = L["SysMeter", Whole(s.CpuPercent), Whole(Sum(s.AppCpuPercent, s.OllamaCpuPercent)), Decimal(s.RamUsedGb),
+            Decimal(s.RamTotalGb), Decimal(Sum(s.AppRamGb, s.OllamaRamGb)), Whole(s.DiskFreeGb)].Value;
         return line + (s.AnalysisBytes is { } bytes ? L["SysMeterAnalysis", Size(bytes)].Value : "");
     }
 
@@ -121,6 +120,9 @@
     /// <summary>The warning color: the processor is busier than 90 %, or less than 1 GB of memory is free.</summary>
     private static bool IsWarning(SystemSnapshot s) =>
         s.CpuPercent > 90 || (s.RamTotalGb is { } total && s.RamUsedGb is { } used && total - used < 1);
+
+    /// <summary>The app's share with Ollama's added; Ollama not running (unknown) adds nothing, both unknown stays unknown.</summary>
+    private static double? Sum(double? app, double? ollama) => app is null && ollama is null ? null : (app ?? 0) + (ollama ?? 0);
 
     private static string Whole(double? value) => value?.ToString("0", German) ?? Unknown;
 

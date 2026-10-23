@@ -28,7 +28,7 @@ public class SourceFinderTests : UiTestContext
     private readonly TestVault _vault = TestVault.Create(
         (BookPath, BookText),
         ("journals/2026_03_01.md", "- Schon Quelle\n  id:: " + Linked + "\n  used-in:: [[Buch - Alpha]]\n"),
-        ("journals/2026_03_02.md", "- Frei\n"),
+        ("journals/2026_03_02.md", "- Frei\n\t- Unterpunkt eins\n\t\t- Tiefer\n\t\t  zweite Zeile\n"),
         ("journals/2026_03_03.md", "- Anderswo\n  used-in:: [[Buch - Beta]]\n"));
 
     protected override void Dispose(bool disposing)
@@ -97,7 +97,9 @@ public class SourceFinderTests : UiTestContext
         cut.Find(".ne-sec-find-sources").Click();
 
         cut.WaitForAssertion(() => Assert.Equal(2, cut.FindAll(".ne-source-candidate").Count));
-        Assert.Equal(["Anderswo", "Frei"], cut.FindAll(".ne-source-text").Select(e => e.TextContent.Trim()));
+        // The whole note with its sub-points, not just its first line.
+        Assert.Equal(["Anderswo", "Frei\n– Unterpunkt eins\n  – Tiefer\n    zweite Zeile"],
+            cut.FindAll(".ne-source-text").Select(e => e.TextContent.Trim()));
         Assert.Equal(["100 %", "67 %"], cut.FindAll(".ne-source-percent").Select(e => e.TextContent.Trim()));
         Assert.Equal(["03.03.2026", "02.03.2026"], cut.FindAll(".ne-source-date").Select(e => e.TextContent.Trim()));
         var used = cut.Find(".ne-source-used");
