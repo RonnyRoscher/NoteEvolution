@@ -76,6 +76,12 @@ Am unteren Rand der Markierung stehen die Abschnittsknöpfe und die Quellen:
 **Teilen** (neben „Zusammenfügen“) teilt den Textblock an der Cursorstelle in zwei, wie Strg+Enter; Strg+Z im Editor
 nimmt es zurück. Alle Tastenkürzel listet der Knopf **„Tastenkürzel“** in der Kopfzeile.
 
+**Quellen suchen** (nur mit lokaler KI, auf einem Textblock oder Detail): zeigt die bis zu fünf Notizen, die dem
+eigenen Text des Blocks am ähnlichsten sind, mit Datum, Auszug und Prozentwert; schon anderswo verwendete Notizen
+stehen mit „verwendet“ dabei (Tooltip: in welchen Büchern), die bisherigen Quellen des Blocks fehlen. „Als Quelle
+verknüpfen“ verknüpft wie der `[handled]`-Assistent: der Block bekommt `source::`, die Notiz
+`used-in:: [[Buch]] ((id))`; das × am Quellen-Chip nimmt es zurück.
+
 Jeder Befehl lässt sich mit „Rückgängig“ in der Kopfzeile zurücknehmen, solange danach nichts an der Buchdatei
 geändert wurde. „N Quellen ▸“ klappt die Quellen des Abschnitts auf; ein Klick springt im Reiter Journal zur Notiz.
 Ist „Verwendete ausblenden“ eingeschaltet, erscheint die Notiz stattdessen als Karte oben im Notizbereich.
@@ -435,6 +441,9 @@ Querverweise und Navigation
       Gliederung scrollt die markierte Überschrift in den Sichtbereich; von Hand gescrollt bleibt sie danach stehen.
 - [ ] „Teilen“ mitten in einem verknüpften Textblock: zwei Blöcke, die Notiz hat zwei `used-in`-Einträge.
 - [ ] „Tastenkürzel“ öffnet die Liste; jedes Kürzel darin funktioniert wie beschrieben.
+- [ ] „Quellen suchen“ auf einem Textblock, dessen Notiz kein `[handled]` hatte: die Notiz steht in der Liste;
+      „Als Quelle verknüpfen“ setzt `source::` im Buch und `used-in:: [[Buch]] ((id))` in der Notiz, sie verschwindet
+      aus der Liste; über das × am Chip wieder entfernen, beide Dateien sind wie vorher (bis auf `id::`).
 - [ ] Aufschlüsselung des Sprachmodell-Fortschritts: alle Balken liegen innerhalb des weißen Kastens.
 - [ ] Zusammenfassungen in „Zuletzt geändert“ (nach der Neuberechnung) beginnen nicht mit „Der Autor erklärt“,
       „Der Abschnitt beschreibt“ o. Ä.

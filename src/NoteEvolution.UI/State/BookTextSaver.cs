@@ -287,6 +287,67 @@ public sealed class BookTextSaver(AppState state, ILogger logger)
     }
 
     /// <summary>
+    /// Links the note as a source of the text block (after <see cref="Save"/>): <c>source::</c> on the block,
+    /// <c>used-in::</c> with the block's id on the note (<see cref="ILinkService.Link"/>). Refused like
+    /// <see cref="RemoveSource"/>.
+    /// </summary>
+    public void AddSource(Guid textBlockKey, Guid noteBlockKey)
+    {
+        if (Pending is not null)
+        {
+            return;
+        }
+
+        string? refusal = null;
+        if (Shown is not { } shown || !TryWritableBook(shown, out var book, out refusal))
+        {
+            if (refusal == "EditorConflict")
+            {
+                Message = new AdoptMessage("EditorSourceConflict", true);
+            }
+
+            return;
+        }
+
+        var session = shown.Session;
+        var bookPath = book.Page.FilePath;
+        if (session.Notes.Get(noteBlockKey) is not { } note)
+        {
+            Message = new AdoptMessage("EditorSourceFailed", true);
+            return;
+        }
+
+        if (session.HasOpenConflict(note.Page.FilePath))
+        {
+            Message = new AdoptMessage("EditorSourceConflict", true);
+            return;
+        }
+
+        try
+        {
+            session.Links.Link(book, textBlockKey, noteBlockKey);
+        }
+        catch (FileChangedExternallyException)
+        {
+            session.HandleExternalChange(bookPath);
+            Message = new AdoptMessage("EditorExternalChange", false);
+            return;
+        }
+        catch (Exception ex) when (ex is ArgumentException or IOException or UnauthorizedAccessException or InvalidOperationException)
+        {
+            // Includes a read-only page; nothing was written.
+            logger.LogWarning(ex, "Linking a source failed");
+            Message = new AdoptMessage("EditorSourceFailed", true);
+            return;
+        }
+
+        if (note.Block.Id is { } noteId)
+        {
+            UpdateSearch(session, [noteId]);
+        }
+    }
+
+    /// <summary>
     /// The shown book from the vault, if it may be written: not read-only, no conflict open for it (R26), and not left
     /// partly changed (a page left so is read from the file again first).
     /// </summary>

@@ -45,4 +45,11 @@ public interface IRelevanceService
     /// score only) if it has text blocks. Parameters as for <see cref="WhereTo"/>.
     /// </summary>
     IReadOnlyList<TopicHit> Topics(Guid noteKey, string noteText, Book book, int limit = 3);
+
+    /// <summary>
+    /// The notes that may be where the text block came from: the most similar to its own text (not its neighbours or
+    /// heading path), best first, among those <paramref name="include"/> accepts (rules as for <see cref="Relevant"/>).
+    /// Empty for an unknown or blank text block.
+    /// </summary>
+    IReadOnlyList<SearchHit> Sources(Book book, Guid textBlockKey, Func<Guid, bool> include, int limit = 5);
 }

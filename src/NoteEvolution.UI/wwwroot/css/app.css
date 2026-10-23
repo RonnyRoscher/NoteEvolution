@@ -2415,3 +2415,39 @@ html, body {
 .ne-shortcuts-what {
     margin: 0;
 }
+
+/* „Quellen suchen“ in the section bar: notes that may be where the text block came from */
+.ne-source-finder-head {
+    font-weight: 600;
+    font-size: 12px;
+}
+
+.ne-source-candidate {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 2px 8px;
+    padding: 4px 2px;
+    border-top: 1px solid var(--border);
+}
+
+.ne-source-meta {
+    grid-column: 1 / -1;
+    display: flex;
+    gap: 8px;
+    color: var(--fg-muted);
+    font-size: 11px;
+}
+
+.ne-source-used {
+    color: var(--warning);
+}
+
+.ne-source-text {
+    font-size: 12px;
+    min-width: 0;
+}
+
+.ne-source-link {
+    align-self: start;
+    white-space: nowrap;
+}

@@ -68,6 +68,20 @@
                     <ReferencePicker Book="book" ExcludeKey="State.Cursor?.Key" OnPick="PickAsync" OnCancel="() => _picking = false" />
                 }
             </span>
+            @* Notes that may be where the text block at the cursor came from (with the local AI only); the list follows
+               the cursor to another text block. *@
+            @if (CanFindSources)
+            {
+                <span class="ne-sec-ref-area">
+                    <button type="button" class="ne-sec-find-sources" title="@L["SectionFindSourcesTitle"]"
+                            aria-expanded="@(_findingSources ? "true" : "false")"
+                            @onclick="() => _findingSources = !_findingSources">@L["SectionFindSources"]</button>
+                    @if (_findingSources && State.CursorTextBlockKey is { } sourceBlock)
+                    {
+                        <SourceFinder Book="book" TextBlockKey="sourceBlock" OnLink="OnSource" />
+                    }
+                </span>
+            }
             @* A heading has no status; it shows as a draft there, greyed out. The key renders the selection anew after
                each change, so a refused change does not leave the chosen status on display. *@
             @{
@@ -211,6 +225,16 @@
     [Parameter]
     public EventCallback<int> OnLevel { get; set; }
 
+    /// <summary>A note was chosen in „Quellen suchen“: link it as a source of the text block at the cursor.</summary>
+    [Parameter]
+    public EventCallback<Guid> OnSource { get; set; }
+
+    /// <summary>Whether „Quellen suchen“ is open.</summary>
+    private bool _findingSources;
+
+    /// <summary>„Quellen suchen“ is offered on a text block or detail of a writable book, with the local AI ready.</summary>
+    private bool CanFindSources => !Locked && State.CursorTextBlockKey is not null && State.Session?.Relevance.IsAvailable == true;
+
     /// <summary>
     /// The search closes once a reference is not possible (the cursor on a heading, the book locked), so it does not
     /// open again by itself and take the focus when it is possible again.
@@ -227,6 +251,11 @@
         if (Locked || !ManuscriptCommands.CanInsertReference(State))
         {
             _picking = false;
+        }
+
+        if (!CanFindSources)
+        {
+            _findingSources = false;
         }
     }
 

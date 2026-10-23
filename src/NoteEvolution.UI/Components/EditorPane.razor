@@ -37,7 +37,7 @@
     {
         <SectionBar Top="_barTop" Visible="_barVisible" Element="State.CurrentElement" Locked="ReadOnlyReason is not null"
                     OnCommand="OnSectionCommand" OnStatus="OnStatusChosen"
-                    OnReference="OnReferenceChosen" OnLevel="OnLevelChosen" />
+                    OnReference="OnReferenceChosen" OnLevel="OnLevelChosen" OnSource="OnSourceChosen" />
     }
 </div>
 
@@ -402,6 +402,35 @@
             _saver.Message = null;
             _saver.Save();
             _saver.RemoveSource(textBlockKey, noteId);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+
+        State.RefreshBook();
+        State.Notify();
+        StateHasChanged();
+    }
+
+    /// <summary>
+    /// Links the note chosen in „Quellen suchen“ as a source of the text block at the cursor (after the editor saved its
+    /// text), as the [handled] wizard links a placement; the source chip's × takes it back.
+    /// </summary>
+    public async Task OnSourceChosen(Guid noteBlockKey)
+    {
+        if (!_ready || _disposed || State.CursorTextBlockKey is not { } textBlockKey)
+        {
+            return;
+        }
+
+        await _gate.WaitAsync();
+        try
+        {
+            CancelDebounce();
+            _saver.Message = null;
+            _saver.Save();
+            _saver.AddSource(textBlockKey, noteBlockKey);
         }
         finally
         {

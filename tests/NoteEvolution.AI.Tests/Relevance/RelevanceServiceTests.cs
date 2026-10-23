@@ -415,6 +415,29 @@ public sealed class RelevanceServiceTests : IDisposable
     }
 
     [Fact]
+    public void Sources_NotesMostSimilarToTheBlocksOwnText_HonoursInclude()
+    {
+        var f = Create("- # Liebe\n\t- Liebe eins\n\t- Liebe zwei\n",
+            notePages: [("journals/2026_03_01.md", "- Nah\n- Mittel\n- Fern\n")]);
+        f.SetSection(f.Section("Liebe"), 0, 1, 0);
+        f.Index.Queries[EmbeddingText.ForTextBlock(f.Text("Liebe eins"))] = [1, 0, 0];
+        f.SetNote("Nah", 1, 0.1f, 0);
+        f.SetNote("Mittel", 1, 1, 0);
+        f.SetNote("Fern", 0, 1, 0);
+
+        var hits = f.Service.Sources(f.Book, f.Text("Liebe eins").Key, f.Allow(NoFilter), 2);
+
+        Assert.Equal(["Nah", "Mittel"], hits.Select(h => f.ContentOf(h.NoteBlockKey)));
+        Assert.Equal(VectorMath.Cosine([1, 0, 0], [1, 1, 0]), hits[1].Score, 1e-6);
+        var nah = f.Note("Nah").Key;
+        Assert.Equal(["Mittel", "Fern"],
+            f.Service.Sources(f.Book, f.Text("Liebe eins").Key, key => key != nah, 2).Select(h => f.ContentOf(h.NoteBlockKey)));
+        Assert.Empty(f.Service.Sources(f.Book, Guid.NewGuid(), f.Allow(NoFilter)));
+        f.Index.Ready = false;
+        Assert.Empty(f.Service.Sources(f.Book, f.Text("Liebe eins").Key, f.Allow(NoFilter)));
+    }
+
+    [Fact]
     public void ZeroTopicVector_Empty_NoNaN()
     {
         var f = SixSections(prologue: false);

@@ -1,0 +1,135 @@
+@using System.Globalization
+@using NoteEvolution.Core.Books
+@using NoteEvolution.Core.Vaults
+@implements IDisposable
+@inject AppState State
+@inject IStringLocalizer<Strings> L
+@inject ILogger<SourceFinder> Logger
+
+@* The search for notes that may be where a text block came from: the notes most similar to its own text, used ones
+   included (marked), its present sources left out. Each can be linked as a source as in the [handled] wizard. *@
+<div class="ne-ref-picker ne-source-finder" role="dialog" aria-label="@L["SourceFinderTitle"]">
+    <div class="ne-source-finder-head">@L["SourceFinderTitle"]</div>
+    @if (_candidates is null)
+    {
+        <span class="ne-ref-none ne-source-searching">@L["SourceFinderSearching"]</span>
+    }
+    else if (_candidates.Count == 0)
+    {
+        <span class="ne-ref-none ne-source-none">@L["SourceFinderNone"]</span>
+    }
+    else
+    {
+        <div class="ne-ref-list ne-source-list">
+            @foreach (var candidate in _candidates)
+            {
+                <div class="ne-source-candidate">
+                    <div class="ne-source-meta">
+                        <span class="ne-source-date">@candidate.Date</span>
+                        <span class="ne-source-percent">@candidate.Percent %</span>
+                        @if (candidate.UsedIn is { } usedIn)
+                        {
+                            <span class="ne-source-used" title="@L["SourceFinderUsedIn", usedIn]">@L["SourceFinderUsed"]</span>
+                        }
+                    </div>
+                    <div class="ne-source-text" title="@candidate.Text">@candidate.Excerpt</div>
+                    <button type="button" class="ne-source-link" disabled="@candidate.ReadOnly"
+                            @onclick="() => OnLink.InvokeAsync(candidate.Key)">@L["SourceFinderLink"]</button>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    /// <summary>How many notes are offered.</summary>
+    internal const int Limit = 5;
+
+    private const int ExcerptLength = 160;
+
+    /// <summary>A note offered as a source; <see cref="UsedIn"/> names the books it is used in, <c>null</c> if unused.</summary>
+    private sealed record Candidate(Guid Key, string Date, string Excerpt, string Text, int Percent, string? UsedIn, bool ReadOnly);
+
+    private IReadOnlyList<Candidate>? _candidates;
+    private (Book Book, Guid TextBlockKey, string Sources)? _searched;
+    private int _generation;
+    private bool _disposed;
+
+    /// <summary>The book as shown; the text block is looked up in it.</summary>
+    [Parameter, EditorRequired] public Book Book { get; set; } = default!;
+
+    /// <summary>The text block whose sources are searched.</summary>
+    [Parameter, EditorRequired] public Guid TextBlockKey { get; set; }
+
+    /// <summary>A note was chosen: link it as a source of the text block.</summary>
+    [Parameter] public EventCallback<Guid> OnLink { get; set; }
+
+    /// <summary>
+    /// Searches again when the text block or its sources change (a linked note leaves the list); another save of the
+    /// book alone keeps the list.
+    /// </summary>
+    protected override async Task OnParametersSetAsync()
+    {
+        var textBlock = Book.FindTextBlock(TextBlockKey);
+        var key = (Book, TextBlockKey, string.Join(",", textBlock?.Sources ?? []));
+        if (_searched is { } searched && searched.TextBlockKey == key.TextBlockKey && searched.Sources == key.Item3
+            && searched.Book.LinkName == Book.LinkName)
+        {
+            return;
+        }
+
+        _searched = key;
+        _candidates = null;
+        var generation = ++_generation;
+        if (State.Session is not { } session || textBlock is null)
+        {
+            _candidates = [];
+            return;
+        }
+
+        // The vault model belongs to the UI thread: the allowed notes are read here, the search runs in the background.
+        var sources = textBlock.Sources.ToHashSet();
+        var allowed = session.Notes.All().Where(note => note.Block.Id is not { } id || !sources.Contains(id))
+            .Select(note => note.Key).ToHashSet();
+        var relevance = session.Relevance;
+        var book = Book;
+        IReadOnlyList<NoteEvolution.AI.Search.SearchHit> hits;
+        try
+        {
+            hits = await Task.Run(() => relevance.Sources(book, TextBlockKey, allowed.Contains, Limit));
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Searching the sources of a text block failed");
+            hits = [];
+        }
+
+        if (_disposed || generation != _generation)
+        {
+            return;
+        }
+
+        var best = hits.Count > 0 ? hits.Max(hit => hit.Score) : 0;
+        _candidates =
+        [
+            .. hits.Select(hit => (Hit: hit, Note: session.Notes.Get(hit.NoteBlockKey)))
+                .Where(found => found.Note is not null)
+                .Select(found => ToCandidate(found.Note!, SearchTab.Percent(found.Hit.Score, best))),
+        ];
+    }
+
+    private static Candidate ToCandidate(NoteBlock note, int percent)
+    {
+        var books = note.Usages.Select(usage => usage.PageName).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        return new Candidate(
+            note.Key,
+            note.Date is { } date ? date.ToString("dd.MM.yyyy", CultureInfo.InvariantCulture) : note.Page.Name,
+            Excerpt.FirstLine(note.Block.Content, ExcerptLength),
+            note.Block.Content,
+            percent,
+            books.Count > 0 ? string.Join(", ", books) : null,
+            note.Page.IsReadOnly);
+    }
+
+    public void Dispose() => _disposed = true;
+}
