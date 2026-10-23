@@ -132,6 +132,165 @@ public static class ManuscriptCommands
         }
     }
 
+    /// <summary>
+    /// Whether <see cref="InsertReferenceAsync"/> is possible now: as for <see cref="CanSetStatus"/>, the book is
+    /// writable, no conflict is open for it (R26), and the cursor is in a text block or detail (headings hold no
+    /// references).
+    /// </summary>
+    public static bool CanInsertReference(AppState state) => CanSetStatus(state);
+
+    /// <summary>
+    /// Inserts a cross reference to the heading or text block <paramref name="targetKey"/> at the cursor of the text
+    /// block or detail at the cursor (<see cref="ManuscriptEditor.InsertReference"/>, spec 2.2), in the same order as
+    /// <see cref="RunAsync"/>: the editor saves its text first, and text it could not save refuses the command; a
+    /// read-only book or an open conflict refuses it too. The editor reports the cursor's offset in the text it shows;
+    /// it is converted to the offset in the block's Markdown (<see cref="ManuscriptEditor.ContentOffset"/>). On a
+    /// heading or without an element at the cursor nothing changes; an invalid target shows <c>SectionCommandFailed</c>.
+    /// The reference and an <c>id::</c> the target gets are saved together with one undo action
+    /// (<paramref name="undoDescription"/>) that is refused once the page changed after the command. The element is
+    /// revealed with the cursor right after the reference and the range level kept; the book view is taken from the
+    /// vault again and <see cref="AppState.Notify"/> is raised. Should no place in the Markdown show the cursor's offset
+    /// (not expected), a warning is logged and the reference goes at the end of the text.
+    /// </summary>
+    /// <returns>The message to show, or <c>null</c> if the reference was inserted (or nothing changed) without remark.</returns>
+    public static async Task<AdoptMessage?> InsertReferenceAsync(AppState state, Guid targetKey, string undoDescription, ILogger logger)
+    {
+        Guid? reveal = null;
+        var after = 0;
+        try
+        {
+            var (message, session, book) = await PrepareAsync(state, logger);
+            if (session is null || book is null || state.Cursor is not { } cursor || StatusTargetOf(state, book) is not { } element)
+            {
+                return message;
+            }
+
+            (message, reveal) = RunStatus(session, book, () =>
+            {
+                var offset = ManuscriptEditor.ContentOffset(book, element.Key, cursor.Offset);
+                if (offset is null)
+                {
+                    // The end of the text at least keeps the text around the reference as it is.
+                    logger.LogWarning(
+                        "No place in the Markdown of {Element} shows offset {Offset}; the reference goes at the end", element.Key, cursor.Offset);
+                }
+
+                // The editor shows the reference as one node: one position of its text.
+                after = offset is null ? int.MaxValue : cursor.Offset + 1;
+                ManuscriptEditor.InsertReference(book, element.Key, offset ?? int.MaxValue, targetKey, session.Clock.Now);
+                return element.Key;
+            }, undoDescription, logger);
+            return message;
+        }
+        finally
+        {
+            // On success the book changed; after a failure the vault holds the page as it is on disk again.
+            state.RefreshBook();
+            if (reveal is { } key)
+            {
+                // The cursor goes right after the reference; the range stays.
+                state.RevealElement(key, after, keepRange: true);
+            }
+
+            state.Notify();
+        }
+    }
+
+    /// <summary>
+    /// The level of the element at the cursor (as for Delete, never the fallback element) the level buttons show
+    /// (spec 4.1): 0 (Text) for a text block or detail, 1–6 for a heading; <c>null</c> without such an element.
+    /// </summary>
+    public static int? LevelAt(AppState state) =>
+        state.CurrentBook is { } book && LevelTargetOf(state, book) is { } element
+            ? element.Kind == ElementKind.Heading ? book.FindNode(element.Key)!.Level : 0
+            : null;
+
+    /// <summary>
+    /// Why the level button <paramref name="level"/> (0 = Text, 1–6 = H1–H6) cannot convert the element at the cursor
+    /// (<see cref="ManuscriptEditor.LevelBlocked"/>), for its tooltip: the resource key of the reason; <c>null</c> if it
+    /// can, or without an element.
+    /// </summary>
+    public static string? LevelBlocked(AppState state, int level) =>
+        state.CurrentBook is { } book && LevelTargetOf(state, book) is { } element
+            ? ManuscriptEditor.LevelBlocked(book, element, level)
+            : null;
+
+    /// <summary>
+    /// Whether <see cref="SetLevelAsync"/> converts the element at the cursor to <paramref name="level"/> now: the book is
+    /// writable, no conflict is open for it (R26), the element has another level and the conversion is possible
+    /// (<see cref="LevelBlocked"/>).
+    /// </summary>
+    public static bool CanSetLevel(AppState state, int level) =>
+        state is { Session: { } session, CurrentBook: { Page.IsReadOnly: false } book }
+        && !session.HasOpenConflict(book.Page.FilePath)
+        && LevelTargetOf(state, book) is { } element
+        && LevelAt(state) != level
+        && ManuscriptEditor.LevelBlocked(book, element, level) is null;
+
+    /// <summary>
+    /// Converts the element at the cursor (<see cref="LevelAt"/>) to <paramref name="level"/> (spec 4), in the same order
+    /// as <see cref="RunAsync"/>: the editor saves its text first, and text it could not save refuses the conversion; a
+    /// read-only book or an open conflict refuses it too. A text block or detail becomes a heading
+    /// (<see cref="ManuscriptEditor.ToHeading"/>), a heading another level (<see cref="ManuscriptEditor.SetHeadingLevel"/>),
+    /// each saved with a <see cref="StructureUndo"/>; Text on a heading removes it (<see cref="ManuscriptEditor.RemoveHeading"/>,
+    /// with its targeted undo). The same level, a level <see cref="LevelBlocked"/> refuses (shows <c>SectionCommandFailed</c>)
+    /// or no element changes nothing. A conversion that fails after it changed the page reads the page from the file
+    /// again. The converted element is revealed and stays the active one (no jump in the history); the book view is
+    /// taken from the vault again and <see cref="AppState.Notify"/> is raised.
+    /// </summary>
+    /// <returns>The message to show, or <c>null</c> if the element was converted (or nothing changed) without remark.</returns>
+    public static async Task<AdoptMessage?> SetLevelAsync(AppState state, int level, string undoDescription, ILogger logger)
+    {
+        Guid? reveal = null;
+        try
+        {
+            var (message, session, book) = await PrepareAsync(state, logger);
+            if (session is null || book is null || LevelTargetOf(state, book) is not { } element || LevelAt(state) == level)
+            {
+                return message;
+            }
+
+            if (element.Kind == ElementKind.Heading && level == 0)
+            {
+                (message, reveal) = RunStructure(session, book, element, SectionCommand.RemoveHeading, undoDescription, logger);
+                return message;
+            }
+
+            var page = book.Page;
+            (message, reveal) = RunStatus(session, book, () =>
+            {
+                try
+                {
+                    if (element.Kind != ElementKind.Heading)
+                    {
+                        return ManuscriptEditor.ToHeading(book, element.Key, level, session.Clock.Now);
+                    }
+
+                    ManuscriptEditor.SetHeadingLevel(book, element.Key, level);
+                    return element.Key;
+                }
+                catch (Exception ex) when (ex is ArgumentException or InvalidOperationException && page.IsDirty)
+                {
+                    // Not expected (the conversion validates first): the page is not left half converted.
+                    PageReload.FromDisk(session, page);
+                    throw;
+                }
+            }, undoDescription, logger);
+            return message;
+        }
+        finally
+        {
+            // On success the book changed; after a failure the vault holds the page as it is on disk again.
+            state.RefreshBook();
+            if (reveal is { } key)
+            {
+                state.RevealElement(key);
+            }
+
+            state.Notify();
+        }
+    }
+
     private static async Task<(AdoptMessage? Message, Guid? Reveal)> TryRunAsync(
         AppState state, SectionCommand command, string undoDescription, ILogger logger)
     {
@@ -302,6 +461,12 @@ public static class ManuscriptCommands
     private static BookElement? StatusTargetOf(AppState state, Book book) =>
         TargetOf(state, book, SectionCommand.ToggleRemark) is { Kind: not ElementKind.Heading } element ? element : null;
 
+    /// <summary>
+    /// The element the level buttons convert: the element with the cursor's own key in <paramref name="book"/> (as for
+    /// Delete); <c>null</c> without one.
+    /// </summary>
+    private static BookElement? LevelTargetOf(AppState state, Book book) => TargetOf(state, book, SectionCommand.Delete);
+
     /// <summary>Whether <paramref name="command"/> fits <paramref name="element"/>, which must be in <paramref name="book"/>.</summary>
     private static bool Fits(Book book, BookElement element, SectionCommand command) =>
         BookElements.Find(book, element.Key) == element
@@ -359,7 +524,7 @@ public static class ManuscriptCommands
                     reveal = element.Key;
                     break;
                 case SectionCommand.RemoveHeading:
-                    removed = ManuscriptEditor.RemoveHeading(book, element.Key);
+                    removed = ManuscriptEditor.RemoveHeading(book, element.Key, session.Clock.Now);
                     reveal = removed.Reveal;
                     break;
                 case SectionCommand.Wrap:
@@ -394,12 +559,17 @@ public static class ManuscriptCommands
     }
 
     /// <summary>
-    /// Runs a status change on the page (<paramref name="change"/>: <see cref="ManuscriptEditor.SetStatus"/> or
-    /// <see cref="ManuscriptEditor.AddRemark"/>), saves it and pushes a <see cref="StructureUndo"/>
+    /// Runs a change of block text or properties on the page (<paramref name="change"/>:
+    /// <see cref="ManuscriptEditor.SetStatus"/>, <see cref="ManuscriptEditor.AddRemark"/>,
+    /// <see cref="ManuscriptEditor.InsertReference"/> or a level conversion), saves it and pushes a <see cref="StructureUndo"/>
     /// (<paramref name="undoDescription"/>). A change refused before anything changed (a heading, a block without place
-    /// for properties) shows <c>SectionCommandFailed</c>; a failed save is handled like that of a structure command.
+    /// for properties, an invalid reference target) shows <c>SectionCommandFailed</c>; a failed save is handled like
+    /// that of a structure command.
     /// </summary>
-    /// <returns>The message, and the element to reveal (the new remark; none after a status change).</returns>
+    /// <returns>
+    /// The message, and the element to reveal (the new remark, the referring element, the converted element; none after a
+    /// status change).
+    /// </returns>
     private static (AdoptMessage? Message, Guid? Reveal) RunStatus(
         VaultSession session, Book book, Func<Guid?> change, string undoDescription, ILogger logger)
     {
@@ -413,7 +583,7 @@ public static class ManuscriptCommands
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
         {
             // Refused before anything changed.
-            logger.LogWarning(ex, "The status change was refused");
+            logger.LogWarning(ex, "The block change was refused");
             return (new AdoptMessage("SectionCommandFailed", true), null);
         }
 
@@ -598,8 +768,10 @@ public static class ManuscriptCommands
 
     /// <summary>
     /// Undoes removing a heading (<see cref="RemovedHeading.RestoreInto"/>) and saves the page: the heading comes back
-    /// around the blocks it held, also after later edits elsewhere or in those blocks' text. Refused (no change) when
-    /// the heading's former parent is gone, a moved block is gone or was moved elsewhere, or the heading is back.
+    /// around the blocks it held, also after later edits elsewhere or in those blocks' text, and the text block made
+    /// from its title goes. Refused (no change) when the heading's former parent is gone, a moved block is gone or was
+    /// moved elsewhere, the heading is back, or the title's text block was edited, got details or was moved elsewhere
+    /// (undo would lose that).
     /// </summary>
     private sealed class RemoveHeadingUndo(string description, VaultSession session, string path, RemovedHeading removed) : IUndoAction
     {

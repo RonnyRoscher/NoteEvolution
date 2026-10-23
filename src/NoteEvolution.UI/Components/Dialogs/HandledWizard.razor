@@ -12,21 +12,11 @@
 
 <Modal Title="@L["HandledTitle"]" CssClass="ne-handled" OnClose="OnClose">
 <ChildContent>
-    @if (_result is { } result)
+    @if (_ran)
     {
-        <p class="ne-handled-done" role="status">@L["HandledDone", result.Converted]</p>
-        @if (result.Skipped.Count > 0)
-        {
-            <p class="ne-dialog-hint">@L["HandledSkipped", result.Skipped.Count]</p>
-            <ul class="ne-handled-skipped">
-                @foreach (var note in result.Skipped)
-                {
-                    <li>@Excerpt.FirstLine(note.Block.Content)</li>
-                }
-            </ul>
-        }
+        <p class="ne-handled-done" role="status">@(_failed > 0 ? L["HandledDoneFailed", _converted, _failed] : L["HandledDone", _converted])</p>
     }
-    else if (State.Session is null)
+    @if (State.Session is null)
     {
         <p>@L["LinkCheckNoVault"]</p>
     }
@@ -99,7 +89,7 @@
     }
     </ChildContent>
     <Footer>
-        @if (_result is null && _items.Count > 0 && State.Session is not null)
+        @if (_items.Count > 0 && State.Session is not null)
         {
             @if (_confirming)
             {
@@ -108,7 +98,7 @@
             }
             else
             {
-                <button type="button" class="ne-handled-convert" disabled="@(_selected.Count == 0 || _bookName is null)"
+                <button type="button" class="ne-handled-convert" disabled="@(_selected.Count == 0 || _bookName is null || _placesPending)"
                         @onclick="() => _confirming = true">@L["HandledConvert"]</button>
             }
         }
@@ -123,7 +113,11 @@
     private bool _confirming;
     private bool _busy;
     private string? _error;
-    private HandledResult? _result;
+
+    /// <summary>Whether a conversion ran in this dialog, and how many notes it converted / could not convert.</summary>
+    private bool _ran;
+    private int _converted;
+    private int _failed;
 
     /// <summary>How many suggested places each note gets.</summary>
     private const int PlacementLimit = 3;
@@ -141,6 +135,9 @@
     private int _placeGeneration;
     private bool _disposed;
 
+    /// <summary>Whether suggestions are being computed: "Umwandeln" waits, so a checked note never goes in with a place not yet carried over.</summary>
+    private bool _placesPending;
+
     private sealed record PlaceOption(Guid TextBlockKey, string Label);
 
     [Parameter] public EventCallback OnClose { get; set; }
@@ -154,11 +151,8 @@
             return;
         }
 
+        // Nothing is checked at first: the user picks the notes to convert (a chosen place checks its note).
         _items = session.Handled.Find();
-        foreach (var note in _items.Where(n => !n.Page.IsReadOnly))
-        {
-            _selected.Add(note.Key);
-        }
 
         _bookName = State.CurrentBook?.LinkName ?? session.Vault.Books.FirstOrDefault()?.LinkName;
         StartPlacements();
@@ -186,10 +180,12 @@
         if (Guid.TryParse(value, out var textBlockKey) && _placeOptions.GetValueOrDefault(noteKey)?.Any(p => p.TextBlockKey == textBlockKey) == true)
         {
             _placeChoice[noteKey] = textBlockKey;
+            _selected.Add(noteKey);
         }
         else
         {
             _placeChoice.Remove(noteKey);
+            _selected.Remove(noteKey);
         }
     }
 
@@ -198,7 +194,7 @@
     /// and computes them in the background (latest wins). The notes' texts and the book snapshot are taken here on the
     /// UI thread, since the vault model is not thread-safe; the labels are read from that snapshot.
     /// </summary>
-    private void StartPlacements()
+    private void StartPlacements(IReadOnlyDictionary<Guid, Guid>? keepChoices = null)
     {
         _placeGeneration++;
         _placePending?.Cancel();
@@ -206,6 +202,7 @@
         _placePending = null;
         _placeOptions = [];
         _placeChoice.Clear();
+        _placesPending = false;
         if (State.Session is not { } session || !session.Relevance.IsAvailable || session.Vault.FindBook(_bookName ?? "") is not { } book)
         {
             return;
@@ -213,11 +210,13 @@
 
         var requests = _items.Where(n => !n.Page.IsReadOnly).Select(n => (n.Key, Text: EmbeddingText.ForNote(n))).ToList();
         var source = _placePending = new CancellationTokenSource();
-        _ = ComputePlacementsAsync(session.Relevance, book, requests, _placeGeneration, source.Token);
+        _placesPending = true;
+        _ = ComputePlacementsAsync(session.Relevance, book, requests, keepChoices, _placeGeneration, source.Token);
     }
 
     private async Task ComputePlacementsAsync(
-        IRelevanceService relevance, Book book, List<(Guid Key, string Text)> requests, int generation, CancellationToken cancel)
+        IRelevanceService relevance, Book book, List<(Guid Key, string Text)> requests,
+        IReadOnlyDictionary<Guid, Guid>? keepChoices, int generation, CancellationToken cancel)
     {
         try
         {
@@ -241,9 +240,19 @@
                     return;
                 }
 
+                _placesPending = false;
                 _placeOptions = found
                     .Where(entry => entry.Hits.Count > 0)
                     .ToDictionary(entry => entry.Key, entry => PlaceOptions(book, entry.Hits));
+                foreach (var (noteKey, textBlockKey) in keepChoices ?? new Dictionary<Guid, Guid>())
+                {
+                    // A choice made before a run stays if its place is still suggested.
+                    if (_placeOptions.GetValueOrDefault(noteKey)?.Any(p => p.TextBlockKey == textBlockKey) == true)
+                    {
+                        _placeChoice[noteKey] = textBlockKey;
+                    }
+                }
+
                 StateHasChanged();
             });
         }
@@ -257,6 +266,14 @@
         {
             // The suggestions are an aid: without them every place stays unknown.
             Logger.LogWarning(ex, "Computing the places for [handled] notes failed");
+            await InvokeAsync(() =>
+            {
+                if (!_disposed && generation == _placeGeneration)
+                {
+                    _placesPending = false;
+                    StateHasChanged();
+                }
+            });
         }
     }
 
@@ -351,6 +368,9 @@
 
         _busy = true;
         _error = null;
+        _ran = false;
+        _converted = 0;
+        _failed = 0;
         try
         {
             try
@@ -391,36 +411,59 @@
                 return;
             }
 
-            try
+            // Note by note, so that a note that cannot be converted (its page cannot be written, its place vanished) leaves
+            // the others converted: it stays in the list. The note and the book are looked up anew each time: a failed save
+            // replaces the page in the vault, and a stale snapshot would be written to a detached page.
+            var converted = 0;
+            var failed = notes.Count(n => n.Page.IsReadOnly);
+            foreach (var key in notes.Where(n => !n.Page.IsReadOnly).Select(n => n.Key).ToList())
             {
-                _result = session.Handled.Apply(notes, book, placements);
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or ArgumentException)
-            {
-                // Pages saved before the failure stay saved; the others are taken from their files again.
-                Logger.LogWarning(ex, "Converting [handled] notes failed");
-                foreach (var page in pages.Where(p => p.IsDirty))
+                var note = session.Handled.Find().FirstOrDefault(n => n.Key == key);
+                var current = session.Vault.FindBook(_bookName ?? "");
+                if (note is null || current is null)
                 {
-                    PageReload.FromDisk(session, page);
+                    failed++;
+                    continue;
                 }
 
-                _error = ex switch
+                try
                 {
-                    FileChangedExternallyException => L["AssistantExternalChange"],
-                    ArgumentException => L["HandledPlacementFailed"],
-                    _ => L["HandledFailed"],
-                };
-                _confirming = false;
+                    converted += session.Handled.Apply([note], current, placements).Converted;
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or ArgumentException)
+                {
+                    // What was saved before the failure stays saved; the pages left unsaved are taken from their files again.
+                    Logger.LogWarning(ex, "Converting a [handled] note failed");
+                    failed++;
+                    foreach (var page in new[] { note.Page, current.Page }.Distinct().Where(p => p.IsDirty).ToList())
+                    {
+                        PageReload.FromDisk(session, page);
+                    }
+
+                    _error = ex switch
+                    {
+                        FileChangedExternallyException => L["AssistantExternalChange"],
+                        ArgumentException => L["HandledPlacementFailed"],
+                        _ => L["HandledFailed"],
+                    };
+                }
             }
 
+            _ran = converted > 0 || failed > 0;
+            _converted = converted;
+            _failed = failed;
+            _confirming = false;
             UpdateSearch(session, pages);
             _items = session.Handled.Find();
-            _selected.IntersectWith(_items.Select(n => n.Key));
+            var remaining = _items.Select(n => n.Key).ToHashSet();
+            _selected.IntersectWith(remaining);
 
             if (placements.Count > 0)
             {
-                // The book page was linked into (or reloaded after a failure): the suggested places and the choices belong to the old snapshot.
-                StartPlacements();
+                // The book page was linked into (or reloaded after a failure): the suggested places belong to the old
+                // snapshot. The choices of the notes that are still listed are carried over where the place is still suggested.
+                var keep = _placeChoice.Where(c => remaining.Contains(c.Key)).ToDictionary(c => c.Key, c => c.Value);
+                StartPlacements(keep);
             }
         }
         finally

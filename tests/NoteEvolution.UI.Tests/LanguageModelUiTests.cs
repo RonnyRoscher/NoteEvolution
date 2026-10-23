@@ -16,6 +16,7 @@ using NoteEvolution.UI.State;
 namespace NoteEvolution.UI.Tests;
 
 /// <summary>The language model's settings, its setup dialog and its progress in the header (spec 4, 7, 11.1).</summary>
+[Collection(ManyNotesCollection.Name)]
 public class LanguageModelUiTests : UiTestContext
 {
     private const string Model = "qwen2.5:7b";
@@ -52,7 +53,7 @@ public class LanguageModelUiTests : UiTestContext
 
     private static async Task Eventually(Func<bool> condition, string because = "The condition was not met in time.")
     {
-        var until = DateTime.UtcNow + Wait;
+        var until = DateTime.UtcNow + RealTimeWait;
         while (!condition())
         {
             Assert.True(DateTime.UtcNow < until, because);

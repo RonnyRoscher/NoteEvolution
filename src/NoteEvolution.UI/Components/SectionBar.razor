@@ -1,12 +1,13 @@
 @using NoteEvolution.Core.Books
+@using NoteEvolution.Core.Text
 @using NoteEvolution.Core.Vaults
 @using NoteEvolution.UI.Editor
 @inject AppState State
 @inject IStringLocalizer<Strings> L
 
 @* The bar at the bottom of the marking (spec 2, 3): the range buttons with the range head, the structure commands of
-   the cursor element, the commands on the marked range, „Bemerkung anfügen“ and the status selection of the cursor
-   element (status spec 2) and the notes the range is based on (package B, spec 2, 4, 5).
+   the cursor element, the commands on the marked range, „Bemerkung anfügen“, the level buttons „Text · H1 … H6“ and
+   „Verweis einfügen“ (cross references spec 4, 2.2) and the status selection of the cursor element (status spec 2) and the notes the range is based on (package B, spec 2, 4, 5).
    EditorPane places it where the editor reports the marking's bottom; the bar renders with every render of EditorPane
    (its element is an object parameter), which follows the state and the conflicts. *@
 <div class="ne-section-bar" hidden="@(!Visible)" style="top: @(Top.ToString(CultureInfo.InvariantCulture))px">
@@ -15,6 +16,7 @@
          && State.CurrentRange is { } range)
     {
         var sources = SourcesOf(book, range);
+        var backRefs = BackRefsOf(book, element);
         <div class="ne-sec-buttons">
             @* Moving the range changes no file, so it stays possible while the book is locked. *@
             <button type="button" class="ne-range-up" title="@L["RangeUpTitle"]" disabled="@(!State.CanRangeUp)"
@@ -37,6 +39,35 @@
                 <button type="button" class="@css" disabled="@(Locked || !ManuscriptCommands.CanRun(State, command))"
                         @onclick="() => OnCommand.InvokeAsync(command)">@L[key]</button>
             }
+            @* The level of the element at the cursor (cross references spec 4): the current one is pressed, a level it
+               cannot take is greyed out and names the reason. *@
+            @{
+                var current = ManuscriptCommands.LevelAt(State);
+            }
+            <span class="ne-sec-levels" role="group" aria-label="@L["SectionLevels"]">
+                @for (var level = 0; level <= OutlineEditor.MaxLevel; level++)
+                {
+                    var target = level;
+                    var reason = ManuscriptCommands.LevelBlocked(State, target);
+                    <button type="button" class="ne-sec-level" aria-pressed="@(current == target ? "true" : "false")"
+                            title="@(reason is null ? LevelTitle(target, current) : L[reason])"
+                            disabled="@(Locked || (current != target && !ManuscriptCommands.CanSetLevel(State, target)))"
+                            @onclick="() => LevelChosenAsync(target, current)">@LevelLabel(target)</button>
+                }
+            </span>
+            @* A cross reference goes in at the cursor of a text block or detail; the search opens above the bar. *@
+            @{
+                var canReference = !Locked && ManuscriptCommands.CanInsertReference(State);
+            }
+            <span class="ne-sec-ref-area">
+                <button type="button" class="ne-sec-ref" title="@L["SectionInsertRefTitle"]" disabled="@(!canReference)"
+                        aria-expanded="@(_picking && canReference ? "true" : "false")"
+                        @onclick="() => _picking = !_picking">@L["SectionInsertRef"]</button>
+                @if (_picking && canReference)
+                {
+                    <ReferencePicker Book="book" ExcludeKey="State.Cursor?.Key" OnPick="PickAsync" OnCancel="() => _picking = false" />
+                }
+            </span>
             @* A heading has no status; it shows as a draft there, greyed out. The key renders the selection anew after
                each change, so a refused change does not leave the chosen status on display. *@
             @{
@@ -51,6 +82,25 @@
             </select>
         </div>
         <div class="ne-sec-sources-area">
+            @* The places referring to the heading or text block at the cursor (cross references spec 2.3). *@
+            @if (backRefs.Count > 0)
+            {
+                <span class="ne-sec-backrefs-area">
+                    <button type="button" class="ne-sec-backrefs" aria-expanded="@(_backExpanded ? "true" : "false")"
+                            @onclick="() => _backExpanded = !_backExpanded">@BackRefsText(backRefs.Count)</button>
+                    @if (_backExpanded)
+                    {
+                        <div class="ne-sec-source-list ne-sec-backref-list">
+                            @foreach (var back in backRefs)
+                            {
+                                var label = BackRefLabel(book, back);
+                                <button type="button" class="ne-sec-source ne-sec-backref" title="@label"
+                                        @onclick="() => RevealBackRef(back)">@label</button>
+                            }
+                        </div>
+                    }
+                </span>
+            }
             @if (sources.Count == 0)
             {
                 <span class="ne-sec-no-sources">@L["SectionNoSources"]</span>
@@ -70,7 +120,7 @@
                             }
                             else
                             {
-                                <button type="button" class="ne-sec-source" @onclick="() => State.RevealNote(source.NoteId)">@source.Label</button>
+                                <button type="button" class="ne-sec-source" @onclick="() => RevealSource(source.NoteId)">@source.Label</button>
                             }
                         }
                     </div>
@@ -108,6 +158,20 @@
     /// <summary>Whether the list of sources is open; it stays so while the range changes.</summary>
     private bool _expanded;
 
+    /// <summary>Whether the list of places referring to the element at the cursor is open.</summary>
+    private bool _backExpanded;
+
+    /// <summary>The element the list of references was opened for.</summary>
+    private Guid? _backKey;
+
+    /// <summary>The cross reference index of <see cref="_indexBook"/>; the book is an immutable snapshot, so it is kept until the instance changes.</summary>
+    private CrossRefIndex? _index;
+
+    private Book? _indexBook;
+
+    /// <summary>Whether the search for the target of a cross reference is open.</summary>
+    private bool _picking;
+
     /// <summary>Counts the changes in the status selection; the selection is rendered anew after each one.</summary>
     private int _statusChanges;
 
@@ -134,6 +198,57 @@
     /// <summary>Sets the status of the text block or detail at the cursor to the one chosen in the selection.</summary>
     [Parameter]
     public EventCallback<BlockStatus> OnStatus { get; set; }
+
+    /// <summary>
+    /// Inserts a cross reference to the chosen heading or text block (its key) at the cursor of the text block or detail
+    /// at the cursor.
+    /// </summary>
+    [Parameter]
+    public EventCallback<Guid> OnReference { get; set; }
+
+    /// <summary>Converts the element at the cursor to the chosen level (0 = Text, 1–6 = H1–H6).</summary>
+    [Parameter]
+    public EventCallback<int> OnLevel { get; set; }
+
+    /// <summary>
+    /// The search closes once a reference is not possible (the cursor on a heading, the book locked), so it does not
+    /// open again by itself and take the focus when it is possible again.
+    /// </summary>
+    protected override void OnParametersSet()
+    {
+        // The list of references belongs to one element: it closes when the marked element changes.
+        if (Element?.Key != _backKey)
+        {
+            _backKey = Element?.Key;
+            _backExpanded = false;
+        }
+
+        if (Locked || !ManuscriptCommands.CanInsertReference(State))
+        {
+            _picking = false;
+        }
+    }
+
+    /// <summary>Closes the search and passes the chosen target on.</summary>
+    private async Task PickAsync(Guid targetKey)
+    {
+        _picking = false;
+        await OnReference.InvokeAsync(targetKey);
+    }
+
+    /// <summary>Passes a chosen level on; the current level does nothing.</summary>
+    private Task LevelChosenAsync(int level, int? current) =>
+        level == current ? Task.CompletedTask : OnLevel.InvokeAsync(level);
+
+    private string LevelLabel(int level) => level == 0 ? L["SectionLevelText"] : L["SectionLevelHeading", level];
+
+    /// <summary>The tooltip of a level button the element can take, or of its current level.</summary>
+    private string LevelTitle(int level, int? current) => (level == current, level) switch
+    {
+        (true, _) => L["SectionLevelCurrent"],
+        (false, 0) => L["SectionLevelTextTitle"],
+        _ => L["SectionLevelHeadingTitle", level],
+    };
 
     /// <summary>Passes the chosen status on; afterwards the selection shows the status the element has then.</summary>
     private async Task ChangeStatusAsync(ChangeEventArgs args)
@@ -162,6 +277,73 @@
             : L["RangeHeading", L["OutlineUntitled"].Value],
         { Kind: ElementKind.TextBlock } => L["RangeTextBlock"],
         _ => L["RangeDetail"],
+    };
+
+    /// <summary>The elements referring to the heading or text block <paramref name="element"/> (by its <c>id::</c>), once each, in book order.</summary>
+    private IReadOnlyList<CrossRefSource> BackRefsOf(Book book, BookElement element)
+    {
+        Guid? id = element.Kind switch
+        {
+            ElementKind.Heading => book.FindNode(element.Key)?.Block?.Id,
+            ElementKind.TextBlock => book.FindTextBlock(element.Key)?.Block.Id,
+            _ => null,
+        };
+        if (id is not { } targetId)
+        {
+            return [];
+        }
+
+        if (!ReferenceEquals(_indexBook, book))
+        {
+            _index = CrossRefIndex.Of(book);
+            _indexBook = book;
+        }
+
+        // Each referring element once, in book order, however often it names the target.
+        return [.. _index!.To(targetId).DistinctBy(source => source.ElementKey)];
+    }
+
+    /// <summary>
+    /// "Abschnitt › Textanfang" of the element holding the reference: the text block's text, or a sub-point's own text
+    /// (without its <c>#notiz</c> tag).
+    /// </summary>
+    private string BackRefLabel(Book book, CrossRefSource source)
+    {
+        var text = source.TextBlock.Paragraphs.FirstOrDefault(p => p.Block.Key == source.ElementKey) is { } paragraph
+            ? NoteTag.Remove(paragraph.Block.Content)
+            : source.TextBlock.Text;
+        return RefLabels.SectionTitle(book, source.TextBlock.Section, L) + RefLabels.Separator
+               + RefLabels.Excerpt(text, RefLabels.TitleExcerptLength);
+    }
+
+    /// <summary>A jump to the referring element, in the back/forward history.</summary>
+    private void RevealBackRef(CrossRefSource source)
+    {
+        State.JumpTo(source.ElementKey);
+        State.Notify();
+    }
+
+    /// <summary>
+    /// Brings the source's note into view in the notes pane. A jump (spec 3) that leaves the active block where it is:
+    /// the block goes into the back/forward history at once.
+    /// </summary>
+    private void RevealSource(Guid noteId)
+    {
+        if (State.Position is { } here)
+        {
+            State.RecordJump(here);
+        }
+
+        State.RevealNote(noteId);
+        State.Notify();
+    }
+
+    private string BackRefsText(int count) => (count, _backExpanded) switch
+    {
+        (1, false) => L["SectionBackRefsOne"],
+        (1, true) => L["SectionBackRefsOneOpen"],
+        (_, false) => L["SectionBackRefs", count],
+        _ => L["SectionBackRefsOpen", count],
     };
 
     private string SourcesText(int count) => (count, _expanded) switch

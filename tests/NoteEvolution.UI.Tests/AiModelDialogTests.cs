@@ -49,7 +49,7 @@ public class AiModelDialogTests : UiTestContext
 
     private static async Task Eventually(Func<bool> condition)
     {
-        var until = DateTime.UtcNow + Wait;
+        var until = DateTime.UtcNow + RealTimeWait;
         while (!condition())
         {
             Assert.True(DateTime.UtcNow < until, "The condition was not met in time.");

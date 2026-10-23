@@ -127,6 +127,126 @@ const Para = Node.create({
     },
 });
 
+/**
+ * A cross reference ((id)) to a heading or text block of the book (spec 2.3): one non-editable inline unit that shows
+ * its label ("→ Titel", "→ Verweis fehlt" with missing) and the target's path as its tooltip. C# writes it back as
+ * ((id)); label, title and missing come from the book and are only shown. A click calls options.onClicked(id).
+ * A foreign reference (to a block outside the book, no cross reference) is such a node too, so every reference is one
+ * position of the text as .NET counts it: it shows its reference text like plain text and a click goes nowhere.
+ */
+const BlockRef = Node.create({
+    name: 'blockRef',
+    group: 'inline',
+    inline: true,
+    atom: true,
+    selectable: true,
+    addOptions() {
+        return { onClicked: () => {} };
+    },
+    addAttributes() {
+        return {
+            id: { default: null, parseHTML: el => el.getAttribute('data-ref'), renderHTML: attrs => ({ 'data-ref': attrs.id }) },
+            label: { default: '', parseHTML: el => el.textContent, rendered: false },
+            title: { default: '', parseHTML: el => el.getAttribute('title') ?? '', rendered: false },
+            missing: { default: false, parseHTML: el => el.classList.contains('missing'), rendered: false },
+            foreign: { default: false, parseHTML: el => el.classList.contains('foreign'), rendered: false },
+        };
+    },
+    parseHTML() {
+        return [{ tag: 'span[data-ref]' }];
+    },
+    renderHTML({ node, HTMLAttributes }) {
+        const attrs = { ...HTMLAttributes, class: refClass(node) };
+        if (node.attrs.title) {
+            attrs.title = node.attrs.title;
+        }
+        return ['span', attrs, node.attrs.label];
+    },
+    // Copied as plain text, a reference is what the book file holds.
+    renderText: ({ node }) => `((${node.attrs.id}))`,
+    addNodeView() {
+        return ({ node }) => {
+            const dom = document.createElement('span');
+            dom.className = refClass(node);
+            dom.contentEditable = 'false';
+            dom.setAttribute('data-ref', node.attrs.id ?? '');
+            dom.textContent = node.attrs.label;
+            if (node.attrs.title) {
+                dom.title = node.attrs.title;
+            }
+            if (!node.attrs.foreign) {
+                dom.addEventListener('click', () => this.options.onClicked(node.attrs.id));
+            }
+            return { dom };
+        };
+    },
+});
+
+/** The CSS classes of a blockRef node: ne-ref, plus missing or foreign. */
+function refClass(node) {
+    return node.attrs.foreign ? 'ne-ref foreign' : node.attrs.missing ? 'ne-ref missing' : 'ne-ref';
+}
+
+/**
+ * Backspace right after a reference or Delete right before it removes the reference whole (the browser's own deletion
+ * would act on the label's characters).
+ */
+function deleteReference(state, dispatch, forward) {
+    const { selection } = state;
+    if (!selection.empty) {
+        return false;
+    }
+    const $pos = selection.$from;
+    const node = forward ? $pos.nodeAfter : $pos.nodeBefore;
+    if (!node || node.type.name !== 'blockRef') {
+        return false;
+    }
+    if (dispatch) {
+        const from = forward ? $pos.pos : $pos.pos - node.nodeSize;
+        dispatch(state.tr.delete(from, from + node.nodeSize).scrollIntoView());
+    }
+    return true;
+}
+
+const refPattern = /\(\(([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\)\)/gi;
+
+/**
+ * Adds to tr what setRefLabels changes in doc: blockRef nodes whose label, title, missing or foreign differ from labels
+ * (a Map of lower-case id → { label, title, missing, foreign }) get the new ones, and a reference typed as text whose id labels has
+ * becomes a blockRef node with the text's marks, unless the selection touches its inside (it is converted by a later
+ * call then).
+ */
+function updateRefs(tr, doc, labels, selection) {
+    const replacements = [];
+    doc.descendants((node, pos) => {
+        if (node.type.name === 'blockRef') {
+            const label = labels.get((node.attrs.id ?? '').toLowerCase());
+            if (label && (label.label !== node.attrs.label || label.title !== node.attrs.title
+                || label.missing !== node.attrs.missing || label.foreign !== node.attrs.foreign)) {
+                tr.setNodeMarkup(pos, undefined, { ...node.attrs, ...label });
+            }
+            return false;
+        }
+        if (!node.isText) {
+            return true;
+        }
+        for (const match of node.text.matchAll(refPattern)) {
+            const id = match[1].toLowerCase();
+            const label = labels.get(id);
+            const from = pos + match.index;
+            const to = from + match[0].length;
+            if (label && !(selection.from < to && selection.to > from)) {
+                replacements.push({ from, to, attrs: { id, ...label }, marks: node.marks });
+            }
+        }
+        return false;
+    });
+    // From the back, so the positions found stay valid (setNodeMarkup keeps every size).
+    for (const { from, to, attrs, marks } of replacements.reverse()) {
+        tr.replaceWith(from, to, doc.type.schema.nodes.blockRef.create(attrs, null, marks));
+    }
+}
+
 /** A text block with its dates at the top right, its source chips below and a handle to drag it. */
 class TextBlockView {
     constructor(node, options) {
@@ -390,11 +510,14 @@ const Keys = Extension.create({
             Tab: inHeadingOr('Indent', run(shiftDepth(1))),
             'Shift-Tab': inHeadingOr('Outdent', run(shiftDepth(-1))),
             Backspace: () => {
-                const { selection } = this.editor.state;
-                return selection.empty && selection.$from.parentOffset === 0 && inHeading(this.editor.state)
-                    ? section('RemoveHeading')()
-                    : false;
+                const { state, view } = this.editor;
+                const { selection } = state;
+                if (selection.empty && selection.$from.parentOffset === 0 && inHeading(state)) {
+                    return section('RemoveHeading')();
+                }
+                return deleteReference(state, view.dispatch, false);
             },
+            Delete: () => deleteReference(this.editor.state, this.editor.view.dispatch, true),
             'Mod-Shift-n': section('ToggleRemark'),
             'Mod-Shift-N': section('ToggleRemark'),
             'Alt-ArrowUp': section('RangeUp'),
@@ -638,8 +761,9 @@ const MarkedNodes = Extension.create({
     },
 });
 
-// Marks the transaction of setBlockDates: it only shows dates and is not reported as an edit.
-const datesOnlyKey = 'neDatesOnly';
+// Marks the transactions of setBlockDates and setRefLabels: they only show what the book holds and are not reported
+// as an edit.
+const shownOnlyKey = 'neShownOnly';
 
 /** The nearest scrolling ancestor of element (the document's scroller if none). */
 function scrollParent(element) {
@@ -681,8 +805,8 @@ function dropTarget(view, event) {
 
 /**
  * Creates the editor in host. dotnet receives DocumentChanged(json), CursorChanged(kind, key, textBlockKey, offset),
- * SectionCommand(name), SectionBoxMoved(barTop, visible), ChipClicked(noteId), ChipRemoved(blockKey, noteId) and
- * NoteDropped(afterKey). options.barHeight is the height of the section bar C# shows at the marking box's bottom
+ * SectionCommand(name), SectionBoxMoved(barTop, visible), ChipClicked(noteId), ChipRemoved(blockKey, noteId),
+ * ReferenceClicked(id) and NoteDropped(afterKey). options.barHeight is the height of the section bar C# shows at the marking box's bottom
  * (.ne-section-bar in the .ne-editor-pane) until the bar can be measured; the bar may wrap into more lines, so its
  * actual height is followed (the gap below the marking, --bar-height, and the scroll distance from the bottom).
  */
@@ -782,6 +906,7 @@ export function createEditor(host, dotnet, options = {}) {
             }),
             Para,
             Text,
+            BlockRef.configure({ onClicked: id => call('ReferenceClicked', id) }),
             Bold,
             Italic,
             HardBreak.extend({
@@ -814,9 +939,10 @@ export function createEditor(host, dotnet, options = {}) {
                 },
             },
         },
-        // Dates set by setBlockDates are no edit: they are not reported (nothing to save).
+        // Dates and reference labels set by setBlockDates and setRefLabels are no edit: they are not reported (nothing to
+        // save).
         onUpdate: ({ editor: e, transaction }) => {
-            if (!transaction.getMeta(datesOnlyKey)) {
+            if (!transaction.getMeta(shownOnlyKey)) {
                 call('DocumentChanged', JSON.stringify(e.getJSON()));
             }
         },
@@ -857,22 +983,24 @@ export function createEditor(host, dotnet, options = {}) {
         },
         /**
          * Puts the cursor at the start of the text of the heading, text block or detail with the key (null: the start
-         * of the document) and scrolls it into view; an unknown key does nothing.
+         * of the document), or textOffset characters into that text (clamped to it), and scrolls it into view; an
+         * unknown key does nothing.
          */
-        reveal(key) {
+        reveal(key, textOffset = 0) {
             const doc = editor.state.doc;
-            let target = key ? null : { pos: 0, at: TextSelection.atStart(doc).from };
+            let target = key ? null : { pos: 0, at: TextSelection.atStart(doc).from, size: 0 };
             doc.forEach((node, offset) => {
                 if (target) {
                     return;
                 }
                 if (node.attrs.key === key) {
                     // A heading's title starts inside it, a text block's text inside its first paragraph.
-                    target = { pos: offset, at: offset + (node.type.name === 'heading' ? 1 : 2) };
+                    const heading = node.type.name === 'heading';
+                    target = { pos: offset, at: offset + (heading ? 1 : 2), size: (heading ? node : node.firstChild).content.size };
                 } else if (node.type.name === 'textBlock') {
                     node.forEach((para, paraOffset, index) => {
                         if (!target && index > 0 && para.attrs.key === key) {
-                            target = { pos: offset + 1 + paraOffset, at: offset + 2 + paraOffset };
+                            target = { pos: offset + 1 + paraOffset, at: offset + 2 + paraOffset, size: para.content.size };
                         }
                     });
                 }
@@ -880,7 +1008,8 @@ export function createEditor(host, dotnet, options = {}) {
             if (!target) {
                 return;
             }
-            editor.view.dispatch(editor.state.tr.setSelection(TextSelection.create(doc, target.at)));
+            const at = target.at + Math.max(0, Math.min(textOffset || 0, target.size));
+            editor.view.dispatch(editor.state.tr.setSelection(TextSelection.create(doc, at)));
             // The user types on right there; a text field that has the focus meanwhile (e.g. renaming an outline
             // heading after a double click) keeps it.
             const active = document.activeElement;
@@ -921,7 +1050,22 @@ export function createEditor(host, dotnet, options = {}) {
                 }
             });
             if (tr.docChanged) {
-                editor.view.dispatch(tr.setMeta('addToHistory', false).setMeta(datesOnlyKey, true));
+                editor.view.dispatch(tr.setMeta('addToHistory', false).setMeta(shownOnlyKey, true));
+            }
+        },
+        /**
+         * Shows the current labels of the references: list is an array of { id, label, title, missing }. Reference
+         * nodes take the new labels, and a reference typed as text becomes a node (see updateRefs). The document stays
+         * otherwise, the cursor is kept (mapped across a conversion before it), nothing goes into the undo history and
+         * no change is reported. Ids the document does not hold are ignored.
+         */
+        setRefLabels(list) {
+            const labels = new Map(list.map(item => [String(item.id).toLowerCase(),
+                { label: item.label ?? '', title: item.title ?? '', missing: item.missing === true, foreign: item.foreign === true }]));
+            const tr = editor.state.tr;
+            updateRefs(tr, editor.state.doc, labels, editor.state.selection);
+            if (tr.docChanged) {
+                editor.view.dispatch(tr.setMeta('addToHistory', false).setMeta(shownOnlyKey, true));
             }
         },
         destroy() {

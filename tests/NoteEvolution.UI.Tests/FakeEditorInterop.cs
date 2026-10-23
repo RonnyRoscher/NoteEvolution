@@ -20,6 +20,9 @@ public sealed class FakeEditorInterop : IEditorInterop
     /// <summary>The keys passed to <see cref="RevealAsync"/>, in order.</summary>
     public List<Guid> Reveals { get; } = [];
 
+    /// <summary>The offsets passed to <see cref="RevealAsync"/>, in the order of <see cref="Reveals"/>.</summary>
+    public List<int> RevealOffsets { get; } = [];
+
     /// <summary>The lists passed to <see cref="SetMarkedAsync"/>, in order.</summary>
     public List<IReadOnlyList<MarkedNode>> Marked { get; } = [];
 
@@ -32,7 +35,7 @@ public sealed class FakeEditorInterop : IEditorInterop
     /// <summary>
     /// All calls in order: <c>doc</c> for <see cref="SetDocumentAsync"/>, <c>reveal:{key}</c> for
     /// <see cref="RevealAsync"/>, <c>marked</c> for <see cref="SetMarkedAsync"/>, <c>dates</c> for
-    /// <see cref="SetBlockDatesAsync"/>.
+    /// <see cref="SetBlockDatesAsync"/>, <c>refs</c> for <see cref="SetRefLabelsAsync"/>.
     /// </summary>
     public List<string> Calls { get; } = [];
 
@@ -75,9 +78,10 @@ public sealed class FakeEditorInterop : IEditorInterop
         }
     }
 
-    public Task RevealAsync(Guid elementKey)
+    public Task RevealAsync(Guid elementKey, int offset = 0)
     {
         Reveals.Add(elementKey);
+        RevealOffsets.Add(offset);
         Calls.Add($"reveal:{elementKey}");
         return Task.CompletedTask;
     }
@@ -99,6 +103,16 @@ public sealed class FakeEditorInterop : IEditorInterop
 
         BlockDates.Add(new Dictionary<Guid, BlockDateLabel?>(dates));
         Calls.Add("dates");
+        return Task.CompletedTask;
+    }
+
+    /// <summary>The labels passed to <see cref="SetRefLabelsAsync"/>, in order.</summary>
+    public List<IReadOnlyDictionary<Guid, RefLabel>> RefLabels { get; } = [];
+
+    public Task SetRefLabelsAsync(IReadOnlyDictionary<Guid, RefLabel> labels)
+    {
+        RefLabels.Add(new Dictionary<Guid, RefLabel>(labels));
+        Calls.Add("refs");
         return Task.CompletedTask;
     }
 

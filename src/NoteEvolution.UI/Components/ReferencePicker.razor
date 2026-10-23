@@ -1,0 +1,165 @@
+@using NoteEvolution.Core.Books
+@using NoteEvolution.UI.Editor
+@using Microsoft.JSInterop
+@inject IStringLocalizer<Strings> L
+@inject IJSRuntime JS
+@inject ILogger<ReferencePicker> Logger
+
+@* The search for the target of a cross reference (spec 2.2): the headings (their path) and text blocks (section ›
+   start of the text) of the book, filtered while typing, case-insensitively. Arrow keys and Enter choose, a click
+   chooses too, Escape cancels. *@
+<div class="ne-ref-picker" role="dialog" aria-label="@L["RefPickerTitle"]">
+    <input type="text" class="ne-ref-query" placeholder="@L["RefPickerPlaceholder"]" aria-label="@L["RefPickerPlaceholder"]"
+           @ref="_input" value="@_query" @oninput="QueryChanged" @onkeydown="KeyDownAsync" />
+    <div class="ne-ref-list" role="listbox" @ref="_list">
+        @if (_matches.Count == 0)
+        {
+            <span class="ne-ref-none">@L["RefPickerNone"]</span>
+        }
+        @for (var i = 0; i < _matches.Count; i++)
+        {
+            var candidate = _matches[i];
+            <button type="button" role="option" aria-selected="@(i == _selected ? "true" : "false")"
+                    class="ne-ref-option @(candidate.IsHeading ? "ne-ref-heading" : "ne-ref-text") @(i == _selected ? "ne-ref-selected" : "")"
+                    title="@candidate.Label" @onclick="() => OnPick.InvokeAsync(candidate.Key)">@candidate.Label</button>
+        }
+        @if (_hidden > 0)
+        {
+            <span class="ne-ref-none ne-ref-more">@L["RefPickerMore", _hidden]</span>
+        }
+    </div>
+</div>
+
+@code {
+
+    private ElementReference _input;
+    private ElementReference _list;
+
+    /// <summary>The arrow keys moved the selection: it is scrolled into view after the render.</summary>
+    private bool _scrollPending;
+    private List<Candidate> _candidates = [];
+    /// <summary>The matches shown: at most <see cref="MaxShown"/>, so a large book does not render thousands of options.</summary>
+    private List<Candidate> _matches = [];
+
+    /// <summary>How many further matches are not shown (typing narrows the list).</summary>
+    private int _hidden;
+
+    private const int MaxShown = 200;
+    private string _query = "";
+    private int _selected;
+    private bool _focused;
+
+    /// <summary>The book whose headings and text blocks are offered.</summary>
+    [Parameter, EditorRequired]
+    public Book Book { get; set; } = default!;
+
+    /// <summary>The element the reference goes into; a text block is not offered as its own target.</summary>
+    [Parameter]
+    public Guid? ExcludeKey { get; set; }
+
+    /// <summary>A target was chosen: the <see cref="Block.Key"/> of the heading or text block.</summary>
+    [Parameter]
+    public EventCallback<Guid> OnPick { get; set; }
+
+    /// <summary>Escape was pressed.</summary>
+    [Parameter]
+    public EventCallback OnCancel { get; set; }
+
+    /// <summary>A target offered: its key, the label shown and searched, and whether it is a heading.</summary>
+    private sealed record Candidate(Guid Key, string Label, bool IsHeading);
+
+    protected override void OnParametersSet()
+    {
+        _candidates = [.. CandidatesOf(Book.Root).Where(candidate => candidate.Key != ExcludeKey)];
+        Filter();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_focused)
+        {
+            _focused = true;
+            await _input.FocusAsync();
+        }
+
+        if (_scrollPending)
+        {
+            _scrollPending = false;
+            try
+            {
+                await JS.InvokeVoidAsync("neLayout.scrollOptionIntoView", _list, _selected);
+            }
+            catch (Exception ex) when (ex is JSException or JSDisconnectedException or InvalidOperationException or TaskCanceledException)
+            {
+                // Only an aid: the selection works without it.
+                Logger.LogDebug(ex, "Scrolling the selected reference target into view failed");
+            }
+        }
+    }
+
+    private void QueryChanged(ChangeEventArgs args)
+    {
+        _query = args.Value?.ToString() ?? "";
+        _selected = 0;
+        Filter();
+    }
+
+    private void Filter()
+    {
+        var query = _query.Trim();
+        var all = query.Length == 0
+            ? _candidates
+            : [.. _candidates.Where(candidate => candidate.Label.Contains(query, StringComparison.CurrentCultureIgnoreCase))];
+        _matches = all.Count > MaxShown ? all[..MaxShown] : all;
+        _hidden = all.Count - _matches.Count;
+        _selected = Math.Clamp(_selected, 0, Math.Max(0, _matches.Count - 1));
+    }
+
+    private async Task KeyDownAsync(KeyboardEventArgs args)
+    {
+        switch (args.Key)
+        {
+            case "ArrowDown":
+                _selected = Math.Min(_selected + 1, Math.Max(0, _matches.Count - 1));
+                _scrollPending = _matches.Count > 0;
+                break;
+            case "ArrowUp":
+                _selected = Math.Max(_selected - 1, 0);
+                _scrollPending = _matches.Count > 0;
+                break;
+            case "Enter" when _matches.Count > 0:
+                await OnPick.InvokeAsync(_matches[_selected].Key);
+                break;
+            case "Escape":
+                await OnCancel.InvokeAsync();
+                break;
+        }
+    }
+
+    /// <summary>
+    /// The headings below <paramref name="node"/> (with their path) and its text blocks (section › start of the text),
+    /// in book order; labelled as the references' tooltips are (<see cref="RefLabels"/>).
+    /// </summary>
+    private IEnumerable<Candidate> CandidatesOf(OutlineNode node)
+    {
+        var section = RefLabels.SectionTitle(Book, node, L);
+        foreach (var item in node.Items)
+        {
+            switch (item)
+            {
+                case OutlineNode child:
+                    yield return new Candidate(child.Key, RefLabels.Path(child, L), true);
+                    foreach (var candidate in CandidatesOf(child))
+                    {
+                        yield return candidate;
+                    }
+
+                    break;
+                case TextBlock textBlock:
+                    yield return new Candidate(
+                        textBlock.Key, section + RefLabels.Separator + RefLabels.Excerpt(textBlock.Text, RefLabels.TitleExcerptLength), false);
+                    break;
+            }
+        }
+    }
+}

@@ -6,7 +6,8 @@ namespace NoteEvolution.Core.Books;
 /// <summary>
 /// What <see cref="ManuscriptEditor.RemoveHeading"/> did, so that it can be undone even after later edits of the book
 /// (in the style of the link service's undo of a delete): the removed heading block with its original lines, where it
-/// was, and the blocks it moved up (by key) with their lines and heading levels before and after the command.
+/// was, the text block made from its title (by key), and the blocks it moved up (by key) with their lines and heading
+/// levels before and after the command.
 /// <see cref="RestoreInto"/> puts the heading back around the moved blocks; the caller saves the page afterwards.
 /// </summary>
 public sealed class RemovedHeading
@@ -14,23 +15,34 @@ public sealed class RemovedHeading
     private readonly Block _heading;
     private readonly Guid? _parentKey;
     private readonly int _index;
+    private readonly Guid? _titleKey;
+    private readonly IReadOnlyList<RawLine> _titleLines;
     private readonly IReadOnlyList<Guid> _childKeys;
     private readonly IReadOnlyList<MovedBlock> _moved;
 
     internal RemovedHeading(
-        Guid reveal, Block heading, Guid? parentKey, int index, IReadOnlyList<Guid> childKeys, IReadOnlyList<MovedBlock> moved)
+        Guid reveal,
+        Block heading,
+        Guid? parentKey,
+        int index,
+        Guid? titleKey,
+        IReadOnlyList<RawLine> titleLines,
+        IReadOnlyList<Guid> childKeys,
+        IReadOnlyList<MovedBlock> moved)
     {
         Reveal = reveal;
         _heading = heading;
         _parentKey = parentKey;
         _index = index;
+        _titleKey = titleKey;
+        _titleLines = titleLines;
         _childKeys = childKeys;
         _moved = moved;
     }
 
     /// <summary>
-    /// The key to reveal after the command: the first moved item, else the element before the heading in the file,
-    /// else <see cref="Guid.Empty"/>.
+    /// The key to reveal after the command: the text block made from the title, else the first moved item, else the
+    /// element before the heading in the file, else <see cref="Guid.Empty"/>.
     /// </summary>
     public Guid Reveal { get; }
 
@@ -38,7 +50,8 @@ public sealed class RemovedHeading
     /// Whether <see cref="RestoreInto"/> can undo the command on <paramref name="page"/>: the heading is not on it again,
     /// its former parent still is, every moved child (by key) still has that parent, and every other moved block still
     /// on the page still has the parent the command left it with (so all of them are still inside the moved subtrees).
-    /// Other edits of the page, also of the moved blocks' text, do not matter.
+    /// The text block made from the title is gone, or still in the heading's place exactly as the command made it (its
+    /// lines unchanged, no details). Other edits of the page, also of the moved blocks' text, do not matter.
     /// </summary>
     public bool CanRestore(Page page)
     {
@@ -53,12 +66,22 @@ public sealed class RemovedHeading
             return false;
         }
 
+        // The text block made from the title may be gone; if it is there, it is still in the heading's place, exactly as
+        // the command made it and without details of its own: removing it must not lose anything typed or added there.
+        if (_titleKey is { } titleKey
+            && Find(page, titleKey) is { } title
+            && (title.Parent != parent || title.Children.Count > 0 || !title.Lines.SequenceEqual(_titleLines)))
+        {
+            return false;
+        }
+
         return _childKeys.All(childKey => Find(page, childKey) is { } child && child.Parent == parent)
                && _moved.All(moved => Find(page, moved.Key) is not { } block || block.Parent?.Key == moved.ParentKey);
     }
 
     /// <summary>
-    /// Puts the heading back with its original lines where the moved children are now (without children: at its old
+    /// Removes the text block made from the title (still as the command made it), puts the heading back with its
+    /// original lines where the moved children are now (without children: where that text block was, else at its old
     /// index), moves the children back below it in their order and gives the moved sub-headings their former levels.
     /// A moved block still exactly as the command left it gets its original lines back; in any other the text stays
     /// and only the heading level changes back. Changed blocks are marked dirty.
@@ -79,7 +102,17 @@ public sealed class RemovedHeading
             .Select(moved => moved.Key)
             .ToHashSet();
 
-        var index = children.Count > 0 ? children.Min(child => IndexOf(siblings, child)) : Math.Min(_index, siblings.Count);
+        // The text block made from the title goes; the heading comes back with its own lines (and its id::).
+        int? titleIndex = null;
+        if (_titleKey is { } titleKey && Find(page, titleKey) is { } title)
+        {
+            titleIndex = IndexOf(siblings, title);
+            page.RemoveBlock(title);
+        }
+
+        var index = children.Count > 0
+            ? children.Min(child => IndexOf(siblings, child))
+            : titleIndex ?? Math.Min(_index, siblings.Count);
         if (IndentStyle.ChildIndent(parent) == _heading.Indent)
         {
             page.RestoreBlock(parent, index, _heading);

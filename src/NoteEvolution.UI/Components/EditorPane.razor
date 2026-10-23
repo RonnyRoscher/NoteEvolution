@@ -36,7 +36,8 @@
     @if (State.CurrentBook is not null)
     {
         <SectionBar Top="_barTop" Visible="_barVisible" Element="State.CurrentElement" Locked="ReadOnlyReason is not null"
-                    OnCommand="OnSectionCommand" OnStatus="OnStatusChosen" />
+                    OnCommand="OnSectionCommand" OnStatus="OnStatusChosen"
+                    OnReference="OnReferenceChosen" OnLevel="OnLevelChosen" />
     }
 </div>
 
@@ -63,6 +64,12 @@
 
     /// <summary>The dates labels the editor shows, by text block key (spec "Blockdaten" 3).</summary>
     private Dictionary<Guid, BlockDateLabel?> _shownDates = [];
+
+    /// <summary>The cross references of the text the editor shows (spec 2.3), as last loaded or pushed.</summary>
+    private ShownRefs _shownRefs = new([], []);
+
+    /// <summary>The references of a text in order (by target id) and the label of each target.</summary>
+    private sealed record ShownRefs(List<Guid> Order, Dictionary<Guid, RefLabel> Labels);
 
     /// <summary>Where the section bar goes (pixels from the pane's top) and whether the marking is in view, as the editor reports it.</summary>
     private double _barTop;
@@ -312,6 +319,26 @@
         StateHasChanged();
     }
 
+    /// <summary>
+    /// Inserts a cross reference to the heading or text block chosen in the section bar at the cursor
+    /// (<see cref="ManuscriptCommands.InsertReferenceAsync"/>) and shows its message.
+    /// </summary>
+    public async Task OnReferenceChosen(Guid targetKey)
+    {
+        _saver.Message = await ManuscriptCommands.InsertReferenceAsync(State, targetKey, L["UndoReference"], Logger);
+        StateHasChanged();
+    }
+
+    /// <summary>
+    /// Converts the element at the cursor to the level chosen in the section bar (<see cref="ManuscriptCommands.SetLevelAsync"/>)
+    /// and shows its message; the element stays the active one.
+    /// </summary>
+    public async Task OnLevelChosen(int level)
+    {
+        _saver.Message = await ManuscriptCommands.SetLevelAsync(State, level, L["UndoLevel"], Logger);
+        StateHasChanged();
+    }
+
     /// <summary>Moves the section bar to the bottom of the marking, or hides it while the marking is out of view.</summary>
     public Task OnSectionBoxMoved(double barTop, bool visible)
     {
@@ -329,6 +356,23 @@
     public Task OnChipClicked(Guid noteId)
     {
         State.RevealNote(noteId);
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// A click on a cross reference jumps to its target (spec 2.3): the heading or text block becomes the element at the
+    /// cursor and is revealed, a jump in the back/forward history (<see cref="AppState.JumpTo"/>). A reference without a
+    /// target goes nowhere.
+    /// </summary>
+    public Task OnReferenceClicked(Guid targetId)
+    {
+        if (State.CurrentBook is not { } book || CrossRefIndex.Of(book).Target(targetId) is not { } target)
+        {
+            return Task.CompletedTask;
+        }
+
+        State.JumpTo(target.Heading?.Key ?? target.TextBlock!.Key);
+        State.Notify();
         return Task.CompletedTask;
     }
 
@@ -529,6 +573,7 @@
             // text slightly normalized; it is compared with the book's version from now on (R33).
             _saver.Shown = shown with { Snapshot = fresh, FromEditor = false };
             await ShowDatesAsync(DatesOf(fresh, book));
+            await ShowRefLabelsAsync(fresh, book);
             StateHasChanged();
             await RevealPendingAsync();
             return;
@@ -540,8 +585,11 @@
         try
         {
             var dates = DatesOf(fresh, book);
-            await Editor.SetDocumentAsync(EditorDocMapper.ToJson(fresh, key => dates.GetValueOrDefault(key)), _showChips, keepCursor: sameTarget);
+            var refs = RefsOf(fresh, book);
+            var json = EditorDocMapper.ToJson(fresh, key => dates.GetValueOrDefault(key), LabelsOf(book));
+            await Editor.SetDocumentAsync(json, _showChips, keepCursor: sameTarget);
             _shownDates = dates;
+            _shownRefs = refs;
         }
         finally
         {
@@ -625,9 +673,10 @@
     /// <summary>Scrolls to the element <see cref="AppState.RevealElement"/> asked for, now that the book is shown.</summary>
     private async Task RevealPendingAsync()
     {
+        var offset = State.PendingRevealOffset;
         if (State.TakePendingReveal() is { } elementKey)
         {
-            await Editor.RevealAsync(elementKey);
+            await Editor.RevealAsync(elementKey, offset);
         }
     }
 
@@ -656,6 +705,49 @@
 
         // Only what the editor took counts as shown: after a failed push the next sync pushes the labels again.
         _shownDates = dates;
+    }
+
+    /// <summary>
+    /// The cross references in the texts of the snapshot, with their labels from the book (<see cref="RefLabels"/>).
+    /// A reference to a block outside the book (a note) is no cross reference but gets its foreign label too
+    /// (<see cref="RefLabel.ForeignOf"/>), so one typed as text becomes a node as well: one position of the shown text.
+    /// </summary>
+    private ShownRefs RefsOf(SectionSnapshot snapshot, Book book)
+    {
+        var labelOf = LabelsOf(book);
+        var labels = new Dictionary<Guid, RefLabel>();
+        var order = new List<Guid>();
+        foreach (var id in snapshot.Nodes.OfType<SnapshotTextBlock>()
+                     .SelectMany(t => t.Paragraphs.Select(p => p.Text).Prepend(t.Text))
+                     .SelectMany(text => BlockRefs.Find(text).Select(r => r.Id)))
+        {
+            labels.TryAdd(id, labelOf(id));
+            order.Add(id);
+        }
+
+        return new ShownRefs(order, labels);
+    }
+
+    /// <summary>The reference labels of the book; an id the session's vault knows outside the book is no reference.</summary>
+    private Func<Guid, RefLabel> LabelsOf(Book book) =>
+        RefLabels.Of(book, L, State.Session?.Vault is { } vault ? id => vault.FindBlockById(id) is not null : null);
+
+    /// <summary>
+    /// Gives the kept document the current reference labels (a target renamed or deleted in its own save) and lets it
+    /// turn references typed as text into reference nodes; pushed only when a label or the references changed.
+    /// </summary>
+    private async Task ShowRefLabelsAsync(SectionSnapshot snapshot, Book book)
+    {
+        var refs = RefsOf(snapshot, book);
+        var same = refs.Order.SequenceEqual(_shownRefs.Order)
+                   && refs.Labels.All(l => _shownRefs.Labels.GetValueOrDefault(l.Key) == l.Value);
+        if (!same)
+        {
+            await Editor.SetRefLabelsAsync(refs.Labels);
+        }
+
+        // Only what the editor took counts as shown: after a failed push the next sync pushes the labels again.
+        _shownRefs = refs;
     }
 
     /// <summary>

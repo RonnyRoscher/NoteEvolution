@@ -245,25 +245,26 @@ public class ManuscriptEditorTests
     }
 
     [Fact]
-    public void RemoveHeading_TextAndSubsectionsMoveUpInPlace_SubheadingsOneLevelHigher()
+    public void RemoveHeading_TitleBecomesTextBlock_TextAndSubsectionsMoveUpInPlace_SubheadingsOneLevelHigher()
     {
         var book = Load(Text);
 
         var reveal = ManuscriptEditor.RemoveHeading(book, KeyOf(book, "## Eins-A")).Reveal;
 
+        // The heading's other properties (collapsed::) go with it; without a time the new text block has no dates.
         AssertResult(
             Text,
             book,
             Text.Replace(
                 "\t- ## Eins-A\n\t  collapsed:: true\n\t\t- Text A\n\t\t- ### Eins-A-i\n\t\t\t- tief\n",
-                "\t- Text A\n\t- ## Eins-A-i\n\t\t- tief\n"),
+                "\t- Eins-A\n\t- Text A\n\t- ## Eins-A-i\n\t\t- tief\n"),
             ["\t- ## Eins-A", "\t  collapsed:: true", "\t\t- Text A", "\t\t- ### Eins-A-i", "\t\t\t- tief"],
-            ["\t- Text A", "\t- ## Eins-A-i", "\t\t- tief"]);
-        Assert.Equal(KeyOf(book, "Text A"), reveal);
+            ["\t- Eins-A", "\t- Text A", "\t- ## Eins-A-i", "\t\t- tief"]);
+        Assert.Equal(KeyOf(book, "Eins-A"), reveal);
         var reloaded = Book.Load(book.Page);
         var eins = reloaded.FindNode(KeyOf(book, "# Eins"))!;
         Assert.Equal(
-            [KeyOf(book, "Text eins"), KeyOf(book, "Text A"), KeyOf(book, "## Eins-A-i"), KeyOf(book, "Text nach A"), KeyOf(book, "## Eins-B")],
+            [KeyOf(book, "Text eins"), KeyOf(book, "Eins-A"), KeyOf(book, "Text A"), KeyOf(book, "## Eins-A-i"), KeyOf(book, "Text nach A"), KeyOf(book, "## Eins-B")],
             eins.Items.Select(item => item switch { OutlineNode n => n.Key, TextBlock t => t.Key, _ => Guid.Empty }));
         Assert.Equal(2, reloaded.FindNode(KeyOf(book, "## Eins-A-i"))!.Level);
         Assert.Empty(reloaded.Warnings);
@@ -280,6 +281,7 @@ public class ManuscriptEditorTests
             "type:: book\n" +
             "\n" +
             "- Vorspann\n" +
+            "- Eins\n" +
             "- Text eins\n" +
             "\t- Detail 1\n" +
             "\t\t- Detail 1a\n" +
@@ -296,7 +298,7 @@ public class ManuscriptEditorTests
             "\t- Text zwei\n" +
             "\t- ## Zwei-A\n",
             Serialize(book));
-        Assert.Equal(KeyOf(book, "Text eins"), reveal);
+        Assert.Equal(KeyOf(book, "Eins"), reveal);
         var reloaded = Book.Load(book.Page);
         Assert.Equal(Guid.Empty, BookElements.SectionOf(reloaded, BookElements.Find(reloaded, KeyOf(book, "Text eins"))!));
         Assert.Equal(Guid.Empty, BookElements.SectionOf(reloaded, BookElements.Find(reloaded, KeyOf(book, "Text nach A"))!));
@@ -305,17 +307,88 @@ public class ManuscriptEditorTests
     }
 
     [Fact]
-    public void RemoveHeading_WithoutContent_RevealsPreviousElement()
+    public void RemoveHeading_WithoutContent_TitleBecomesTheRevealedTextBlock()
     {
         var book = Load(Text);
-        Assert.Equal(KeyOf(book, "Text zwei"), ManuscriptEditor.RemoveHeading(book, KeyOf(book, "## Zwei-A")).Reveal);
-        Assert.Equal(Text.Replace("\t- ## Zwei-A\n", ""), Serialize(book));
+        var reveal = ManuscriptEditor.RemoveHeading(book, KeyOf(book, "## Zwei-A")).Reveal;
+        Assert.Equal(Text.Replace("\t- ## Zwei-A\n", "\t- Zwei-A\n"), Serialize(book));
+        Assert.Equal(KeyOf(book, "Zwei-A"), reveal);
 
         var single = Load("type:: book\n\n- # Leer\n");
-        Assert.Equal(Guid.Empty, ManuscriptEditor.RemoveHeading(single, KeyOf(single, "# Leer")).Reveal);
-        Assert.Equal("type:: book\n\n", Serialize(single));
+        reveal = ManuscriptEditor.RemoveHeading(single, KeyOf(single, "# Leer")).Reveal;
+        Assert.Equal("type:: book\n\n- Leer\n", Serialize(single));
+        Assert.Equal(KeyOf(single, "Leer"), reveal);
 
         Assert.Throws<ArgumentException>(() => ManuscriptEditor.RemoveHeading(book, KeyOf(book, "Text zwei")));
+    }
+
+    [Fact]
+    public void RemoveHeading_TitleThatLooksLikeAHeading_IsEscaped_StaysText()
+    {
+        var book = Load("type:: book\n\n- # Eins\n\t- Text\n\t- ## # Kein Titel\n\t- ### - kein Punkt\n");
+
+        ManuscriptEditor.RemoveHeading(book, KeyOf(book, "## # Kein Titel"));
+        ManuscriptEditor.RemoveHeading(book, KeyOf(book, "### - kein Punkt"));
+
+        // Read as structure the titles would become a heading again and a bullet: escaped, they show as before.
+        Assert.Equal("type:: book\n\n- # Eins\n\t- Text\n\t- \\# Kein Titel\n\t- \\- kein Punkt\n", Serialize(book));
+        var reloaded = Book.Load(book.Page);
+        Assert.Empty(reloaded.Root.Children.Single().Children);
+        Assert.Empty(reloaded.Warnings);
+    }
+
+    [Fact]
+    public void RemoveHeading_EmptyTitleWithoutId_NoTextBlock_RevealsPreviousElement()
+    {
+        var book = Load("type:: book\n\n- # Eins\n\t- Text\n\t- ## \n");
+        var heading = book.Root.Children.Single().Children.Single().Key;
+
+        Assert.Equal(KeyOf(book, "Text"), ManuscriptEditor.RemoveHeading(book, heading).Reveal);
+
+        Assert.Equal("type:: book\n\n- # Eins\n\t- Text\n", Serialize(book));
+    }
+
+    [Fact]
+    public void RemoveHeading_TextBlockFromTheTitle_TakesOverTheId_GetsDates_ReferencesKeepResolving()
+    {
+        const string id = "6650a1c2-1b7e-4c1d-9a0f-2b3c4d5e6f70";
+        var text =
+            "type:: book\n\n" +
+            "- # Eins\n" +
+            "\t- Text eins\n" +
+            "\t- ## Ziel\n" +
+            $"\t  id:: {id}\n" +
+            "\t  collapsed:: true\n" +
+            "\t\t- Text Z\n" +
+            "- # Zwei\n" +
+            $"\t- Siehe (({id}))\n";
+        var book = Load(text);
+        var now = new DateTimeOffset(2026, 10, 19, 14, 32, 0, TimeSpan.Zero);
+        var stamp = BlockDates.Format(now);
+
+        var removed = ManuscriptEditor.RemoveHeading(book, KeyOf(book, "## Ziel"), now);
+
+        Assert.Equal(
+            "type:: book\n\n" +
+            "- # Eins\n" +
+            "\t- Text eins\n" +
+            "\t- Ziel\n" +
+            $"\t  id:: {id}\n" +
+            $"\t  created:: {stamp}\n" +
+            $"\t  updated:: {stamp}\n" +
+            "\t- Text Z\n" +
+            "- # Zwei\n" +
+            $"\t- Siehe (({id}))\n",
+            Serialize(book));
+        var index = CrossRefIndex.Of(Book.Load(book.Page));
+        Assert.Empty(index.Missing);
+        Assert.Equal(KeyOf(book, "Ziel"), index.Target(Guid.Parse(id))!.TextBlock!.Key);
+
+        // Undo takes the text block away again and gives the original bytes.
+        book.Page.MarkSaved();
+        Assert.True(removed.CanRestore(book.Page));
+        removed.RestoreInto(book.Page);
+        Assert.Equal(text, Serialize(book));
     }
 
     [Theory]
@@ -408,6 +481,39 @@ public class ManuscriptEditorTests
         removed = ManuscriptEditor.RemoveHeading(deepHeading, KeyOf(deepHeading, "# Eins"));
         deepHeading.Page.MoveBlock(BlockOf(deepHeading, "## Eins-A-i"), BlockOf(deepHeading, "# Eins-B"), 1);
         AssertRefused(deepHeading, removed);
+
+        static void AssertRefused(Book book, RemovedHeading removed)
+        {
+            var before = Serialize(book);
+            Assert.False(removed.CanRestore(book.Page));
+            Assert.Throws<InvalidOperationException>(() => removed.RestoreInto(book.Page));
+            Assert.Equal(before, Serialize(book));
+        }
+    }
+
+    [Fact]
+    public void RemoveHeading_RestoreInto_TitleTextBlockEditedOrGotADetail_Refused_PageUnchanged()
+    {
+        // Typed into the text block made from the title: undo would lose the text.
+        var edited = Load(Text);
+        var removed = ManuscriptEditor.RemoveHeading(edited, KeyOf(edited, "## Eins-A"));
+        BlockOf(edited, "Eins-A").SetContent("Eins-A und mehr");
+        AssertRefused(edited, removed);
+
+        // A detail added to it would go with it.
+        var detail = Load(Text);
+        removed = ManuscriptEditor.RemoveHeading(detail, KeyOf(detail, "## Eins-A"));
+        var reloaded = Book.Load(detail.Page);
+        ManuscriptEditor.InsertChild(reloaded, BookElements.Find(reloaded, KeyOf(detail, "Eins-A"))!);
+        AssertRefused(detail, removed);
+
+        // Deleted, it is no reason to refuse.
+        var deleted = Load(Text);
+        removed = ManuscriptEditor.RemoveHeading(deleted, KeyOf(deleted, "## Eins-A"));
+        deleted.Page.RemoveBlock(BlockOf(deleted, "Eins-A"));
+        Assert.True(removed.CanRestore(deleted.Page));
+        removed.RestoreInto(deleted.Page);
+        Assert.Equal(Text, Serialize(deleted));
 
         static void AssertRefused(Book book, RemovedHeading removed)
         {

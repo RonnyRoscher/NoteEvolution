@@ -665,6 +665,231 @@ public class EditorPaneTests : UiTestContext
         Assert.Equal(Text("EditorReadOnly"), cut.Find(".ne-editor-hint").TextContent);
     }
 
+    private const string HeadingId = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+
+    private const string MissingId = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
+
+    /// <summary>Alpha with references: to the heading "Zwei", to the text block "Erster Text" and to a missing block.</summary>
+    private static TestVault WithRefs() => TestVault.Create(
+        (BookPath,
+            "title:: Alpha\ntype:: book\n\n" +
+            "- # Eins\n" +
+            "\t- Erster ((" + HeadingId + ")) Text, der so lang ist, dass er gekürzt wird\n" +
+            "\t  id:: " + FirstId + "\n" +
+            "\t- Siehe ((" + HeadingId + ")) und ((" + FirstId + ")) und ((" + MissingId + "))\n" +
+            "- # Zwei\n" +
+            "  id:: " + HeadingId + "\n" +
+            "\t- Dritter Text\n"));
+
+    /// <summary>The blockRef nodes of the shown document, in order.</summary>
+    private List<JsonNode> RefNodes() =>
+        [.. Blocks(Doc(Editor.Json)).Where(n => (string?)n!["type"] == "textBlock")
+            .SelectMany(n => n!["content"]!.AsArray())
+            .SelectMany(p => p!["content"]?.AsArray() ?? [])
+            .Where(n => (string?)n!["type"] == "blockRef")
+            .Select(n => n!)];
+
+    [Fact]
+    public async Task Pane_ShowsReferencesWithLabels()
+    {
+        using var tv = WithRefs();
+        await RenderAsync(tv);
+
+        var refs = RefNodes();
+        Assert.Equal(
+            [
+                (HeadingId, "→ Zwei", "Zwei", false),
+                (HeadingId, "→ Zwei", "Zwei", false),
+                // A reference in the target's text shows as "→" in its label.
+                (FirstId, "→ Eins: Erster → Text, der so lang ist, dass er…", "Eins › Erster → Text, der so lang ist, dass er gekürzt wird", false),
+                (MissingId, Text("RefLabelMissing"), Text("RefTitleMissing"), true),
+            ],
+            refs.Select(n => ((string)n["attrs"]!["id"]!, (string)n["attrs"]!["label"]!, (string)n["attrs"]!["title"]!,
+                (bool)n["attrs"]!["missing"]!)));
+    }
+
+    [Fact]
+    public async Task Pane_ReferenceToANote_IsAForeignNode_FileUnchanged()
+    {
+        // Spec 2.1: a reference to a block outside the book (here a note) is no cross reference. It is still one unit
+        // of the shown text (a foreign node showing the reference text), so the editor's offsets count it as one.
+        using var tv = NoteRefVault();
+        var (_, cut) = await RenderAsync(tv);
+
+        Assert.Equal([NoteId, MissingId], RefNodes().Select(n => (string)n["attrs"]!["id"]!));
+        var foreign = RefNodes()[0]["attrs"]!;
+        Assert.Equal("((" + NoteId + "))", (string?)foreign["label"]);
+        Assert.True((bool)foreign["foreign"]!);
+        Assert.False(RefNodes()[1]["attrs"]!.AsObject().ContainsKey("foreign"));
+
+        // Saving another block leaves the reference as it is; the label push gives the note its reference text as label.
+        var doc = Doc(Editor.Json);
+        SetText(doc, 1, "Zweiter Text, geändert");
+        await ChangeAsync(cut, doc);
+        await cut.InvokeAsync(() => State.FlushEditor!());
+
+        var saved = tv.Read(BookPath);
+        Assert.Contains("Zweiter Text, geändert", saved);
+        Assert.Contains("\t- Erster Text ((" + NoteId + ")) hier und ((" + MissingId + "))\n", saved);
+        Assert.All(Editor.RefLabels, pushed =>
+            Assert.Equal(new RefLabel("((" + NoteId + "))", "", false, true), pushed[Guid.Parse(NoteId)]));
+    }
+
+    [Fact]
+    public async Task AdoptAtCursor_AfterANoteReference_AtTheOffsetTheEditorShows()
+    {
+        using var tv = NoteRefVault();
+        var (_, cut) = await RenderAsync(tv);
+        var book = State.CurrentBook!;
+        var element = book.Page.AllBlocks().Single(b => b.Content.StartsWith("Erster Text", StringComparison.Ordinal)).Key;
+        State.Cursor = new CursorInfo(ElementKind.TextBlock, element, element, ShownOffsetAfter(Doc(Editor.Json), NoteId));
+        var note = State.Session!.Notes.All().Single(n => n.Block.Content == "Notiz").Key;
+
+        var message = await cut.InvokeAsync(() => NoteAdoption.AdoptAsync(State, note, AdoptVariant.AtCursor, "Ohne Titel", NullLogger.Instance));
+
+        Assert.Null(message);
+        Assert.Contains("\t- Erster Text ((" + NoteId + "))Notiz hier und ((" + MissingId + "))\n", tv.Read(BookPath));
+    }
+
+    [Fact]
+    public async Task InsertReference_AfterANoteReference_AtTheOffsetTheEditorShows()
+    {
+        using var tv = NoteRefVault();
+        var (_, cut) = await RenderAsync(tv);
+        var book = State.CurrentBook!;
+        var element = book.Page.AllBlocks().Single(b => b.Content.StartsWith("Erster Text", StringComparison.Ordinal)).Key;
+
+        // The cursor right after the note reference, counted in the editor's document.
+        State.Cursor = new CursorInfo(ElementKind.TextBlock, element, element, ShownOffsetAfter(Doc(Editor.Json), NoteId));
+        var target = book.Page.AllBlocks().Single(b => b.Content == "Zweiter Text").Key;
+        var message = await cut.InvokeAsync(() => ManuscriptCommands.InsertReferenceAsync(State, target, "Verweis", NullLogger.Instance));
+
+        Assert.Null(message);
+        var saved = tv.Read(BookPath);
+        var id = System.Text.RegularExpressions.Regex.Match(saved, @"\t- Zweiter Text\n\t  id:: ([0-9a-f-]{36})").Groups[1].Value;
+        Assert.Contains("\t- Erster Text ((" + NoteId + "))((" + id + ")) hier und ((" + MissingId + "))\n", saved);
+    }
+
+    /// <summary>Alpha with a text block referring to a note and to a missing block.</summary>
+    private static TestVault NoteRefVault() => TestVault.Create(
+        (BookPath,
+            "title:: Alpha\ntype:: book\n\n" +
+            "- # Eins\n" +
+            "\t- Erster Text ((" + NoteId + ")) hier und ((" + MissingId + "))\n" +
+            "\t- Zweiter Text\n"),
+        (NotesPath, "- Notiz\n  id:: " + NoteId + "\n"));
+
+    /// <summary>
+    /// The offset right after the reference node to <paramref name="id"/> in its paragraph, as the editor counts it:
+    /// a character per text character, one position per node.
+    /// </summary>
+    internal static int ShownOffsetAfter(JsonNode doc, string id)
+    {
+        var para = Blocks(doc).SelectMany(n => n!["content"]?.AsArray() ?? [])
+            .Single(p => (p!["content"]?.AsArray() ?? []).Any(n => (string?)n!["attrs"]?["id"] == id))!;
+        var offset = 0;
+        foreach (var node in para["content"]!.AsArray())
+        {
+            offset += (string?)node!["text"] is { } text ? text.Length : 1;
+            if ((string?)node["attrs"]?["id"] == id)
+            {
+                return offset;
+            }
+        }
+
+        throw new InvalidOperationException("No reference node " + id);
+    }
+
+    /// <summary>The heading node with <paramref name="title"/> in an editor document.</summary>
+    private static JsonNode HeadingNode(JsonNode doc, string title) =>
+        Blocks(doc).Single(n => (string?)n!["type"] == "heading" && (string?)n["content"]?[0]?["text"] == title)!;
+
+    [Fact]
+    public async Task Pane_OwnSave_RenamedTarget_PushesTheNewLabel_DocumentKept()
+    {
+        using var tv = WithRefs();
+        var (_, cut) = await RenderAsync(tv);
+        var doc = Doc(Editor.Json);
+        HeadingNode(doc, "Zwei")["content"] = new JsonArray(new JsonObject { ["type"] = "text", ["text"] = "Zwei neu" });
+
+        await ChangeAsync(cut, doc);
+        await cut.InvokeAsync(() => State.FlushEditor!());
+
+        Assert.Contains("- # Zwei neu\n", tv.Read(BookPath));
+        var pushed = Assert.Single(Editor.RefLabels);
+        Assert.Equal(new RefLabel("→ Zwei neu", "Zwei neu", false), pushed[Guid.Parse(HeadingId)]);
+        Assert.True(pushed[Guid.Parse(MissingId)].Missing);
+        Assert.Single(Editor.Documents);
+
+        // Another save that changes no label and no reference pushes nothing.
+        SetText(doc, 2, "Dritter Text, geändert");
+        await ChangeAsync(cut, doc);
+        await cut.InvokeAsync(() => State.FlushEditor!());
+
+        Assert.Single(Editor.RefLabels);
+    }
+
+    [Fact]
+    public async Task Pane_OwnSave_TypedReference_IsPushedToBecomeANode()
+    {
+        using var tv = WithRefs();
+        var (_, cut) = await RenderAsync(tv);
+        var doc = Doc(Editor.Json);
+        SetText(doc, 2, "Dritter Text ((" + FirstId + "))");
+
+        await ChangeAsync(cut, doc);
+        await cut.InvokeAsync(() => State.FlushEditor!());
+
+        Assert.Contains("\t- Dritter Text ((" + FirstId + "))\n", tv.Read(BookPath));
+        var pushed = Assert.Single(Editor.RefLabels);
+        Assert.StartsWith("→ Eins: Erster", pushed[Guid.Parse(FirstId)].Text);
+        Assert.Single(Editor.Documents);
+    }
+
+    [Fact]
+    public async Task Pane_DeletedTarget_ShowsTheReferenceAsMissing()
+    {
+        using var tv = WithRefs();
+        var (_, cut) = await RenderAsync(tv);
+        var doc = Doc(Editor.Json);
+        Blocks(doc).RemoveAt(At(doc, 0));
+
+        await ChangeAsync(cut, doc);
+        await cut.InvokeAsync(() => State.FlushEditor!());
+
+        Assert.DoesNotContain("Erster", tv.Read(BookPath));
+        var pushed = Assert.Single(Editor.RefLabels);
+        Assert.Equal(new RefLabel(Text("RefLabelMissing"), Text("RefTitleMissing"), true), pushed[Guid.Parse(FirstId)]);
+        Assert.False(pushed[Guid.Parse(HeadingId)].Missing);
+        Assert.Single(Editor.Documents);
+    }
+
+    [Fact]
+    public async Task Pane_ReferenceClick_RevealsTheTarget()
+    {
+        using var tv = WithRefs();
+        var (_, cut) = await RenderAsync(tv);
+        var zwei = Section("Zwei").Key;
+        var first = Section("Eins").TextBlocks.First().Key;
+
+        await cut.InvokeAsync(() => Editor.Callbacks!.OnReferenceClicked(Guid.Parse(HeadingId)));
+
+        cut.WaitForAssertion(() => Assert.Equal([zwei], Editor.Reveals));
+        Assert.Equal(zwei, State.CurrentSectionKey);
+        Assert.Equal(zwei, State.Cursor!.Key);
+
+        await cut.InvokeAsync(() => Editor.Callbacks!.OnReferenceClicked(Guid.Parse(FirstId)));
+
+        cut.WaitForAssertion(() => Assert.Equal([zwei, first], Editor.Reveals));
+        Assert.Equal((first, 0), (State.Cursor!.Key, State.Cursor.Offset));
+
+        // A missing target goes nowhere.
+        await cut.InvokeAsync(() => Editor.Callbacks!.OnReferenceClicked(Guid.Parse(MissingId)));
+
+        Assert.Equal([zwei, first], Editor.Reveals);
+        Assert.Equal(first, State.Cursor!.Key);
+    }
+
     [Fact]
     public async Task Pane_ChipClick_RevealsNote_CursorIsTracked_FlushUnregisteredOnDispose()
     {

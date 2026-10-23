@@ -24,7 +24,7 @@ public class DialogTests : UiTestContext
     /// The "[handled]" assistant computes its places with the AI in the background, which can take longer than bUnit's
     /// default second under load.
     /// </summary>
-    private static readonly TimeSpan HandledWait = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan HandledWait = TimeSpan.FromSeconds(30);
 
     private const string JournalPath = "journals/2026_03_01.md";
     private const string NotesPath = "pages/Notizen.md";
@@ -54,12 +54,7 @@ public class DialogTests : UiTestContext
             _out.Dispose();
         }
 
-        // The session (and its vector cache in the vault) is closed first, then the vault folders are deleted.
         base.Dispose(disposing);
-        if (disposing)
-        {
-            _aiVaults.ForEach(v => v.Dispose());
-        }
     }
 
     private string Text(string key) => Services.GetRequiredService<IStringLocalizer<Strings>>()[key].Value;
@@ -381,6 +376,63 @@ public class DialogTests : UiTestContext
     }
 
     [Fact]
+    public async Task LinkCheckDialog_CrossRefsWithoutTarget_ListedWithTheirPlace_RemoveKeepsTheText()
+    {
+        const string gone = "0190c000-0000-7000-8000-00000000dead";
+        using var tv = TestVault.Create(
+            ("pages/Buch - Alpha.md",
+                "title:: Alpha\ntype:: book\n\n" +
+                "- # Eins\n" +
+                $"\t- Siehe (({gone})) dort\n" +
+                "\t- Anderer Text\n"));
+        await OpenSessionAsync(tv);
+
+        var cut = Render<LinkCheckDialog>();
+
+        Assert.Equal(Text("LinkCheckCrossRefs"), cut.Find(".ne-linkcheck-crossrefs-title").TextContent);
+        Assert.Equal("Querverweise ohne Ziel", Text("LinkCheckCrossRefs"));
+        var item = cut.Find(".ne-linkcheck-crossref");
+        Assert.Contains("Buch - Alpha", item.TextContent);
+        Assert.Contains("Siehe", item.TextContent);
+        Assert.Empty(cut.FindAll(".ne-linkcheck-clean"));
+
+        // Removing cannot be undone: it asks first, and "Abbrechen" changes nothing.
+        cut.Find(".ne-linkcheck-crossrefs-remove").Click();
+        Assert.Equal("1 Verweis entfernen? Das lässt sich nicht rückgängig machen.", cut.Find(".ne-linkcheck-crossrefs-confirm").TextContent);
+        cut.Find(".ne-linkcheck-crossrefs-no").Click();
+        Assert.Empty(cut.FindAll(".ne-linkcheck-crossrefs-confirm"));
+        Assert.Contains($"(({gone}))", tv.Read("pages/Buch - Alpha.md"));
+
+        cut.Find(".ne-linkcheck-crossrefs-remove").Click();
+        Assert.Equal("Ja", cut.Find(".ne-linkcheck-crossrefs-yes").TextContent);
+        cut.Find(".ne-linkcheck-crossrefs-yes").Click();
+
+        Assert.Equal(
+            "title:: Alpha\ntype:: book\n\n- # Eins\n\t- Siehe dort\n\t- Anderer Text\n", tv.Read("pages/Buch - Alpha.md"));
+        Assert.Empty(cut.FindAll(".ne-linkcheck-crossrefs-confirm"));
+        cut.WaitForAssertion(() => Assert.Empty(cut.FindAll(".ne-linkcheck-crossref")));
+        Assert.Single(cut.FindAll(".ne-linkcheck-clean"));
+        Assert.Contains("1", cut.Find(".ne-linkcheck-crossrefs-removed").TextContent);
+    }
+
+    [Fact]
+    public async Task LinkCheckDialog_CrossRefsInAReadOnlyBook_NotRemoved_SaysHowMany()
+    {
+        const string gone = "0190c000-0000-7000-8000-00000000dead";
+        var text = "title:: Alpha\ntype:: book\n\n- # Eins\n" + $"\t- Siehe (({gone})) dort\n" + "- ```\n  offen\n";
+        using var tv = TestVault.Create(("pages/Buch - Alpha.md", text));
+        await OpenSessionAsync(tv);
+        var cut = Render<LinkCheckDialog>();
+
+        cut.Find(".ne-linkcheck-crossrefs-remove").Click();
+        cut.Find(".ne-linkcheck-crossrefs-yes").Click();
+
+        Assert.Equal(text, tv.Read("pages/Buch - Alpha.md"));
+        cut.WaitForAssertion(() => Assert.Equal(string.Format(Text("LinkCheckCrossRefsReadOnly"), 1), cut.Find(".ne-dialog-error").TextContent));
+        Assert.Single(cut.FindAll(".ne-linkcheck-crossref"));
+    }
+
+    [Fact]
     public void Shell_OpeningAVaultWithLinkProblems_ShowsTheLinkCheck()
     {
         using var tv = LinkVault();
@@ -415,9 +467,9 @@ public class DialogTests : UiTestContext
         var cut = Render<HandledWizard>();
         var boxes = cut.FindAll(".ne-handled-item input[type=checkbox]");
         Assert.Equal(2, boxes.Count);
-        Assert.All(boxes, box => Assert.True(box.HasAttribute("checked")));
+        Assert.All(boxes, box => Assert.False(box.HasAttribute("checked")));
 
-        boxes[1].Change(false);
+        boxes[0].Change(true);
         cut.Find(".ne-handled-convert").Click();
         Assert.Single(cut.FindAll(".ne-handled-confirm-text"));
         Assert.Equal("- [handled] Eins\n- [handled] Zwei\n- Drei\n", tv.Read(NotesPath));
@@ -437,6 +489,7 @@ public class DialogTests : UiTestContext
         var cut = Render<HandledWizard>();
 
         cut.Find(".ne-handled-book-select").Change("Buch - Beta");
+        CheckAll(cut);
         cut.Find(".ne-handled-convert").Click();
         cut.WaitForElement(".ne-handled-yes").Click();
 
@@ -451,11 +504,10 @@ public class DialogTests : UiTestContext
         await OpenSessionAsync(tv);
         var cut = Render<HandledWizard>();
 
-        for (var i = 0; i < 2; i++)
-        {
-            cut.FindAll(".ne-handled-item input[type=checkbox]")[i].Change(false);
-        }
-
+        Assert.True(cut.Find(".ne-handled-convert").HasAttribute("disabled"));
+        cut.FindAll(".ne-handled-item input[type=checkbox]")[0].Change(true);
+        Assert.False(cut.Find(".ne-handled-convert").HasAttribute("disabled"));
+        cut.FindAll(".ne-handled-item input[type=checkbox]")[0].Change(false);
         Assert.True(cut.Find(".ne-handled-convert").HasAttribute("disabled"));
     }
 
@@ -473,6 +525,7 @@ public class DialogTests : UiTestContext
 
         Assert.Equal(2, cut.FindAll(".ne-handled-item").Count);
         Assert.Single(cut.FindAll(".ne-handled-readonly"));
+        CheckAll(cut);
         cut.Find(".ne-handled-convert").Click();
         cut.WaitForElement(".ne-handled-yes").Click();
         cut.WaitForAssertion(() => Assert.Single(cut.FindAll(".ne-handled-done")), HandledWait);
@@ -492,6 +545,7 @@ public class DialogTests : UiTestContext
         Assert.True(session.HasOpenConflict(path));
         var cut = Render<HandledWizard>();
 
+        CheckAll(cut);
         cut.Find(".ne-handled-convert").Click();
         cut.WaitForElement(".ne-handled-yes").Click();
 
@@ -499,269 +553,90 @@ public class DialogTests : UiTestContext
         Assert.Equal(external, tv.Read(NotesPath));
     }
 
-    // ---- HandledWizard: suggested placements ----
-
-    private const string SleepText = "Schlaf und Träume im Alltag";
-
-    private readonly List<TestVault> _aiVaults = [];
-
-    private TestVault PlacementVault()
-    {
-        var vault = CreatePlacementVault();
-        _aiVaults.Add(vault);
-        return vault;
-    }
-
-    private static TestVault CreatePlacementVault() => TestVault.Create(
-        ("pages/Buch - Alpha.md", $"title:: Alpha\ntype:: book\n\n- # Eins\n\t- {SleepText}\n\t- Suppe kochen mit Gemüse\n"),
-        ("pages/Buch - Beta.md", "title:: Beta\ntype:: book\n\n- # Zwei\n\t- Musik Gitarre Klavier spielen\n"),
-        (NotesPath, "- [handled] Schlaf und Träume\n- [handled] Zwei\n- Drei\n"));
-
-    /// <summary>
-    /// Waits up to <see cref="HandledWait"/> until <paramref name="assertion"/> holds for the places the assistant computes
-    /// in the background. bUnit can keep the elements of an older render when the render of the places lands while it
-    /// reads them (its markup has the places, the elements the assertion finds do not, and it checks no more): every
-    /// <see cref="PlaceCheckInterval"/> the elements are compared with the markup, and the component is rendered once
-    /// more if they lag behind, so they are read again. A component that did not render the places fails all the same.
-    /// </summary>
-    private static void WaitForPlaces(IRenderedComponent<HandledWizard> cut, Action assertion)
-    {
-        var until = DateTime.UtcNow + HandledWait;
-        while (true)
-        {
-            try
-            {
-                cut.WaitForAssertion(assertion, PlaceCheckInterval);
-                return;
-            }
-            catch (Bunit.Extensions.WaitForHelpers.WaitForFailedException) when (DateTime.UtcNow < until)
-            {
-                var rendered = new HtmlParser().ParseDocument(cut.Markup).Body!.TextContent;
-                if (rendered != string.Concat(cut.Nodes.Select(node => node.TextContent)))
-                {
-                    cut.Render();
-                }
-            }
-        }
-    }
-
-    private static readonly TimeSpan PlaceCheckInterval = TimeSpan.FromMilliseconds(200);
-
-    private static IElement Place(IRenderedComponent<HandledWizard> cut, int item) =>
-        cut.FindAll(".ne-handled-item")[item].QuerySelector(".ne-handled-place")!;
-
-    private static string OptionFor(IElement place, string startsWith) =>
-        place.QuerySelectorAll("option").First(o => o.TextContent.StartsWith(startsWith, StringComparison.Ordinal)).GetAttribute("value")!;
-
     [Fact]
-    public async Task Handled_PlacementChosen_FullLinkWritten()
+    public async Task HandledWizard_OpensWithNothingChecked_AndConvertingKeepsTheDialogOpen()
     {
-        var tv = PlacementVault();
-        var session = await OpenWithAiAsync(tv);
+        using var tv = HandledVault();
+        var session = await OpenSessionAsync(tv);
         var cut = Render<HandledWizard>();
-        WaitForPlaces(cut, () => Assert.Equal(2, cut.FindAll(".ne-handled-place").Count));
-        var place = Place(cut, 0);
-        var options = place.QuerySelectorAll("option").ToList();
-        Assert.Equal(3, options.Count);
-        Assert.Equal("", options[0].GetAttribute("value"));
-        Assert.Equal(Text("HandledPlaceUnknown"), options[0].TextContent);
-        Assert.All(options.Skip(1), o => Assert.Matches(@" – \d{1,3} %$", o.TextContent));
+        Assert.All(cut.FindAll(".ne-handled-item input[type=checkbox]"), box => Assert.False(box.HasAttribute("checked")));
 
-        place.Change(OptionFor(place, SleepText));
+        cut.FindAll(".ne-handled-item input[type=checkbox]")[0].Change(true);
         cut.Find(".ne-handled-convert").Click();
         cut.WaitForElement(".ne-handled-yes").Click();
 
-        cut.WaitForAssertion(() => Assert.Single(cut.FindAll(".ne-handled-done")), HandledWait);
-        var notes = tv.Read(NotesPath);
-        Assert.DoesNotContain("[handled] Schlaf", notes);
-        Assert.Matches(@"- Schlaf und Träume\n  id:: [0-9a-f-]{36}\n  used-in:: \[\[Buch - Alpha\]\] \(\([0-9a-f-]{36}\)\)\n", notes);
-        Assert.Contains("- Zwei\n  used-in:: [[Buch - Alpha]]\n", notes);
-        Assert.Contains("source:: ((", tv.Read("pages/Buch - Alpha.md"));
-        Assert.Same(session.Vault.FindBook("Buch - Alpha"), State.CurrentBook);
-        Assert.NotNull(State.CurrentBook!.Root.Children.Single().TextBlocks.First().Block.Id);
+        cut.WaitForAssertion(() => Assert.Equal(string.Format(Text("HandledDone"), 1), cut.Find(".ne-handled-done").TextContent), HandledWait);
+        Assert.Equal("1 umgewandelt", cut.Find(".ne-handled-done").TextContent);
+        Assert.Equal("- Eins\n  used-in:: [[Buch - Alpha]]\n- [handled] Zwei\n- Drei\n", tv.Read(NotesPath));
+        Assert.Single(cut.FindAll(".ne-handled-item"));
+        Assert.Contains("Zwei", cut.Find(".ne-handled-item").TextContent);
+        Assert.False(cut.Find(".ne-handled-item input[type=checkbox]").HasAttribute("checked"));
+        Assert.True(cut.Find(".ne-handled-convert").HasAttribute("disabled"));
+        Assert.Single(session.Handled.Find());
+
+        // The rest in the same dialog; the list is then empty.
+        cut.Find(".ne-handled-item input[type=checkbox]").Change(true);
+        cut.Find(".ne-handled-convert").Click();
+        cut.WaitForElement(".ne-handled-yes").Click();
+        cut.WaitForAssertion(() => Assert.Equal("Keine [handled]-Notizen mehr", cut.Find(".ne-handled-none").TextContent), HandledWait);
+        Assert.Equal("1 umgewandelt", cut.Find(".ne-handled-done").TextContent);
     }
 
     [Fact]
-    public async Task Handled_ShowsTheFullNoteWithSubPoints()
+    public async Task HandledWizard_Close_RaisesOnClose()
     {
+        using var tv = HandledVault();
+        await OpenSessionAsync(tv);
+        var closed = 0;
+        var cut = Render<HandledWizard>(p => p.Add(c => c.OnClose, EventCallback.Factory.Create(this, () => closed++)));
+
+        cut.Find(".ne-handled-close").Click();
+
+        Assert.Equal(1, closed);
+    }
+
+    [Fact]
+    public async Task HandledWizard_NoteOnAPageThatCannotBeWritten_StaysAndBothCountsAreShown()
+    {
+        const string second = "pages/Zweit.md";
         using var tv = TestVault.Create(
             ("pages/Buch - Alpha.md", "title:: Alpha\ntype:: book\n\n- # Eins\n"),
-            (NotesPath, "- [handled] Hauptpunkt\n\t- Unterpunkt A\n\t\t- Tiefer B\n- Drei\n"));
+            (NotesPath, "- [handled] Eins\n"),
+            (second, "- [handled] Fremd\n"));
         await OpenSessionAsync(tv);
         var cut = Render<HandledWizard>();
-
-        var note = cut.Find(".ne-handled-note");
-        Assert.True(note.HasAttribute("open"));
-        Assert.Contains("Hauptpunkt", note.TextContent);
-        Assert.Contains("Unterpunkt A", note.TextContent);
-        Assert.Contains("Tiefer B", note.TextContent);
-        Assert.Empty(cut.FindAll(".ne-handled-preview"));
-    }
-
-    [Fact]
-    public async Task Handled_ChosenPlace_ShowsItsTextAndPath()
-    {
-        var tv = PlacementVault();
-        await OpenWithAiAsync(tv);
-        var cut = Render<HandledWizard>();
-        WaitForPlaces(cut, () => Assert.Equal(2, cut.FindAll(".ne-handled-place").Count));
-        Assert.Empty(cut.FindAll(".ne-handled-preview"));
-
-        var place = Place(cut, 0);
-        place.Change(OptionFor(place, SleepText));
-
-        var preview = cut.Find(".ne-handled-preview");
-        Assert.Equal(SleepText, preview.QuerySelector(".ne-handled-preview-text")!.TextContent);
-        Assert.Equal("Eins", preview.QuerySelector(".ne-handled-preview-path")!.TextContent);
-    }
-
-    [Fact]
-    public async Task Handled_ChangingThePlace_UpdatesThePreview_UnknownClearsIt()
-    {
-        var tv = PlacementVault();
-        await OpenWithAiAsync(tv);
-        var cut = Render<HandledWizard>();
-        WaitForPlaces(cut, () => Assert.Equal(2, cut.FindAll(".ne-handled-place").Count));
-
-        Place(cut, 0).Change(OptionFor(Place(cut, 0), SleepText));
-        Assert.Equal(SleepText, cut.Find(".ne-handled-preview-text").TextContent);
-
-        Place(cut, 0).Change(OptionFor(Place(cut, 0), "Suppe kochen"));
-        Assert.Equal("Suppe kochen mit Gemüse", cut.Find(".ne-handled-preview-text").TextContent);
-
-        Place(cut, 0).Change("");
-        Assert.Empty(cut.FindAll(".ne-handled-preview"));
-    }
-
-    [Fact]
-    public async Task Handled_LongPlaceText_IsCutAt400()
-    {
-        var tv = TestVault.Create(
-            ("pages/Buch - Alpha.md", $"title:: Alpha\ntype:: book\n\n- # Eins\n\t- {SleepText} {new string('x', 600)}\n"),
-            (NotesPath, "- [handled] Schlaf und Träume\n- Drei\n"));
-        _aiVaults.Add(tv);
-        await OpenWithAiAsync(tv);
-        var cut = Render<HandledWizard>();
-        WaitForPlaces(cut, () => Assert.Single(cut.FindAll(".ne-handled-place")));
-
-        Place(cut, 0).Change(OptionFor(Place(cut, 0), SleepText));
-
-        var text = cut.Find(".ne-handled-preview-text").TextContent;
-        Assert.Equal(400, text.Length);
-        Assert.EndsWith("…", text);
-    }
-
-    [Fact]
-    public async Task Handled_DefaultUnknownPlace_AsBefore()
-    {
-        var tv = PlacementVault();
-        await OpenWithAiAsync(tv);
-        var cut = Render<HandledWizard>();
-        WaitForPlaces(cut, () => Assert.Equal(2, cut.FindAll(".ne-handled-place").Count));
-
-        cut.Find(".ne-handled-convert").Click();
-        cut.WaitForElement(".ne-handled-yes").Click();
-
-        cut.WaitForAssertion(() => Assert.Single(cut.FindAll(".ne-handled-done")), HandledWait);
-        Assert.Equal(
-            "- Schlaf und Träume\n  used-in:: [[Buch - Alpha]]\n- Zwei\n  used-in:: [[Buch - Alpha]]\n- Drei\n", tv.Read(NotesPath));
-        Assert.DoesNotContain("source::", tv.Read("pages/Buch - Alpha.md"));
-    }
-
-    [Fact]
-    public async Task Handled_WithoutAi_NoPlacementColumn()
-    {
-        var tv = PlacementVault();
-        await OpenSessionAsync(tv);
-        var cut = Render<HandledWizard>();
-
-        Assert.Equal(2, cut.FindAll(".ne-handled-item").Count);
-        Assert.Empty(cut.FindAll(".ne-handled-place"));
-    }
-
-    [Fact]
-    public async Task Handled_BookChange_RecomputesPlacementsAndForgetsTheChoice()
-    {
-        var tv = PlacementVault();
-        await OpenWithAiAsync(tv);
-        var cut = Render<HandledWizard>();
-        WaitForPlaces(cut, () => Assert.Equal(2, cut.FindAll(".ne-handled-place").Count));
-        var place = Place(cut, 0);
-        place.Change(OptionFor(place, SleepText));
-
-        cut.Find(".ne-handled-book-select").Change("Buch - Beta");
-
-        WaitForPlaces(
-            cut, () => Assert.Contains(Place(cut, 0).QuerySelectorAll("option"), o => o.TextContent.StartsWith("Musik Gitarre", StringComparison.Ordinal)));
-        Assert.DoesNotContain(Place(cut, 0).QuerySelectorAll("option"), o => o.TextContent.StartsWith(SleepText, StringComparison.Ordinal));
-        cut.Find(".ne-handled-convert").Click();
-        cut.WaitForElement(".ne-handled-yes").Click();
-        cut.WaitForAssertion(() => Assert.Single(cut.FindAll(".ne-handled-done")), HandledWait);
-        Assert.Equal(
-            "- Schlaf und Träume\n  used-in:: [[Buch - Beta]]\n- Zwei\n  used-in:: [[Buch - Beta]]\n- Drei\n", tv.Read(NotesPath));
-    }
-
-    [Fact]
-    public async Task Handled_PlacementChosen_OpenConflictOnTheBookPage_IsRefused()
-    {
-        var tv = PlacementVault();
-        var session = await OpenWithAiAsync(tv);
-        var cut = Render<HandledWizard>();
-        WaitForPlaces(cut, () => Assert.Equal(2, cut.FindAll(".ne-handled-place").Count));
-        var place = Place(cut, 0);
-        place.Change(OptionFor(place, SleepText));
-        var path = Path.Combine(tv.Root, "pages/Buch - Alpha.md");
-        session.Vault.FindPageByPath(path)!.Roots[0].SetContent("# Lokal");
-        const string external = "title:: Alpha\ntype:: book\n\n- # Extern\n\t- Ein Text\n";
-        File.WriteAllText(path, external, Utf8);
-        session.HandleExternalChange(path);
-        Assert.True(session.HasOpenConflict(path));
-        var before = tv.Read(NotesPath);
-
-        cut.Find(".ne-handled-convert").Click();
-        cut.WaitForElement(".ne-handled-yes").Click();
-
-        cut.WaitForAssertion(() => Assert.Equal(Text("AssistantConflict"), cut.Find(".ne-dialog-error").TextContent));
-        Assert.Equal(before, tv.Read(NotesPath));
-        Assert.Equal(external, tv.Read("pages/Buch - Alpha.md"));
-    }
-
-    [Fact]
-    public async Task Handled_PlacementVanished_ShowsErrorAndStaysOpen()
-    {
-        var tv = PlacementVault();
-        var session = await OpenWithAiAsync(tv);
-        var cut = Render<HandledWizard>();
-        WaitForPlaces(cut, () => Assert.Equal(2, cut.FindAll(".ne-handled-place").Count));
-        var place = Place(cut, 0);
-        place.Change(OptionFor(place, SleepText));
-        var path = Path.Combine(tv.Root, "pages/Buch - Alpha.md");
-        const string external = "title:: Alpha\ntype:: book\n\n- # Eins\n\t- Etwas ganz anderes\n";
-        File.WriteAllText(path, external, Utf8);
-        session.HandleExternalChange(path);
-        var before = tv.Read(NotesPath);
-
-        cut.Find(".ne-handled-convert").Click();
-        cut.WaitForElement(".ne-handled-yes").Click();
-
-        cut.WaitForAssertion(() => Assert.Equal(Text("HandledPlacementFailed"), cut.Find(".ne-dialog-error").TextContent));
-        Assert.Empty(cut.FindAll(".ne-handled-done"));
-        Assert.Equal(2, cut.FindAll(".ne-handled-item").Count);
-        Assert.Equal(before, tv.Read(NotesPath));
-
-        // The places are suggested again for the book as it is now; the choice is back to "Stelle unbekannt".
-        WaitForPlaces(cut, () =>
+        CheckAll(cut);
+        var path = Path.Combine(tv.Root, second.Replace('/', Path.DirectorySeparatorChar));
+        File.SetAttributes(path, FileAttributes.ReadOnly);
+        try
         {
-            var options = Place(cut, 0).QuerySelectorAll("option").Select(o => o.TextContent).ToList();
-            Assert.DoesNotContain(options, o => o.StartsWith(SleepText, StringComparison.Ordinal));
-            Assert.Contains(options, o => o.StartsWith("Etwas ganz anderes", StringComparison.Ordinal));
-        });
-        cut.Find(".ne-handled-convert").Click();
-        cut.WaitForElement(".ne-handled-yes").Click();
+            cut.Find(".ne-handled-convert").Click();
+            cut.WaitForElement(".ne-handled-yes").Click();
 
-        cut.WaitForAssertion(() => Assert.Single(cut.FindAll(".ne-handled-done")), HandledWait);
-        Assert.Equal(
-            "- Schlaf und Träume\n  used-in:: [[Buch - Alpha]]\n- Zwei\n  used-in:: [[Buch - Alpha]]\n- Drei\n", tv.Read(NotesPath));
+            cut.WaitForAssertion(() => Assert.Equal("1 umgewandelt, 1 fehlgeschlagen", cut.Find(".ne-handled-done").TextContent), HandledWait);
+        }
+        finally
+        {
+            File.SetAttributes(path, FileAttributes.Normal);
+        }
+
+        Assert.Equal("- Eins\n  used-in:: [[Buch - Alpha]]\n", tv.Read(NotesPath));
+        Assert.Equal("- [handled] Fremd\n", tv.Read(second));
+        Assert.Single(cut.FindAll(".ne-handled-item"));
+        Assert.Contains("Fremd", cut.Find(".ne-handled-item").TextContent);
+    }
+
+    /// <summary>Checks every box that can be checked (the wizard opens with none checked).</summary>
+    internal static void CheckAll(IRenderedComponent<HandledWizard> cut)
+    {
+        for (var i = 0; i < cut.FindAll(".ne-handled-item").Count; i++)
+        {
+            var box = cut.FindAll(".ne-handled-item input[type=checkbox]")[i];
+            if (!box.HasAttribute("checked") && !box.HasAttribute("disabled"))
+            {
+                box.Change(true);
+            }
+        }
     }
 
     // ---- DraftWizard ----
@@ -867,8 +742,11 @@ public class DialogTests : UiTestContext
         return (session, target);
     }
 
+    private const string PdfNoteId = "0190a000-0000-7000-8000-0000000000aa";
+
     private static TestVault PdfVault() => TestVault.Create(
-        ("pages/Buch - Alpha.md", "title:: Alpha\ntype:: book\n\n- # Eins\n\t- Erster Text\n- # Zwei\n"));
+        ("pages/Buch - Alpha.md", "title:: Alpha\ntype:: book\n\n- # Eins\n\t- Erster Text\n- # Zwei\n"),
+        (JournalPath, $"- Notiz\n  id:: {PdfNoteId}\n"));
 
     [Fact]
     public async Task PdfExportDialog_ShowsWarningsAfterExport()
@@ -887,6 +765,9 @@ public class DialogTests : UiTestContext
         var call = Assert.Single(_exporter.Calls);
         Assert.Null(call.Scope);
         Assert.Equal(PdfPageSize.A4, call.Options.Size);
+        // The exporter can tell a reference to a note (left out as before) from one to an unknown id (missing).
+        Assert.True(call.KnownElsewhere!(Guid.Parse(PdfNoteId)));
+        Assert.False(call.KnownElsewhere(Guid.NewGuid()));
     }
 
     [Fact]
@@ -1370,13 +1251,14 @@ public class DialogTests : UiTestContext
 
     private sealed class FakePdfExporter : IPdfExporter
     {
-        public List<(Guid? Scope, PdfOptions Options)> Calls { get; } = [];
+        public List<(Guid? Scope, PdfOptions Options, Func<Guid, bool>? KnownElsewhere)> Calls { get; } = [];
 
         public IReadOnlyList<string> Warnings { get; set; } = [];
 
         public Exception? Failure { get; set; }
 
-        public PdfExportReport Export(Book book, Guid? scopeKey, PdfOptions options, Stream output)
+        public PdfExportReport Export(
+            Book book, Guid? scopeKey, PdfOptions options, Stream output, Func<Guid, bool>? knownElsewhere = null)
         {
             output.Write("%PDF-fake"u8);
             if (Failure is not null)
@@ -1384,7 +1266,7 @@ public class DialogTests : UiTestContext
                 throw Failure;
             }
 
-            Calls.Add((scopeKey, options));
+            Calls.Add((scopeKey, options, knownElsewhere));
             return new PdfExportReport(Warnings);
         }
     }

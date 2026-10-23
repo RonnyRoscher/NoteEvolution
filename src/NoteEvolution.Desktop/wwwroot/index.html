@@ -147,6 +147,11 @@
                 const element = container ? splitter?.parentElement : splitter?.previousElementSibling;
                 return element ? element.getBoundingClientRect().height : 0;
             },
+            // Called by the search for a cross reference target (ReferencePicker.razor): keeps the option with the
+            // index in view while the arrow keys move the selection.
+            scrollOptionIntoView(list, index) {
+                list?.querySelectorAll('[role="option"]')[index]?.scrollIntoView({ block: 'nearest' });
+            },
         };
 
         // The arrow keys on a row splitter change the list's height (RowSplitter.razor); they must not also scroll a
@@ -156,6 +161,29 @@
                 && e.target.closest('.ne-row-splitter')) {
                 e.preventDefault();
             }
+        }, true);
+
+        // Back and forward between the active blocks (HeaderBar.razor) in the whole window, also in the editor (which
+        // binds no Alt+Left/Right; word-wise moves are Ctrl+arrows). Only these two combinations lose their default
+        // (the browser's history navigation). The header registers itself once it is rendered.
+        window.neNav = {
+            header: null,
+            register(header) {
+                this.header = header;
+            },
+        };
+        document.addEventListener('keydown', e => {
+            if (!e.altKey || e.ctrlKey || e.shiftKey || e.metaKey || (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight')) {
+                return;
+            }
+
+            e.preventDefault();
+            // While a modal dialog is open (Modal.razor) the book behind it does not move.
+            if (document.querySelector('[aria-modal="true"]')) {
+                return;
+            }
+            window.neNav.header?.invokeMethodAsync('Navigate', e.key === 'ArrowLeft' ? 'back' : 'forward')
+                .catch(() => { });
         }, true);
 
         // Should the start never report back (an error before the shell runs), the app shows itself after 30 s anyway.

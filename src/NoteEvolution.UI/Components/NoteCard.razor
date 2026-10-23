@@ -466,15 +466,19 @@
 
         var sameBook = string.Equals(State.CurrentBook?.LinkName, book.LinkName, StringComparison.OrdinalIgnoreCase);
         var target = entry.BookBlockId is { } blockId ? TargetOf(book.Root, blockId) : HeadingOfSubPoints(book);
-        State.CurrentBook = book;
+
+        // A jump in the back/forward history; without a target it goes to the start of the other book.
         if (target is { } key)
         {
-            State.RevealElement(key);
+            State.JumpTo(key, book);
         }
         else if (!sameBook)
         {
-            State.CurrentSectionKey = book.Root.Key;
-            State.Cursor = null;
+            State.JumpTo(book.Root.Key, book);
+        }
+        else
+        {
+            State.CurrentBook = book;
         }
 
         State.Notify();
@@ -731,7 +735,7 @@
             return;
         }
 
-        State.RevealElement(textBlockKey);
+        State.JumpTo(textBlockKey);
         State.Notify();
     }
 

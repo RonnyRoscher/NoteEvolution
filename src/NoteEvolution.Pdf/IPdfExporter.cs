@@ -19,7 +19,10 @@ public interface IPdfExporter
     /// Writes a readable PDF of <paramref name="book"/> to <paramref name="output"/>: title page, table of contents and
     /// the text of the outline. <paramref name="scopeKey"/> is the key of an outline node to export on its own (with
     /// its heading and subtree); <c>null</c> or <see cref="Guid.Empty"/> exports the whole book.
+    /// <paramref name="knownElsewhere"/> tells whether an id names a block somewhere in the vault: a reference to such a
+    /// block that is no target of the book (a note) is left out as before, not shown as missing (spec 2.1).
     /// </summary>
     /// <exception cref="ArgumentException"><paramref name="scopeKey"/> names no outline node of the book.</exception>
-    PdfExportReport Export(Book book, Guid? scopeKey, PdfOptions options, Stream output);
+    PdfExportReport Export(
+        Book book, Guid? scopeKey, PdfOptions options, Stream output, Func<Guid, bool>? knownElsewhere = null);
 }

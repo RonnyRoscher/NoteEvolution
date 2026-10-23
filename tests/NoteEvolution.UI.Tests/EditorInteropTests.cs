@@ -118,6 +118,29 @@ public class EditorInteropTests
     }
 
     [Fact]
+    public async Task SetRefLabels_Serializes_IdLabelTitleMissingForeign()
+    {
+        var interop = await InitAsync();
+
+        await interop.SetRefLabelsAsync(new Dictionary<Guid, RefLabel> { [Guid.Parse(Key)] = new("Eins", "Buch: Eins", true) });
+
+        var payload = JsonSerializer.Serialize(_js.Calls.Single(c => c.Method == "setRefLabels").Args.Single());
+        Assert.Equal($$"""[{"id":"{{Key}}","label":"Eins","title":"Buch: Eins","missing":true,"foreign":false}]""", payload);
+    }
+
+    [Fact]
+    public async Task ReferenceClicked_Forwarded_InvalidIdIgnored()
+    {
+        var interop = await InitAsync();
+
+        await interop.ReferenceClicked(Key);
+        await interop.ReferenceClicked("keine-id");
+        await interop.ReferenceClicked(null);
+
+        Assert.Equal([Guid.Parse(Key)], _callbacks.References);
+    }
+
+    [Fact]
     public async Task SectionBoxMoved_Forwarded()
     {
         var interop = await InitAsync();
@@ -136,11 +159,12 @@ public class EditorInteropTests
         await interop.SetDocumentAsync("{}", true, keepCursor: false);
         await interop.RevealAsync(Guid.Parse(Key));
         await interop.RevealAsync(Guid.Empty);
+        await interop.RevealAsync(Guid.Parse(Key), 7);
 
         var options = _js.Calls.Single(c => c.Method == "createEditor").Args[2]!;
         Assert.Equal(40, options.GetType().GetProperty("barHeight")!.GetValue(options));
         Assert.Equal(
-            [("setDocument", ["{}", true, false]), ("reveal", [Key]), ("reveal", [null])],
+            [("setDocument", ["{}", true, false]), ("reveal", [Key, 0]), ("reveal", [null, 0]), ("reveal", [Key, 7])],
             _js.Calls.Where(c => c.Method is "setDocument" or "reveal").Select(c => (c.Method, c.Args)).ToArray(),
             new CallComparer());
     }
@@ -201,6 +225,14 @@ public class EditorInteropTests
         public Task OnChipClicked(Guid noteId) => Task.CompletedTask;
 
         public Task OnChipRemoved(Guid textBlockKey, Guid noteId) => Task.CompletedTask;
+
+        public List<Guid> References { get; } = [];
+
+        public Task OnReferenceClicked(Guid targetId)
+        {
+            References.Add(targetId);
+            return Task.CompletedTask;
+        }
 
         public Task OnNoteDropped(Guid noteBlockKey, Guid? afterTextBlockKey) => Task.CompletedTask;
     }

@@ -110,24 +110,29 @@ public static class ManuscriptEditor
         book.FindNode(headingKey) is { Block: not null } node && CanOutdent(node);
 
     /// <summary>
-    /// Removes the heading but keeps its content: its child blocks (text blocks and sub-sections) take its place in
-    /// the surrounding section, in order, and every moved sub-heading gets the level of the surrounding section + 1
-    /// (its own sub-headings the levels below).
+    /// Removes the heading but keeps its content: its title (with any further lines of the heading's text) becomes a
+    /// text block in its place, which takes over the heading's <c>id::</c> so that cross references to the heading keep
+    /// resolving; its child blocks (text blocks and sub-sections) follow in the surrounding section, in order, and every
+    /// moved sub-heading gets the level of the surrounding section + 1 (its own sub-headings the levels below). A heading
+    /// with an empty title and no id leaves no text block. The heading's other properties go with it.
     /// </summary>
+    /// <param name="now">With a time, the new text block gets both dates; without, none.</param>
     /// <returns>
     /// What was done, for a targeted undo (<see cref="RemovedHeading.RestoreInto"/>), with the key to reveal afterwards
-    /// (<see cref="RemovedHeading.Reveal"/>): the first moved item, else the element before the heading in the file,
-    /// else <see cref="Guid.Empty"/>.
+    /// (<see cref="RemovedHeading.Reveal"/>): the new text block, else the first moved item, else the element before the
+    /// heading in the file, else <see cref="Guid.Empty"/>.
     /// </returns>
     /// <exception cref="ArgumentException">Unknown heading.</exception>
-    public static RemovedHeading RemoveHeading(Book book, Guid headingKey)
+    public static RemovedHeading RemoveHeading(Book book, Guid headingKey, DateTimeOffset? now = null)
     {
         var node = OutlineEditor.FindHeading(book, headingKey, nameof(headingKey));
         var heading = node.Block!;
         var page = book.Page;
         var parent = heading.Parent;
         var children = heading.Children.ToList();
-        var reveal = children.FirstOrDefault()?.Key
+        var titleBlock = TitleBlock(heading, node.Level, now);
+        var reveal = titleBlock?.Key
+                     ?? children.FirstOrDefault()?.Key
                      ?? page.AllBlocks().TakeWhile(block => block != heading).LastOrDefault()?.Key
                      ?? Guid.Empty;
 
@@ -146,13 +151,305 @@ public static class ManuscriptEditor
         }
 
         page.RemoveBlock(heading);
+        if (titleBlock is not null)
+        {
+            page.InsertBlock(parent, index, titleBlock);
+        }
+
         foreach (var child in node.Children)
         {
             OutlineEditor.Relevel(child, node.Parent!.Level + 1);
         }
 
-        return new RemovedHeading(reveal, heading, parent?.Key, index, [.. children.Select(child => child.Key)], MovedBlocks(moved, levels));
+        return new RemovedHeading(
+            reveal,
+            heading,
+            parent?.Key,
+            index,
+            titleBlock?.Key,
+            titleBlock is null ? [] : [.. titleBlock.Lines],
+            [.. children.Select(child => child.Key)],
+            MovedBlocks(moved, levels));
     }
+
+    /// <summary>
+    /// The detached text block made from a heading's title for <see cref="RemoveHeading"/>: the heading's text without
+    /// its hashes (its first line escaped, see <see cref="HeadingText.AsTextBlockContent"/>), with the heading's raw
+    /// <c>id::</c> and, with <paramref name="now"/>, both dates; <c>null</c> for an empty title without id.
+    /// </summary>
+    private static Block? TitleBlock(Block heading, int level, DateTimeOffset? now)
+    {
+        // A title "# …" as text would read as a heading again: escaped, it shows as it did.
+        var content = HeadingText.AsTextBlockContent(HeadingText.WithoutMarks(heading.Content, level), shownUnescaped: false);
+        var id = heading.GetProperty("id");
+        if (string.IsNullOrWhiteSpace(content) && id is null)
+        {
+            return null;
+        }
+
+        var block = Block.CreateDetached(content, id is null ? null : [new BlockProperty("id", id)]);
+        if (now is { } time)
+        {
+            BlockDates.StampNew(block, time);
+        }
+
+        return block;
+    }
+
+    /// <summary>
+    /// Why the level button <paramref name="level"/> (0 = Text, 1–6 = H1–H6) cannot convert <paramref name="element"/>
+    /// (spec 4.2), for its tooltip: the resource key of the German reason (<c>LevelBlocked…</c> in the UI's strings,
+    /// where all UI text lives); <c>null</c> if it can (or the element already has that level). There is no level
+    /// outside 0–6. A text block or detail cannot become a heading above the level of its section (it would take over
+    /// sections not its own), except in the prologue. A heading cannot go above the level of its parent heading + 1 (that
+    /// is outdenting), nor so deep that a sub-heading would fall below H6, nor so high that a sub-heading of an irregular
+    /// outline (one that is not deeper) would rise above H1. A text block or detail whose first line (the title) holds a
+    /// reference cannot become a heading either (a heading holds no reference). Text is always possible.
+    /// </summary>
+    /// <exception cref="ArgumentException">The element is not in the book.</exception>
+    public static string? LevelBlocked(Book book, BookElement element, int level)
+    {
+        if (BookElements.Find(book, element.Key) != element)
+        {
+            throw new ArgumentException($"There is no such {element.Kind} in the book.", nameof(element));
+        }
+
+        if (level is < 0 or > OutlineEditor.MaxLevel)
+        {
+            return "LevelBlockedNoSuchLevel";
+        }
+
+        if (element.Kind != ElementKind.Heading)
+        {
+            var section = BookElements.TextBlockOf(book, element)!.Section;
+            return level == 0 ? null
+                : BlockRefs.Find(HeadingSplit(BlockOf(book, element)).Title).Count > 0 ? "LevelBlockedReference"
+                : level < section.Level ? "LevelBlockedAboveSection"
+                : null;
+        }
+
+        var node = book.FindNode(element.Key)!;
+        if (level == 0 || level == node.Level)
+        {
+            return null;
+        }
+
+        if (level < node.Parent!.Level + 1)
+        {
+            return "LevelBlockedOutOfParent";
+        }
+
+        var difference = level - node.Level;
+        return DeepestLevel(node) + difference > OutlineEditor.MaxLevel ? "LevelBlockedBelowH6"
+            : ShallowestLevel(node) + difference < 1 ? "LevelBlockedAboveH1"
+            : null;
+    }
+
+    /// <summary>
+    /// Makes the text block or detail <paramref name="elementKey"/> a heading of <paramref name="level"/> (spec 4.2). The
+    /// block's first line (as the editor shows it, without heading marks and a <c>#notiz</c> tag) is the title; the
+    /// further text becomes the first text block under it, and each direct sub-point a text block with its deeper
+    /// sub-points as details (a sub-point "# …" escaped, so it stays text). The heading stands in the block's place, a
+    /// detail's heading right after its text block; it takes over the section's items that follow there up to the next heading that is not deeper (above the
+    /// section's level these are the section's own following text blocks, at its level also its following sub-sections,
+    /// and the heading then follows the section). The block's properties (<c>id::</c>, <c>source::</c>, the status, also
+    /// from a <c>#notiz</c> tag, and any other, <c>created::</c> included) go to the first text block: the block itself
+    /// keeps them with the further text, else the first sub-point takes them if it has none of the same keys, else the
+    /// block stays as an empty text block with them. A block with no further text and no properties but its dates goes
+    /// (a heading has no dates). Each text block made gets both dates (<c>updated::</c> only if it has
+    /// <c>created::</c>), a detail's text block <c>updated::</c>; the heading gets none.
+    /// </summary>
+    /// <returns>The key of the new heading.</returns>
+    /// <exception cref="ArgumentException">
+    /// The element is a heading or not in the book, <see cref="LevelBlocked"/> refuses the level, or the further text
+    /// would not stay one block.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// A block has no place for properties (an open code fence, which makes the page read-only); the page is then left
+    /// partly converted and must be read again.
+    /// </exception>
+    public static Guid ToHeading(Book book, Guid elementKey, int level, DateTimeOffset now)
+    {
+        var element = BookElements.Find(book, elementKey) is { Kind: not ElementKind.Heading } found
+            ? found
+            : throw new ArgumentException("Only a text block or a detail of the book becomes a heading.", nameof(elementKey));
+        if (level == 0)
+        {
+            throw new ArgumentException("Text is no heading level.", nameof(level));
+        }
+
+        if (LevelBlocked(book, element, level) is { } reason)
+        {
+            throw new ArgumentException(reason, nameof(level));
+        }
+
+        var page = book.Page;
+        var block = BlockOf(book, element);
+        var textBlock = BookElements.TextBlockOf(book, element)!;
+        var section = textBlock.Section;
+
+        var hasTag = NoteTag.Has(block.Content);
+        var (title, further) = HeadingSplit(block);
+        if (further is not null)
+        {
+            // Escaped anew as the editor saves it, so that no line of it reads as structure as the first one of a block.
+            further = BlockTextEscape.Escape(further);
+            Block.ValidateContent(further);
+        }
+
+        // Every property line goes to the first text block; the tag as a status.
+        var carried = block.Properties.ToList();
+        if (hasTag && block.GetProperty(BlockStatuses.Key) is null)
+        {
+            carried.Add(new BlockProperty(BlockStatuses.Key, BlockStatuses.FileValue(BlockStatus.Remark)!));
+        }
+
+        // Dates alone need no text block: they belong to the text, which is the heading's title now.
+        var needsCarrier = carried.Any(property => !IsDate(property.Key));
+        var subPoints = block.Children.ToList();
+        var keepBlock = further is not null
+                        || (needsCarrier && (subPoints.Count == 0 || Collides(subPoints[0], carried)));
+        var following = section.Items
+            .SkipWhile(item => item != textBlock)
+            .Skip(1)
+            .TakeWhile(item => item is TextBlock || item is OutlineNode { Level: var l } && l > level)
+            .Select(item => item is TextBlock followingText ? followingText.Block : ((OutlineNode)item).Block!)
+            .ToList();
+
+        // Above the section's level the heading goes into the section after the text block, at its level after the section.
+        var (parent, index) = level > section.Level
+            ? (section.Block, IndexOf(page, textBlock.Block) + 1)
+            : (section.Block!.Parent, IndexOf(page, section.Block) + 1);
+        var heading = Block.CreateDetached(HeadingText.WithTitle("", level, title));
+        page.InsertBlock(parent, index, heading);
+
+        var position = 0;
+        if (keepBlock)
+        {
+            block.SetContent(further ?? "");
+            foreach (var property in carried.Where(property => property.Key == BlockStatuses.Key && block.GetProperty(property.Key) is null))
+            {
+                block.SetProperty(property.Key, property.Value);
+            }
+
+            StampAsTextBlock(block, now);
+            page.MoveBlock(block, heading, position++);
+        }
+        else if (needsCarrier)
+        {
+            // updated:: is stamped anew below.
+            foreach (var property in carried.Where(property => !IsKey(property, BlockDates.UpdatedKey)))
+            {
+                subPoints[0].SetProperty(property.Key, property.Value);
+            }
+        }
+
+        foreach (var subPoint in subPoints)
+        {
+            // As a text block a sub-point "# …" would read as a heading: escaped, it shows as it did.
+            if (HeadingText.AsTextBlockContent(subPoint.Content, shownUnescaped: true) is var escaped && escaped != subPoint.Content)
+            {
+                subPoint.SetContent(escaped);
+            }
+
+            StampAsTextBlock(subPoint, now);
+            page.MoveBlock(subPoint, heading, position++);
+        }
+
+        if (!keepBlock)
+        {
+            page.RemoveBlock(block);
+        }
+
+        foreach (var item in following)
+        {
+            page.MoveBlock(item, heading, position++);
+        }
+
+        if (element.Kind == ElementKind.Detail)
+        {
+            BlockDates.StampChanged(textBlock.Block, now);
+        }
+
+        return heading.Key;
+    }
+
+    /// <summary>
+    /// Gives the heading <paramref name="headingKey"/> the level <paramref name="level"/> (1–6, spec 4.2); every heading
+    /// of its subtree shifts by the same difference, so the outline below it stays as it is. Only the <c>#</c> marks
+    /// change.
+    /// </summary>
+    /// <exception cref="ArgumentException">Unknown heading, or <see cref="LevelBlocked"/> refuses the level (also Text).</exception>
+    public static void SetHeadingLevel(Book book, Guid headingKey, int level)
+    {
+        var node = OutlineEditor.FindHeading(book, headingKey, nameof(headingKey));
+        if (level == 0)
+        {
+            throw new ArgumentException("Text is no heading level; the heading is removed instead.", nameof(level));
+        }
+
+        if (LevelBlocked(book, new BookElement(ElementKind.Heading, headingKey), level) is { } reason)
+        {
+            throw new ArgumentException(reason, nameof(level));
+        }
+
+        Shift(node, level - node.Level);
+    }
+
+    /// <summary>
+    /// The title and further text of a heading made from <paramref name="block"/> (<see cref="HeadingText.Split"/>), from
+    /// its text as the editor shows it: unescaped, without a <c>#notiz</c> tag.
+    /// </summary>
+    private static (string Title, string? Further) HeadingSplit(Block block) =>
+        HeadingText.Split(BlockTextEscape.Unescape(NoteTag.Has(block.Content) ? NoteTag.Remove(block.Content) : block.Content));
+
+    private static bool IsKey(BlockProperty property, string key) => property.Key.Equals(key, StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsDate(string key) =>
+        key.Equals(BlockDates.CreatedKey, StringComparison.OrdinalIgnoreCase)
+        || key.Equals(BlockDates.UpdatedKey, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Whether the sub-point <paramref name="block"/> has a property of <paramref name="carried"/> of its own (but
+    /// <c>updated::</c>, which is stamped anew), or a <c>#notiz</c> tag where a status is carried: it cannot take them.
+    /// </summary>
+    private static bool Collides(Block block, List<BlockProperty> carried) =>
+        carried.Any(property => !IsKey(property, BlockDates.UpdatedKey)
+                                && (block.GetProperty(property.Key) is not null
+                                    || (IsKey(property, BlockStatuses.Key) && NoteTag.Has(block.Content))));
+
+    /// <summary>Stamps a block that is a text block now: both dates for a new one, <c>updated::</c> if it has <c>created::</c>.</summary>
+    private static void StampAsTextBlock(Block block, DateTimeOffset now)
+    {
+        if (block.GetProperty(BlockDates.CreatedKey) is null)
+        {
+            BlockDates.StampNew(block, now);
+        }
+        else
+        {
+            BlockDates.StampChanged(block, now);
+        }
+    }
+
+    /// <summary>Changes the level of <paramref name="node"/> and every heading below it by <paramref name="difference"/>.</summary>
+    private static void Shift(OutlineNode node, int difference)
+    {
+        if (difference != 0)
+        {
+            node.Block!.SetContent(HeadingText.WithLevel(node.Block.Content, node.Level, node.Level + difference));
+        }
+
+        foreach (var child in node.Children)
+        {
+            Shift(child, difference);
+        }
+    }
+
+    /// <summary>The deepest level of a heading in the subtree of <paramref name="node"/>, the node included.</summary>
+    private static int DeepestLevel(OutlineNode node) => node.Children.Select(DeepestLevel).Append(node.Level).Max();
+
+    /// <summary>The highest level (smallest number) of a heading in the subtree of <paramref name="node"/>, the node included.</summary>
+    private static int ShallowestLevel(OutlineNode node) => node.Children.Select(ShallowestLevel).Append(node.Level).Min();
 
     /// <summary>
     /// Whether <see cref="Wrap"/> is possible: <c>false</c> for a detail, for no head (the whole book), for an unknown
@@ -300,6 +597,107 @@ public static class ManuscriptEditor
         var remark = Block.CreateDetached("", [new BlockProperty(BlockStatuses.Key, BlockStatuses.FileValue(BlockStatus.Remark)!)]);
         book.Page.InsertBlock(textBlock, textBlock.Children.Count, remark);
         return remark.Key;
+    }
+
+    /// <summary>
+    /// Inserts a cross reference <c>((id))</c> to the heading or text block <paramref name="targetKey"/> into the text of
+    /// the text block or detail <paramref name="elementKey"/> (spec 2.2), at <paramref name="offset"/> in its content
+    /// (the block's Markdown, clamped to it; see <see cref="ContentOffset"/> for an offset the editor reports). The
+    /// target gets an <c>id::</c> if it has none, without a date; the referring text block (the element itself, or the
+    /// one a detail belongs to) gets <c>updated::</c>. At the start of a line, the line escape (see
+    /// <see cref="BlockTextEscape"/>) is written anew for the line with the reference in front.
+    /// </summary>
+    /// <exception cref="ArgumentException">
+    /// The element is a heading or not in the book, or the target is not a heading or text block of the book, or it is
+    /// the element itself.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">A block has no place for properties (an open code fence); nothing is changed.</exception>
+    public static void InsertReference(Book book, Guid elementKey, int offset, Guid targetKey, DateTimeOffset now)
+    {
+        var element = ReferringElement(book, elementKey);
+        var target = (book.FindNode(targetKey)?.Block ?? book.FindTextBlock(targetKey)?.Block)
+                     ?? throw new ArgumentException("The target is not a heading or text block of the book.", nameof(targetKey));
+        if (targetKey == elementKey)
+        {
+            throw new ArgumentException("An element cannot refer to itself.", nameof(targetKey));
+        }
+
+        var block = BlockOf(book, element);
+        var owner = BookElements.TextBlockOf(book, element)!.Block;
+        var saved = new[] { block, owner, target }.Distinct().Select(b => (Block: b, Lines: b.Lines.ToList(), b.IsDirty)).ToList();
+        try
+        {
+            var reference = BlockRefs.Format(target.EnsureId());
+            block.SetContent(WithReference(block.Content, Math.Clamp(offset, 0, block.Content.Length), reference));
+            BlockDates.StampChanged(owner, now);
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            foreach (var (b, lines, isDirty) in saved)
+            {
+                b.RestoreLines(lines, isDirty);
+            }
+
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// The offset in the content of the text block or detail <paramref name="elementKey"/> (as <see cref="InsertReference"/>
+    /// takes it) for an offset in its text as the editor shows it: without emphasis markers, line escapes and a
+    /// <c>#notiz</c> tag, <c>\*</c> and <c>\_</c> as one character, a line break and a block reference (one node in the
+    /// editor) as one. It is the first place where a reference shows at that offset with the text around it unchanged
+    /// (also in its emphasis); out of range is clamped.
+    /// </summary>
+    /// <returns>The offset; <c>null</c> if there is no such place (not expected), and the caller decides where to go.</returns>
+    /// <exception cref="ArgumentException">The element is a heading or not in the book.</exception>
+    public static int? ContentOffset(Book book, Guid elementKey, int shownOffset)
+    {
+        var element = ReferringElement(book, elementKey);
+        Func<string, string> editorText = element.Kind == ElementKind.TextBlock ? BlockTextEscape.Unescape : BookSnapshot.ParagraphText;
+        var content = BlockOf(book, element).Content;
+        var shown = InlineMarkdown.ShownChars(editorText(content));
+        var at = Math.Clamp(shownOffset, 0, shown.Count);
+        var probe = BlockRefs.Format(Guid.Empty);
+        for (var m = 0; m <= content.Length; m++)
+        {
+            // The reference shows as one unit (one node in the editor).
+            var trial = InlineMarkdown.ShownChars(editorText(WithReference(content, m, probe)));
+            if (trial.Count == shown.Count + 1
+                && trial.Take(at).SequenceEqual(shown.Take(at))
+                && trial[at].Char == probe
+                && trial.Skip(at + 1).SequenceEqual(shown.Skip(at)))
+            {
+                return m;
+            }
+        }
+
+        // Not expected: every shown offset has such a place.
+        return null;
+    }
+
+    /// <summary>The text block or detail that may hold a reference.</summary>
+    /// <exception cref="ArgumentException">The key is that of a heading or of no element of the book.</exception>
+    private static BookElement ReferringElement(Book book, Guid elementKey) =>
+        BookElements.Find(book, elementKey) is { Kind: not ElementKind.Heading } element
+            ? element
+            : throw new ArgumentException("A reference goes into a text block or a detail of the book.", nameof(elementKey));
+
+    /// <summary>
+    /// <paramref name="content"/> with <paramref name="reference"/> at <paramref name="offset"/>; at the start of a line
+    /// the line is escaped anew, so an escape the line no longer needs goes (<c>\# x</c> becomes <c>((id))# x</c>).
+    /// </summary>
+    private static string WithReference(string content, int offset, string reference)
+    {
+        if (offset > 0 && content[offset - 1] != '\n')
+        {
+            return content.Insert(offset, reference);
+        }
+
+        var end = content.IndexOf('\n', offset);
+        end = end < 0 ? content.Length : end;
+        var line = BlockTextEscape.Escape(reference + BlockTextEscape.Unescape(content[offset..end]));
+        return content[..offset] + line + content[end..];
     }
 
     /// <summary>The block of a text block or detail; headings have no status.</summary>

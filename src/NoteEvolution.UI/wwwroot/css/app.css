@@ -108,6 +108,13 @@ html, body {
     flex: 1;
 }
 
+/* Back and forward between the active blocks (spec 3), left of undo */
+.ne-nav-back,
+.ne-nav-forward {
+    padding-left: 6px;
+    padding-right: 6px;
+}
+
 .ne-book-select {
     flex: 0 1 180px;
     min-width: 0;
@@ -1415,6 +1422,44 @@ html, body {
     padding-left: 0 !important;
 }
 
+/* A cross reference in the text (spec 2.3): one small unit, a click jumps to its target; red without a target. */
+.ne-ref {
+    padding: 0 0.25em;
+    border-radius: 4px;
+    background: var(--bg-pane);
+    color: var(--accent);
+    font-family: var(--font-ui);
+    font-size: 0.85em;
+    cursor: pointer;
+    user-select: none;
+}
+
+.ne-ref:hover {
+    text-decoration: underline;
+}
+
+.ne-ref.missing {
+    color: var(--danger);
+}
+
+/* A reference to a block outside the book (a note) is no cross reference: it looks like the text around it. */
+.ne-ref.foreign {
+    padding: 0;
+    background: none;
+    color: inherit;
+    font-family: inherit;
+    font-size: inherit;
+    cursor: text;
+}
+
+.ne-ref.foreign:hover {
+    text-decoration: none;
+}
+
+.ne-ref.ProseMirror-selectednode {
+    outline: 1px solid var(--accent);
+}
+
 /* Manuscript look: continuous text, blocks only spaced, sources as a margin mark, chips on request. */
 .mode-manuscript .ne-block {
     padding-bottom: 0.8em;
@@ -1532,7 +1577,8 @@ html, body {
 }
 
 .ne-sec-buttons button,
-.ne-sec-sources {
+.ne-sec-sources,
+.ne-sec-backrefs {
     white-space: nowrap;
 }
 
@@ -1579,6 +1625,11 @@ html, body {
     white-space: pre;
 }
 
+/* The places referring here sit left of the sources; their list opens upwards like the sources' list. */
+.ne-sec-backrefs-area {
+    position: relative;
+}
+
 .ne-sec-no-sources {
     color: var(--fg-muted);
 }
@@ -1619,6 +1670,75 @@ html, body {
 .ne-sec-source-broken {
     padding: 3px 10px;
     color: var(--danger);
+}
+
+/* The search for a cross reference target opens upwards above its button, like the list of sources. */
+.ne-sec-ref-area {
+    position: relative;
+}
+
+/* The level buttons „Text · H1 … H6“ form one group; the current level is pressed. */
+.ne-sec-levels {
+    display: inline-flex;
+    gap: 2px;
+}
+
+.ne-shell .ne-sec-level {
+    padding: 3px 6px;
+}
+
+.ne-shell .ne-sec-level[aria-pressed="true"] {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--accent-fg);
+}
+
+.ne-ref-picker {
+    position: absolute;
+    left: 0;
+    bottom: calc(100% + 6px);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    width: 420px;
+    max-width: 80vw;
+    padding: 6px;
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    z-index: 3;
+}
+
+.ne-ref-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    max-height: 260px;
+    overflow-y: auto;
+}
+
+.ne-shell .ne-ref-option {
+    border: none;
+    background: transparent;
+    text-align: left;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.ne-shell .ne-ref-heading {
+    font-weight: 600;
+}
+
+.ne-shell .ne-ref-option:hover,
+.ne-shell .ne-ref-selected {
+    background: var(--hint-bg);
+}
+
+.ne-ref-none {
+    padding: 3px 10px;
+    color: var(--fg-muted);
 }
 
 /* Assistants menu in the header */

@@ -196,6 +196,19 @@ public class InlineMarkdownTests
     }
 
     [Fact]
+    public void SplitAt_ReferenceCountsAsOnePosition()
+    {
+        // The editor shows a reference as one inline node: "a ", the reference, " b" (5 positions).
+        const string Ref = "((aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa))";
+        Assert.Equal(("a " + Ref, " b"), InlineMarkdown.SplitAt("a " + Ref + " b", 3));
+        Assert.Equal(("a " + Ref, " **b**"), InlineMarkdown.SplitAt("a " + Ref + " **b**", 3));
+        Assert.Equal(("a " + Ref + " b", ""), InlineMarkdown.SplitAt("a " + Ref + " b", 5));
+        Assert.Throws<ArgumentOutOfRangeException>(() => InlineMarkdown.SplitAt("a " + Ref + " b", 6));
+        // Anything else in double parentheses is plain text, one position per character.
+        Assert.Equal(("((x", "))"), InlineMarkdown.SplitAt("((x))", 3));
+    }
+
+    [Fact]
     public void SplitAt_OffsetOutOfRange_Throws()
     {
         Assert.Throws<ArgumentOutOfRangeException>(() => InlineMarkdown.SplitAt("Hallo Welt", -1));

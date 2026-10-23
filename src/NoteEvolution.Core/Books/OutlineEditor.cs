@@ -11,7 +11,8 @@ namespace NoteEvolution.Core.Books;
 /// </summary>
 public static class OutlineEditor
 {
-    internal const int MaxLevel = 6;
+    /// <summary>The deepest heading level (H6).</summary>
+    public const int MaxLevel = 6;
 
     /// <summary>
     /// Adds a heading <c>"#" * (parent level + 1) + " " + title</c> as the last child of the parent

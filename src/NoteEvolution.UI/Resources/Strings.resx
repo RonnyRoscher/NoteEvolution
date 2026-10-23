@@ -85,6 +85,12 @@
   <data name="Undo" xml:space="preserve">
     <value>Rückgängig</value>
   </data>
+  <data name="NavBack" xml:space="preserve">
+    <value>Zurück (Alt+←)</value>
+  </data>
+  <data name="NavForward" xml:space="preserve">
+    <value>Vor (Alt+→)</value>
+  </data>
   <data name="PdfExport" xml:space="preserve">
     <value>PDF-Export</value>
   </data>
@@ -211,6 +217,20 @@
   <data name="SectionSourcesOneOpen" xml:space="preserve">
     <value>1 Quelle ▾</value>
   </data>
+  <data name="SectionBackRefs" xml:space="preserve">
+    <value>↩ {0} Verweise hierher ▸</value>
+    <comment>Zugeklappte Verweise auf das Element am Cursor; {0} = Anzahl</comment>
+  </data>
+  <data name="SectionBackRefsOpen" xml:space="preserve">
+    <value>↩ {0} Verweise hierher ▾</value>
+    <comment>Aufgeklappte Verweise auf das Element am Cursor; {0} = Anzahl</comment>
+  </data>
+  <data name="SectionBackRefsOne" xml:space="preserve">
+    <value>↩ 1 Verweis hierher ▸</value>
+  </data>
+  <data name="SectionBackRefsOneOpen" xml:space="preserve">
+    <value>↩ 1 Verweis hierher ▾</value>
+  </data>
   <data name="SectionNoSources" xml:space="preserve">
     <value>Keine Quellen</value>
   </data>
@@ -256,6 +276,100 @@
   <data name="UndoAddRemark" xml:space="preserve">
     <value>Bemerkung anfügen</value>
     <comment>Name der Aktion für „Rückgängig“ nach „Bemerkung anfügen“</comment>
+  </data>
+  <data name="SectionInsertRef" xml:space="preserve">
+    <value>Verweis einfügen</value>
+  </data>
+  <data name="SectionInsertRefTitle" xml:space="preserve">
+    <value>Fügt an der Cursorstelle einen Verweis auf eine Überschrift oder einen Textblock dieses Buchs ein</value>
+    <comment>Titel des Knopfs „Verweis einfügen“ in der Leiste am aktuellen Block</comment>
+  </data>
+  <data name="SectionLevels" xml:space="preserve">
+    <value>Ebene</value>
+    <comment>Name der Knopfgruppe „Text · H1 … H6“ in der Leiste am aktuellen Block (für Screenreader)</comment>
+  </data>
+  <data name="SectionLevelText" xml:space="preserve">
+    <value>Text</value>
+    <comment>Ebenen-Knopf: der Block wird Text (eine Überschrift wird entfernt, ihr Titel wird ein Textblock)</comment>
+  </data>
+  <data name="SectionLevelHeading" xml:space="preserve">
+    <value>H{0}</value>
+    <comment>Ebenen-Knopf für die Überschriftenebene {0} (1 bis 6)</comment>
+  </data>
+  <data name="SectionLevelCurrent" xml:space="preserve">
+    <value>Die aktuelle Ebene des Blocks</value>
+    <comment>Titel des hervorgehobenen Ebenen-Knopfs</comment>
+  </data>
+  <data name="SectionLevelTextTitle" xml:space="preserve">
+    <value>Macht aus der Überschrift Text: Ihr Titel wird ein Textblock, ihr Inhalt rückt in den übergeordneten Abschnitt</value>
+    <comment>Titel des Ebenen-Knopfs „Text“ an einer Überschrift</comment>
+  </data>
+  <data name="SectionLevelHeadingTitle" xml:space="preserve">
+    <value>Wandelt den Block in eine Überschrift der Ebene {0} um</value>
+    <comment>Titel eines Ebenen-Knopfs H1 bis H6, dessen Umwandlung möglich ist</comment>
+  </data>
+  <data name="LevelBlockedNoSuchLevel" xml:space="preserve">
+    <value>Diese Ebene gibt es nicht: Überschriften reichen von H1 bis H6</value>
+    <comment>Titel eines ausgegrauten Ebenen-Knopfs (kommt in der Leiste nicht vor, nur H1 bis H6 haben Knöpfe)</comment>
+  </data>
+  <data name="LevelBlockedAboveSection" xml:space="preserve">
+    <value>Auf dieser Ebene stünde die Überschrift über ihrem Abschnitt und würde Abschnitte übernehmen, die nicht zu ihr gehören</value>
+    <comment>Titel eines ausgegrauten Ebenen-Knopfs an einem Textblock oder Unterpunkt (Ebene höher als sein Abschnitt)</comment>
+  </data>
+  <data name="LevelBlockedOutOfParent" xml:space="preserve">
+    <value>Auf dieser Ebene fiele die Überschrift aus dem Abschnitt ihrer übergeordneten Überschrift; dafür gibt es Ausrücken</value>
+    <comment>Titel eines ausgegrauten Ebenen-Knopfs an einer Überschrift (höher als ihre übergeordnete Überschrift + 1)</comment>
+  </data>
+  <data name="LevelBlockedBelowH6" xml:space="preserve">
+    <value>Auf dieser Ebene käme eine Unterüberschrift unter H6</value>
+    <comment>Titel eines ausgegrauten Ebenen-Knopfs an einer Überschrift, deren Unterüberschriften tiefer als H6 rutschten</comment>
+  </data>
+  <data name="LevelBlockedReference" xml:space="preserve">
+    <value>Überschriften enthalten keine Verweise</value>
+    <comment>Titel eines ausgegrauten Ebenen-Knopfs H1 bis H6 an einem Textblock oder Unterpunkt, dessen erste Zeile (der Titel) einen Verweis enthält</comment>
+  </data>
+  <data name="LevelBlockedAboveH1" xml:space="preserve">
+    <value>Auf dieser Ebene käme eine Unterüberschrift über H1</value>
+    <comment>Titel eines ausgegrauten Ebenen-Knopfs an einer Überschrift, deren (nicht tiefere) Unterüberschrift über H1 rutschte</comment>
+  </data>
+  <data name="UndoLevel" xml:space="preserve">
+    <value>Ebene ändern</value>
+    <comment>Name der Aktion für „Rückgängig“ nach einem Ebenen-Knopf</comment>
+  </data>
+  <data name="UndoReference" xml:space="preserve">
+    <value>Verweis einfügen</value>
+    <comment>Name der Aktion für „Rückgängig“ nach „Verweis einfügen“</comment>
+  </data>
+  <data name="RefPickerTitle" xml:space="preserve">
+    <value>Verweisziel wählen</value>
+    <comment>Beschriftung der Suche nach dem Ziel eines Verweises (für Screenreader)</comment>
+  </data>
+  <data name="RefPickerPlaceholder" xml:space="preserve">
+    <value>Überschrift oder Text suchen …</value>
+  </data>
+  <data name="RefPickerNone" xml:space="preserve">
+    <value>Nichts gefunden</value>
+    <comment>In der Suche nach dem Ziel eines Verweises, wenn nichts passt</comment>
+  </data>
+  <data name="RefPickerMore" xml:space="preserve">
+    <value>… und {0} weitere – Suche eingrenzen</value>
+    <comment>Am Ende der Liste in der Suche nach dem Ziel eines Verweises, wenn mehr Treffer passen als gezeigt werden; {0} = Anzahl der nicht gezeigten</comment>
+  </data>
+  <data name="RefLabelHeading" xml:space="preserve">
+    <value>→ {0}</value>
+    <comment>Ein Verweis auf eine Überschrift im Text; {0} = ihr Titel</comment>
+  </data>
+  <data name="RefLabelText" xml:space="preserve">
+    <value>→ {0}: {1}</value>
+    <comment>Ein Verweis auf einen Textblock im Text; {0} = der Abschnitt, {1} = der Anfang des Texts</comment>
+  </data>
+  <data name="RefLabelMissing" xml:space="preserve">
+    <value>→ Verweis fehlt</value>
+    <comment>Ein Verweis, dessen Ziel es im Buch nicht mehr gibt</comment>
+  </data>
+  <data name="RefTitleMissing" xml:space="preserve">
+    <value>Das Ziel dieses Verweises gibt es im Buch nicht mehr.</value>
+    <comment>Tooltip eines Verweises ohne Ziel</comment>
   </data>
   <data name="RangeUp" xml:space="preserve">
     <value>Bereich ▲</value>
@@ -615,6 +729,9 @@
   <data name="Cancel" xml:space="preserve">
     <value>Abbrechen</value>
   </data>
+  <data name="Yes" xml:space="preserve">
+    <value>Ja</value>
+  </data>
   <data name="Save" xml:space="preserve">
     <value>Speichern</value>
   </data>
@@ -722,6 +839,31 @@
   <data name="LinkCheckJumpFailed" xml:space="preserve">
     <value>Der Block konnte nicht angezeigt werden.</value>
   </data>
+  <data name="LinkCheckCrossRefs" xml:space="preserve">
+    <value>Querverweise ohne Ziel</value>
+  </data>
+  <data name="LinkCheckCrossRefsHint" xml:space="preserve">
+    <value>Diese Stellen verweisen auf einen Block, den es nicht mehr gibt. Ein Klick springt zur Stelle; „Verweise entfernen“ nimmt die Verweise heraus und lässt den übrigen Text stehen.</value>
+  </data>
+  <data name="LinkCheckCrossRefsRemove" xml:space="preserve">
+    <value>Verweise entfernen</value>
+  </data>
+  <data name="LinkCheckCrossRefsConfirm" xml:space="preserve">
+    <value>{0} Verweise entfernen? Das lässt sich nicht rückgängig machen.</value>
+    <comment>Rückfrage vor „Verweise entfernen“ in der Linkprüfung; {0} = Anzahl (mehr als einer)</comment>
+  </data>
+  <data name="LinkCheckCrossRefsConfirmOne" xml:space="preserve">
+    <value>1 Verweis entfernen? Das lässt sich nicht rückgängig machen.</value>
+    <comment>Rückfrage vor „Verweise entfernen“ in der Linkprüfung, ein Verweis</comment>
+  </data>
+  <data name="LinkCheckCrossRefsRemoved" xml:space="preserve">
+    <value>{0} Querverweise ohne Ziel entfernt.</value>
+    <comment>{0} = Anzahl</comment>
+  </data>
+  <data name="LinkCheckCrossRefsReadOnly" xml:space="preserve">
+    <value>{0} Querverweise ohne Ziel stehen in einem Buch, das nicht sicher lesbar ist, und wurden nicht entfernt.</value>
+    <comment>{0} = Anzahl</comment>
+  </data>
   <data name="LinkCheckBookMissing" xml:space="preserve">
     <value>Buch „{0}“ nicht gefunden</value>
     <comment>{0} = Seitenname des Buchs</comment>
@@ -760,7 +902,7 @@
     <value>Diese Notizen beginnen mit [handled]. Die Markierung wird entfernt und stattdessen das gewählte Buch als „verwendet in“ vermerkt. Das ändert den Text der Notizdateien.</value>
   </data>
   <data name="HandledNone" xml:space="preserve">
-    <value>Keine Notizen mit [handled] gefunden.</value>
+    <value>Keine [handled]-Notizen mehr</value>
   </data>
   <data name="HandledBook" xml:space="preserve">
     <value>Buch</value>
@@ -779,12 +921,12 @@
     <value>Umwandeln</value>
   </data>
   <data name="HandledDone" xml:space="preserve">
-    <value>{0} Notiz(en) umgewandelt.</value>
+    <value>{0} umgewandelt</value>
     <comment>{0} = Anzahl</comment>
   </data>
-  <data name="HandledSkipped" xml:space="preserve">
-    <value>{0} Notiz(en) übersprungen, weil ihre Datei nicht sicher lesbar ist:</value>
-    <comment>{0} = Anzahl</comment>
+  <data name="HandledDoneFailed" xml:space="preserve">
+    <value>{0} umgewandelt, {1} fehlgeschlagen</value>
+    <comment>{0} = Anzahl umgewandelt, {1} = Anzahl fehlgeschlagen</comment>
   </data>
   <data name="HandledFailed" xml:space="preserve">
     <value>Die Notizen konnten nicht umgewandelt werden. Bereits geschriebene Dateien bleiben umgewandelt.</value>
@@ -1223,14 +1365,13 @@
     <value>CPU {0} % (App {1} %) · RAM {2}/{3} GB (App {4} GB) · Frei {5} GB</value>
     <comment>Systemanzeige in der Kopfzeile: {0} = Prozessorauslastung, {1} = Anteil von NoteEvolution, {2}/{3} = Arbeitsspeicher belegt/gesamt, {4} = Speicher von NoteEvolution, {5} = freier Platz auf dem Laufwerk des Vaults; unbekannte Werte „–“</comment>
   </data>
+  <data name="SysMeterOllama" xml:space="preserve">
+    <value>CPU {0} % (App {1} % · Ollama {2} %) · RAM {3}/{4} GB (App {5} · Ollama {6} GB) · Frei {7} GB</value>
+    <comment>Systemanzeige mit Ollama: wie SysMeter, zusätzlich {2} = Prozessoranteil von Ollama, {6} = Speicher von Ollama; unbekannte Werte „–“</comment>
+  </data>
   <data name="SysMeterAnalysis" xml:space="preserve">
     <value> · Analyse {0}</value>
     <comment>Anhang der Systemanzeige: {0} = Größe der Analyse-Dateien des Vaults mit Einheit (z. B. „38 MB“); entfällt ohne Vault</comment>
-  </data>
-  <data name="SysMeterTooltip" xml:space="preserve">
-    <value>Ollama: CPU {0} %, RAM {1} GB
-NoteEvolution: CPU {2} %, RAM {3} GB</value>
-    <comment>Tooltip der Systemanzeige: Anteile von Ollama ({0}, {1}) und NoteEvolution ({2}, {3}); unbekannte Werte „–“</comment>
   </data>
   <data name="SettingsSystemMeter" xml:space="preserve">
     <value>Systemanzeige in der Kopfzeile (CPU, Arbeitsspeicher, freier Platz)</value>

@@ -115,7 +115,7 @@
             }
 
             // The flush may have saved (and so replaced) the book view.
-            if (State.Session?.Vault.FindBook(State.CurrentBook.LinkName) is not { } book)
+            if (State.Session?.Vault is not { } vault || vault.FindBook(State.CurrentBook.LinkName) is not { } book)
             {
                 return;
             }
@@ -130,7 +130,8 @@
             var options = new PdfOptions(_size);
             try
             {
-                var report = await Task.Run(() => Write(book, scope, options, path));
+                // A reference to a note stays out of the PDF as before; only an id the vault does not know is missing.
+                var report = await Task.Run(() => Write(book, scope, options, path, id => vault.FindBlockById(id) is not null));
                 _warnings = report.Warnings;
                 _savedTo = path;
             }
@@ -147,12 +148,12 @@
         }
     }
 
-    private PdfExportReport Write(Book book, Guid? scope, PdfOptions options, string path)
+    private PdfExportReport Write(Book book, Guid? scope, PdfOptions options, string path, Func<Guid, bool> knownElsewhere)
     {
         try
         {
             using var stream = File.Create(path);
-            return Exporter.Export(book, scope, options, stream);
+            return Exporter.Export(book, scope, options, stream, knownElsewhere);
         }
         catch
         {

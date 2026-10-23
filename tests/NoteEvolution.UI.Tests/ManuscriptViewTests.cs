@@ -361,7 +361,8 @@ public class ManuscriptViewTests : UiTestContext
     /// <summary>The PDF dialog only needs an exporter to render; these tests never export.</summary>
     private sealed class NoPdfExporter : IPdfExporter
     {
-        public PdfExportReport Export(Book book, Guid? scopeKey, PdfOptions options, Stream output) =>
+        public PdfExportReport Export(
+            Book book, Guid? scopeKey, PdfOptions options, Stream output, Func<Guid, bool>? knownElsewhere = null) =>
             throw new NotSupportedException();
     }
 }

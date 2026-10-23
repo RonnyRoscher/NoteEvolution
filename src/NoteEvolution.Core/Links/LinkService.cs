@@ -188,15 +188,12 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
 
         // Everything is built detached first, so that a text that would not stay one block throws before anything changed.
         var text = NoteTag.Has(note.Content) ? NoteTag.Remove(note.Content) : note.Content;
-        var lines = text.Split('\n', 2);
-        // A note line that is a heading itself gives only its title (no "## # Titel").
-        var title = HeadingMarks().Replace(lines[0].Trim(), "").Trim();
+        var (title, further) = HeadingText.Split(text);
         var heading = Block.CreateDetached(HeadingText.WithTitle("", level, title.Length > 0 ? title : untitledTitle));
         var adopted = new List<(Block Note, Block Copy)>();
-        if (lines.Length > 1 && !string.IsNullOrWhiteSpace(lines[1]))
+        if (further is not null)
         {
-            var further = lines[1].Trim();
-            if (HeadingMarks().IsMatch(further))
+            if (HeadingText.StartsAsHeading(further))
             {
                 // As a text block of its own it would be read as a heading, and the note would not be linked.
                 throw new ArgumentException("The note block's further text would start with a heading.", nameof(noteBlockKey));
@@ -451,6 +448,10 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
                     page.RemoveBlock(block);
                 }
             }
+
+            // References to a removed block now point to its group's first block, which has an id whenever one goes.
+            RetargetReferences(
+                page, merges.Zip(plans).SelectMany(m => m.Second.RemovedIds.Select(id => (id, m.First[0].Id!.Value))));
         });
 
         return merges[0][0].Key;
@@ -522,9 +523,45 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
 
                 page.RemoveBlock(detail);
             }
+
+            // A detail is no reference target, but a reference to a merged one is kept valid: it points to the text block,
+            // which gets an id only for that.
+            if (ReferencesAny(page, plan.RemovedIds))
+            {
+                var textBlockId = textBlock.EnsureId();
+                RetargetReferences(page, plan.RemovedIds.Select(id => (id, textBlockId)));
+            }
         });
 
         return head.Key;
+    }
+
+    /// <summary>Whether a block text of <paramref name="page"/> refers (<c>((id))</c>) to one of <paramref name="ids"/>.</summary>
+    private static bool ReferencesAny(Page page, IReadOnlyCollection<Guid> ids) =>
+        ids.Count > 0 && page.AllBlocks().Any(block => BlockRefs.Find(block.Content).Any(r => ids.Contains(r.Id)));
+
+    /// <summary>
+    /// Points the references <c>((id))</c> in the block texts of <paramref name="page"/> from each removed id to its
+    /// remaining one; other lines of those blocks stay byte-identical. No <c>updated::</c>: this is no edit of the text.
+    /// </summary>
+    private static void RetargetReferences(Page page, IEnumerable<(Guid From, Guid To)> moves)
+    {
+        var map = moves
+            .Where(move => move.From != move.To)
+            .DistinctBy(move => move.From)
+            .ToDictionary(move => move.From, move => move.To);
+        if (map.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var block in page.AllBlocks().ToList())
+        {
+            if (BlockRefs.Find(block.Content).Any(r => map.ContainsKey(r.Id)))
+            {
+                block.SetContent(BlockRefs.Retarget(block.Content, map));
+            }
+        }
     }
 
     /// <summary>
@@ -680,7 +717,8 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
     /// <summary>
     /// Refuses a merge when a block reference <c>((id))</c> to one of <paramref name="removedIds"/> stands anywhere in
     /// the vault (page lines before the first block, block texts, property values) other than in a <c>used-in::</c>
-    /// value (which the merge rewrites) or a <c>source::</c> value of the book itself.
+    /// value (which the merge rewrites), a <c>source::</c> value of the book itself, or a block text of the book (whose
+    /// cross references the merge retargets).
     /// </summary>
     /// <exception cref="MergeRefusedException">Such a reference exists.</exception>
     private void EnsureUnreferenced(Book book, IReadOnlyList<Guid> removedIds)
@@ -702,7 +740,7 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
 
             if (page.PrefixLines.Any(line => Mentions(line.Text))
                 || page.AllBlocks().Any(block =>
-                    Mentions(block.Content) || block.Properties.Any(property => !Rewritten(property) && Mentions(property.Value))))
+                    (!isBook && Mentions(block.Content)) || block.Properties.Any(property => !Rewritten(property) && Mentions(property.Value))))
             {
                 throw new MergeRefusedException($"The id of a block that would go is referenced in '{page.FilePath}'.");
             }
@@ -1222,7 +1260,8 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
 
     /// <summary>
     /// Writes a book page. If that fails, <paramref name="revert"/> undoes the edit on this instance, the vault gets
-    /// the page as it is on disk again, and the exception is passed on.
+    /// the page as it is on disk again (its blocks keeping their keys, see <see cref="RuntimeKeys.Carry"/>), and the
+    /// exception is passed on.
     /// </summary>
     private void SaveBook(Page page, Action revert)
     {
@@ -1235,7 +1274,9 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
             revert();
             try
             {
-                vault.ReplacePage(LogseqParser.Parse(page.FilePath, File.ReadAllBytes(page.FilePath)));
+                var reloaded = LogseqParser.Parse(page.FilePath, File.ReadAllBytes(page.FilePath));
+                RuntimeKeys.Carry(page, reloaded);
+                vault.ReplacePage(reloaded);
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
@@ -1464,10 +1505,6 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
 
         throw new ArgumentException("The block does not belong to this page.", nameof(block));
     }
-
-    /// <summary>The <c>#</c> marks that make a line a heading (<c>"# "</c> to <c>"###### "</c>).</summary>
-    [GeneratedRegex("^#{1,6} +")]
-    private static partial Regex HeadingMarks();
 
     private static string Hash(string content) => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(content)));
 

@@ -85,6 +85,9 @@ public interface IEditorCallbacks
     /// <summary>The × of a source chip was clicked.</summary>
     Task OnChipRemoved(Guid textBlockKey, Guid noteId);
 
+    /// <summary>A cross reference was clicked; <paramref name="targetId"/> is the <c>id::</c> it refers to.</summary>
+    Task OnReferenceClicked(Guid targetId);
+
     /// <summary>
     /// A note card was dropped into the editor. <paramref name="afterTextBlockKey"/> is the key of the text block the
     /// drop point follows, or of the heading it directly follows (the start of that section), or <c>null</c> for the
@@ -109,11 +112,11 @@ public interface IEditorInterop : IAsyncDisposable
     Task SetDocumentAsync(string docJson, bool showChips, bool keepCursor);
 
     /// <summary>
-    /// Puts the cursor at the start of the element's text, scrolls it into view and gives the editor the focus (unless
-    /// a text field has it); <see cref="Guid.Empty"/> is the start of the book. An element the editor does not show is
-    /// ignored.
+    /// Puts the cursor at the start of the element's text, or <paramref name="offset"/> characters into it (clamped to
+    /// the text), scrolls it into view and gives the editor the focus (unless a text field has it);
+    /// <see cref="Guid.Empty"/> is the start of the book. An element the editor does not show is ignored.
     /// </summary>
-    Task RevealAsync(Guid elementKey);
+    Task RevealAsync(Guid elementKey, int offset = 0);
 
     /// <summary>
     /// Marks the nodes of the range (<see cref="RangeInfo.Nodes"/>); the editor draws a box per contiguous piece and
@@ -127,4 +130,12 @@ public interface IEditorInterop : IAsyncDisposable
     /// editor does not show are ignored.
     /// </summary>
     Task SetBlockDatesAsync(IReadOnlyDictionary<Guid, BlockDateLabel?> dates);
+
+    /// <summary>
+    /// Sets the labels of the shown cross references by target id without replacing the document (spec 2.3
+    /// "Aktualität"): reference nodes take the new labels, and a reference typed as text becomes a reference node
+    /// (unless the cursor is inside it). The cursor and the undo history stay, and no
+    /// <see cref="IEditorCallbacks.OnDocumentChanged"/> is raised. Ids the editor does not show are ignored.
+    /// </summary>
+    Task SetRefLabelsAsync(IReadOnlyDictionary<Guid, RefLabel> labels);
 }

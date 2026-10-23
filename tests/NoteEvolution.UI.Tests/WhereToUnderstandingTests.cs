@@ -69,7 +69,7 @@ public class WhereToUnderstandingTests : UiTestContext
 
     private static async Task Eventually(Func<bool> condition, string because = "The condition was not met in time.")
     {
-        var until = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+        var until = DateTime.UtcNow + RealTimeWait;
         while (!condition())
         {
             Assert.True(DateTime.UtcNow < until, because);

@@ -55,6 +55,30 @@ internal static class PdfSamples
         "\t\t\t\t- Enkel der Notiz\n" +
         "\t\t- Folgender Absatz\n";
 
+    public const string HeadingTargetId = "11111111-1111-4111-8111-111111111111";
+    public const string TextTargetId = "22222222-2222-4222-8222-222222222222";
+    public const string ExcludedTargetId = "33333333-3333-4333-8333-333333333333";
+    public const string MissingTargetId = "44444444-4444-4444-8444-444444444444";
+
+    /// <summary>
+    /// Three chapters, each on its own page (3, 4, 5): a referenced heading, a referenced text block, and a chapter
+    /// that refers to both, to a relevant (excluded) block and to an id without a target.
+    /// </summary>
+    public static string BookWithRefs =>
+        "title:: Verweisbuch\ntype:: book\n\n" +
+        "- # Abendroutine\n" +
+        $"  id:: {HeadingTargetId}\n" +
+        "\t- Am Abend zur Ruhe kommen.\n" +
+        "- # Morgenroutine\n" +
+        "\t- Am Morgen langsam beginnen.\n" +
+        $"\t  id:: {TextTargetId}\n" +
+        "- # Verweise\n" +
+        $"\t- Siehe (({HeadingTargetId})) und (({TextTargetId})).\n" +
+        $"\t- Auch (({ExcludedTargetId})) und (({MissingTargetId})) zählen.\n" +
+        "\t- Ausgelassener Block\n" +
+        "\t  status:: relevant\n" +
+        $"\t  id:: {ExcludedTargetId}\n";
+
     public static Book Load(string text, string path = "Buch - Test.md") =>
         Book.Load(LogseqParser.Parse(path, new UTF8Encoding(false).GetBytes(text)));
 

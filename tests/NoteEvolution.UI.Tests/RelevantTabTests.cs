@@ -60,7 +60,7 @@ public class RelevantTabTests : UiTestContext
 
     private static async Task Eventually(Func<bool> condition)
     {
-        var until = DateTime.UtcNow + Wait;
+        var until = DateTime.UtcNow + RealTimeWait;
         while (!condition())
         {
             Assert.True(DateTime.UtcNow < until, "The condition was not met in time.");
@@ -535,7 +535,7 @@ public class RelevantTabPlacedTests : UiTestContext
 
     private static async Task Eventually(Func<bool> condition, string because)
     {
-        var until = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+        var until = DateTime.UtcNow + RealTimeWait;
         while (!condition())
         {
             Assert.True(DateTime.UtcNow < until, because);

@@ -31,9 +31,26 @@ public class EditorDocMapperTests
         doc["content"]!.AsArray().First(n => (string?)n!["type"] == "textBlock")!["content"]![0]!.AsObject();
 
     private static List<string> Inline(JsonObject para) =>
-        [.. (para["content"]?.AsArray() ?? []).Select(n => (string)n!["type"]! == "hardBreak"
-            ? "<br>"
-            : (string)n["text"]! + string.Concat((n["marks"]?.AsArray() ?? []).Select(m => "|" + (string)m!["type"]!)))];
+        [.. (para["content"]?.AsArray() ?? []).Select(n => (string)n!["type"]! switch
+        {
+            "hardBreak" => "<br>",
+            "blockRef" => $"<ref {(string)n["attrs"]!["id"]!}>",
+            _ => (string)n["text"]!,
+        } + string.Concat((n["marks"]?.AsArray() ?? []).Select(m => "|" + (string)m!["type"]!)))];
+
+    private static readonly Guid RefA = Guid.Parse("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
+
+    private static readonly Guid RefB = Guid.Parse("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb");
+
+    private static readonly string A = BlockRefs.Format(RefA);
+
+    private static readonly string B = BlockRefs.Format(RefB);
+
+    /// <summary>Labels as the pane builds them: A is a heading, B a text block, anything else missing.</summary>
+    private static RefLabel Label(Guid id) =>
+        id == RefA ? new RefLabel("→ Eins", "Eins", false)
+        : id == RefB ? new RefLabel("→ Eins: Erster Text", "Eins › Erster Text", false)
+        : new RefLabel("→ Verweis fehlt", "Fehlt", true);
 
     [Fact]
     public void Mapper_RoundTrip_SpecExample()
@@ -222,6 +239,135 @@ public class EditorDocMapperTests
         Assert.Equal("Geändert: 19.10.2026 14:32", (string?)nodes[1]!["attrs"]!["datesTitle"]);
         Assert.False(nodes[2]!["attrs"]!.AsObject().ContainsKey("dates"));
         Assert.False(nodes[2]!["attrs"]!.AsObject().ContainsKey("datesTitle"));
+    }
+
+    public static TheoryData<string> RefTexts() => new()
+    {
+        $"Siehe {A} hier",
+        $"{A} am Anfang",
+        $"am Ende {A}",
+        $"{A}{B}",
+        $"zwei {A} {B} nacheinander",
+        $"**fett {A}** und *kursiv {B}*",
+        $"_kursiv {A}_ und snake_case",
+        $"**{A}**",
+        $"Zeile {A}\nzweite {B} Zeile",
+        // Case-insensitive on read: an upper-case id is kept as it is in the file.
+        $"groß (({RefA.ToString("D").ToUpperInvariant()})) bleibt",
+        // A missing target, and something that is no reference.
+        $"fehlt {BlockRefs.Format(Guid.Parse("cccccccc-cccc-4ccc-8ccc-cccccccccccc"))} und ((keine)) Referenz",
+    };
+
+    [Theory]
+    [MemberData(nameof(RefTexts))]
+    public void Mapper_UnchangedTextWithReferences_KeepsItsMarkdown(string text)
+    {
+        var detail = Guid.Parse("0199a000-0000-7000-8000-000000000003");
+        var snapshot = OneBlock(text, [new SnapshotParagraph(detail, text, 1, false)]);
+        var json = EditorDocMapper.ToJson(snapshot, refOf: Label);
+
+        var back = (SnapshotTextBlock)EditorDocMapper.FromJson(json, Scope, false).Nodes.Single();
+
+        Assert.Equal(text, back.Text);
+        Assert.Equal(text, back.Paragraphs.Single().Text);
+    }
+
+    [Fact]
+    public void ToJson_ReferenceIsANodeWithLabelTitleAndMarks()
+    {
+        var missing = Guid.Parse("cccccccc-cccc-4ccc-8ccc-cccccccccccc");
+        var doc = JsonNode.Parse(EditorDocMapper.ToJson(
+            OneBlock($"Siehe **{A}** und {B}{BlockRefs.Format(missing)}, nicht ((keine))"), refOf: Label))!;
+        var para = FirstPara(doc);
+
+        Assert.Equal(
+            ["Siehe ", $"<ref {RefA}>|bold", " und ", $"<ref {RefB}>", $"<ref {missing}>", ", nicht ((keine))"],
+            Inline(para));
+        var nodes = para["content"]!.AsArray();
+        Assert.Equal("→ Eins", (string?)nodes[1]!["attrs"]!["label"]);
+        Assert.Equal("Eins", (string?)nodes[1]!["attrs"]!["title"]);
+        Assert.False((bool)nodes[1]!["attrs"]!["missing"]!);
+        Assert.Equal("→ Verweis fehlt", (string?)nodes[4]!["attrs"]!["label"]);
+        Assert.True((bool)nodes[4]!["attrs"]!["missing"]!);
+    }
+
+    [Fact]
+    public void ToJson_ReferenceToANote_IsAForeignNode_KeepsItsMarkdown()
+    {
+        // A block outside the book (a note) is no cross reference (spec 2.1), but still one unit of the shown text: a
+        // foreign node that shows the reference text, so offsets count it as one position like any reference.
+        var note = Guid.Parse("0190a000-0000-7000-8000-0000000000aa");
+        var text = $"Siehe (({note.ToString("D").ToUpperInvariant()})) und {A}";
+        RefLabel? LabelOrNone(Guid id) => id == note ? null : Label(id);
+        var json = EditorDocMapper.ToJson(OneBlock(text), refOf: LabelOrNone);
+
+        var para = FirstPara(JsonNode.Parse(json)!);
+        Assert.Equal(["Siehe ", $"<ref {note}>", " und ", $"<ref {RefA}>"], Inline(para));
+        var foreign = para["content"]![1]!["attrs"]!;
+        Assert.Equal(BlockRefs.Format(note), (string?)foreign["label"]);
+        Assert.True((bool)foreign["foreign"]!);
+        Assert.False(para["content"]![3]!["attrs"]!.AsObject().ContainsKey("foreign"));
+        var back = (SnapshotTextBlock)EditorDocMapper.FromJson(json, Scope, false).Nodes.Single();
+        Assert.Equal(text, back.Text);
+    }
+
+    [Fact]
+    public void FromJson_ChangedTextWithAForeignNode_WritesTheReferenceBack()
+    {
+        var note = Guid.Parse("0190a000-0000-7000-8000-0000000000aa");
+        var doc = JsonNode.Parse(EditorDocMapper.ToJson(OneBlock($"Siehe {BlockRefs.Format(note)} hier"), refOf: _ => null))!;
+        var content = FirstPara(doc)["content"]!.AsArray();
+        content[0]!["text"] = "Neu: ";
+
+        var back = (SnapshotTextBlock)EditorDocMapper.FromJson(doc.ToJsonString(), Scope, false).Nodes.Single();
+
+        Assert.Equal($"Neu: {BlockRefs.Format(note)} hier", back.Text);
+    }
+
+    [Fact]
+    public void FromJson_ChangedLabels_SameSnapshot()
+    {
+        var snapshot = OneBlock($"Siehe {A} und **{B}**");
+        var doc = JsonNode.Parse(EditorDocMapper.ToJson(snapshot, refOf: Label))!;
+        var changed = (JsonObject)doc.DeepClone();
+        foreach (var node in FirstPara(changed)["content"]!.AsArray().Where(n => (string?)n!["type"] == "blockRef"))
+        {
+            node!["attrs"]!["label"] = "→ anders";
+            node["attrs"]!["title"] = "anders";
+            node["attrs"]!["missing"] = true;
+        }
+
+        Assert.Equal(Describe(snapshot), Describe(EditorDocMapper.FromJson(changed.ToJsonString(), Scope, false)));
+    }
+
+    [Fact]
+    public void FromJson_ChangedTextWithReferences_WritesThemBack()
+    {
+        var doc = JsonNode.Parse(EditorDocMapper.ToJson(OneBlock("alt"), refOf: Label))!;
+        var para = FirstPara(doc);
+        para["content"] = new JsonArray(
+            new JsonObject { ["type"] = "blockRef", ["attrs"] = new JsonObject { ["id"] = RefA.ToString("D"), ["label"] = "→ Eins" } },
+            new JsonObject { ["type"] = "text", ["text"] = " neu *x* " },
+            new JsonObject
+            {
+                ["type"] = "blockRef",
+                ["attrs"] = new JsonObject { ["id"] = RefB.ToString("D") },
+                ["marks"] = new JsonArray(new JsonObject { ["type"] = "bold" }),
+            },
+            new JsonObject { ["type"] = "blockRef", ["attrs"] = new JsonObject { ["id"] = "keine-id" } });
+
+        var back = (SnapshotTextBlock)EditorDocMapper.FromJson(doc.ToJsonString(), Scope, false).Nodes.Single();
+
+        // A node without a valid id is dropped.
+        Assert.Equal($"{A} neu *x\\* **{B}**", back.Text);
+    }
+
+    [Fact]
+    public void ToJson_WithoutLabels_StillGivesTheNode()
+    {
+        var para = FirstPara(JsonNode.Parse(EditorDocMapper.ToJson(OneBlock($"x {A}")))!);
+
+        Assert.Equal(["x ", $"<ref {RefA}>"], Inline(para));
     }
 
     [Fact]

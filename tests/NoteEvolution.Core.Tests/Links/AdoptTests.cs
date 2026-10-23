@@ -199,6 +199,19 @@ public class AdoptTests
     }
 
     [Fact]
+    public void AdoptInto_AtCursor_ReferenceBeforeTheCursor_CountsAsOnePosition()
+    {
+        const string Ref = "((aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa))";
+        using var s = new LinkSetup(DetailBook.Replace("\t- Hallo Welt\n", $"\t- Hallo {Ref} Welt\n"));
+        var textKey = s.Text($"Hallo {Ref} Welt").Key;
+
+        // The editor shows "Hallo ", the reference (one position), " Welt": offset 8 is after "Hallo ", reference, " ".
+        var r = s.Links.AdoptInto(s.Book, s.Note("Zweite Notiz").Key, new IntoPosition.AtCursor(textKey, 8));
+
+        Assert.Contains($"\t- Hallo {Ref} Zweite NotizWelt\n\t  id:: {r.TextBlockId}\n", s.ReadBook());
+    }
+
+    [Fact]
     public void AdoptInto_AtCursor_Detail_SubBulletsBecomeFirstChildren()
     {
         using var s = new LinkSetup(DetailBook);

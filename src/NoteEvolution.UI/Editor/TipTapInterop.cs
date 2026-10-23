@@ -35,8 +35,8 @@ public sealed class TipTapInterop(IJSRuntime js, AppState state) : IEditorIntero
     public async Task SetDocumentAsync(string docJson, bool showChips, bool keepCursor) =>
         await Initialized.InvokeVoidAsync("setDocument", docJson, showChips, keepCursor);
 
-    public async Task RevealAsync(Guid elementKey) =>
-        await Initialized.InvokeVoidAsync("reveal", elementKey == Guid.Empty ? null : elementKey.ToString("D"));
+    public async Task RevealAsync(Guid elementKey, int offset = 0) =>
+        await Initialized.InvokeVoidAsync("reveal", elementKey == Guid.Empty ? null : elementKey.ToString("D"), offset);
 
     /// <summary>Passes the nodes to the script as an array of <c>{ key, ownTextOnly }</c>.</summary>
     public async Task SetMarkedAsync(IReadOnlyList<MarkedNode> nodes) =>
@@ -48,6 +48,12 @@ public sealed class TipTapInterop(IJSRuntime js, AppState state) : IEditorIntero
         await Initialized.InvokeVoidAsync(
             "setBlockDates",
             [dates.Select(d => new { key = d.Key.ToString("D"), dates = d.Value?.Text, datesTitle = d.Value?.Title }).ToArray()]);
+
+    /// <summary>Passes the labels to the script as an array of <c>{ id, label, title, missing, foreign }</c>.</summary>
+    public async Task SetRefLabelsAsync(IReadOnlyDictionary<Guid, RefLabel> labels) =>
+        await Initialized.InvokeVoidAsync(
+            "setRefLabels",
+            [labels.Select(l => new { id = l.Key.ToString("D"), label = l.Value.Text, title = l.Value.Title, missing = l.Value.Missing, foreign = l.Value.Foreign }).ToArray()]);
 
     [JSInvokable]
     public Task DocumentChanged(string docJson) => _callbacks?.OnDocumentChanged(docJson) ?? Task.CompletedTask;
@@ -112,6 +118,10 @@ public sealed class TipTapInterop(IJSRuntime js, AppState state) : IEditorIntero
         _callbacks is not null && Guid.TryParse(textBlockKey, out var key) && Guid.TryParse(noteId, out var id)
             ? _callbacks.OnChipRemoved(key, id)
             : Task.CompletedTask;
+
+    [JSInvokable]
+    public Task ReferenceClicked(string? targetId) =>
+        _callbacks is not null && Guid.TryParse(targetId, out var id) ? _callbacks.OnReferenceClicked(id) : Task.CompletedTask;
 
     /// <summary>
     /// Something was dropped into the editor from outside. Only a note card counts: it records itself in
