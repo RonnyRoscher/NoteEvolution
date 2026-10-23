@@ -2424,7 +2424,19 @@ html, body {
     margin: 0;
 }
 
-/* „Quellen suchen“ in the section bar: notes that may be where the text block came from */
+/* „Quellen suchen“ in the section bar: notes that may be where the text block came from. The list spans the whole bar
+   (its area is not positioned) and is taller than the other pickers, to show more of each note. */
+.ne-ref-picker.ne-source-finder {
+    left: 0;
+    right: 0;
+    width: auto;
+    max-width: none;
+}
+
+.ne-source-finder .ne-source-list {
+    max-height: min(60vh, 560px);
+}
+
 .ne-source-finder-head {
     font-weight: 600;
     font-size: 12px;
@@ -2453,6 +2465,10 @@ html, body {
 .ne-source-text {
     font-size: 12px;
     min-width: 0;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    max-height: 12em;
+    overflow-y: auto;
 }
 
 .ne-source-link {

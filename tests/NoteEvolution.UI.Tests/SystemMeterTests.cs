@@ -40,7 +40,8 @@ public class SystemMeterTests : UiTestContext
         var cut = Render<SystemMeter>();
 
         var meter = cut.Find(".ne-sysmeter");
-        Assert.Equal("CPU 63 % (App 12 % · Ollama 40 %) · RAM 9,8/15,8 GB (App 0,6 · Ollama 4,9 GB) · Frei 112 GB · Analyse 38 MB", meter.TextContent);
+        // "App" is NoteEvolution and Ollama together: 12,4 + 40,2 % and 0,6 + 4,86 GB.
+        Assert.Equal("CPU 63 % (App 53 %) · RAM 9,8/15,8 GB (App 5,5 GB) · Frei 112 GB · Analyse 38 MB", meter.TextContent);
         Assert.False(meter.ClassList.Contains("ne-sysmeter-warn"));
 
         // The shares are in the line itself, no tooltip.
@@ -48,7 +49,7 @@ public class SystemMeterTests : UiTestContext
     }
 
     [Fact]
-    public void SystemMeter_WithoutOllama_LeavesItsPartsOut()
+    public void SystemMeter_WithoutOllama_AppAlone()
     {
         SystemMonitor.Snapshot = new SystemSnapshot(63.4, 9.79, 15.84, 112.3, null, null, 12.4, 0.6, false, 38_400_000);
 

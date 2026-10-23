@@ -1,5 +1,6 @@
 @using System.Globalization
 @using NoteEvolution.Core.Books
+@using NoteEvolution.Core.Model
 @using NoteEvolution.Core.Vaults
 @implements IDisposable
 @inject AppState State
@@ -32,7 +33,7 @@
                             <span class="ne-source-used" title="@L["SourceFinderUsedIn", usedIn]">@L["SourceFinderUsed"]</span>
                         }
                     </div>
-                    <div class="ne-source-text" title="@candidate.Text">@candidate.Excerpt</div>
+                    <div class="ne-source-text">@candidate.Text</div>
                     <button type="button" class="ne-source-link" disabled="@candidate.ReadOnly"
                             @onclick="() => OnLink.InvokeAsync(candidate.Key)">@L["SourceFinderLink"]</button>
                 </div>
@@ -45,10 +46,14 @@
     /// <summary>How many notes are offered.</summary>
     internal const int Limit = 5;
 
-    private const int ExcerptLength = 160;
+    /// <summary>How much of a note is shown at most; the list scrolls within each note beyond a few lines.</summary>
+    internal const int TextLimit = 1500;
 
-    /// <summary>A note offered as a source; <see cref="UsedIn"/> names the books it is used in, <c>null</c> if unused.</summary>
-    private sealed record Candidate(Guid Key, string Date, string Excerpt, string Text, int Percent, string? UsedIn, bool ReadOnly);
+    /// <summary>
+    /// A note offered as a source, with its sub-points (indented); <see cref="UsedIn"/> names the books it is used in,
+    /// <c>null</c> if unused.
+    /// </summary>
+    private sealed record Candidate(Guid Key, string Date, string Text, int Percent, string? UsedIn, bool ReadOnly);
 
     private IReadOnlyList<Candidate>? _candidates;
     private (Book Book, Guid TextBlockKey, string Sources)? _searched;
@@ -124,12 +129,38 @@
         return new Candidate(
             note.Key,
             note.Date is { } date ? date.ToString("dd.MM.yyyy", CultureInfo.InvariantCulture) : note.Page.Name,
-            Excerpt.FirstLine(note.Block.Content, ExcerptLength),
-            note.Block.Content,
+            Limited(TextOf(note.Block)),
             percent,
             books.Count > 0 ? string.Join(", ", books) : null,
             note.Page.IsReadOnly);
     }
+
+    /// <summary>The block's text and its sub-points, each a line, indented by its depth.</summary>
+    internal static string TextOf(Block block)
+    {
+        var lines = new List<string>();
+        void Add(Block b, int depth)
+        {
+            // A sub-point starts with a dash; its further lines line up with its text.
+            var indent = new string(' ', Math.Max(0, depth - 1) * 2);
+            var first = true;
+            foreach (var line in b.Content.Split('\n'))
+            {
+                lines.Add(depth == 0 ? line : indent + (first ? "– " : "  ") + line);
+                first = false;
+            }
+
+            foreach (var child in b.Children)
+            {
+                Add(child, depth + 1);
+            }
+        }
+
+        Add(block, 0);
+        return string.Join("\n", lines);
+    }
+
+    private static string Limited(string text) => text.Length <= TextLimit ? text : text[..TextLimit].TrimEnd() + " …";
 
     public void Dispose() => _disposed = true;
 }
