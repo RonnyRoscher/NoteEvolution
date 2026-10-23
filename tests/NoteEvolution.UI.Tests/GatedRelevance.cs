@@ -19,6 +19,13 @@ internal sealed class GatedRelevance(IRelevanceService inner) : IRelevanceServic
     /// <summary>How many <see cref="Placements"/> calls wait at the closed gate now.</summary>
     public int Waiting => Volatile.Read(ref _waiting);
 
+    /// <summary>
+    /// Waits up to <paramref name="timeout"/> until a <see cref="Placements"/> call waits at the closed gate. Polled in
+    /// real time: the call gets there in the background, often after the component's last render, so a bUnit wait
+    /// (checked again only on a render) would not see it.
+    /// </summary>
+    public bool WaitForCaller(TimeSpan timeout) => SpinWait.SpinUntil(() => Waiting > 0, timeout);
+
     public void Hold() => _open.Reset();
 
     public void Release() => _open.Set();

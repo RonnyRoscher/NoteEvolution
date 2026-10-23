@@ -60,6 +60,10 @@ public class HandledPlacementTests : UiTestContext
     /// reads them (its markup has the places, the elements the assertion finds do not, and it checks no more): every
     /// <see cref="PlaceCheckInterval"/> the elements are compared with the markup, and the component is rendered once
     /// more if they lag behind, so they are read again. A component that did not render the places fails all the same.
+    /// Once the assertion holds, the render of the places may still be finishing on the background thread, and the
+    /// elements read meanwhile can carry event handler ids that no longer match the render tree (a change sent through
+    /// them reaches another note, or no handler at all): the test waits until the renderer is idle and renders once
+    /// more from its own thread, so what it reads and acts on next is that render, and the assertion is checked on it.
     /// </summary>
     private static void WaitForPlaces(IRenderedComponent<HandledWizard> cut, Action assertion)
     {
@@ -69,6 +73,9 @@ public class HandledPlacementTests : UiTestContext
             try
             {
                 cut.WaitForAssertion(assertion, PlaceCheckInterval);
+                cut.InvokeAsync(() => { }).GetAwaiter().GetResult();
+                cut.Render();
+                assertion();
                 return;
             }
             catch (Bunit.Extensions.WaitForHelpers.WaitForFailedException) when (DateTime.UtcNow < until)
@@ -374,7 +381,7 @@ public class HandledPlacementTests : UiTestContext
         cut.Find(".ne-handled-convert").Click();
         cut.WaitForElement(".ne-handled-yes").Click();
         cut.WaitForAssertion(() => Assert.Equal("1 umgewandelt", cut.Find(".ne-handled-done").TextContent), HandledWait);
-        cut.WaitForAssertion(() => Assert.True(gate.Waiting > 0), HandledWait);
+        Assert.True(gate.WaitForCaller(HandledWait), "The places were not computed again after the run.");
 
         // Check the remaining note: while its places are computed again nothing can be converted.
         cut.Find(".ne-handled-item input[type=checkbox]").Change(true);
