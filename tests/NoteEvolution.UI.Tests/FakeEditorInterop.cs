@@ -8,7 +8,7 @@ namespace NoteEvolution.UI.Tests;
 /// The editor without JavaScript: records the shown documents, revealed elements and marked nodes; tests raise the editor's events
 /// via <see cref="Callbacks"/>.
 /// </summary>
-public sealed class FakeEditorInterop : IEditorInterop
+public sealed class FakeEditorInterop : IEditorInterop, IDisposable
 {
     public IEditorCallbacks? Callbacks { get; private set; }
 
@@ -126,5 +126,14 @@ public sealed class FakeEditorInterop : IEditorInterop
     {
         Disposed = true;
         return ValueTask.CompletedTask;
+    }
+
+    /// <summary>
+    /// Does nothing: the test's service container disposes the editors it handed out per pane
+    /// (<see cref="UiTestContext"/>'s <c>UseEditorPerPane</c>) synchronously, which an <see cref="IAsyncDisposable"/> alone
+    /// does not allow. <see cref="Disposed"/> stays what the pane did (<see cref="DisposeAsync"/>).
+    /// </summary>
+    public void Dispose()
+    {
     }
 }
