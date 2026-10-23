@@ -11,6 +11,7 @@ using NoteEvolution.UI.State;
 namespace NoteEvolution.UI.Tests;
 
 /// <summary>The status dot on the note card (spec 7.2).</summary>
+[Collection(ManyNotesCollection.Name)]
 public class NoteStatusUiTests : UiTestContext
 {
     private const string SleepNote =
@@ -64,6 +65,28 @@ public class NoteStatusUiTests : UiTestContext
             Assert.True(DateTime.UtcNow < until, because);
             await Task.Delay(10);
         }
+    }
+
+    /// <summary>
+    /// Lets every status build still due (a debounced one fires only when the fake time advances) run, until a further
+    /// second of fake time reads nothing more: a baseline of reads taken then is not raised by work begun before it.
+    /// </summary>
+    private async Task SettleAsync(VaultSession session)
+    {
+        for (var round = 0; round < 10; round++)
+        {
+            var reads = session.NoteStatusReads;
+            var builds = session.NoteStatusBuilds;
+            Time.Advance(TimeSpan.FromSeconds(1));
+            await Task.Delay(100);
+            await Eventually(() => !session.NoteStatusBuilding, "Putting the status together did not end.");
+            if (session.NoteStatusReads == reads && session.NoteStatusBuilds == builds)
+            {
+                return;
+            }
+        }
+
+        Assert.Fail("The status builds did not come to rest.");
     }
 
     private async Task<VaultSession> OpenReadyAsync(TestVault vault, SemaphoreSlim? gate = null)
@@ -170,7 +193,7 @@ public class NoteStatusUiTests : UiTestContext
         Time.Advance(TimeSpan.FromSeconds(1));
         await Eventually(() => session.NoteStatus(key) is { Placement: PlacementState.Current } && !session.NoteStatusBuilding,
             "The status was not put together.");
-        await Task.Delay(50);
+        await SettleAsync(session);
         var reads = session.NoteStatusReads;
         var builds = session.NoteStatusBuilds;
         var raised = 0;
