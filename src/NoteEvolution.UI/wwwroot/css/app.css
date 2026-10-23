@@ -306,7 +306,9 @@ html, body {
     color: var(--danger);
 }
 
-/* The book area: one half, or two with the split view; the notes pane stays at the right */
+/* The book area: one half, or two with the split view; the notes pane stays at the right. Its minimum width (outline
+   plus the editor's minimum) is set by the shell, so the notes pane gives way first; min-width: 0 only keeps the
+   content from widening it. */
 
 .ne-book-area {
     flex: 1;

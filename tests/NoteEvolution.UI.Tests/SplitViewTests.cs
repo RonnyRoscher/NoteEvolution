@@ -205,6 +205,22 @@ public class SplitViewTests : UiTestContext
     }
 
     [Fact]
+    public void Divider_Drag_ContainerNoHigherThanTheDivider_LeavesTheRatio()
+    {
+        JSInterop.Setup<double>("neLayout.paneTop", _ => true).SetResult(100);
+        JSInterop.Setup<double>("neLayout.paneHeight", i => i.Arguments[1] is true).SetResult(SplitDivider.Thickness);
+        Settings.SplitView = true;
+        Settings.SplitRatio = 0.4;
+        var cut = WaitForHalves(RenderShell(), 2);
+
+        cut.Find(".ne-split-divider").PointerDown(new PointerEventArgs { ClientY = 100 });
+        cut.Find(".ne-row-splitter-overlay").PointerMove(new PointerEventArgs { ClientY = 300, Buttons = 1 });
+        cut.Find(".ne-row-splitter-overlay").PointerUp(new PointerEventArgs { ClientY = 300 });
+
+        Assert.Equal(0.4, Settings.SplitRatio);
+    }
+
+    [Fact]
     public async Task ActiveHalf_HasTheAccent_ExactlyOne_OnlyWhileSplit()
     {
         var cut = RenderShell();

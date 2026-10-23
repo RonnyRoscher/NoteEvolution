@@ -70,8 +70,8 @@
 
     private async Task SetAsync(PointerEventArgs e)
     {
-        // Without a known container size (no layout) the share cannot be derived from the pointer.
-        if (_height > 0)
+        // Without a known container size (no layout, or no room beside the divider) the share cannot be derived from the pointer.
+        if (_height > Thickness)
         {
             // The halves share the container minus the divider; the divider's middle follows the pointer.
             await SetRatioAsync((e.ClientY - _top - Thickness / 2) / (_height - Thickness));

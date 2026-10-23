@@ -35,7 +35,7 @@
 
     <main class="ne-main">
         @* The book: one half, or two with the split view (each with its own outline and editor). *@
-        <div class="ne-book-area">
+        <div class="ne-book-area" style="@BookAreaStyle">
             @for (var i = 0; i < Halves.Count; i++)
             {
                 var view = Halves[i];
@@ -476,6 +476,13 @@
     /// </summary>
     private double NotesMinPointerX =>
         (Settings.OutlineCollapsed ? CollapsedPaneWidth : Settings.OutlineWidth) + EditorMinWidth;
+
+    /// <summary>
+    /// The book area keeps room for the outline and the editor's minimum (<see cref="NotesMinPointerX"/>), so in a narrow
+    /// window the notes pane gives way first (app.css, <c>.ne-notes</c>); without it the area's <c>min-width: 0</c>
+    /// would let it shrink below them.
+    /// </summary>
+    private string BookAreaStyle => $"min-width: {NotesMinPointerX.ToString(CultureInfo.InvariantCulture)}px";
 
     /// <summary>The views shown as halves: both with the split view, but only the first while no vault is open.</summary>
     private IReadOnlyList<BookView> Halves => State.Session is null ? State.Views.Take(1).ToList() : State.Views;
