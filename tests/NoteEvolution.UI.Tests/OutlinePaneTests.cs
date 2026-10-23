@@ -40,7 +40,7 @@ public class OutlinePaneTests : UiTestContext
         Item(cut, title).QuerySelector(".ne-drop-before")!;
 
     private static List<string> Titles(IRenderedComponent<OutlinePane> cut) =>
-        [.. cut.FindAll(".ne-outline-row").Select(Title)];
+        [.. cut.FindAll(".ne-outline-tree .ne-outline-row").Select(Title)];
 
     [Fact]
     public async Task CurrentSectionChange_ScrollsItsRowIntoView_OnlyThen()
@@ -61,6 +61,26 @@ public class OutlinePaneTests : UiTestContext
         cut.Render();
 
         Assert.Equal(before + 1, Scrolls());
+    }
+
+    [Fact]
+    public async Task BookRow_OnTop_ShowsTheTitleAndTheWordsOfTheWholeBook_GoesToTheStart()
+    {
+        using var tv = Alpha();
+        await OpenSessionAsync(tv);
+        var cut = Render<OutlinePane>();
+
+        var row = cut.Find(".ne-outline-book");
+
+        Assert.Equal("Alpha", row.QuerySelector(".ne-outline-title")!.TextContent);
+        // Vorspann 5, Eins 2 + Eins-A 3: 10 words.
+        Assert.Equal("10 W", row.QuerySelector(".ne-outline-words")!.TextContent);
+        Assert.Contains("ne-outline-book", cut.Find(".ne-outline-scroll").FirstElementChild!.ClassList);
+
+        State.CurrentSectionKey = State.CurrentBook!.Root.Children.ElementAt(1).Key;
+        row.Click();
+
+        Assert.Equal(State.CurrentBook!.Root.Key, State.CurrentSectionKey);
     }
 
     [Fact]
@@ -469,7 +489,7 @@ public class OutlinePaneTests : UiTestContext
 
         var cut = Render<Shell>();
 
-        cut.WaitForAssertion(() => Assert.Equal(["Eins", "Zwei", "Zwei-A", "Drei"], cut.FindAll(".ne-outline .ne-outline-title").Select(e => e.TextContent)));
+        cut.WaitForAssertion(() => Assert.Equal(["Eins", "Zwei", "Zwei-A", "Drei"], cut.FindAll(".ne-outline .ne-outline-tree .ne-outline-title").Select(e => e.TextContent)));
         Assert.Empty(cut.FindAll(".ne-outline .ne-placeholder"));
     }
 

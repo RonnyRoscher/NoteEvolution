@@ -349,7 +349,7 @@ public class ManuscriptViewTests : UiTestContext
 
         var cut = Render<OutlinePane>();
 
-        Assert.Equal([Text("OutlineUntitled"), "Zwei"], cut.FindAll(".ne-outline-title").Select(e => e.TextContent));
+        Assert.Equal([Text("OutlineUntitled"), "Zwei"], cut.FindAll(".ne-outline-tree .ne-outline-title").Select(e => e.TextContent));
     }
 
     private static AngleSharp.Dom.IElement Row(IRenderedComponent<OutlinePane> cut, string title) =>

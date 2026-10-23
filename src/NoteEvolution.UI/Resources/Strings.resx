@@ -1626,4 +1626,10 @@
   <data name="EditorSourceFailed" xml:space="preserve">
     <value>Die Notiz konnte nicht als Quelle verknüpft werden.</value>
   </data>
+  <data name="NotesCount" xml:space="preserve">
+    <value>{0} Notizen</value>
+  </data>
+  <data name="NotesCountFiltered" xml:space="preserve">
+    <value>{0} von {1} Notizen</value>
+  </data>
 </root>

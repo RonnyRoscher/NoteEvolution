@@ -61,7 +61,8 @@ Textblöcke mit Datum, dem ersten Satz der Abschnitts-Zusammenfassung (sonst dem
 Klick springt hin. Mehrere Blöcke desselben Abschnitts, die am selben Tag zuletzt geändert wurden, stehen als ein
 Eintrag „N Blöcke“ da; ein Klick springt zur Überschrift. Rechts in der Zeile „GLIEDERUNG“ schaltet ein kleiner Knopf
 die Abdeckung ein und aus. Der Schieber zwischen Liste und Gliederung stellt die Höhe ein (auch mit Pfeil hoch/runter); die
-Liste lässt sich mit ▾/▸ einklappen. Höhe und Klappzustand bleiben nach einem Neustart erhalten.
+Liste lässt sich mit ▾/▸ einklappen. Höhe und Klappzustand bleiben nach einem Neustart erhalten. Ganz oben in der
+Gliederung steht der Titel des Buchs mit der Wortzahl des ganzen Buchs; ein Klick springt an den Anfang.
 
 Am unteren Rand der Markierung stehen die Abschnittsknöpfe und die Quellen:
 
@@ -106,6 +107,9 @@ Seitenzahl sind anklickbar.
 **Vor und zurück:** ◀ und ▶ links neben „Rückgängig“ (oder Alt+Pfeil links/rechts) springen zu früher ausgewählten
 Blöcken, auch über Buchgrenzen. Ein Block zählt, wenn der Cursor mindestens 2 s darin war oder per Sprung (Verweis,
 „Zuletzt geändert“, Quellen) erreicht wurde; gemerkt werden die letzten 50, nur für die laufende Sitzung.
+
+Am Anfang der Filterzeile steht, wie viele Notizen (Hauptpunkte) es gibt, bzw. wie viele davon der Filter
+durchlässt („812 von 1.234 Notizen“; im Journal zählen auch „‚nicht relevant‘ ausblenden“ und „‚später‘ ausblenden“).
 
 Der Reiter **Journal** ist beim Start ausgewählt und zeigt jede Journal-Datei als eine Karte (ein Tag, mit Datum
 und „In Logseq öffnen“); ihre Hauptpunkte stehen darin als Kästen mit Linie, jeder mit seinen Knöpfen untereinander
@@ -281,7 +285,8 @@ verglichen; dadurch weiß jede Überschrift, worum es in ihren Unterabschnitten 
   `--limit N` für einen kurzen Lauf).
 
 **Systemanzeige:** Rechts in der Kopfzeile stehen Prozessorlast, belegter Arbeitsspeicher und freier Platz auf dem
-Laufwerk des Vaults, dazu den Anteil von NoteEvolution und, wenn es läuft, von Ollama sowie die Größe der
+Laufwerk des Vaults, dazu den Anteil von NoteEvolution und, wenn es läuft, von Ollama (alle Prozesse `ollama…`
+und `llama-server`, das das Modell rechnet) sowie die Größe der
 Analysedateien des Vaults (`vectors.db` und `understanding.db`): „CPU 63 % (App 12 % · Ollama 40 %) · RAM 9,8/15,8 GB
 (App 0,6 · Ollama 4,9 GB) · Frei 112 GB · Analyse 38 MB“, alle 2 s. Über 90 % CPU oder unter 1 GB freiem Arbeitsspeicher erscheint der Wert in der Warnfarbe.
 Abschaltbar in den Einstellungen.
@@ -437,6 +442,9 @@ Querverweise und Navigation
 - [ ] PDF: ein Verweis steht als „→ Titel (S. n)“ mit richtiger Seitenzahl; Klick auf Titel und Seitenzahl springt
       im PDF-Betrachter zur Stelle.
 - [ ] Systemanzeige mit laufendem Ollama: Anteil in Klammern neben App, kein Tooltip; ohne Ollama fehlt der Teil.
+      Während das Modell rechnet, entsprechen CPU und RAM von Ollama etwa `llama-server.exe` im Task-Manager.
+- [ ] Gliederung: oberste Zeile mit Buchtitel und Wortzahl des ganzen Buchs. Notizbereich: „N Notizen“, mit
+      „Verwendete ausblenden“ „M von N Notizen“.
 - [ ] In einer langen Gliederung im Editor zu einem weit entfernten Abschnitt scrollen und hineinklicken: die
       Gliederung scrollt die markierte Überschrift in den Sichtbereich; von Hand gescrollt bleibt sie danach stehen.
 - [ ] „Teilen“ mitten in einem verknüpften Textblock: zwei Blöcke, die Notiz hat zwei `used-in`-Einträge.

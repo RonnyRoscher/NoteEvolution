@@ -27,6 +27,10 @@ else
                         aria-selected="@(_tab == Tab.Coverage)" @onclick="() => SelectTab(Tab.Coverage)">@L["NotesTabCoverage"]</button>
             </div>
             <div class="ne-notes-filters">
+                @{
+                    var (shown, total) = NoteCounts(session, filter);
+                }
+                <span class="ne-notes-count">@(shown == total ? L["NotesCount", Number(total)] : L["NotesCountFiltered", Number(shown), Number(total)])</span>
                 <label class="ne-filter-hide"><input type="checkbox" class="ne-hide-used" checked="@Settings.HideUsed" @onchange="OnHideUsed" /> @L["NotesHideUsed"]</label>
                 @* "Von"/"Bis" are switched off; to bring them back, restore the _from/_to fields and pass them in Filter().
                 <label class="ne-filter-date"><span>@L["NotesFrom"]</span>
@@ -221,6 +225,29 @@ else
 
     /// <summary>The filter of all tabs ("Von"/"Bis" are switched off, see the filter row).</summary>
     private NoteFilter Filter() => new(Settings.HideUsed, null, null);
+
+    /// <summary>
+    /// How many notes (main points) the current filter lets through (in the journal also its marks „nicht relevant“ and
+    /// „später“), and how many there are.
+    /// </summary>
+    private (int Shown, int Total) NoteCounts(VaultSession session, NoteFilter filter)
+    {
+        var marks = _tab == Tab.Journal ? MarkFilter() : null;
+        int shown = 0, total = 0;
+        // The notes as the journal shows them (main points); their sub-points are part of them.
+        foreach (var note in session.Notes.All().Where(note => note.Block.Parent is null))
+        {
+            total++;
+            if (session.Notes.Matches(note, filter) && marks?.Hides(note.Page) != true)
+            {
+                shown++;
+            }
+        }
+
+        return (shown, total);
+    }
+
+    private static string Number(int count) => count.ToString("N0", System.Globalization.CultureInfo.GetCultureInfo("de-DE"));
 
     /// <summary>The Journal tab's filter of marked days; "nicht relevant" counts for the current book.</summary>
     private DayMarkFilter MarkFilter() => new(Settings.HideNotRelevant, Settings.HideLater, State.CurrentBook?.LinkName);
