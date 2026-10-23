@@ -178,6 +178,10 @@
             }
 
             e.preventDefault();
+            // While a modal dialog is open (Modal.razor) the book behind it does not move.
+            if (document.querySelector('[aria-modal="true"]')) {
+                return;
+            }
             window.neNav.header?.invokeMethodAsync('Navigate', e.key === 'ArrowLeft' ? 'back' : 'forward')
                 .catch(() => { });
         }, true);

@@ -372,8 +372,9 @@ public sealed class AppState(TimeProvider? time = null)
 
     /// <summary>
     /// A jump (spec 3: a click in the outline, in the recent changes, on a cross reference …): records the active block,
-    /// makes <paramref name="book"/> the current book if it is another one, reveals the element with
-    /// <paramref name="elementKey"/> (<see cref="RevealElement"/>) and records it. The caller calls <see cref="Notify"/>.
+    /// makes <paramref name="book"/> the current book if it is another one (raising <see cref="BookSelected"/>, as
+    /// <see cref="SelectBook"/> does), reveals the element with <paramref name="elementKey"/> (<see cref="RevealElement"/>)
+    /// and records it. The caller calls <see cref="Notify"/>.
     /// </summary>
     public void JumpTo(Guid elementKey, Book? book = null)
     {
@@ -386,6 +387,7 @@ public sealed class AppState(TimeProvider? time = null)
             {
                 CurrentSectionKey = book.Root.Key;
                 Cursor = null;
+                BookSelected?.Invoke(book);
             }
         }
 
@@ -434,13 +436,14 @@ public sealed class AppState(TimeProvider? time = null)
         }
 
         var here = Position;
+        var recorded = back && here is not null;
         NavEntry? entry;
         lock (_history)
         {
             StopDwell();
-            if (back && here is not null)
+            if (recorded)
             {
-                _history.Record(here);
+                _history.Record(here!);
             }
 
             entry = back ? _history.Back(Exists) : _history.Forward(Exists);
@@ -448,6 +451,12 @@ public sealed class AppState(TimeProvider? time = null)
 
         if (entry is null || session.Vault.FindBook(entry.BookLink) is not { } book)
         {
+            if (recorded)
+            {
+                // Nowhere to go, but the history changed (the active block was recorded): the header shows it.
+                Notify();
+            }
+
             return;
         }
 
@@ -502,9 +511,14 @@ public sealed class AppState(TimeProvider? time = null)
         }
     }
 
-    /// <summary>Raised by the dwell timer (on any thread): records the entry unless the dwell was stopped meanwhile.</summary>
+    /// <summary>
+    /// Raised by the dwell timer (on any thread): records the entry unless the dwell was stopped meanwhile, and raises
+    /// <see cref="Notify"/> only if that changed <see cref="CanGoBack"/> or <see cref="CanGoForward"/> (the header's
+    /// buttons; a render for nothing would disturb typing).
+    /// </summary>
     private void OnDwelled(long version, NavEntry entry)
     {
+        bool changed;
         lock (_history)
         {
             if (version != _dwellVersion)
@@ -512,11 +526,16 @@ public sealed class AppState(TimeProvider? time = null)
                 return;
             }
 
+            var before = (CanGoBack, CanGoForward);
             StopDwell();
             _history.Record(entry);
+            changed = before != (CanGoBack, CanGoForward);
         }
 
-        Notify();
+        if (changed)
+        {
+            Notify();
+        }
     }
 
     /// <summary>Stops a running dwell; called under the history's lock.</summary>

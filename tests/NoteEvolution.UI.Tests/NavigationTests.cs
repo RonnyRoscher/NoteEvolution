@@ -148,6 +148,47 @@ public class NavigationTests : UiTestContext
     }
 
     [Fact]
+    public async Task Back_WithoutAnEarlierEntry_RecordsTheBlock_AndNotifies()
+    {
+        await OpenAsync();
+        MoveTo("Erster Text");
+        var notified = 0;
+        State.Changed += () => notified++;
+
+        await State.GoBackAsync();
+
+        // Nothing to go back to, but the active block is recorded now: the header shows the history as it is.
+        Assert.Equal(1, notified);
+        Assert.Equal(KeyOf("Erster Text"), CursorKey);
+        MoveTo("Zweiter Text");
+        Assert.True(State.CanGoBack);
+    }
+
+    [Fact]
+    public async Task Dwell_NotifiesOnlyWhenBackOrForwardChanges()
+    {
+        await OpenAsync();
+        MoveTo("Erster Text");
+        State.JumpTo(KeyOf("Dritter Text"));
+        var notified = 0;
+        State.Changed += () => notified++;
+
+        // Back was possible before and still is: no notification.
+        MoveTo("Vierter Text");
+        Time.Advance(NavigationHistory.DwellTime);
+        Assert.Equal(0, notified);
+
+        // After going back, a dwell elsewhere drops the forward entries: forward changes, the header is told.
+        await State.GoBackAsync();
+        Assert.True(State.CanGoForward);
+        notified = 0;
+        MoveTo("Zweiter Text");
+        Time.Advance(NavigationHistory.DwellTime);
+        Assert.False(State.CanGoForward);
+        Assert.Equal(1, notified);
+    }
+
+    [Fact]
     public async Task NewJumpAfterBack_DropsTheForwardEntries()
     {
         await OpenAsync();
@@ -170,21 +211,27 @@ public class NavigationTests : UiTestContext
         var selected = new List<string>();
         State.BookSelected += book => selected.Add(book.LinkName);
 
+        // A jump into another book selects it like the book selection does (so it is remembered).
         State.JumpTo(KeyOf(Beta, "Beta Text"), Beta);
         Assert.Equal("Buch - Beta", State.CurrentBook!.LinkName);
+        Assert.Equal(["Buch - Beta"], selected);
+
+        // A jump within the book selects nothing.
+        State.JumpTo(KeyOf(Beta, "Beta Text"), Beta);
+        Assert.Equal(["Buch - Beta"], selected);
 
         await State.GoBackAsync();
 
         Assert.Equal("Buch - Alpha", State.CurrentBook!.LinkName);
         Assert.Equal(KeyOf("Zweiter Text"), CursorKey);
         Assert.Equal(KeyOf("Zweiter Text"), State.PendingReveal);
-        Assert.Equal(["Buch - Alpha"], selected);
+        Assert.Equal(["Buch - Beta", "Buch - Alpha"], selected);
 
         await State.GoForwardAsync();
 
         Assert.Equal("Buch - Beta", State.CurrentBook!.LinkName);
         Assert.Equal(KeyOf(Beta, "Beta Text"), CursorKey);
-        Assert.Equal(["Buch - Alpha", "Buch - Beta"], selected);
+        Assert.Equal(["Buch - Beta", "Buch - Alpha", "Buch - Beta"], selected);
     }
 
     [Fact]
