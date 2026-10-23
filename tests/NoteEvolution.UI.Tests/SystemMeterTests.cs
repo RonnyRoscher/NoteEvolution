@@ -35,16 +35,26 @@ public class SystemMeterTests : UiTestContext
     [Fact]
     public void SystemMeter_ShowsValues_GermanDecimal()
     {
-        SystemMonitor.Snapshot = new SystemSnapshot(63.4, 9.79, 15.84, 112.3, 41.6, 4.26, 12.4, 0.6, false, 38_400_000);
+        SystemMonitor.Snapshot = new SystemSnapshot(63.4, 9.79, 15.84, 112.3, 40.2, 4.86, 12.4, 0.6, false, 38_400_000);
 
         var cut = Render<SystemMeter>();
 
         var meter = cut.Find(".ne-sysmeter");
-        Assert.Equal("CPU 63 % (App 12 %) · RAM 9,8/15,8 GB (App 0,6 GB) · Frei 112 GB · Analyse 38 MB", meter.TextContent);
+        Assert.Equal("CPU 63 % (App 12 % · Ollama 40 %) · RAM 9,8/15,8 GB (App 0,6 · Ollama 4,9 GB) · Frei 112 GB · Analyse 38 MB", meter.TextContent);
         Assert.False(meter.ClassList.Contains("ne-sysmeter-warn"));
 
-        // The tooltip shows the shares of Ollama and NoteEvolution.
-        Assert.Equal(Text("SysMeterTooltip", "42", "4,3", "12", "0,6"), meter.GetAttribute("title"));
+        // The shares are in the line itself, no tooltip.
+        Assert.Null(meter.GetAttribute("title"));
+    }
+
+    [Fact]
+    public void SystemMeter_WithoutOllama_LeavesItsPartsOut()
+    {
+        SystemMonitor.Snapshot = new SystemSnapshot(63.4, 9.79, 15.84, 112.3, null, null, 12.4, 0.6, false, 38_400_000);
+
+        var cut = Render<SystemMeter>();
+
+        Assert.Equal("CPU 63 % (App 12 %) · RAM 9,8/15,8 GB (App 0,6 GB) · Frei 112 GB · Analyse 38 MB", cut.Find(".ne-sysmeter").TextContent);
     }
 
     [Fact]
@@ -55,7 +65,7 @@ public class SystemMeterTests : UiTestContext
         var meter = cut.Find(".ne-sysmeter");
         Assert.Equal("CPU – % (App – %) · RAM –/– GB (App – GB) · Frei – GB", meter.TextContent);
         Assert.False(meter.ClassList.Contains("ne-sysmeter-warn"));
-        Assert.Equal(Text("SysMeterTooltip", "–", "–", "–", "–"), meter.GetAttribute("title"));
+        Assert.Null(meter.GetAttribute("title"));
     }
 
     [Fact]

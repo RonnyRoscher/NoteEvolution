@@ -329,6 +329,22 @@ public class NavigationTests : UiTestContext
     }
 
     [Fact]
+    public async Task HeaderOrder_NavigationUndoCommandsThenSpacerThenIndicators()
+    {
+        await OpenAsync();
+        var header = Render<HeaderBar>(p => p
+            .Add(c => c.OnHandledWizard, Microsoft.AspNetCore.Components.EventCallback.Factory.Create(this, () => { }))
+            .Add(c => c.OnPdfExport, Microsoft.AspNetCore.Components.EventCallback.Factory.Create(this, () => { }))
+            .Add(c => c.OnLinkCheck, Microsoft.AspNetCore.Components.EventCallback.Factory.Create(this, () => { }))
+            .Add(c => c.OnSettings, Microsoft.AspNetCore.Components.EventCallback.Factory.Create(this, () => { })));
+
+        var classes = header.FindAll(".ne-header > *").Select(e => e.ClassList.First()).ToList();
+        string[] expected = ["ne-nav-back", "ne-nav-forward", "ne-undo", "ne-assistants", "ne-pdf", "ne-linkcheck", "ne-settings", "ne-header-spacer", "ne-ai"];
+        var start = classes.IndexOf("ne-nav-back");
+        Assert.Equal(expected, classes.Skip(start).Take(expected.Length));
+    }
+
+    [Fact]
     public async Task Shortcut_AltArrows_ThroughTheInteropEvent()
     {
         await OpenAsync();

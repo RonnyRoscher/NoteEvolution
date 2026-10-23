@@ -60,6 +60,28 @@
         <span class="ne-undo-error" role="alert">@_undoError</span>
     }
 
+    @* The commands next to undo; the indicators (read-only files, AI, language model, system meter) at the right end. *@
+    @if (OnHandledWizard.HasDelegate || OnDraftWizard.HasDelegate)
+    {
+        <div class="ne-assistants">
+            <button type="button" class="ne-assistants-toggle" disabled="@(State.Session is null)" aria-expanded="@(_assistantsOpen ? "true" : "false")"
+                    @onclick="() => _assistantsOpen = !_assistantsOpen">@L["Assistants"]</button>
+            @if (_assistantsOpen && State.Session is not null)
+            {
+                <div class="ne-assistants-popup">
+                    <button type="button" class="ne-assistant-handled" @onclick="OpenHandled">@L["AssistantHandled"]</button>
+                    <button type="button" class="ne-assistant-draft" @onclick="OpenDraft">@L["AssistantDraft"]</button>
+                </div>
+            }
+        </div>
+    }
+
+    <button type="button" class="ne-pdf" disabled="@(State.CurrentBook is null || !OnPdfExport.HasDelegate)"
+            @onclick="OnPdfExport">@L["PdfExport"]</button>
+    <button type="button" class="ne-linkcheck" disabled="@(State.Session is null || !OnLinkCheck.HasDelegate)"
+            @onclick="OnLinkCheck">@L["LinkCheck"]</button>
+    <button type="button" class="ne-settings" disabled="@(!OnSettings.HasDelegate)" @onclick="OnSettings">@L["Settings"]</button>
+
     <span class="ne-header-spacer"></span>
 
     @if (ReadOnlyPages() is { Count: > 0 } readOnly)
@@ -82,26 +104,6 @@
         </div>
     }
 
-    @if (OnHandledWizard.HasDelegate || OnDraftWizard.HasDelegate)
-    {
-        <div class="ne-assistants">
-            <button type="button" class="ne-assistants-toggle" disabled="@(State.Session is null)" aria-expanded="@(_assistantsOpen ? "true" : "false")"
-                    @onclick="() => _assistantsOpen = !_assistantsOpen">@L["Assistants"]</button>
-            @if (_assistantsOpen && State.Session is not null)
-            {
-                <div class="ne-assistants-popup">
-                    <button type="button" class="ne-assistant-handled" @onclick="OpenHandled">@L["AssistantHandled"]</button>
-                    <button type="button" class="ne-assistant-draft" @onclick="OpenDraft">@L["AssistantDraft"]</button>
-                </div>
-            }
-        </div>
-    }
-
-    <button type="button" class="ne-pdf" disabled="@(State.CurrentBook is null || !OnPdfExport.HasDelegate)"
-            @onclick="OnPdfExport">@L["PdfExport"]</button>
-    <button type="button" class="ne-linkcheck" disabled="@(State.Session is null || !OnLinkCheck.HasDelegate)"
-            @onclick="OnLinkCheck">@L["LinkCheck"]</button>
-    <button type="button" class="ne-settings" disabled="@(!OnSettings.HasDelegate)" @onclick="OnSettings">@L["Settings"]</button>
     @{ var ai = AiStatusNow; }
     @* Also the fallback hint of spec 9: without a usable model the search is full text only. *@
     <span class="ne-ai ne-ai-@ai.State.ToString().ToLowerInvariant()" title="@(ai.State == AiState.Failed ? ai.Error : null)">@AiText(ai)</span>
