@@ -14,6 +14,7 @@ using NoteEvolution.UI.State;
 namespace NoteEvolution.UI.Tests;
 
 /// <summary>Switching the AI model from the settings: the shell closes the vault, activates the model and opens the vault again.</summary>
+[Collection(ManyNotesCollection.Name)]
 public class ModelSwitchTests : UiTestContext
 {
     private const string BetaPath = "pages/Buch - Beta.md";
@@ -49,7 +50,7 @@ public class ModelSwitchTests : UiTestContext
 
     private static async Task Eventually(Func<bool> condition)
     {
-        var until = DateTime.UtcNow + Wait;
+        var until = DateTime.UtcNow + RealTimeWait;
         while (!condition())
         {
             Assert.True(DateTime.UtcNow < until, "The condition was not met in time.");

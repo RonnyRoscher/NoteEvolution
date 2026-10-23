@@ -44,7 +44,7 @@ public class CoverageTabTests : UiTestContext
         var session = await OpenWithAiAsync(Vault());
 
         // The language model's parts start after the index is created; the indexing can be done before they are.
-        var until = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+        var until = DateTime.UtcNow + RealTimeWait;
         while (session.Understanding is null)
         {
             Assert.True(DateTime.UtcNow < until, "The language model's worker did not start.");
@@ -56,7 +56,7 @@ public class CoverageTabTests : UiTestContext
 
     private static async Task Eventually(Func<bool> condition, string because)
     {
-        var until = DateTime.UtcNow + DefaultWaitTimeout;
+        var until = DateTime.UtcNow + RealTimeWait;
         while (!condition())
         {
             Assert.True(DateTime.UtcNow < until, because);

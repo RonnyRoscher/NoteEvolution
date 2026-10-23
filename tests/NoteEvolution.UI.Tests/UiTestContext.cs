@@ -28,7 +28,7 @@ public abstract class UiTestContext : BunitContext
 
     protected UiTestContext()
     {
-        State = new AppState(Time);
+        State = new AppState(NavTime);
         Services.AddLocalization();
         Services.AddLogging();
         Services.AddSingleton<IPlatformServices>(Platform);
@@ -66,7 +66,7 @@ public abstract class UiTestContext : BunitContext
 
     protected UiSettings Settings { get; } = new();
 
-    /// <summary>The app state; its cursor dwell (the back/forward history) runs on <see cref="Time"/>.</summary>
+    /// <summary>The app state; its cursor dwell (the back/forward history) runs on <see cref="NavTime"/>.</summary>
     protected AppState State { get; }
 
     protected FakeClock Clock { get; } = new(new DateTimeOffset(2026, 10, 6, 9, 0, 0, TimeSpan.FromHours(2)));
@@ -76,6 +76,19 @@ public abstract class UiTestContext : BunitContext
 
     /// <summary>Never advances on its own, so the vault watcher's debounce timers only fire when a test says so.</summary>
     protected FakeTimeProvider Time { get; } = new();
+
+    /// <summary>
+    /// The time of <see cref="State"/>'s cursor dwell, apart from <see cref="Time"/>: a test that advances the vault's or
+    /// the language model's time does not record history entries as a side effect, and the reverse.
+    /// </summary>
+    protected FakeTimeProvider NavTime { get; } = new();
+
+    /// <summary>
+    /// How long a real-time wait (an <c>Eventually</c> loop, the AI becoming ready) waits at most for background work: a
+    /// wait that passes ends as soon as it passes, only a failing one takes the full time, so it is generous for a busy
+    /// machine.
+    /// </summary>
+    protected static readonly TimeSpan RealTimeWait = TimeSpan.FromSeconds(30);
 
     /// <summary>The AI runtime registered by <see cref="UseAi"/>; <c>null</c> without one (the AI is off).</summary>
     protected AiRuntime? Ai { get; private set; }
@@ -171,7 +184,7 @@ public abstract class UiTestContext : BunitContext
     {
         embedder ??= new FakeEmbedder();
         var session = await OpenSessionAsync(vault, UseAi(installed: true, () => embedder), logger);
-        var until = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+        var until = DateTime.UtcNow + RealTimeWait;
         while (session.AiStatus.State != AiState.Ready)
         {
             Assert.True(DateTime.UtcNow < until, "The AI did not become ready in time.");

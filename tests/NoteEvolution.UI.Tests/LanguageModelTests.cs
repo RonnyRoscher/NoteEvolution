@@ -12,6 +12,7 @@ using NoteEvolution.UI.State;
 namespace NoteEvolution.UI.Tests;
 
 /// <summary>The language model runtime and the vault session's background work with it (spec 4, 7, 8).</summary>
+[Collection(ManyNotesCollection.Name)]
 public class LanguageModelTests : UiTestContext
 {
     private const string BookPath = "pages/Buch - Alpha.md";
@@ -54,7 +55,7 @@ public class LanguageModelTests : UiTestContext
 
     private static async Task Eventually(Func<bool> condition, string because = "The condition was not met in time.")
     {
-        var until = DateTime.UtcNow + Wait;
+        var until = DateTime.UtcNow + RealTimeWait;
         while (!condition())
         {
             Assert.True(DateTime.UtcNow < until, because);

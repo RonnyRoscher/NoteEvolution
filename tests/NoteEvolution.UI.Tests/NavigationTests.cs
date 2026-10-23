@@ -96,9 +96,9 @@ public class NavigationTests : UiTestContext
         State.JumpTo(KeyOf("Erster Text"));
 
         MoveTo("Zweiter Text");
-        Time.Advance(NavigationHistory.DwellTime);
+        NavTime.Advance(NavigationHistory.DwellTime);
         MoveTo("Ein Detail");
-        Time.Advance(TimeSpan.FromSeconds(1));
+        NavTime.Advance(TimeSpan.FromSeconds(1));
         State.JumpTo(KeyOf("Vierter Text"));
 
         // Vierter ← Ein Detail (the jump's origin) ← Zweiter (dwelled) ← Erster.
@@ -117,11 +117,11 @@ public class NavigationTests : UiTestContext
         State.JumpTo(KeyOf("Erster Text"));
 
         MoveTo("Zweiter Text");
-        Time.Advance(TimeSpan.FromSeconds(1.9));
+        NavTime.Advance(TimeSpan.FromSeconds(1.9));
         MoveTo("Ein Detail");
-        Time.Advance(TimeSpan.FromSeconds(1.9));
+        NavTime.Advance(TimeSpan.FromSeconds(1.9));
         MoveTo("Dritter Text");
-        Time.Advance(TimeSpan.FromSeconds(1));
+        NavTime.Advance(TimeSpan.FromSeconds(1));
         State.JumpTo(KeyOf("Vierter Text"));
 
         // Vierter ← Dritter (the jump's origin) ← Erster: the blocks passed on the way are not in the history.
@@ -175,7 +175,7 @@ public class NavigationTests : UiTestContext
 
         // Back was possible before and still is: no notification.
         MoveTo("Vierter Text");
-        Time.Advance(NavigationHistory.DwellTime);
+        NavTime.Advance(NavigationHistory.DwellTime);
         Assert.Equal(0, notified);
 
         // After going back, a dwell elsewhere drops the forward entries: forward changes, the header is told.
@@ -183,7 +183,7 @@ public class NavigationTests : UiTestContext
         Assert.True(State.CanGoForward);
         notified = 0;
         MoveTo("Zweiter Text");
-        Time.Advance(NavigationHistory.DwellTime);
+        NavTime.Advance(NavigationHistory.DwellTime);
         Assert.False(State.CanGoForward);
         Assert.Equal(1, notified);
     }
@@ -320,9 +320,9 @@ public class NavigationTests : UiTestContext
         State.Session = null;
         old.Dispose();
         await OpenAsync();
-        Time.Advance(NavigationHistory.DwellTime);
+        NavTime.Advance(NavigationHistory.DwellTime);
         MoveTo("Dritter Text");
-        Time.Advance(NavigationHistory.DwellTime);
+        NavTime.Advance(NavigationHistory.DwellTime);
 
         // Only Dritter Text is in the history: nothing to go back to.
         Assert.False(State.CanGoBack);

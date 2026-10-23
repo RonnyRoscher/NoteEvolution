@@ -5,8 +5,9 @@ using NoteEvolution.UI.State;
 namespace NoteEvolution.UI.Tests;
 
 /// <summary>
-/// The tests that run against 300 notes keep the CPU busy for seconds (embedding, building the placement checks); they
-/// run in a collection of their own, alone, so they neither slow down their neighbours nor time out next to them.
+/// The tests that keep the CPU busy for seconds (300 notes, the AI embedding, the language model's background work, the
+/// [handled] assistant's places) run in a collection of their own, alone, so they neither slow down their neighbours nor
+/// time out next to them.
 /// </summary>
 [CollectionDefinition(Name, DisableParallelization = true)]
 public sealed class ManyNotesCollection
@@ -43,7 +44,7 @@ public class ManyNotesUiTests : UiTestContext
 
     private static async Task Eventually(Func<bool> condition, string because = "The condition was not met in time.")
     {
-        var until = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+        var until = DateTime.UtcNow + RealTimeWait;
         while (!condition())
         {
             Assert.True(DateTime.UtcNow < until, because);
