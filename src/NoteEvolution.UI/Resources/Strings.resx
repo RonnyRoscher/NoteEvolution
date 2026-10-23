@@ -883,7 +883,7 @@
     <value>Diese Notizen beginnen mit [handled]. Die Markierung wird entfernt und stattdessen das gewählte Buch als „verwendet in“ vermerkt. Das ändert den Text der Notizdateien.</value>
   </data>
   <data name="HandledNone" xml:space="preserve">
-    <value>Keine Notizen mit [handled] gefunden.</value>
+    <value>Keine [handled]-Notizen mehr</value>
   </data>
   <data name="HandledBook" xml:space="preserve">
     <value>Buch</value>
@@ -902,12 +902,12 @@
     <value>Umwandeln</value>
   </data>
   <data name="HandledDone" xml:space="preserve">
-    <value>{0} Notiz(en) umgewandelt.</value>
+    <value>{0} umgewandelt</value>
     <comment>{0} = Anzahl</comment>
   </data>
-  <data name="HandledSkipped" xml:space="preserve">
-    <value>{0} Notiz(en) übersprungen, weil ihre Datei nicht sicher lesbar ist:</value>
-    <comment>{0} = Anzahl</comment>
+  <data name="HandledDoneFailed" xml:space="preserve">
+    <value>{0} umgewandelt, {1} fehlgeschlagen</value>
+    <comment>{0} = Anzahl umgewandelt, {1} = Anzahl fehlgeschlagen</comment>
   </data>
   <data name="HandledFailed" xml:space="preserve">
     <value>Die Notizen konnten nicht umgewandelt werden. Bereits geschriebene Dateien bleiben umgewandelt.</value>

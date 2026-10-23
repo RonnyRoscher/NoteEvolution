@@ -461,9 +461,9 @@ public class DialogTests : UiTestContext
         var cut = Render<HandledWizard>();
         var boxes = cut.FindAll(".ne-handled-item input[type=checkbox]");
         Assert.Equal(2, boxes.Count);
-        Assert.All(boxes, box => Assert.True(box.HasAttribute("checked")));
+        Assert.All(boxes, box => Assert.False(box.HasAttribute("checked")));
 
-        boxes[1].Change(false);
+        boxes[0].Change(true);
         cut.Find(".ne-handled-convert").Click();
         Assert.Single(cut.FindAll(".ne-handled-confirm-text"));
         Assert.Equal("- [handled] Eins\n- [handled] Zwei\n- Drei\n", tv.Read(NotesPath));
@@ -483,6 +483,7 @@ public class DialogTests : UiTestContext
         var cut = Render<HandledWizard>();
 
         cut.Find(".ne-handled-book-select").Change("Buch - Beta");
+        CheckAll(cut);
         cut.Find(".ne-handled-convert").Click();
         cut.WaitForElement(".ne-handled-yes").Click();
 
@@ -497,11 +498,10 @@ public class DialogTests : UiTestContext
         await OpenSessionAsync(tv);
         var cut = Render<HandledWizard>();
 
-        for (var i = 0; i < 2; i++)
-        {
-            cut.FindAll(".ne-handled-item input[type=checkbox]")[i].Change(false);
-        }
-
+        Assert.True(cut.Find(".ne-handled-convert").HasAttribute("disabled"));
+        cut.FindAll(".ne-handled-item input[type=checkbox]")[0].Change(true);
+        Assert.False(cut.Find(".ne-handled-convert").HasAttribute("disabled"));
+        cut.FindAll(".ne-handled-item input[type=checkbox]")[0].Change(false);
         Assert.True(cut.Find(".ne-handled-convert").HasAttribute("disabled"));
     }
 
@@ -519,6 +519,7 @@ public class DialogTests : UiTestContext
 
         Assert.Equal(2, cut.FindAll(".ne-handled-item").Count);
         Assert.Single(cut.FindAll(".ne-handled-readonly"));
+        CheckAll(cut);
         cut.Find(".ne-handled-convert").Click();
         cut.WaitForElement(".ne-handled-yes").Click();
         cut.WaitForAssertion(() => Assert.Single(cut.FindAll(".ne-handled-done")), HandledWait);
@@ -538,11 +539,85 @@ public class DialogTests : UiTestContext
         Assert.True(session.HasOpenConflict(path));
         var cut = Render<HandledWizard>();
 
+        CheckAll(cut);
         cut.Find(".ne-handled-convert").Click();
         cut.WaitForElement(".ne-handled-yes").Click();
 
         cut.WaitForAssertion(() => Assert.Equal(Text("AssistantConflict"), cut.Find(".ne-dialog-error").TextContent));
         Assert.Equal(external, tv.Read(NotesPath));
+    }
+
+    [Fact]
+    public async Task HandledWizard_OpensWithNothingChecked_AndConvertingKeepsTheDialogOpen()
+    {
+        using var tv = HandledVault();
+        var session = await OpenSessionAsync(tv);
+        var cut = Render<HandledWizard>();
+        Assert.All(cut.FindAll(".ne-handled-item input[type=checkbox]"), box => Assert.False(box.HasAttribute("checked")));
+
+        cut.FindAll(".ne-handled-item input[type=checkbox]")[0].Change(true);
+        cut.Find(".ne-handled-convert").Click();
+        cut.WaitForElement(".ne-handled-yes").Click();
+
+        cut.WaitForAssertion(() => Assert.Equal(string.Format(Text("HandledDone"), 1), cut.Find(".ne-handled-done").TextContent), HandledWait);
+        Assert.Equal("1 umgewandelt", cut.Find(".ne-handled-done").TextContent);
+        Assert.Equal("- Eins\n  used-in:: [[Buch - Alpha]]\n- [handled] Zwei\n- Drei\n", tv.Read(NotesPath));
+        Assert.Single(cut.FindAll(".ne-handled-item"));
+        Assert.Contains("Zwei", cut.Find(".ne-handled-item").TextContent);
+        Assert.False(cut.Find(".ne-handled-item input[type=checkbox]").HasAttribute("checked"));
+        Assert.True(cut.Find(".ne-handled-convert").HasAttribute("disabled"));
+        Assert.Single(session.Handled.Find());
+
+        // The rest in the same dialog; the list is then empty.
+        cut.Find(".ne-handled-item input[type=checkbox]").Change(true);
+        cut.Find(".ne-handled-convert").Click();
+        cut.WaitForElement(".ne-handled-yes").Click();
+        cut.WaitForAssertion(() => Assert.Equal("Keine [handled]-Notizen mehr", cut.Find(".ne-handled-none").TextContent), HandledWait);
+        Assert.Equal("1 umgewandelt", cut.Find(".ne-handled-done").TextContent);
+    }
+
+    [Fact]
+    public async Task HandledWizard_Close_RaisesOnClose()
+    {
+        using var tv = HandledVault();
+        await OpenSessionAsync(tv);
+        var closed = 0;
+        var cut = Render<HandledWizard>(p => p.Add(c => c.OnClose, EventCallback.Factory.Create(this, () => closed++)));
+
+        cut.Find(".ne-handled-close").Click();
+
+        Assert.Equal(1, closed);
+    }
+
+    [Fact]
+    public async Task HandledWizard_NoteOnAPageThatCannotBeWritten_StaysAndBothCountsAreShown()
+    {
+        const string second = "pages/Zweit.md";
+        using var tv = TestVault.Create(
+            ("pages/Buch - Alpha.md", "title:: Alpha\ntype:: book\n\n- # Eins\n"),
+            (NotesPath, "- [handled] Eins\n"),
+            (second, "- [handled] Fremd\n"));
+        await OpenSessionAsync(tv);
+        var cut = Render<HandledWizard>();
+        CheckAll(cut);
+        var path = Path.Combine(tv.Root, second.Replace('/', Path.DirectorySeparatorChar));
+        File.SetAttributes(path, FileAttributes.ReadOnly);
+        try
+        {
+            cut.Find(".ne-handled-convert").Click();
+            cut.WaitForElement(".ne-handled-yes").Click();
+
+            cut.WaitForAssertion(() => Assert.Equal("1 umgewandelt, 1 fehlgeschlagen", cut.Find(".ne-handled-done").TextContent), HandledWait);
+        }
+        finally
+        {
+            File.SetAttributes(path, FileAttributes.Normal);
+        }
+
+        Assert.Equal("- Eins\n  used-in:: [[Buch - Alpha]]\n", tv.Read(NotesPath));
+        Assert.Equal("- [handled] Fremd\n", tv.Read(second));
+        Assert.Single(cut.FindAll(".ne-handled-item"));
+        Assert.Contains("Fremd", cut.Find(".ne-handled-item").TextContent);
     }
 
     // ---- HandledWizard: suggested placements ----
@@ -591,6 +666,19 @@ public class DialogTests : UiTestContext
         }
     }
 
+    /// <summary>Checks every box that can be checked (the wizard opens with none checked).</summary>
+    private static void CheckAll(IRenderedComponent<HandledWizard> cut)
+    {
+        for (var i = 0; i < cut.FindAll(".ne-handled-item").Count; i++)
+        {
+            var box = cut.FindAll(".ne-handled-item input[type=checkbox]")[i];
+            if (!box.HasAttribute("checked") && !box.HasAttribute("disabled"))
+            {
+                box.Change(true);
+            }
+        }
+    }
+
     private static readonly TimeSpan PlaceCheckInterval = TimeSpan.FromMilliseconds(200);
 
     private static IElement Place(IRenderedComponent<HandledWizard> cut, int item) =>
@@ -614,6 +702,7 @@ public class DialogTests : UiTestContext
         Assert.All(options.Skip(1), o => Assert.Matches(@" – \d{1,3} %$", o.TextContent));
 
         place.Change(OptionFor(place, SleepText));
+        CheckAll(cut);
         cut.Find(".ne-handled-convert").Click();
         cut.WaitForElement(".ne-handled-yes").Click();
 
@@ -625,6 +714,53 @@ public class DialogTests : UiTestContext
         Assert.Contains("source:: ((", tv.Read("pages/Buch - Alpha.md"));
         Assert.Same(session.Vault.FindBook("Buch - Alpha"), State.CurrentBook);
         Assert.NotNull(State.CurrentBook!.Root.Children.Single().TextBlocks.First().Block.Id);
+    }
+
+    [Fact]
+    public async Task Handled_ChoosingAPlaceChecksTheBox_UnknownUnchecksIt_ManualToggleStaysFree()
+    {
+        var tv = PlacementVault();
+        await OpenWithAiAsync(tv);
+        var cut = Render<HandledWizard>();
+        WaitForPlaces(cut, () => Assert.Equal(2, cut.FindAll(".ne-handled-place").Count));
+        bool Checked(int item) => cut.FindAll(".ne-handled-item input[type=checkbox]")[item].HasAttribute("checked");
+        Assert.False(Checked(0));
+
+        var place = Place(cut, 0);
+        place.Change(OptionFor(place, SleepText));
+        Assert.True(Checked(0));
+        Assert.False(Checked(1));
+
+        cut.FindAll(".ne-handled-item input[type=checkbox]")[0].Change(false);
+        Assert.False(Checked(0));
+
+        cut.FindAll(".ne-handled-item input[type=checkbox]")[0].Change(true);
+        Assert.True(Checked(0));
+
+        Place(cut, 0).Change("");
+        Assert.False(Checked(0));
+    }
+
+    [Fact]
+    public async Task Handled_ConvertingSomeNotes_KeepsTheChoicesOfTheOthers()
+    {
+        var tv = PlacementVault();
+        await OpenWithAiAsync(tv);
+        var cut = Render<HandledWizard>();
+        WaitForPlaces(cut, () => Assert.Equal(2, cut.FindAll(".ne-handled-place").Count));
+        var first = Place(cut, 0);
+        first.Change(OptionFor(first, SleepText));
+        cut.FindAll(".ne-handled-item input[type=checkbox]")[0].Change(false);
+        var secondPlace = Place(cut, 1);
+        secondPlace.Change(secondPlace.QuerySelectorAll("option").Skip(1).First().GetAttribute("value")!);
+
+        cut.Find(".ne-handled-convert").Click();
+        cut.WaitForElement(".ne-handled-yes").Click();
+
+        cut.WaitForAssertion(() => Assert.Equal("1 umgewandelt", cut.Find(".ne-handled-done").TextContent), HandledWait);
+        Assert.Single(cut.FindAll(".ne-handled-item"));
+        WaitForPlaces(cut, () => Assert.Contains(SleepText, cut.Find(".ne-handled-preview-text").TextContent));
+        Assert.False(cut.Find(".ne-handled-item input[type=checkbox]").HasAttribute("checked"));
     }
 
     [Fact]
@@ -705,6 +841,7 @@ public class DialogTests : UiTestContext
         var cut = Render<HandledWizard>();
         WaitForPlaces(cut, () => Assert.Equal(2, cut.FindAll(".ne-handled-place").Count));
 
+        CheckAll(cut);
         cut.Find(".ne-handled-convert").Click();
         cut.WaitForElement(".ne-handled-yes").Click();
 
@@ -740,6 +877,7 @@ public class DialogTests : UiTestContext
         WaitForPlaces(
             cut, () => Assert.Contains(Place(cut, 0).QuerySelectorAll("option"), o => o.TextContent.StartsWith("Musik Gitarre", StringComparison.Ordinal)));
         Assert.DoesNotContain(Place(cut, 0).QuerySelectorAll("option"), o => o.TextContent.StartsWith(SleepText, StringComparison.Ordinal));
+        CheckAll(cut);
         cut.Find(".ne-handled-convert").Click();
         cut.WaitForElement(".ne-handled-yes").Click();
         cut.WaitForAssertion(() => Assert.Single(cut.FindAll(".ne-handled-done")), HandledWait);
@@ -764,6 +902,7 @@ public class DialogTests : UiTestContext
         Assert.True(session.HasOpenConflict(path));
         var before = tv.Read(NotesPath);
 
+        CheckAll(cut);
         cut.Find(".ne-handled-convert").Click();
         cut.WaitForElement(".ne-handled-yes").Click();
 
@@ -787,6 +926,7 @@ public class DialogTests : UiTestContext
         session.HandleExternalChange(path);
         var before = tv.Read(NotesPath);
 
+        CheckAll(cut);
         cut.Find(".ne-handled-convert").Click();
         cut.WaitForElement(".ne-handled-yes").Click();
 
@@ -802,6 +942,7 @@ public class DialogTests : UiTestContext
             Assert.DoesNotContain(options, o => o.StartsWith(SleepText, StringComparison.Ordinal));
             Assert.Contains(options, o => o.StartsWith("Etwas ganz anderes", StringComparison.Ordinal));
         });
+        CheckAll(cut);
         cut.Find(".ne-handled-convert").Click();
         cut.WaitForElement(".ne-handled-yes").Click();
 
