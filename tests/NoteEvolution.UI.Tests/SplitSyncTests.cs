@@ -1,12 +1,15 @@
 using System.Collections.Concurrent;
 using System.Text.Json.Nodes;
 using Bunit;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Localization;
 using NoteEvolution.AI.Relevance;
 using NoteEvolution.AI.Search;
 using NoteEvolution.Core.Books;
 using NoteEvolution.TestSupport;
 using NoteEvolution.UI.Components;
 using NoteEvolution.UI.Editor;
+using NoteEvolution.UI.Resources;
 using NoteEvolution.UI.State;
 
 namespace NoteEvolution.UI.Tests;
@@ -91,6 +94,128 @@ public class SplitSyncTests : UiTestContext
         var block = doc["content"]!.AsArray().First(n => (string?)n!["type"] == "textBlock")!;
         block["content"]![0]!["content"] = new JsonArray(new JsonObject { ["type"] = "text", ["text"] = text });
         return doc.ToJsonString();
+    }
+
+    /// <summary>The editor's document with the text block that starts with <paramref name="old"/> showing <paramref name="text"/>.</summary>
+    private static string WithText(FakeEditorInterop editor, string old, string text)
+    {
+        var doc = JsonNode.Parse(editor.Json)!;
+        var block = doc["content"]!.AsArray().First(n =>
+            (string?)n!["type"] == "textBlock" && (string?)n["content"]![0]!["content"]![0]!["text"] == old)!;
+        block["content"]![0]!["content"] = new JsonArray(new JsonObject { ["type"] = "text", ["text"] = text });
+        return doc.ToJsonString();
+    }
+
+    private string Text(string key) => Services.GetRequiredService<IStringLocalizer<Strings>>()[key].Value;
+
+    private string BookPath => Path.Combine(_vault.Root, "pages", "Buch - Alpha.md");
+
+    [Fact]
+    public async Task UpperSaveFails_LowerHalfRefusesInputAndFocus_UntilTheUpperTextIsSaved_ThenBothTextsAreKept()
+    {
+        var (upper, lower) = await RenderEditorsAsync();
+        await ClickIntoAsync(upper, Editors[0], CursorIn("Erster Text"));
+        Assert.Same(State.Views[0], State.ActiveView);
+
+        using (new FileStream(BookPath, FileMode.Open, FileAccess.Read, FileShare.Read))
+        {
+            await upper.InvokeAsync(() => Editors[0].Callbacks!.OnDocumentChanged(WithText(Editors[0], "Erster Text", "Oben, nicht gespeichert")));
+
+            // Text waiting for its debounce locks nothing: the lower half may still be clicked into.
+            Assert.Empty(lower.FindAll(".ne-editor-hint"));
+
+            // Typing in the lower half (its editor kept the focus): the upper text cannot be saved, so the lower half
+            // does not become active, does not take the change and shows the book again.
+            var lowerDocuments = Editors[1].Documents.Count;
+            await lower.InvokeAsync(() => Editors[1].Callbacks!.OnDocumentChanged(WithText(Editors[1], "Dritter Text", "Unten verloren")));
+
+            Assert.Same(State.Views[0], State.ActiveView);
+            Assert.True(State.Views[0].HasFailedEditorText!());
+            Assert.False(State.Views[1].HasUnsavedEditorText!());
+            Assert.True(Editors[1].Documents.Count > lowerDocuments);
+            Assert.True(Editors[1].KeepCursor[^1]);
+            lower.WaitForAssertion(() => Assert.Equal(Text("EditorOtherHalfUnsaved"), lower.Find(".ne-editor-hint").TextContent));
+            Assert.True(lower.Find(".ne-editor-host").HasAttribute("inert"));
+            Assert.Empty(upper.FindAll(".ne-editor-hint"));
+
+            // The focus does not make it active either.
+            await lower.InvokeAsync(() => Editors[1].Callbacks!.OnEditorFocused());
+            Assert.Same(State.Views[0], State.ActiveView);
+        }
+
+        Assert.DoesNotContain("Oben, nicht gespeichert", BookFile);
+
+        // The file is writable again: the upper text is saved, the lock goes, and the lower half shows the upper text.
+        await upper.InvokeAsync(() => State.Views[0].FlushEditor!());
+        Assert.Contains("Oben, nicht gespeichert", BookFile);
+        lower.WaitForAssertion(() => Assert.Empty(lower.FindAll(".ne-editor-hint")));
+        Assert.False(lower.Find(".ne-editor-host").HasAttribute("inert"));
+        lower.WaitForAssertion(() => Assert.Contains("Oben, nicht gespeichert", Editors[1].Json));
+
+        await ClickIntoAsync(lower, Editors[1], CursorIn("Dritter Text"));
+        Assert.Same(State.Views[1], State.ActiveView);
+        await lower.InvokeAsync(() => Editors[1].Callbacks!.OnDocumentChanged(WithText(Editors[1], "Dritter Text", "Unten getippt")));
+        await lower.InvokeAsync(() => State.Views[1].FlushEditor!());
+
+        Assert.Contains("Oben, nicht gespeichert", BookFile);
+        Assert.Contains("Unten getippt", BookFile);
+        Assert.DoesNotContain("Unten verloren", BookFile);
+    }
+
+    [Fact]
+    public async Task TypingInTheInactiveHalf_MakesItActive_AfterTheOtherHalfSaved()
+    {
+        var (upper, lower) = await RenderEditorsAsync();
+        await upper.InvokeAsync(() => Editors[0].Callbacks!.OnDocumentChanged(WithText(Editors[0], "Erster Text", "Oben getippt")));
+
+        // No focus event (the editor kept the DOM focus): the change itself makes the lower half active, after the upper saved.
+        await lower.InvokeAsync(() => Editors[1].Callbacks!.OnDocumentChanged(WithText(Editors[1], "Dritter Text", "Unten getippt")));
+
+        Assert.Same(State.Views[1], State.ActiveView);
+        Assert.Contains("Oben getippt", BookFile);
+        await lower.InvokeAsync(() => State.Views[1].FlushEditor!());
+        Assert.Contains("Unten getippt", BookFile);
+    }
+
+    [Fact]
+    public async Task Split_LowerEditorRevealsTheActiveSection_WithoutTakingTheFocus()
+    {
+        var (_, lower) = await RenderEditorsAsync();
+
+        lower.WaitForAssertion(() => Assert.Equal([SectionKey("Eins")], Editors[1].Reveals));
+        Assert.Equal([false], Editors[1].RevealFocus);
+        Assert.Empty(Editors[0].Reveals);
+        Assert.Same(State.Views[0], State.ActiveView);
+    }
+
+    [Fact]
+    public async Task DirtyPage_IsReportedByTheUpperHalfOnly_AndWarnedOnce()
+    {
+        var (upper, lower) = await RenderEditorsAsync();
+        using (new FileStream(BookPath, FileMode.Open, FileAccess.Read, FileShare.Read))
+        {
+            // Changes in the shared book page that cannot be saved (e.g. a merge whose save failed).
+            Book.Page.AllBlocks().Single(b => b.Content == "Erster Text").SetContent("Im Speicher geändert");
+            await upper.InvokeAsync(() => State.FlushEditor!());
+            Assert.True(Book.Page.IsDirty);
+
+            Assert.True(State.Views[0].HasUnsavedEditorText!());
+            Assert.False(State.Views[1].HasUnsavedEditorText!());
+            Assert.True(State.HasUnsavedEditorText!());
+
+            Assert.True(await upper.InvokeAsync(() => State.WarnUnsavedText!()));
+            upper.WaitForAssertion(() => Assert.Equal(Text("EditorCloseUnsaved"), upper.Find(".ne-editor-error").TextContent));
+            Assert.Empty(lower.FindAll(".ne-editor-error"));
+
+            // The lower editor's own text waiting for the next try: it warns, and the upper one no longer does.
+            await ClickIntoAsync(lower, Editors[1], CursorIn("Dritter Text"));
+            Assert.Same(State.Views[1], State.ActiveView);
+            await lower.InvokeAsync(() => Editors[1].Callbacks!.OnDocumentChanged(WithText(Editors[1], "Dritter Text", "Unten gesperrt")));
+            await lower.InvokeAsync(() => State.Views[1].FlushEditor!());
+            Assert.True(State.Views[1].HasUnsavedEditorText!());
+            Assert.False(State.Views[0].HasUnsavedEditorText!());
+            Assert.True(State.HasUnsavedEditorText!());
+        }
     }
 
     [Fact]

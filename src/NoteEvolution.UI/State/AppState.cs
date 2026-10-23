@@ -1,3 +1,4 @@
+using System.Runtime.ExceptionServices;
 using Microsoft.Extensions.Logging;
 using NoteEvolution.Core.Books;
 using NoteEvolution.UI.Editor;
@@ -38,6 +39,9 @@ public sealed class AppState
     private Book? _currentBook;
     private readonly HashSet<Guid> _whereToOpenNotes = [];
 
+    /// <summary>Another session was set: the next <see cref="CurrentBook"/> resets the inactive views, even for the same book.</summary>
+    private bool _sessionChanged;
+
     /// <param name="time">The clock of the cursor dwell (<see cref="NavigationHistory.DwellTime"/>); <see cref="TimeProvider.System"/> if <c>null</c>.</param>
     public AppState(TimeProvider? time = null)
     {
@@ -56,9 +60,10 @@ public sealed class AppState
     public bool IsSplit => _second is not null;
 
     /// <summary>
-    /// Shows the book in two halves or in one. A new second view starts at the active view's section, without a cursor.
-    /// Unsplitting while the second view is active makes the first one active, with its own place. Raises
-    /// <see cref="Notify"/>. The caller saves the second editor's pending text before unsplitting.
+    /// Shows the book in two halves or in one. A new second view starts at the active view's section, without a cursor,
+    /// and asks its editor to reveal that section. Unsplitting while the second view is active makes the first one
+    /// active, with its own place (the cursor dwell restarts for it). Raises <see cref="Notify"/>. The caller saves the
+    /// second editor's pending text before unsplitting.
     /// </summary>
     public void SetSplit(bool split)
     {
@@ -67,14 +72,22 @@ public sealed class AppState
             if (split)
             {
                 _second = new BookView { CurrentSectionKey = _active.CurrentSectionKey };
+                // Shown at that section, while the focus stays in the active half.
+                _second.RequestReveal(_second.CurrentSectionKey, 0, focus: false);
                 Views = [_first, _second];
             }
             else
             {
+                var wasActive = ReferenceEquals(_active, _second);
                 _second = null;
                 Views = [_first];
                 _active = _first;
                 _session?.SetFocus(_currentBook, _active.CurrentSectionKey);
+                if (wasActive)
+                {
+                    // A dwell started in the removed half must not record its position.
+                    StartDwell();
+                }
             }
         }
 
@@ -84,7 +97,10 @@ public sealed class AppState
     /// <summary>
     /// Makes <paramref name="view"/> the active one, after the previous active view's editor saved its pending text (an
     /// exception from that propagates and nothing changes); nothing happens if it is active already or was removed
-    /// meanwhile. The cursor dwell restarts for the new view's cursor. Raises <see cref="Notify"/>.
+    /// meanwhile. If that editor still holds text it could not save (<see cref="BookView.HasFailedEditorText"/>), the
+    /// previous view stays active: typing in the other half would save a document without that text over it. The cursor
+    /// dwell restarts for the new view's cursor. Raises <see cref="Notify"/> (also when the switch is refused, so the
+    /// halves show why).
     /// </summary>
     public async Task ActivateAsync(BookView view)
     {
@@ -98,7 +114,8 @@ public sealed class AppState
             throw new ArgumentException("The view does not belong to this state.", nameof(view));
         }
 
-        if (_active.FlushEditor is { } flush)
+        var previous = _active;
+        if (previous.FlushEditor is { } flush)
         {
             await flush();
         }
@@ -106,6 +123,12 @@ public sealed class AppState
         // The split may have been switched off while the editor saved.
         if (!Views.Contains(view))
         {
+            return;
+        }
+
+        if (previous.HasFailedEditorText?.Invoke() == true)
+        {
+            Notify();
             return;
         }
 
@@ -121,7 +144,8 @@ public sealed class AppState
     /// <see cref="ActivateAsync"/> for the components of a half (its editor, its outline): <c>true</c> if
     /// <paramref name="view"/> is the active view afterwards (at once if it is already); <c>false</c> if it no longer
     /// belongs to <see cref="Views"/> (the split was switched off), was removed while the previous editor saved, or that
-    /// save failed (logged to <paramref name="logger"/>, nothing changes).
+    /// save failed (an exception is logged to <paramref name="logger"/>; nothing changes, also while the previous editor
+    /// still holds text it could not save).
     /// </summary>
     public async Task<bool> TryActivateAsync(BookView view, ILogger logger)
     {
@@ -149,9 +173,10 @@ public sealed class AppState
     }
 
     /// <summary>
-    /// The open vault; <c>null</c> until one is opened. Another session puts the range back to level 0 and clears the
-    /// back/forward history. The session is told the current book and section (<see cref="CurrentBook"/>,
-    /// <see cref="CurrentSectionKey"/>) whenever they change.
+    /// The open vault; <c>null</c> until one is opened. Another session puts the range back to level 0, clears the
+    /// back/forward history and makes the next <see cref="CurrentBook"/> put every inactive view back to the start of the
+    /// book (the same book of the new session holds other blocks). The session is told the current book and section
+    /// (<see cref="CurrentBook"/>, <see cref="CurrentSectionKey"/>) whenever they change.
     /// </summary>
     public VaultSession? Session
     {
@@ -170,6 +195,8 @@ public sealed class AppState
                     StopDwell();
                     _history.Clear();
                 }
+
+                _sessionChanged = true;
             }
 
             _session = value;
@@ -179,16 +206,22 @@ public sealed class AppState
 
     /// <summary>
     /// The book the editor shows. Another book (by link name; not the same book taken from the vault again, see
-    /// <see cref="RefreshBook"/>) puts the range back to level 0 and every inactive view back to the start of the book.
+    /// <see cref="RefreshBook"/>) puts the range back to level 0 and every inactive view back to the start of the book;
+    /// so does the first book set after another <see cref="Session"/>, even the same one.
     /// </summary>
     public Book? CurrentBook
     {
         get => _currentBook;
         set
         {
-            if (!string.Equals(value?.LinkName, _currentBook?.LinkName, StringComparison.OrdinalIgnoreCase))
+            var other = !string.Equals(value?.LinkName, _currentBook?.LinkName, StringComparison.OrdinalIgnoreCase);
+            if (other)
             {
                 RangeLevel = 0;
+            }
+
+            if (other || _sessionChanged)
+            {
                 foreach (var view in Views.Where(v => !ReferenceEquals(v, _active)))
                 {
                     view.CurrentSectionKey = value?.Root.Key ?? Guid.Empty;
@@ -197,6 +230,7 @@ public sealed class AppState
                 }
             }
 
+            _sessionChanged = false;
             _currentBook = value;
             _session?.SetFocus(_currentBook, _active.CurrentSectionKey);
         }
@@ -302,9 +336,11 @@ public sealed class AppState
     public bool CloseWhereTo(Guid noteKey) => _whereToOpenNotes.Remove(noteKey);
 
     /// <summary>
-    /// Saves the pending text of every editor in turn, <c>null</c> while no editor is shown. An editor registers it with its
-    /// <see cref="BookView"/>; setting it here sets the first view's. Whoever is about to change the book page behind the
-    /// editors' back (adopting a note) awaits it first, so no typed text is lost and the editors' page is current.
+    /// Saves the pending text of every editor in turn, <c>null</c> while no editor is shown: each one is tried even if one
+    /// before failed, then the failure is rethrown (an <see cref="AggregateException"/> if several failed). An editor
+    /// registers it with its <see cref="BookView"/>; setting it here sets the first view's. Whoever is about to change the
+    /// book page behind the editors' back (adopting a note) awaits it first, so no typed text is lost and the editors'
+    /// page is current.
     /// </summary>
     public Func<Task>? FlushEditor
     {
@@ -318,9 +354,27 @@ public sealed class AppState
                 1 => flushes[0],
                 _ => async () =>
                 {
+                    var failures = new List<Exception>();
                     foreach (var flush in flushes)
                     {
-                        await flush();
+                        try
+                        {
+                            await flush();
+                        }
+                        catch (Exception ex)
+                        {
+                            failures.Add(ex);
+                        }
+                    }
+
+                    if (failures.Count == 1)
+                    {
+                        ExceptionDispatchInfo.Throw(failures[0]);
+                    }
+
+                    if (failures.Count > 1)
+                    {
+                        throw new AggregateException(failures);
                     }
                 },
             };

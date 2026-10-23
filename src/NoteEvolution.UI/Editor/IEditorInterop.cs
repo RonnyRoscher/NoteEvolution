@@ -125,10 +125,11 @@ public interface IEditorInterop : IAsyncDisposable
 
     /// <summary>
     /// Puts the cursor at the start of the element's text, or <paramref name="offset"/> characters into it (clamped to
-    /// the text), scrolls it into view and gives the editor the focus (unless a text field has it);
+    /// the text), scrolls it into view and gives the editor the focus (unless a text field has it, or
+    /// <paramref name="focus"/> is <c>false</c>: the focus stays where it is, e.g. in the other half of a split view);
     /// <see cref="Guid.Empty"/> is the start of the book. An element the editor does not show is ignored.
     /// </summary>
-    Task RevealAsync(Guid elementKey, int offset = 0);
+    Task RevealAsync(Guid elementKey, int offset = 0, bool focus = true);
 
     /// <summary>Splits the text block at the cursor in two, as Ctrl+Enter does, and gives the editor the focus back.</summary>
     Task SplitAtCursorAsync();

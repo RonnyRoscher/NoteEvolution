@@ -51,6 +51,9 @@ public sealed class BookView
     /// <summary>Where in the text of <see cref="PendingReveal"/> the cursor goes, in characters as the editor shows them.</summary>
     public int PendingRevealOffset { get; private set; }
 
+    /// <summary>Whether revealing <see cref="PendingReveal"/> gives the editor the focus (not for the new lower half of a split).</summary>
+    public bool PendingRevealFocus { get; private set; } = true;
+
     /// <summary>Saves the editor's pending text, <c>null</c> while no editor is shown for this view.</summary>
     public Func<Task>? FlushEditor { get; set; }
 
@@ -66,14 +69,26 @@ public sealed class BookView
     /// </summary>
     public Func<bool>? HasUnsavedEditorText { get; set; }
 
+    /// <summary>
+    /// Asked on the UI thread at any time: <c>true</c> while the editor holds text of its own whose save failed (pending
+    /// for the next try, or left in the book page), not only text waiting for its debounce. While it does, the other
+    /// half of a split view takes no input and does not become active (<see cref="AppState.ActivateAsync"/>), since its
+    /// editor would save a document without that text. <c>null</c> while no editor is shown.
+    /// </summary>
+    public Func<bool>? HasFailedEditorText { get; set; }
+
     /// <summary>An element is to be revealed in this view's editor (see <see cref="RequestReveal"/>).</summary>
     public event Action<Guid>? RevealRequested;
 
-    /// <summary>Sets the pending reveal and raises <see cref="RevealRequested"/>.</summary>
-    internal void RequestReveal(Guid elementKey, int offset)
+    /// <summary>
+    /// Sets the pending reveal and raises <see cref="RevealRequested"/>; <paramref name="focus"/> <c>false</c> reveals the
+    /// element without giving the editor the focus.
+    /// </summary>
+    internal void RequestReveal(Guid elementKey, int offset, bool focus = true)
     {
         PendingReveal = elementKey;
         PendingRevealOffset = offset;
+        PendingRevealFocus = focus;
         RevealRequested?.Invoke(elementKey);
     }
 

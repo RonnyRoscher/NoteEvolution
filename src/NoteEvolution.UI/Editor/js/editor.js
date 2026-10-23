@@ -989,13 +989,14 @@ export function createEditor(host, dotnet, options = {}) {
         /**
          * Puts the cursor at the start of the text of the heading, text block or detail with the key (null: the start
          * of the document), or textOffset characters into that text (clamped to it), and scrolls it into view; an
-         * unknown key does nothing.
+         * unknown key does nothing. With focus false the editor does not take the focus (e.g. the other half of a
+         * split view keeps it).
          */
         /** The split button of the section bar: Ctrl+Enter at the cursor, with the focus back in the editor. */
         splitAtCursor() {
             editor.chain().focus().command(splitTextBlock).run();
         },
-        reveal(key, textOffset = 0) {
+        reveal(key, textOffset = 0, focus = true) {
             const doc = editor.state.doc;
             let target = key ? null : { pos: 0, at: TextSelection.atStart(doc).from, size: 0 };
             doc.forEach((node, offset) => {
@@ -1022,7 +1023,7 @@ export function createEditor(host, dotnet, options = {}) {
             // The user types on right there; a text field that has the focus meanwhile (e.g. renaming an outline
             // heading after a double click) keeps it.
             const active = document.activeElement;
-            if (!(active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement || active instanceof HTMLSelectElement)) {
+            if (focus && !(active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement || active instanceof HTMLSelectElement)) {
                 editor.view.focus();
             }
             // ProseMirror scrolls to the selection only while the editor has the focus, and focus() does not scroll.

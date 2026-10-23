@@ -304,6 +304,105 @@ public class BookViewTests : IDisposable
     }
 
     [Fact]
+    public async Task Activate_PreviousEditorStillHoldsUnsavedText_StaysActive_AndNotifies()
+    {
+        State.SetSplit(true);
+        var unsaved = true;
+        var log = new List<string>();
+        State.Views[0].FlushEditor = () =>
+        {
+            log.Add("flush0");
+            return Task.CompletedTask;
+        };
+        State.Views[0].HasFailedEditorText = () => unsaved;
+        State.Changed += () => log.Add("notify");
+
+        Assert.False(await State.TryActivateAsync(State.Views[1], NullLogger.Instance));
+
+        Assert.Same(State.Views[0], State.ActiveView);
+        Assert.Equal(["flush0", "notify"], log);
+
+        // Once the text is saved, the switch goes through.
+        unsaved = false;
+        Assert.True(await State.TryActivateAsync(State.Views[1], NullLogger.Instance));
+        Assert.Same(State.Views[1], State.ActiveView);
+    }
+
+    [Fact]
+    public async Task Split_LowerViewRevealsTheActiveSection_WithoutTakingTheFocus()
+    {
+        State.CurrentSectionKey = KeyOf("# Zwei");
+        State.Cursor = CursorOf("Text eins");
+
+        State.SetSplit(true);
+
+        Assert.Equal(KeyOf("# Zwei"), State.Views[1].PendingReveal);
+        Assert.Equal(0, State.Views[1].PendingRevealOffset);
+        Assert.False(State.Views[1].PendingRevealFocus);
+        Assert.Null(State.Views[0].PendingReveal);
+        Assert.Null(State.PendingReveal);
+
+        // A reveal asked for later (a jump) takes the focus again.
+        State.Views[1].TakePendingReveal();
+        await State.ActivateAsync(State.Views[1]);
+        State.RevealElement(KeyOf("Text zwei"));
+        Assert.True(State.Views[1].PendingRevealFocus);
+    }
+
+    [Fact]
+    public async Task Unsplit_WhileSecondActive_RestartsTheDwell_ForTheFirstViewsCursor()
+    {
+        State.Cursor = CursorOf("# Eins");
+        State.SetSplit(true);
+        await State.ActivateAsync(State.Views[1]);
+        State.Cursor = CursorOf("# Zwei");
+
+        State.SetSplit(false);
+        _time.Advance(NavigationHistory.DwellTime);
+
+        // The dwell recorded "Eins" (the active block now), not "Zwei" of the removed half.
+        Assert.False(State.CanGoBack);
+        Assert.Equal(KeyOf("# Eins"), State.Position!.ElementKey);
+    }
+
+    [Fact]
+    public async Task CombinedFlush_TriesEveryEditor_ThenRethrows()
+    {
+        State.SetSplit(true);
+        var log = new List<string>();
+        var first = new InvalidOperationException("oben");
+        State.Views[0].FlushEditor = () =>
+        {
+            log.Add("flush0");
+            return Task.FromException(first);
+        };
+        State.Views[1].FlushEditor = () =>
+        {
+            log.Add("flush1");
+            return Task.CompletedTask;
+        };
+
+        var thrown = await Assert.ThrowsAsync<InvalidOperationException>(() => State.FlushEditor!());
+
+        Assert.Same(first, thrown);
+        Assert.Equal(["flush0", "flush1"], log);
+
+        // Both failing: both are tried, both reported.
+        var second = new IOException("unten");
+        State.Views[1].FlushEditor = () =>
+        {
+            log.Add("flush1");
+            throw second;
+        };
+        log.Clear();
+
+        var both = await Assert.ThrowsAsync<AggregateException>(() => State.FlushEditor!());
+
+        Assert.Equal(["flush0", "flush1"], log);
+        Assert.Equal([first, second], both.InnerExceptions);
+    }
+
+    [Fact]
     public async Task Activate_RestartsTheDwell_ForTheNewViewsCursor()
     {
         State.Cursor = CursorOf("# Eins");
@@ -346,5 +445,33 @@ public class BookViewFocusTests : UiTestContext
 
         var focus = typeof(VaultSession).GetField("_focusSection", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
         Assert.Equal(zwei, (Guid)focus.GetValue(session)!);
+    }
+
+    [Fact]
+    public async Task SameVaultOpenedAgain_SameBook_ResetsTheInactiveView()
+    {
+        var old = await OpenSessionAsync(_vault);
+        var book = State.CurrentBook!;
+        var zwei = book.Page.AllBlocks().Single(b => b.Content == "# Zwei").Key;
+        var text = book.Page.AllBlocks().Single(b => b.Content == "Text zwei").Key;
+        State.SetSplit(true);
+        State.Views[1].CurrentSectionKey = zwei;
+        State.Views[1].Cursor = new CursorInfo(ElementKind.TextBlock, text, text, 0);
+        State.Views[1].RangeLevel = 1;
+
+        // As the shell opens a vault: the new session, then its book (the same link name), then the active view's place.
+        var reopened = await OpenSessionAsync(_vault);
+        old.Dispose();
+        Assert.Equal(book.LinkName, State.CurrentBook!.LinkName);
+
+        Assert.Equal(State.CurrentBook!.Root.Key, State.Views[1].CurrentSectionKey);
+        Assert.Null(State.Views[1].Cursor);
+        Assert.Equal(0, State.Views[1].RangeLevel);
+
+        // Taking the same book from the vault again (a refresh) resets nothing.
+        State.Views[1].CurrentSectionKey = zwei;
+        State.Views[1].Cursor = new CursorInfo(ElementKind.TextBlock, text, text, 0);
+        State.CurrentBook = reopened.Vault.FindBook(book.LinkName);
+        Assert.NotNull(State.Views[1].Cursor);
     }
 }

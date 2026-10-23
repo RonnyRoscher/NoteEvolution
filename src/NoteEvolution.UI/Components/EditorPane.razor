@@ -102,13 +102,23 @@
     /// <summary>The pane is marked <c>active</c> only in a split view, as the half the user works in.</summary>
     private string PaneClass => State.IsSplit && IsActive ? "ne-editor-pane active" : "ne-editor-pane";
 
-    /// <summary>Why the book page cannot be edited now: it is read-only, or a conflict for its file is open (R26).</summary>
+    /// <summary>
+    /// Why the book page cannot be edited now: it is read-only, a conflict for its file is open (R26), or, in the half
+    /// that is not the active one, the other half holds text it could not save (typing here would save a document
+    /// without it over it; see <see cref="AppState.ActivateAsync"/>).
+    /// </summary>
     private string? ReadOnlyReason => State switch
     {
         { CurrentBook.Page.IsReadOnly: true } => "EditorReadOnly",
         { Session: { } session, CurrentBook.Page: { } page } when session.HasOpenConflict(page.FilePath) => "EditorConflict",
+        _ when OtherHalfHasUnsavedText => "EditorOtherHalfUnsaved",
         _ => null,
     };
+
+    /// <summary>In a split view, this half is not the active one and another half's editor holds text whose save failed.</summary>
+    private bool OtherHalfHasUnsavedText =>
+        State.IsSplit && !IsActive
+        && State.Views.Any(v => !ReferenceEquals(v, MyView) && v.HasFailedEditorText?.Invoke() == true);
 
     protected override void OnInitialized()
     {
@@ -119,6 +129,7 @@
         MyView.FlushEditor = FlushAsync;
         MyView.WarnUnsavedText = WarnUnsavedText;
         MyView.HasUnsavedEditorText = HasUnsavedText;
+        MyView.HasFailedEditorText = HasFailedText;
         TrackSession();
     }
 
@@ -169,6 +180,11 @@
         if (MyView.HasUnsavedEditorText == (Func<bool>)HasUnsavedText)
         {
             MyView.HasUnsavedEditorText = null;
+        }
+
+        if (MyView.HasFailedEditorText == (Func<bool>)HasFailedText)
+        {
+            MyView.HasFailedEditorText = null;
         }
 
         Unsubscribe();
@@ -224,7 +240,7 @@
     /// </summary>
     private bool WarnUnsavedText()
     {
-        if (_disposed || !_saver.HasUnsavedText)
+        if (!HasUnsavedText())
         {
             return false;
         }
@@ -234,15 +250,57 @@
         return true;
     }
 
-    /// <summary>Registered as <see cref="MyView"/>'s <see cref="BookView.HasUnsavedEditorText"/>: whether text could not be saved (after a flush).</summary>
-    private bool HasUnsavedText() => !_disposed && _saver.HasUnsavedText;
+    /// <summary>
+    /// Registered as <see cref="MyView"/>'s <see cref="BookView.HasUnsavedEditorText"/>: whether text could not be saved
+    /// (after a flush). Each editor answers for its own text: its pending text, or what a failed save of it left in the
+    /// book page. The shown book page holding other changes that could not be saved is one page for all halves: if no
+    /// other editor answers, the first view's editor does, so the user is told once when the window closes (without a
+    /// split: the pending text or the page's unsaved changes, as before).
+    /// </summary>
+    private bool HasUnsavedText()
+    {
+        if (_disposed)
+        {
+            return false;
+        }
 
-    public Task OnDocumentChanged(string docJson)
+        if (_saver.Pending is not null || _saver.HasFailedText)
+        {
+            return true;
+        }
+
+        return _saver.ShownPageIsDirty && ReferenceEquals(MyView, State.Views[0])
+               && !State.Views.Skip(1).Any(v => v.HasUnsavedEditorText?.Invoke() == true);
+    }
+
+    /// <summary>
+    /// Registered as <see cref="MyView"/>'s <see cref="BookView.HasFailedEditorText"/>: whether a save of this editor's
+    /// own text failed and the text is not in the file yet (asked at any time).
+    /// </summary>
+    private bool HasFailedText() => !_disposed && _saver.HasFailedText;
+
+    /// <summary>
+    /// Takes the editor's changed document as pending text, saved after the debounce. A change in an editor that is not
+    /// the active one makes its view active first (the editor may have kept the focus); if that is refused (the other
+    /// half could not save its text), the change is not taken and the editor shows the book again.
+    /// </summary>
+    public async Task OnDocumentChanged(string docJson)
     {
         // A change from before a newly loaded document, or in a page that cannot be saved, is not taken.
         if (_loading || _saver.Shown is null || ReadOnlyReason is not null)
         {
-            return Task.CompletedTask;
+            return;
+        }
+
+        if (!IsActive && !await ActivateAsync())
+        {
+            if (!_disposed)
+            {
+                _saver.ReloadNeeded = true;
+                await SyncAsync();
+            }
+
+            return;
         }
 
         _saver.Pending = docJson;
@@ -250,7 +308,6 @@
         CancelDebounce();
         var source = _debounce = new CancellationTokenSource();
         _ = SaveAfterDelayAsync(source.Token);
-        return Task.CompletedTask;
     }
 
     /// <summary>
@@ -783,9 +840,10 @@
     private async Task RevealPendingAsync()
     {
         var offset = MyView.PendingRevealOffset;
+        var focus = MyView.PendingRevealFocus;
         if (MyView.TakePendingReveal() is { } elementKey)
         {
-            await Editor.RevealAsync(elementKey, offset);
+            await Editor.RevealAsync(elementKey, offset, focus);
         }
     }
 

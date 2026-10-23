@@ -148,6 +148,9 @@
   <data name="EditorConflict" xml:space="preserve">
     <value>Die Buchdatei wurde gleichzeitig von einem anderen Programm geändert. Bis der Konflikt gelöst ist, wird hier nichts gespeichert.</value>
   </data>
+  <data name="EditorOtherHalfUnsaved" xml:space="preserve">
+    <value>Die andere Hälfte enthält Text, der nicht gespeichert werden konnte.</value>
+  </data>
   <data name="EditorLoadFailed" xml:space="preserve">
     <value>Der Editor konnte nicht geladen werden.</value>
   </data>

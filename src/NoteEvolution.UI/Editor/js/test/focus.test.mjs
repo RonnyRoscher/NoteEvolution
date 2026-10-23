@@ -67,3 +67,37 @@ test('getting the focus is reported every time, before the cursor, even at an un
     api.destroy();
     host.remove();
 });
+
+test('reveal without focus moves the cursor but leaves the focus where it is (the other half of a split view)', () => {
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const other = document.createElement('input');
+    document.body.appendChild(other);
+    const calls = [];
+    const dotnet = { invokeMethodAsync: (method, ...args) => { calls.push([method, ...args]); return Promise.resolve(); } };
+    const api = createEditor(host, dotnet, { barHeight: 0 });
+    api.setDocument(JSON.stringify({ type: 'doc', content: [block(A, 'Erster Text'), block(B, 'Zweiter Text')] }), false, false);
+    const editor = host.querySelector('.ne-doc').editor;
+    // A plain element elsewhere has the focus (not a text field, which reveal leaves alone anyway).
+    const away = document.createElement('div');
+    away.tabIndex = 0;
+    document.body.appendChild(away);
+    away.focus();
+    calls.length = 0;
+
+    api.reveal(B, 3, false);
+
+    assert.equal(editor.state.selection.$from.parent.textContent, 'Zweiter Text');
+    assert.equal(editor.state.selection.$from.parentOffset, 3);
+    assert.equal(document.activeElement, away);
+    assert.equal(calls.filter(([method]) => method === 'EditorFocused').length, 0);
+
+    // By default the editor takes the focus.
+    api.reveal(A);
+    assert.notEqual(document.activeElement, away);
+
+    api.destroy();
+    host.remove();
+    other.remove();
+    away.remove();
+});
