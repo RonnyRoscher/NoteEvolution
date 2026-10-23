@@ -73,7 +73,7 @@
             @if (CanFindSources)
             {
                 @* Not positioned itself: the list opens over the whole width of the bar, to show more of each note. *@
-                <span class="ne-sec-sources-area">
+                <span class="ne-sec-find-sources-area">
                     <button type="button" class="ne-sec-find-sources" title="@L["SectionFindSourcesTitle"]"
                             aria-expanded="@(_findingSources ? "true" : "false")"
                             @onclick="() => _findingSources = !_findingSources">@L["SectionFindSources"]</button>

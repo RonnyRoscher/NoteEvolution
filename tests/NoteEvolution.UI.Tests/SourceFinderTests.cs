@@ -97,6 +97,9 @@ public class SourceFinderTests : UiTestContext
         cut.Find(".ne-sec-find-sources").Click();
 
         cut.WaitForAssertion(() => Assert.Equal(2, cut.FindAll(".ne-source-candidate").Count));
+        // The list spans the whole bar: no positioned ancestor of its own (the sources area of the bar is one).
+        Assert.Null(cut.Find(".ne-source-finder").Closest(".ne-sec-sources-area"));
+        Assert.NotNull(cut.Find(".ne-source-finder").Closest(".ne-sec-find-sources-area"));
         // The whole note with its sub-points, not just its first line.
         Assert.Equal(["Anderswo", "Frei\n– Unterpunkt eins\n  – Tiefer\n    zweite Zeile"],
             cut.FindAll(".ne-source-text").Select(e => e.TextContent.Trim()));
