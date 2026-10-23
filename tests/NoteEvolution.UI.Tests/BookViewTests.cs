@@ -23,10 +23,12 @@ public class BookViewTests : IDisposable
 
     private readonly Vault _opened;
 
+    private readonly FakeTimeProvider _time = new();
+
     public BookViewTests()
     {
         _opened = _vault.Open();
-        State = new AppState(new FakeTimeProvider()) { CurrentBook = _opened.FindBook("Buch - Alpha") };
+        State = new AppState(_time) { CurrentBook = _opened.FindBook("Buch - Alpha") };
     }
 
     private AppState State { get; }
@@ -244,5 +246,78 @@ public class BookViewTests : IDisposable
         Assert.Same(flush, State.FlushEditor);
         State.FlushEditor = null;
         Assert.Null(State.FlushEditor);
+    }
+
+    [Fact]
+    public async Task Activate_WhenTheSplitIsSwitchedOffDuringTheFlush_DoesNotActivateTheRemovedView()
+    {
+        State.SetSplit(true);
+        var second = State.Views[1];
+        State.Views[0].FlushEditor = () =>
+        {
+            State.SetSplit(false);
+            return Task.CompletedTask;
+        };
+
+        await State.ActivateAsync(second);
+
+        Assert.Single(State.Views);
+        Assert.Same(State.Views[0], State.ActiveView);
+    }
+
+    [Fact]
+    public async Task Activate_ThrowingFlush_LeavesTheActiveViewUnchanged()
+    {
+        State.SetSplit(true);
+        State.Views[0].FlushEditor = () => throw new InvalidOperationException("save failed");
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => State.ActivateAsync(State.Views[1]));
+
+        Assert.Same(State.Views[0], State.ActiveView);
+    }
+
+    [Fact]
+    public async Task Activate_RestartsTheDwell_ForTheNewViewsCursor()
+    {
+        State.Cursor = CursorOf("# Eins");
+        State.SetSplit(true);
+        State.Views[1].Cursor = CursorOf("# Zwei");
+
+        await State.ActivateAsync(State.Views[1]);
+        _time.Advance(NavigationHistory.DwellTime);
+
+        // The dwell recorded "Zwei" (the active block), not "Eins" of the old half.
+        Assert.False(State.CanGoBack);
+    }
+}
+
+/// <summary>What the session's focus feed gets from the active view.</summary>
+public class BookViewFocusTests : UiTestContext
+{
+    private readonly TestVault _vault = TestVault.Create(
+        ("pages/Buch - Alpha.md", "title:: Alpha\ntype:: book\n\n- # Eins\n\t- Text eins\n- # Zwei\n\t- Text zwei\n"));
+
+    protected override void Dispose(bool disposing)
+    {
+        base.Dispose(disposing);
+        if (disposing)
+        {
+            _vault.Dispose();
+        }
+    }
+
+    [Fact]
+    public async Task SetFocus_GetsTheActiveViewsSection_AfterActivate()
+    {
+        var session = await OpenSessionAsync(_vault);
+        var book = State.CurrentBook!;
+        var zwei = book.Page.AllBlocks().Single(b => b.Content == "# Zwei").Key;
+        State.SetSplit(true);
+        State.Views[1].CurrentSectionKey = zwei;
+
+        await State.ActivateAsync(State.Views[1]);
+
+        var focus = typeof(VaultSession).GetField("_focusSection", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+        Assert.Equal(zwei, (Guid)focus.GetValue(session)!);
     }
 }

@@ -82,8 +82,8 @@ public sealed class AppState
 
     /// <summary>
     /// Makes <paramref name="view"/> the active one, after the previous active view's editor saved its pending text (an
-    /// exception from that propagates and nothing changes); nothing happens if it is active already. Raises
-    /// <see cref="Notify"/>.
+    /// exception from that propagates and nothing changes); nothing happens if it is active already or was removed
+    /// meanwhile. The cursor dwell restarts for the new view's cursor. Raises <see cref="Notify"/>.
     /// </summary>
     public async Task ActivateAsync(BookView view)
     {
@@ -102,8 +102,17 @@ public sealed class AppState
             await flush();
         }
 
+        // The split may have been switched off while the editor saved.
+        if (!Views.Contains(view))
+        {
+            return;
+        }
+
         _active = view;
         _session?.SetFocus(_currentBook, _active.CurrentSectionKey);
+
+        // A dwell started in the old half must not record a position of the new one.
+        StartDwell();
         Notify();
     }
 
