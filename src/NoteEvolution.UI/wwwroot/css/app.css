@@ -519,6 +519,14 @@ html, body {
     font-style: italic;
 }
 
+/* The book's title above its sections, with the words of the whole book */
+.ne-outline-row.ne-outline-book {
+    font-weight: 600;
+    border-bottom: 1px solid var(--border);
+    border-radius: 4px 4px 0 0;
+    margin-bottom: 2px;
+}
+
 .ne-outline-row.drop-onto {
     outline: 2px solid var(--accent);
     outline-offset: -2px;
@@ -2450,4 +2458,12 @@ html, body {
 .ne-source-link {
     align-self: start;
     white-space: nowrap;
+}
+
+/* How many notes the filter lets through, at the start of the filter row */
+.ne-notes-count {
+    color: var(--fg-muted);
+    font-size: 12px;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
 }

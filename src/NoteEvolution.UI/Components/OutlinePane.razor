@@ -36,6 +36,13 @@ else
         }
         @* Only the tree scrolls: the list, the splitter, the label and the toggle above it stay in view. *@
         <div class="ne-outline-scroll" @ref="_scroll">
+            @* The book itself on top, with the words of the whole book; a click goes to its start. *@
+            <div class="ne-outline-row ne-outline-book" @onclick="() => Select(book.Root)">
+                <span class="ne-outline-title">@(book.Title.Length > 0 ? book.Title : book.LinkName)</span>
+                <span class="ne-outline-meta">
+                    <span class="ne-outline-words" title="@L["OutlineWordsLong", book.Root.WordCount]">@L["OutlineWords", book.Root.WordCount]</span>
+                </span>
+            </div>
             <ul class="ne-outline-tree">
                 @if (book.Root.TextBlocks.Any())
                 {

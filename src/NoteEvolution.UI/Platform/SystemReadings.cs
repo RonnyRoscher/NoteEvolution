@@ -13,6 +13,15 @@ public static class SystemReadings
     public const double BytesPerGb = 1024.0 * 1024 * 1024;
 
     /// <summary>
+    /// Whether a process (its name without ".exe") belongs to Ollama: "ollama", "ollama app", "ollama_llama_server", and
+    /// "llama-server", which newer versions start to run the model and which does the actual work.
+    /// </summary>
+    public static bool IsOllamaProcess(string processName) =>
+        processName.StartsWith("ollama", StringComparison.OrdinalIgnoreCase)
+        || processName.StartsWith("llama-server", StringComparison.OrdinalIgnoreCase)
+        || processName.StartsWith("llama_server", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
     /// The processor load between two readings of the system's times (any unit): the share of the time that passed
     /// that was not idle, 0–100; <c>null</c> when no time passed (or the counters went backwards).
     /// </summary>

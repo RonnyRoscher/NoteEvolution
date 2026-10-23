@@ -90,7 +90,7 @@ internal sealed class SystemMonitor(TimeProvider time) : ISystemMonitor
 
     /// <summary>
     /// The processor shares (since the previous reading) and the memory of Ollama's processes (<c>ollama</c>,
-    /// <c>ollama app</c>, <c>ollama_llama_server</c>, …) and of this process. Ollama's values are unknown while it does not
+    /// <c>ollama app</c>, <c>ollama_llama_server</c>, <c>llama-server</c>, …, see <see cref="SystemReadings.IsOllamaProcess"/>) and of this process. Ollama's values are unknown while it does not
     /// run; a process that started since the previous reading counts from the next one.
     /// </summary>
     private Shares ProcessShares()
@@ -121,7 +121,7 @@ internal sealed class SystemMonitor(TimeProvider time) : ISystemMonitor
                 try
                 {
                     var own = process.Id == ownId;
-                    if (!own && !process.ProcessName.StartsWith("ollama", StringComparison.OrdinalIgnoreCase))
+                    if (!own && !SystemReadings.IsOllamaProcess(process.ProcessName))
                     {
                         continue;
                     }

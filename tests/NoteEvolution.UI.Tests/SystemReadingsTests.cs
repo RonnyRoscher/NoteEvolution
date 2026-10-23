@@ -5,6 +5,19 @@ namespace NoteEvolution.UI.Tests;
 /// <summary>The computations of the system meter's readings (spec 11.2), apart from the platform calls.</summary>
 public class SystemReadingsTests
 {
+    [Theory]
+    [InlineData("ollama", true)]
+    [InlineData("ollama app", true)]
+    [InlineData("ollama_llama_server", true)]
+    [InlineData("llama-server", true)]
+    [InlineData("LLAMA-SERVER", true)]
+    [InlineData("llama_server", true)]
+    [InlineData("NoteEvolution", false)]
+    [InlineData("llama", false)]
+    [InlineData("chrome", false)]
+    public void SystemReadings_OllamaProcesses_IncludeTheModelServer(string name, bool expected) =>
+        Assert.Equal(expected, SystemReadings.IsOllamaProcess(name));
+
     [Fact]
     public void SystemReadings_CpuPercentFromTimes()
     {
