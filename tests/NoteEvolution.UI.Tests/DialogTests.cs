@@ -924,16 +924,16 @@ public class DialogTests : UiTestContext
         const string external = "title:: Alpha\ntype:: book\n\n- # Eins\n\t- Etwas ganz anderes\n";
         File.WriteAllText(path, external, Utf8);
         session.HandleExternalChange(path);
-        var before = tv.Read(NotesPath);
-
         CheckAll(cut);
         cut.Find(".ne-handled-convert").Click();
         cut.WaitForElement(".ne-handled-yes").Click();
 
         cut.WaitForAssertion(() => Assert.Equal(Text("HandledPlacementFailed"), cut.Find(".ne-dialog-error").TextContent));
-        Assert.Empty(cut.FindAll(".ne-handled-done"));
-        Assert.Equal(2, cut.FindAll(".ne-handled-item").Count);
-        Assert.Equal(before, tv.Read(NotesPath));
+        // The failure is per note: the one without a place is converted, only the one whose place vanished stays.
+        Assert.Equal("1 umgewandelt, 1 fehlgeschlagen", cut.Find(".ne-handled-done").TextContent);
+        Assert.Single(cut.FindAll(".ne-handled-item"));
+        Assert.Contains("Schlaf", cut.Find(".ne-handled-item").TextContent);
+        Assert.Equal("- [handled] Schlaf und Träume\n- Zwei\n  used-in:: [[Buch - Alpha]]\n- Drei\n", tv.Read(NotesPath));
 
         // The places are suggested again for the book as it is now; the choice is back to "Stelle unbekannt".
         WaitForPlaces(cut, () =>
@@ -942,7 +942,7 @@ public class DialogTests : UiTestContext
             Assert.DoesNotContain(options, o => o.StartsWith(SleepText, StringComparison.Ordinal));
             Assert.Contains(options, o => o.StartsWith("Etwas ganz anderes", StringComparison.Ordinal));
         });
-        CheckAll(cut);
+        cut.Find(".ne-handled-item input[type=checkbox]").Change(true);
         cut.Find(".ne-handled-convert").Click();
         cut.WaitForElement(".ne-handled-yes").Click();
 
@@ -950,6 +950,73 @@ public class DialogTests : UiTestContext
         Assert.Equal(
             "- Schlaf und Träume\n  used-in:: [[Buch - Alpha]]\n- Zwei\n  used-in:: [[Buch - Alpha]]\n- Drei\n", tv.Read(NotesPath));
     }
+
+    [Fact]
+    public async Task Handled_ConvertWaitsForTheCarriedOverPlaces_ThenKeepsTheChoice()
+    {
+        var tv = PlacementVault();
+        await OpenWithAiAsync(tv);
+        var cut = Render<HandledWizard>();
+        WaitForPlaces(cut, () => Assert.Equal(2, cut.FindAll(".ne-handled-place").Count));
+        var first = Place(cut, 0);
+        first.Change(OptionFor(first, SleepText));
+        cut.FindAll(".ne-handled-item input[type=checkbox]")[0].Change(false);
+        var second = Place(cut, 1);
+        second.Change(second.QuerySelectorAll("option").Skip(1).First().GetAttribute("value")!);
+        cut.Find(".ne-handled-convert").Click();
+        cut.WaitForElement(".ne-handled-yes").Click();
+        cut.WaitForAssertion(() => Assert.Equal("1 umgewandelt", cut.Find(".ne-handled-done").TextContent), HandledWait);
+
+        // Check the remaining note at once: the places are computed again, and until then nothing can be converted.
+        var box = cut.Find(".ne-handled-item input[type=checkbox]");
+        box.Change(true);
+        var pendingSeen = cut.Find(".ne-handled-convert").HasAttribute("disabled");
+        WaitForPlaces(cut, () => Assert.False(cut.Find(".ne-handled-convert").HasAttribute("disabled")));
+
+        // Either the places were still pending (convert disabled) or already back; after that the choice is kept.
+        Assert.Contains(SleepText, cut.Find(".ne-handled-preview-text").TextContent);
+        Assert.True(pendingSeen || cut.FindAll(".ne-handled-place").Count == 1);
+    }
+
+    [Fact]
+    public async Task Handled_FailedBookSave_NextNoteIsNotWrittenToTheDetachedPage()
+    {
+        const string second = "pages/Zweit.md";
+        var tv = TestVault.Create(
+            ("pages/Buch - Alpha.md", $"title:: Alpha\ntype:: book\n\n- # Eins\n	- {SleepText}\n	- Suppe kochen mit Gemüse\n"),
+            (NotesPath, "- [handled] Schlaf und Träume\n"),
+            (second, "- [handled] Suppe kochen\n"));
+        _aiVaults.Add(tv);
+        var session = await OpenWithAiAsync(tv);
+        var cut = Render<HandledWizard>();
+        WaitForPlaces(cut, () => Assert.Equal(2, cut.FindAll(".ne-handled-place").Count));
+        foreach (var item in new[] { 0, 1 })
+        {
+            var place = Place(cut, item);
+            place.Change(place.QuerySelectorAll("option").Skip(1).First().GetAttribute("value")!);
+        }
+
+        // The book file changed behind the app's back: the first save of the book is refused (and the page replaced),
+        // the next note must be linked to the book as it is now.
+        var bookPath = Path.Combine(tv.Root, "pages", "Buch - Alpha.md");
+        File.AppendAllText(bookPath, "\n", Utf8);
+        cut.Find(".ne-handled-convert").Click();
+        cut.WaitForElement(".ne-handled-yes").Click();
+
+        // The first save of the book is refused and its page replaced; the second note's place belonged to the replaced page,
+        // so it fails too instead of being written to a detached page: nothing is linked, vault and disk agree.
+        cut.WaitForAssertion(() => Assert.Equal("0 umgewandelt, 2 fehlgeschlagen", cut.Find(".ne-handled-done").TextContent), HandledWait);
+        var book = session.Vault.FindBook("Buch - Alpha")!;
+        Assert.DoesNotContain("source::", tv.Read("pages/Buch - Alpha.md"));
+        Assert.DoesNotContain("id::", tv.Read("pages/Buch - Alpha.md"));
+        Assert.DoesNotContain(book.Page.Roots.SelectMany(Flatten), b => b.Id is not null);
+        Assert.Same(book.Page, session.Vault.FindPageByPath(bookPath));
+        Assert.Equal("- [handled] Suppe kochen\n", tv.Read(second));
+        Assert.Equal("- [handled] Schlaf und Träume\n", tv.Read(NotesPath));
+    }
+
+    private static IEnumerable<NoteEvolution.Core.Model.Block> Flatten(NoteEvolution.Core.Model.Block block) =>
+        new[] { block }.Concat(block.Children.SelectMany(Flatten));
 
     // ---- DraftWizard ----
 

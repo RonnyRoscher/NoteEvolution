@@ -98,7 +98,7 @@
             }
             else
             {
-                <button type="button" class="ne-handled-convert" disabled="@(_selected.Count == 0 || _bookName is null)"
+                <button type="button" class="ne-handled-convert" disabled="@(_selected.Count == 0 || _bookName is null || _placesPending)"
                         @onclick="() => _confirming = true">@L["HandledConvert"]</button>
             }
         }
@@ -134,6 +134,9 @@
     private CancellationTokenSource? _placePending;
     private int _placeGeneration;
     private bool _disposed;
+
+    /// <summary>Whether suggestions are being computed: "Umwandeln" waits, so a checked note never goes in with a place not yet carried over.</summary>
+    private bool _placesPending;
 
     private sealed record PlaceOption(Guid TextBlockKey, string Label);
 
@@ -199,6 +202,7 @@
         _placePending = null;
         _placeOptions = [];
         _placeChoice.Clear();
+        _placesPending = false;
         if (State.Session is not { } session || !session.Relevance.IsAvailable || session.Vault.FindBook(_bookName ?? "") is not { } book)
         {
             return;
@@ -206,6 +210,7 @@
 
         var requests = _items.Where(n => !n.Page.IsReadOnly).Select(n => (n.Key, Text: EmbeddingText.ForNote(n))).ToList();
         var source = _placePending = new CancellationTokenSource();
+        _placesPending = true;
         _ = ComputePlacementsAsync(session.Relevance, book, requests, keepChoices, _placeGeneration, source.Token);
     }
 
@@ -235,6 +240,7 @@
                     return;
                 }
 
+                _placesPending = false;
                 _placeOptions = found
                     .Where(entry => entry.Hits.Count > 0)
                     .ToDictionary(entry => entry.Key, entry => PlaceOptions(book, entry.Hits));
@@ -260,6 +266,14 @@
         {
             // The suggestions are an aid: without them every place stays unknown.
             Logger.LogWarning(ex, "Computing the places for [handled] notes failed");
+            await InvokeAsync(() =>
+            {
+                if (!_disposed && generation == _placeGeneration)
+                {
+                    _placesPending = false;
+                    StateHasChanged();
+                }
+            });
         }
     }
 
@@ -354,6 +368,9 @@
 
         _busy = true;
         _error = null;
+        _ran = false;
+        _converted = 0;
+        _failed = 0;
         try
         {
             try
@@ -394,21 +411,31 @@
                 return;
             }
 
-            // Page by page, so that a page that cannot be written leaves the others converted: its notes stay in the list.
+            // Note by note, so that a note that cannot be converted (its page cannot be written, its place vanished) leaves
+            // the others converted: it stays in the list. The note and the book are looked up anew each time: a failed save
+            // replaces the page in the vault, and a stale snapshot would be written to a detached page.
             var converted = 0;
             var failed = notes.Count(n => n.Page.IsReadOnly);
-            foreach (var group in notes.Where(n => !n.Page.IsReadOnly).GroupBy(n => n.Page))
+            foreach (var key in notes.Where(n => !n.Page.IsReadOnly).Select(n => n.Key).ToList())
             {
+                var note = session.Handled.Find().FirstOrDefault(n => n.Key == key);
+                var current = session.Vault.FindBook(_bookName ?? "");
+                if (note is null || current is null)
+                {
+                    failed++;
+                    continue;
+                }
+
                 try
                 {
-                    converted += session.Handled.Apply(group, book, placements).Converted;
+                    converted += session.Handled.Apply([note], current, placements).Converted;
                 }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or ArgumentException)
                 {
-                    // Pages saved before the failure stay saved; the others are taken from their files again.
-                    Logger.LogWarning(ex, "Converting [handled] notes failed");
-                    failed += group.Count();
-                    foreach (var page in pages.Where(p => p.IsDirty))
+                    // What was saved before the failure stays saved; the pages left unsaved are taken from their files again.
+                    Logger.LogWarning(ex, "Converting a [handled] note failed");
+                    failed++;
+                    foreach (var page in new[] { note.Page, current.Page }.Distinct().Where(p => p.IsDirty).ToList())
                     {
                         PageReload.FromDisk(session, page);
                     }
@@ -422,7 +449,7 @@
                 }
             }
 
-            _ran = converted > 0 || (failed > 0 && _error is null);
+            _ran = converted > 0 || failed > 0;
             _converted = converted;
             _failed = failed;
             _confirming = false;
