@@ -189,10 +189,19 @@ public sealed class VaultSession : IDisposable
     /// Meaning-based suggestions; without a semantic index a service that is never available. With the language model's
     /// understanding while the model is ready and its server reachable, otherwise without it (as before).
     /// </summary>
-    public IRelevanceService Relevance =>
-        _understanding is { ServerAway: false } understanding
-            ? understanding.Relevance
-            : (IRelevanceService?)_aiParts?.Relevance ?? UnavailableRelevance.Instance;
+    public IRelevanceService Relevance
+    {
+        get
+        {
+            var relevance = _understanding is { ServerAway: false } understanding
+                ? understanding.Relevance
+                : (IRelevanceService?)_aiParts?.Relevance ?? UnavailableRelevance.Instance;
+            return WrapRelevance?.Invoke(relevance) ?? relevance;
+        }
+    }
+
+    /// <summary>For tests: wraps <see cref="Relevance"/> (e.g. to hold its answers back); <c>null</c>: as it is.</summary>
+    internal Func<IRelevanceService, IRelevanceService>? WrapRelevance { get; set; }
 
     /// <summary>The language model's background progress; <c>null</c> while it does not run for this vault.</summary>
     public UnderstandingProgress? Understanding => _understanding?.Worker.Progress;

@@ -1260,7 +1260,8 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
 
     /// <summary>
     /// Writes a book page. If that fails, <paramref name="revert"/> undoes the edit on this instance, the vault gets
-    /// the page as it is on disk again, and the exception is passed on.
+    /// the page as it is on disk again (its blocks keeping their keys, see <see cref="RuntimeKeys.Carry"/>), and the
+    /// exception is passed on.
     /// </summary>
     private void SaveBook(Page page, Action revert)
     {
@@ -1273,7 +1274,9 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
             revert();
             try
             {
-                vault.ReplacePage(LogseqParser.Parse(page.FilePath, File.ReadAllBytes(page.FilePath)));
+                var reloaded = LogseqParser.Parse(page.FilePath, File.ReadAllBytes(page.FilePath));
+                RuntimeKeys.Carry(page, reloaded);
+                vault.ReplacePage(reloaded);
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {

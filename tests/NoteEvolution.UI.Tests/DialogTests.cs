@@ -955,7 +955,9 @@ public class DialogTests : UiTestContext
     public async Task Handled_ConvertWaitsForTheCarriedOverPlaces_ThenKeepsTheChoice()
     {
         var tv = PlacementVault();
-        await OpenWithAiAsync(tv);
+        var session = await OpenWithAiAsync(tv);
+        using var gate = new GatedRelevance(session.Relevance);
+        session.WrapRelevance = _ => gate;
         var cut = Render<HandledWizard>();
         WaitForPlaces(cut, () => Assert.Equal(2, cut.FindAll(".ne-handled-place").Count));
         var first = Place(cut, 0);
@@ -963,23 +965,28 @@ public class DialogTests : UiTestContext
         cut.FindAll(".ne-handled-item input[type=checkbox]")[0].Change(false);
         var second = Place(cut, 1);
         second.Change(second.QuerySelectorAll("option").Skip(1).First().GetAttribute("value")!);
+
+        // The places computed again after the run are held back until the gate opens.
+        gate.Hold();
         cut.Find(".ne-handled-convert").Click();
         cut.WaitForElement(".ne-handled-yes").Click();
         cut.WaitForAssertion(() => Assert.Equal("1 umgewandelt", cut.Find(".ne-handled-done").TextContent), HandledWait);
+        cut.WaitForAssertion(() => Assert.True(gate.Waiting > 0), HandledWait);
 
-        // Check the remaining note at once: the places are computed again, and until then nothing can be converted.
-        var box = cut.Find(".ne-handled-item input[type=checkbox]");
-        box.Change(true);
-        var pendingSeen = cut.Find(".ne-handled-convert").HasAttribute("disabled");
+        // Check the remaining note: while its places are computed again nothing can be converted.
+        cut.Find(".ne-handled-item input[type=checkbox]").Change(true);
+        cut.WaitForAssertion(() => Assert.True(cut.Find(".ne-handled-convert").HasAttribute("disabled")));
+        Assert.True(gate.Waiting > 0);
+
+        // Once they are back, "Umwandeln" can be used and the choice made before the run is kept.
+        gate.Release();
         WaitForPlaces(cut, () => Assert.False(cut.Find(".ne-handled-convert").HasAttribute("disabled")));
-
-        // Either the places were still pending (convert disabled) or already back; after that the choice is kept.
         Assert.Contains(SleepText, cut.Find(".ne-handled-preview-text").TextContent);
-        Assert.True(pendingSeen || cut.FindAll(".ne-handled-place").Count == 1);
+        Assert.Single(cut.FindAll(".ne-handled-place"));
     }
 
     [Fact]
-    public async Task Handled_FailedBookSave_NextNoteIsNotWrittenToTheDetachedPage()
+    public async Task Handled_FailedBookSave_KeysCarriedOver_NextNoteIsTriedAgainstTheReloadedPage()
     {
         const string second = "pages/Zweit.md";
         var tv = TestVault.Create(
@@ -1003,16 +1010,20 @@ public class DialogTests : UiTestContext
         cut.Find(".ne-handled-convert").Click();
         cut.WaitForElement(".ne-handled-yes").Click();
 
-        // The first save of the book is refused and its page replaced; the second note's place belonged to the replaced page,
-        // so it fails too instead of being written to a detached page: nothing is linked, vault and disk agree.
-        cut.WaitForAssertion(() => Assert.Equal("0 umgewandelt, 2 fehlgeschlagen", cut.Find(".ne-handled-done").TextContent), HandledWait);
+        // The first save of the book is refused and its page taken from the file again, its blocks keeping their keys:
+        // the second note's place is still valid and it is tried (spec 7), linked to the book as it is now, not to a
+        // detached page. Vault and disk agree.
+        cut.WaitForAssertion(() => Assert.Equal("1 umgewandelt, 1 fehlgeschlagen", cut.Find(".ne-handled-done").TextContent), HandledWait);
         var book = session.Vault.FindBook("Buch - Alpha")!;
-        Assert.DoesNotContain("source::", tv.Read("pages/Buch - Alpha.md"));
-        Assert.DoesNotContain("id::", tv.Read("pages/Buch - Alpha.md"));
-        Assert.DoesNotContain(book.Page.Roots.SelectMany(Flatten), b => b.Id is not null);
+        var bookText = tv.Read("pages/Buch - Alpha.md");
+        Assert.Single(System.Text.RegularExpressions.Regex.Matches(bookText, "source::"));
+        Assert.Matches(@"\t- Suppe kochen mit Gemüse\n\t  id:: [0-9a-f-]{36}\n\t  source:: \(\([0-9a-f-]{36}\)\)\n", bookText);
         Assert.Same(book.Page, session.Vault.FindPageByPath(bookPath));
-        Assert.Equal("- [handled] Suppe kochen\n", tv.Read(second));
+        Assert.Contains(book.Page.Roots.SelectMany(Flatten), b => b.Content == "Suppe kochen mit Gemüse" && b.Id is not null);
         Assert.Equal("- [handled] Schlaf und Träume\n", tv.Read(NotesPath));
+        Assert.DoesNotContain("[handled]", tv.Read(second));
+        Assert.Single(cut.FindAll(".ne-handled-item"));
+        Assert.Contains("Schlaf", cut.Find(".ne-handled-item").TextContent);
     }
 
     private static IEnumerable<NoteEvolution.Core.Model.Block> Flatten(NoteEvolution.Core.Model.Block block) =>

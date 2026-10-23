@@ -434,7 +434,7 @@ else
             // A change by another program is merged or reported as a conflict by the session, and an open conflict
             // keeps the local page for its resolution. Any other failure leaves the edited page unsaved: take the
             // file's version.
-            ReloadFromDisk(session, page);
+            PageReload.FromDisk(session, page);
             _error = L["OutlineSaveFailed"];
         }
 
@@ -442,18 +442,6 @@ else
         State.Notify();
         StateHasChanged();
         return saved ? ApplyResult.Saved : ApplyResult.NotSaved;
-    }
-
-    private static void ReloadFromDisk(VaultSession session, Page page)
-    {
-        try
-        {
-            session.Vault.ReplacePage(LogseqParser.Parse(page.FilePath, File.ReadAllBytes(page.FilePath)));
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            // Unreadable as well: the vault keeps the edited page, the error text says the change was not saved.
-        }
     }
 
     /// <summary>
