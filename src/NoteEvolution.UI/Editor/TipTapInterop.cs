@@ -99,6 +99,10 @@ public sealed class TipTapInterop(IJSRuntime js, AppState state) : IEditorIntero
             : Task.CompletedTask;
     }
 
+    /// <summary>The editor got the focus.</summary>
+    [JSInvokable]
+    public Task EditorFocused() => _callbacks?.OnEditorFocused() ?? Task.CompletedTask;
+
     /// <summary>A structure command's shortcut; <paramref name="name"/> is a <see cref="Editor.SectionCommand"/> member name, others are ignored.</summary>
     [JSInvokable]
     public Task SectionCommand(string name) =>

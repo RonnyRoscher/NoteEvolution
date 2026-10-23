@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using Bunit;
 using NoteEvolution.Core.Books;
 using NoteEvolution.TestSupport;
@@ -8,8 +9,9 @@ using NoteEvolution.UI.State;
 namespace NoteEvolution.UI.Tests;
 
 /// <summary>
-/// The outline and the editor of each half of a split view work on their own <see cref="BookView"/>: a cursor or a
-/// click there makes it the active view, and jumps land in the active half only.
+/// The outline and the editor of each half of a split view work on their own <see cref="BookView"/>: the focus in an
+/// editor or a click in an outline makes it the active view (a cursor report alone does not), and jumps land in the
+/// active half only.
 /// </summary>
 public class BookViewPaneTests : UiTestContext
 {
@@ -61,11 +63,29 @@ public class BookViewPaneTests : UiTestContext
         return (upper, lower);
     }
 
+    /// <summary>A click into an editor as the script reports it: the focus, then the cursor.</summary>
+    private static async Task ClickIntoAsync(IRenderedComponent<EditorPane> pane, FakeEditorInterop editor, CursorInfo cursor)
+    {
+        await pane.InvokeAsync(() => editor.Callbacks!.OnEditorFocused());
+        await pane.InvokeAsync(() => editor.Callbacks!.OnCursorChanged(cursor));
+    }
+
+    /// <summary>The document <paramref name="editor"/> shows last, with the own text of its first text block replaced by <paramref name="text"/>.</summary>
+    private static string WithFirstText(FakeEditorInterop editor, string text)
+    {
+        var doc = JsonNode.Parse(editor.Json)!;
+        var block = doc["content"]!.AsArray().First(n => (string?)n!["type"] == "textBlock")!;
+        block["content"]![0]!["content"] = new JsonArray(new JsonObject { ["type"] = "text", ["text"] = text });
+        return doc.ToJsonString();
+    }
+
+    private string BookFile => File.ReadAllText(Path.Combine(_vault.Root, "pages", "Buch - Alpha.md"));
+
     private static string SelectedRow(IRenderedComponent<OutlinePane> outline) =>
         outline.Find(".ne-outline-item .ne-outline-row.selected .ne-outline-title").TextContent;
 
     [Fact]
-    public async Task CursorInPane2_ActivatesIt_BarOnlyThere()
+    public async Task ClickInPane2_ActivatesIt_BarOnlyThere()
     {
         var (upper, lower) = await RenderEditorsAsync();
         Assert.Single(upper.FindAll(".ne-section-bar"));
@@ -73,7 +93,7 @@ public class BookViewPaneTests : UiTestContext
         Assert.Contains("active", upper.Find(".ne-editor-pane").ClassList);
 
         var cursor = CursorIn("Dritter Text");
-        await lower.InvokeAsync(() => Editors[1].Callbacks!.OnCursorChanged(cursor));
+        await ClickIntoAsync(lower, Editors[1], cursor);
 
         Assert.Same(Lower, State.ActiveView);
         Assert.Equal(cursor, Lower.Cursor);
@@ -94,7 +114,7 @@ public class BookViewPaneTests : UiTestContext
     public async Task Reveal_FromRecentChanges_LandsInTheActivePaneOnly()
     {
         var (upper, lower) = await RenderEditorsAsync();
-        await lower.InvokeAsync(() => Editors[1].Callbacks!.OnCursorChanged(CursorIn("Erster Text")));
+        await ClickIntoAsync(lower, Editors[1], CursorIn("Erster Text"));
         Assert.Same(Lower, State.ActiveView);
         var upperReveals = Editors[0].Reveals.Count;
         var list = Render<RecentChangesList>();
@@ -113,7 +133,7 @@ public class BookViewPaneTests : UiTestContext
     public async Task RecentChangesInOutline1_ActivatesView1_RevealsThereOnly()
     {
         var (upper, lower) = await RenderEditorsAsync();
-        await lower.InvokeAsync(() => Editors[1].Callbacks!.OnCursorChanged(CursorIn("Erster Text")));
+        await ClickIntoAsync(lower, Editors[1], CursorIn("Erster Text"));
         var lowerReveals = Editors[1].Reveals.Count;
         var outline = Render<OutlinePane>(p => p.Add(o => o.View, Upper));
 
@@ -144,6 +164,46 @@ public class BookViewPaneTests : UiTestContext
         outline1.WaitForAssertion(() => Assert.Equal("Eins", SelectedRow(outline1)));
         lower.WaitForAssertion(() => Assert.Equal(Section("Zwei").Key, Editors[1].Reveals.LastOrDefault()));
         Assert.Equal(upperReveals, Editors[0].Reveals.Count);
+    }
+
+    [Fact]
+    public async Task CursorReportInInactivePane_AfterTheOtherHalfSaved_DoesNotActivateIt()
+    {
+        var (upper, lower) = await RenderEditorsAsync();
+        Editors[1].CursorPlaced = true;
+        var kept = CursorIn("Dritter Text") with { Offset = 3 };
+        Editors[1].CursorAfterLoad = () => kept;
+        await lower.InvokeAsync(() => Editors[1].Callbacks!.OnCursorChanged(CursorIn("Dritter Text")));
+        Assert.Same(Upper, State.ActiveView);
+        Assert.Equal(Section("Zwei").Key, Lower.CurrentSectionKey);
+        var lowerDocuments = Editors[1].Documents.Count;
+
+        // Typing in the upper half; its autosave makes the lower editor reload, which reports its kept cursor.
+        await upper.InvokeAsync(() => Editors[0].Callbacks!.OnDocumentChanged(WithFirstText(Editors[0], "Oben getippt")));
+        AdvanceUntil(lower, () => Assert.True(Editors[1].Documents.Count > lowerDocuments), TimeSpan.FromMilliseconds(500));
+        Assert.Contains("Oben getippt", BookFile);
+        Assert.True(Editors[1].KeepCursor[^1]);
+
+        Assert.Same(Upper, State.ActiveView);
+        Assert.Equal(kept, Lower.Cursor);
+        Assert.Single(upper.FindAll(".ne-section-bar"));
+        Assert.Empty(lower.FindAll(".ne-section-bar"));
+    }
+
+    [Fact]
+    public async Task FocusInPane2_SavesPane1First_ActivatesPane2_BarMoves()
+    {
+        var (upper, lower) = await RenderEditorsAsync();
+        await upper.InvokeAsync(() => Editors[0].Callbacks!.OnDocumentChanged(WithFirstText(Editors[0], "Noch nicht gespeichert")));
+        Assert.DoesNotContain("Noch nicht gespeichert", BookFile);
+
+        await lower.InvokeAsync(() => Editors[1].Callbacks!.OnEditorFocused());
+
+        Assert.Contains("Noch nicht gespeichert", BookFile);
+        Assert.Same(Lower, State.ActiveView);
+        lower.WaitForAssertion(() => Assert.Single(lower.FindAll(".ne-section-bar")));
+        upper.WaitForAssertion(() => Assert.Empty(upper.FindAll(".ne-section-bar")));
+        Assert.Contains("active", lower.Find(".ne-editor-pane").ClassList);
     }
 
     [Fact]

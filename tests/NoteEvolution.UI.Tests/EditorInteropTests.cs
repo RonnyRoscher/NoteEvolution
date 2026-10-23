@@ -141,6 +141,16 @@ public class EditorInteropTests
     }
 
     [Fact]
+    public async Task EditorFocused_Forwarded()
+    {
+        var interop = await InitAsync();
+
+        await interop.EditorFocused();
+
+        Assert.Equal(1, _callbacks.Focused);
+    }
+
+    [Fact]
     public async Task SectionBoxMoved_Forwarded()
     {
         var interop = await InitAsync();
@@ -207,6 +217,14 @@ public class EditorInteropTests
         public Task OnCursorChanged(CursorInfo? cursor)
         {
             Cursors.Add(cursor);
+            return Task.CompletedTask;
+        }
+
+        public int Focused { get; private set; }
+
+        public Task OnEditorFocused()
+        {
+            Focused++;
             return Task.CompletedTask;
         }
 

@@ -286,35 +286,10 @@ else
     internal bool IsSelected(OutlineNode node) => MyView.CurrentSectionKey == node.Key;
 
     /// <summary>
-    /// Makes <see cref="MyView"/> the active view if it is not (<see cref="AppState.ActivateAsync"/>: the active editor
-    /// saves its pending text first); <c>false</c> if it is not active afterwards: it left the views (the split was
-    /// switched off) or the editor's save failed (logged).
+    /// Makes <see cref="MyView"/> the active view if it is not (the active editor saves its pending text first);
+    /// <c>false</c> if it is not active afterwards (see <see cref="AppState.TryActivateAsync"/>).
     /// </summary>
-    internal async Task<bool> ActivateAsync()
-    {
-        var view = MyView;
-        if (ReferenceEquals(view, State.ActiveView))
-        {
-            return true;
-        }
-
-        if (!State.Views.Contains(view))
-        {
-            return false;
-        }
-
-        try
-        {
-            await State.ActivateAsync(view);
-        }
-        catch (Exception ex)
-        {
-            Logger.LogError(ex, "Saving the editor before switching to this outline's view failed");
-            return false;
-        }
-
-        return ReferenceEquals(view, State.ActiveView);
-    }
+    internal Task<bool> ActivateAsync() => State.TryActivateAsync(MyView, Logger);
 
     /// <summary>
     /// Makes this outline's view the active one, then scrolls its editor to the node's heading (the prologue: the start of

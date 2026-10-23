@@ -1,4 +1,5 @@
-﻿using Microsoft.Extensions.Time.Testing;
+﻿using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Time.Testing;
 using NoteEvolution.Core.Books;
 using NoteEvolution.Core.Vaults;
 using NoteEvolution.TestSupport;
@@ -273,6 +274,32 @@ public class BookViewTests : IDisposable
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => State.ActivateAsync(State.Views[1]));
 
+        Assert.Same(State.Views[0], State.ActiveView);
+    }
+
+    [Fact]
+    public async Task TryActivate_ThrowingFlush_ReturnsFalse_LeavesTheActiveViewUnchanged()
+    {
+        State.SetSplit(true);
+        State.Views[0].FlushEditor = () => throw new InvalidOperationException("save failed");
+
+        Assert.False(await State.TryActivateAsync(State.Views[1], NullLogger.Instance));
+
+        Assert.Same(State.Views[0], State.ActiveView);
+    }
+
+    [Fact]
+    public async Task TryActivate_ActiveView_True_RemovedView_False()
+    {
+        State.SetSplit(true);
+        var second = State.Views[1];
+        Assert.True(await State.TryActivateAsync(State.Views[0], NullLogger.Instance));
+        Assert.True(await State.TryActivateAsync(second, NullLogger.Instance));
+        Assert.Same(second, State.ActiveView);
+
+        State.SetSplit(false);
+
+        Assert.False(await State.TryActivateAsync(second, NullLogger.Instance));
         Assert.Same(State.Views[0], State.ActiveView);
     }
 

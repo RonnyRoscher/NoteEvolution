@@ -75,6 +75,12 @@ public interface IEditorCallbacks
     /// <summary>The cursor moved to another element or offset; <c>null</c> when it is in no element.</summary>
     Task OnCursorChanged(CursorInfo? cursor);
 
+    /// <summary>
+    /// The editor got the focus (a click or tab into it, also where its cursor already is); raised before the cursor
+    /// report that may follow. In a split view this makes its half the active one.
+    /// </summary>
+    Task OnEditorFocused();
+
     /// <summary>A structure command's shortcut was pressed for the element at the cursor.</summary>
     Task OnSectionCommand(SectionCommand command);
 

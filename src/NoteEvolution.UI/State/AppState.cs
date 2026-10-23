@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using NoteEvolution.Core.Books;
 using NoteEvolution.UI.Editor;
 
@@ -114,6 +115,37 @@ public sealed class AppState
         // A dwell started in the old half must not record a position of the new one.
         StartDwell();
         Notify();
+    }
+
+    /// <summary>
+    /// <see cref="ActivateAsync"/> for the components of a half (its editor, its outline): <c>true</c> if
+    /// <paramref name="view"/> is the active view afterwards (at once if it is already); <c>false</c> if it no longer
+    /// belongs to <see cref="Views"/> (the split was switched off), was removed while the previous editor saved, or that
+    /// save failed (logged to <paramref name="logger"/>, nothing changes).
+    /// </summary>
+    public async Task<bool> TryActivateAsync(BookView view, ILogger logger)
+    {
+        if (ReferenceEquals(view, _active))
+        {
+            return true;
+        }
+
+        if (!Views.Contains(view))
+        {
+            return false;
+        }
+
+        try
+        {
+            await ActivateAsync(view);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Saving the active editor before switching the book view failed");
+            return false;
+        }
+
+        return ReferenceEquals(view, _active);
     }
 
     /// <summary>

@@ -13,8 +13,8 @@
    last one by reconciling the editor's document into the book page (BookTextSaver). The cursor element sets the
    current section; the editor marks the nodes of the range (AppState.CurrentRange) and the section bar sits at the
    bottom of that marking; revealed elements (outline, jumps) are scrolled to once the editor shows the book. The
-   editor shows its own BookView (one half of a split): its cursor, section, marking and reveals are that view's; a
-   cursor reported here makes it the active view first, and only the active view's editor shows the section bar. *@
+   editor shows its own BookView (one half of a split): its cursor, section, marking and reveals are that view's; the
+   editor getting the focus makes it the active view, and only the active view's editor shows the section bar. *@
 <div class="@PaneClass">
     @if (State.CurrentBook is null)
     {
@@ -254,37 +254,40 @@
     }
 
     /// <summary>
-    /// Makes <see cref="MyView"/> the active view (the other editor saves its text first), then takes the cursor element
-    /// and its section into it through <see cref="AppState"/>, which forwards to the active view (without a cursor the
-    /// section stays); a report is dropped if the view cannot be made active.
+    /// Takes the cursor element and its section into <see cref="MyView"/> (without a cursor the section stays): through
+    /// <see cref="AppState"/> while it is the active view (the back/forward dwell, the session's focus), else into the view
+    /// alone. A report never makes the view active (<see cref="OnEditorFocused"/> does): the editor also reports its kept
+    /// cursor after a reload, e.g. when the other half saved.
     /// Components are only notified when the element or the section changed, not for every keystroke. The editor is
     /// never reloaded for it (it reports the cursor after a reload of the same book), and typed text waits for its
     /// debounce. A report while the document of another book or session is loaded is not taken: the editor's selection
     /// there is no place the user chose.
     /// </summary>
-    public async Task OnCursorChanged(CursorInfo? cursor)
+    public Task OnCursorChanged(CursorInfo? cursor)
     {
-        if (_newTarget || !await ActivateAsync())
+        var before = MyView.Cursor;
+        if (_newTarget || cursor == before)
         {
-            return;
+            return Task.CompletedTask;
         }
 
-        // From here on State.Cursor and State.CurrentSectionKey are MyView's.
-        var before = State.Cursor;
-        if (cursor == before)
+        var section = MyView.CurrentSectionKey;
+        if (IsActive)
         {
-            return;
+            State.Cursor = cursor;
+        }
+        else
+        {
+            MyView.Cursor = cursor;
         }
 
-        var section = State.CurrentSectionKey;
-        State.Cursor = cursor;
         if (cursor is not null && State.CurrentBook is { } book)
         {
-            State.CurrentSectionKey = State.CurrentElement is { } element ? BookElements.SectionOf(book, element) : Guid.Empty;
+            SetSection(MyView.ElementIn(book) is { } element ? BookElements.SectionOf(book, element) : Guid.Empty);
         }
 
         if (before is null || cursor is null || (before.Kind, before.Key, before.TextBlockKey) != (cursor.Kind, cursor.Key, cursor.TextBlockKey)
-            || section != State.CurrentSectionKey)
+            || section != MyView.CurrentSectionKey)
         {
             _notifyingCursor = true;
             try
@@ -296,36 +299,30 @@
                 _notifyingCursor = false;
             }
         }
+
+        return Task.CompletedTask;
     }
 
     /// <summary>
-    /// Makes <see cref="MyView"/> the active view if it is not (<see cref="AppState.ActivateAsync"/>: the active editor
-    /// saves its pending text first); <c>false</c> if it is not active afterwards: it left the views (the split was
-    /// switched off) or the other editor's save failed (logged).
+    /// The editor got the focus: <see cref="MyView"/> becomes the active view, after the other editor saved its text
+    /// (<see cref="AppState.TryActivateAsync"/>).
     /// </summary>
-    private async Task<bool> ActivateAsync()
+    public Task OnEditorFocused() => ActivateAsync();
+
+    /// <summary>Makes <see cref="MyView"/> the active view if it is not; <c>false</c> if it is not active afterwards (see <see cref="AppState.TryActivateAsync"/>).</summary>
+    private Task<bool> ActivateAsync() => State.TryActivateAsync(MyView, Logger);
+
+    /// <summary>Sets <see cref="MyView"/>'s section: the active view's through <see cref="AppState"/>, which tells the session.</summary>
+    private void SetSection(Guid section)
     {
         if (IsActive)
         {
-            return true;
+            State.CurrentSectionKey = section;
         }
-
-        if (!State.Views.Contains(MyView))
+        else
         {
-            return false;
+            MyView.CurrentSectionKey = section;
         }
-
-        try
-        {
-            await State.ActivateAsync(MyView);
-        }
-        catch (Exception ex)
-        {
-            Logger.LogError(ex, "Saving the other editor before switching to this one failed");
-            return false;
-        }
-
-        return IsActive;
     }
 
     /// <summary>
@@ -724,8 +721,7 @@
     /// <summary>
     /// After the book changed under an unmoved cursor (a structure command, an undo, an outline change) the cursor
     /// element may belong to another section now: the current section follows it, as in <see cref="OnCursorChanged"/>.
-    /// Components are notified only if the section changed. It is <see cref="MyView"/>'s cursor and section; the active
-    /// view's section is set through <see cref="AppState"/>, which tells the session.
+    /// Components are notified only if the section changed. It is <see cref="MyView"/>'s cursor and section.
     /// </summary>
     private void FollowCursorSection()
     {
@@ -740,15 +736,7 @@
             return;
         }
 
-        if (IsActive)
-        {
-            State.CurrentSectionKey = section;
-        }
-        else
-        {
-            MyView.CurrentSectionKey = section;
-        }
-
+        SetSection(section);
         _notifyingCursor = true;
         try
         {
