@@ -2387,3 +2387,31 @@ html, body {
     white-space: nowrap;
     max-width: 100%;
 }
+
+/* The legend of the keyboard shortcuts (header button „Tastenkürzel“) */
+.ne-shortcuts-group {
+    margin: 12px 0 6px;
+    font-size: 13px;
+}
+
+.ne-shortcuts-group:first-child {
+    margin-top: 0;
+}
+
+.ne-shortcuts-list {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 4px 16px;
+    margin: 0;
+}
+
+.ne-shortcuts-keys {
+    font-family: var(--font-mono, ui-monospace, monospace);
+    font-size: 12px;
+    color: var(--fg-muted);
+    white-space: nowrap;
+}
+
+.ne-shortcuts-what {
+    margin: 0;
+}

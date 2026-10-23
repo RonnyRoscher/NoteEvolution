@@ -73,6 +73,9 @@ Am unteren Rand der Markierung stehen die Abschnittsknöpfe und die Quellen:
 | Überschrift entfernen (der Titel wird ein Textblock, der Inhalt bleibt) | Rücktaste am Anfang des Titels |
 | Abschnitt löschen | nur Knopf |
 
+**Teilen** (neben „Zusammenfügen“) teilt den Textblock an der Cursorstelle in zwei, wie Strg+Enter; Strg+Z im Editor
+nimmt es zurück. Alle Tastenkürzel listet der Knopf **„Tastenkürzel“** in der Kopfzeile.
+
 Jeder Befehl lässt sich mit „Rückgängig“ in der Kopfzeile zurücknehmen, solange danach nichts an der Buchdatei
 geändert wurde. „N Quellen ▸“ klappt die Quellen des Abschnitts auf; ein Klick springt im Reiter Journal zur Notiz.
 Ist „Verwendete ausblenden“ eingeschaltet, erscheint die Notiz stattdessen als Karte oben im Notizbereich.
@@ -428,6 +431,13 @@ Querverweise und Navigation
 - [ ] PDF: ein Verweis steht als „→ Titel (S. n)“ mit richtiger Seitenzahl; Klick auf Titel und Seitenzahl springt
       im PDF-Betrachter zur Stelle.
 - [ ] Systemanzeige mit laufendem Ollama: Anteil in Klammern neben App, kein Tooltip; ohne Ollama fehlt der Teil.
+- [ ] In einer langen Gliederung im Editor zu einem weit entfernten Abschnitt scrollen und hineinklicken: die
+      Gliederung scrollt die markierte Überschrift in den Sichtbereich; von Hand gescrollt bleibt sie danach stehen.
+- [ ] „Teilen“ mitten in einem verknüpften Textblock: zwei Blöcke, die Notiz hat zwei `used-in`-Einträge.
+- [ ] „Tastenkürzel“ öffnet die Liste; jedes Kürzel darin funktioniert wie beschrieben.
+- [ ] Aufschlüsselung des Sprachmodell-Fortschritts: alle Balken liegen innerhalb des weißen Kastens.
+- [ ] Zusammenfassungen in „Zuletzt geändert“ (nach der Neuberechnung) beginnen nicht mit „Der Autor erklärt“,
+      „Der Abschnitt beschreibt“ o. Ä.
 
 PDF
 - [ ] PDF-Export für das ganze Buch in A4 und A5 sowie für „Aktueller Abschnitt“: der native Speichern-Dialog schlägt

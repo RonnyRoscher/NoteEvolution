@@ -81,6 +81,7 @@
     <button type="button" class="ne-linkcheck" disabled="@(State.Session is null || !OnLinkCheck.HasDelegate)"
             @onclick="OnLinkCheck">@L["LinkCheck"]</button>
     <button type="button" class="ne-settings" disabled="@(!OnSettings.HasDelegate)" @onclick="OnSettings">@L["Settings"]</button>
+    <button type="button" class="ne-shortcuts" disabled="@(!OnShortcuts.HasDelegate)" @onclick="OnShortcuts">@L["Shortcuts"]</button>
 
     <span class="ne-header-spacer"></span>
 
@@ -209,6 +210,9 @@
 
     /// <summary>Opens the settings dialog; the button is disabled while unset.</summary>
     [Parameter] public EventCallback OnSettings { get; set; }
+
+    /// <summary>Opens the legend of the keyboard shortcuts.</summary>
+    [Parameter] public EventCallback OnShortcuts { get; set; }
 
     protected override void OnInitialized()
     {

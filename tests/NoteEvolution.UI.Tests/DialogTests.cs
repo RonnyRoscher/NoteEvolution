@@ -949,11 +949,26 @@ public class DialogTests : UiTestContext
         OpenAndClose(cut, ".ne-settings", ".ne-settings-dialog", ".ne-settings-cancel");
         OpenAndClose(cut, ".ne-pdf", ".ne-pdf-dialog", ".ne-pdf-close");
         OpenAndClose(cut, ".ne-linkcheck", ".ne-linkcheck-dialog", ".ne-linkcheck-close");
+        OpenAndClose(cut, ".ne-shortcuts", ".ne-shortcuts-dialog", ".ne-shortcuts-dialog .ne-modal-close");
 
         cut.Find(".ne-assistants-toggle").Click();
         OpenAndClose(cut, ".ne-assistant-handled", ".ne-handled", ".ne-handled-close");
         cut.Find(".ne-assistants-toggle").Click();
         OpenAndClose(cut, ".ne-assistant-draft", ".ne-draft", ".ne-draft-close");
+    }
+
+    [Fact]
+    public void ShortcutsDialog_ListsEveryShortcutWithItsKeys()
+    {
+        var cut = Render<ShortcutsDialog>();
+
+        var entries = ShortcutsDialog.Groups.SelectMany(g => g.Entries).ToList();
+        Assert.Equal(ShortcutsDialog.Groups.Select(g => Text(g.Group)), cut.FindAll(".ne-shortcuts-group").Select(e => e.TextContent));
+        Assert.Equal(entries.Select(e => Text(e + "Keys")), cut.FindAll(".ne-shortcuts-keys").Select(e => e.TextContent));
+        Assert.Equal(entries.Select(Text), cut.FindAll(".ne-shortcuts-what").Select(e => e.TextContent));
+        Assert.All(entries, e => Assert.NotEqual(e + "Keys", Text(e + "Keys")));
+        Assert.Contains("Strg+Enter", cut.FindAll(".ne-shortcuts-keys").Select(e => e.TextContent));
+        Assert.Contains("Alt+Pfeil links / rechts", cut.FindAll(".ne-shortcuts-keys").Select(e => e.TextContent));
     }
 
     private static void OpenAndClose(IRenderedComponent<Shell> cut, string button, string dialog, string close)
