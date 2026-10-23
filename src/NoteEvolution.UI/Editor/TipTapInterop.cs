@@ -35,8 +35,8 @@ public sealed class TipTapInterop(IJSRuntime js, AppState state) : IEditorIntero
     public async Task SetDocumentAsync(string docJson, bool showChips, bool keepCursor) =>
         await Initialized.InvokeVoidAsync("setDocument", docJson, showChips, keepCursor);
 
-    public async Task RevealAsync(Guid elementKey, int offset = 0) =>
-        await Initialized.InvokeVoidAsync("reveal", elementKey == Guid.Empty ? null : elementKey.ToString("D"), offset);
+    public async Task RevealAsync(Guid elementKey, int offset = 0, bool focus = true) =>
+        await Initialized.InvokeVoidAsync("reveal", elementKey == Guid.Empty ? null : elementKey.ToString("D"), offset, focus);
 
     public async Task SplitAtCursorAsync() => await Initialized.InvokeVoidAsync("splitAtCursor");
 
@@ -98,6 +98,10 @@ public sealed class TipTapInterop(IJSRuntime js, AppState state) : IEditorIntero
             ? _callbacks.OnCursorChanged(new CursorInfo(elementKind, elementKey, blockKey, offset))
             : Task.CompletedTask;
     }
+
+    /// <summary>The editor got the focus.</summary>
+    [JSInvokable]
+    public Task EditorFocused() => _callbacks?.OnEditorFocused() ?? Task.CompletedTask;
 
     /// <summary>A structure command's shortcut; <paramref name="name"/> is a <see cref="Editor.SectionCommand"/> member name, others are ignored.</summary>
     [JSInvokable]

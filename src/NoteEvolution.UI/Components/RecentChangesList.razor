@@ -52,6 +52,12 @@
 
     [Parameter] public EventCallback<bool> CollapsedChanged { get; set; }
 
+    /// <summary>
+    /// Awaited before a click on an entry jumps (the outline makes its book view the active one, so the jump lands in its
+    /// half); <c>false</c> cancels the jump. Without it the jump goes to the active view.
+    /// </summary>
+    [Parameter] public Func<Task<bool>>? BeforeJump { get; set; }
+
     /// <summary>Collapsed, the list takes the header's height and <see cref="Height"/> waits for the next expand.</summary>
     private string? HeightStyle => !Collapsed && Height is { } h ? FormattableString.Invariant($"height: {h}px") : null;
 
@@ -123,8 +129,13 @@
         }
     }
 
-    private void Reveal(RecentChange item)
+    private async Task Reveal(RecentChange item)
     {
+        if (BeforeJump is { } before && !await before())
+        {
+            return;
+        }
+
         State.JumpTo(item.RevealKey);
         State.Notify();
     }

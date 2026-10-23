@@ -49,6 +49,9 @@ public abstract class UiTestContext : BunitContext
         // The height of the list above a row splitter, or of the container with `true` (index.html); 0 means unknown.
         JSInterop.Setup<double>("neLayout.paneHeight", _ => true).SetResult(0);
 
+        // The top edge of the split view's container (index.html); 0 means unknown.
+        JSInterop.Setup<double>("neLayout.paneTop", _ => true).SetResult(0);
+
         // Keeps the selected option of a list in view (index.html).
         JSInterop.SetupVoid("neLayout.scrollOptionIntoView", _ => true).SetVoidResult();
 
@@ -59,8 +62,31 @@ public abstract class UiTestContext : BunitContext
         JSInterop.SetupVoid("neNav.register", _ => true).SetVoidResult();
     }
 
-    /// <summary>The editor every rendered <c>EditorPane</c> talks to.</summary>
+    /// <summary>
+    /// The editor every rendered <c>EditorPane</c> talks to; after <see cref="UseEditorPerPane"/> only the first one
+    /// (<c>Editors[0]</c>).
+    /// </summary>
     protected FakeEditorInterop Editor { get; } = new();
+
+    private readonly List<FakeEditorInterop> _editors = [];
+
+    /// <summary>
+    /// The editors handed out after <see cref="UseEditorPerPane"/>, in the order the <c>EditorPane</c>s were created:
+    /// <see cref="Editor"/> first, then a new <see cref="FakeEditorInterop"/> for each further pane. Empty without it.
+    /// </summary>
+    protected IReadOnlyList<FakeEditorInterop> Editors => _editors;
+
+    /// <summary>
+    /// Gives every <c>EditorPane</c> its own editor, as the app does (the editor interop is transient there): the first
+    /// pane created gets <see cref="Editor"/>, each further one a new fake, all listed in <see cref="Editors"/>. Call it
+    /// before the first render (for tests with two panes, e.g. a split view); without it every pane shares <see cref="Editor"/>.
+    /// </summary>
+    protected void UseEditorPerPane() => Services.AddTransient<IEditorInterop>(_ =>
+    {
+        var editor = _editors.Count == 0 ? Editor : new FakeEditorInterop();
+        _editors.Add(editor);
+        return editor;
+    });
 
     protected FakePlatformServices Platform { get; } = new();
 

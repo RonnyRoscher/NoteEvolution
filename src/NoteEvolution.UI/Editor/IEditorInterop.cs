@@ -75,6 +75,12 @@ public interface IEditorCallbacks
     /// <summary>The cursor moved to another element or offset; <c>null</c> when it is in no element.</summary>
     Task OnCursorChanged(CursorInfo? cursor);
 
+    /// <summary>
+    /// The editor got the focus (a click or tab into it, also where its cursor already is); raised before the cursor
+    /// report that may follow. In a split view this makes its half the active one.
+    /// </summary>
+    Task OnEditorFocused();
+
     /// <summary>A structure command's shortcut was pressed for the element at the cursor.</summary>
     Task OnSectionCommand(SectionCommand command);
 
@@ -119,10 +125,11 @@ public interface IEditorInterop : IAsyncDisposable
 
     /// <summary>
     /// Puts the cursor at the start of the element's text, or <paramref name="offset"/> characters into it (clamped to
-    /// the text), scrolls it into view and gives the editor the focus (unless a text field has it);
+    /// the text), scrolls it into view and gives the editor the focus (unless a text field has it, or
+    /// <paramref name="focus"/> is <c>false</c>: the focus stays where it is, e.g. in the other half of a split view);
     /// <see cref="Guid.Empty"/> is the start of the book. An element the editor does not show is ignored.
     /// </summary>
-    Task RevealAsync(Guid elementKey, int offset = 0);
+    Task RevealAsync(Guid elementKey, int offset = 0, bool focus = true);
 
     /// <summary>Splits the text block at the cursor in two, as Ctrl+Enter does, and gives the editor the focus back.</summary>
     Task SplitAtCursorAsync();

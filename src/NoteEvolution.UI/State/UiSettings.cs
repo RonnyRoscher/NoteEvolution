@@ -32,6 +32,12 @@ public sealed class UiSettings
     /// <summary>The tallest stored height of the "Zuletzt geändert" list that is believed; a larger value is a broken file.</summary>
     public const double MaxRecentListHeight = 4000;
 
+    public const double MinSplitRatio = 0.2;
+
+    public const double MaxSplitRatio = 0.8;
+
+    public const double DefaultSplitRatio = 0.5;
+
     private static readonly JsonSerializerOptions Json = new()
     {
         WriteIndented = true,
@@ -50,6 +56,12 @@ public sealed class UiSettings
 
     /// <summary>The "Zuletzt geändert" list shows only its header; <see cref="RecentListHeight"/> stays for expanding it.</summary>
     public bool RecentListCollapsed { get; set; }
+
+    /// <summary>The book is shown in two halves, each with its own outline and editor.</summary>
+    public bool SplitView { get; set; }
+
+    /// <summary>The share of the upper half in the book area when split, <see cref="MinSplitRatio"/> to <see cref="MaxSplitRatio"/>.</summary>
+    public double SplitRatio { get; set; } = DefaultSplitRatio;
 
     public bool OutlineCollapsed { get; set; }
 
@@ -130,6 +142,11 @@ public sealed class UiSettings
             if (!(settings.RecentListHeight is >= MinRecentListHeight and <= MaxRecentListHeight))
             {
                 settings.RecentListHeight = DefaultRecentListHeight;
+            }
+
+            if (!(settings.SplitRatio is >= MinSplitRatio and <= MaxSplitRatio))
+            {
+                settings.SplitRatio = DefaultSplitRatio;
             }
 
             if (!Enum.IsDefined(settings.LastAdoptVariant))

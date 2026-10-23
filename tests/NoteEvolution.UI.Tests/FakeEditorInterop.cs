@@ -8,7 +8,7 @@ namespace NoteEvolution.UI.Tests;
 /// The editor without JavaScript: records the shown documents, revealed elements and marked nodes; tests raise the editor's events
 /// via <see cref="Callbacks"/>.
 /// </summary>
-public sealed class FakeEditorInterop : IEditorInterop
+public sealed class FakeEditorInterop : IEditorInterop, IDisposable
 {
     public IEditorCallbacks? Callbacks { get; private set; }
 
@@ -22,6 +22,9 @@ public sealed class FakeEditorInterop : IEditorInterop
 
     /// <summary>The offsets passed to <see cref="RevealAsync"/>, in the order of <see cref="Reveals"/>.</summary>
     public List<int> RevealOffsets { get; } = [];
+
+    /// <summary>The <c>focus</c> argument of each <see cref="RevealAsync"/>, in the order of <see cref="Reveals"/>.</summary>
+    public List<bool> RevealFocus { get; } = [];
 
     /// <summary>The lists passed to <see cref="SetMarkedAsync"/>, in order.</summary>
     public List<IReadOnlyList<MarkedNode>> Marked { get; } = [];
@@ -84,10 +87,11 @@ public sealed class FakeEditorInterop : IEditorInterop
         return Task.CompletedTask;
     }
 
-    public Task RevealAsync(Guid elementKey, int offset = 0)
+    public Task RevealAsync(Guid elementKey, int offset = 0, bool focus = true)
     {
         Reveals.Add(elementKey);
         RevealOffsets.Add(offset);
+        RevealFocus.Add(focus);
         Calls.Add($"reveal:{elementKey}");
         return Task.CompletedTask;
     }
@@ -126,5 +130,14 @@ public sealed class FakeEditorInterop : IEditorInterop
     {
         Disposed = true;
         return ValueTask.CompletedTask;
+    }
+
+    /// <summary>
+    /// Does nothing: the test's service container disposes the editors it handed out per pane
+    /// (<see cref="UiTestContext"/>'s <c>UseEditorPerPane</c>) synchronously, which an <see cref="IAsyncDisposable"/> alone
+    /// does not allow. <see cref="Disposed"/> stays what the pane did (<see cref="DisposeAsync"/>).
+    /// </summary>
+    public void Dispose()
+    {
     }
 }

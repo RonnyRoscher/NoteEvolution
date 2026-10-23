@@ -805,7 +805,7 @@ function dropTarget(view, event) {
 
 /**
  * Creates the editor in host. dotnet receives DocumentChanged(json), CursorChanged(kind, key, textBlockKey, offset),
- * SectionCommand(name), SectionBoxMoved(barTop, visible), ChipClicked(noteId), ChipRemoved(blockKey, noteId),
+ * EditorFocused() (whenever the editor gets the focus, before the cursor report that may follow), SectionCommand(name), SectionBoxMoved(barTop, visible), ChipClicked(noteId), ChipRemoved(blockKey, noteId),
  * ReferenceClicked(id) and NoteDropped(afterKey). options.barHeight is the height of the section bar C# shows at the marking box's bottom
  * (.ne-section-bar in the .ne-editor-pane) until the bar can be measured; the bar may wrap into more lines, so its
  * actual height is followed (the gap below the marking, --bar-height, and the scroll distance from the bottom).
@@ -948,7 +948,12 @@ export function createEditor(host, dotnet, options = {}) {
         },
         onSelectionUpdate: ({ editor: e }) => reportCursor(e.state),
         // A click on the place the selection already has changes no selection; after a new book it places the cursor.
-        onFocus: ({ editor: e }) => reportCursor(e.state),
+        // The focus is reported even where the cursor already is (the cursor report skips an unchanged cursor): in a
+        // split view it makes this editor's half the active one.
+        onFocus: ({ editor: e }) => {
+            call('EditorFocused');
+            reportCursor(e.state);
+        },
         onTransaction: scheduleBox,
     });
 
@@ -984,13 +989,14 @@ export function createEditor(host, dotnet, options = {}) {
         /**
          * Puts the cursor at the start of the text of the heading, text block or detail with the key (null: the start
          * of the document), or textOffset characters into that text (clamped to it), and scrolls it into view; an
-         * unknown key does nothing.
+         * unknown key does nothing. With focus false the editor does not take the focus (e.g. the other half of a
+         * split view keeps it).
          */
         /** The split button of the section bar: Ctrl+Enter at the cursor, with the focus back in the editor. */
         splitAtCursor() {
             editor.chain().focus().command(splitTextBlock).run();
         },
-        reveal(key, textOffset = 0) {
+        reveal(key, textOffset = 0, focus = true) {
             const doc = editor.state.doc;
             let target = key ? null : { pos: 0, at: TextSelection.atStart(doc).from, size: 0 };
             doc.forEach((node, offset) => {
@@ -1017,7 +1023,7 @@ export function createEditor(host, dotnet, options = {}) {
             // The user types on right there; a text field that has the focus meanwhile (e.g. renaming an outline
             // heading after a double click) keeps it.
             const active = document.activeElement;
-            if (!(active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement || active instanceof HTMLSelectElement)) {
+            if (focus && !(active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement || active instanceof HTMLSelectElement)) {
                 editor.view.focus();
             }
             // ProseMirror scrolls to the selection only while the editor has the focus, and focus() does not scroll.

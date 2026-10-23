@@ -48,6 +48,9 @@
         </select>
     }
 
+    @* Shows the book in two halves (Ctrl+Alt+S in the whole window, index.html). *@
+    <button type="button" class="ne-split-toggle" disabled="@(!OnToggleSplit.HasDelegate)" title="@L["SplitToggleTitle"]" aria-label="@L["SplitToggleTitle"]"
+            aria-pressed="@(State.IsSplit ? "true" : "false")" @onclick="OnToggleSplit">⇅</button>
     @* Back and forward between the active blocks (spec 3); Alt+Left/Right in the whole window (index.html). *@
     <button type="button" class="ne-nav-back" disabled="@(!State.CanGoBack)" title="@L["NavBack"]" aria-label="@L["NavBack"]"
             @onclick="GoBack">◀</button>
@@ -213,6 +216,9 @@
 
     /// <summary>Opens the legend of the keyboard shortcuts.</summary>
     [Parameter] public EventCallback OnShortcuts { get; set; }
+
+    /// <summary>Switches the split view on or off (the button, and Ctrl+Alt+S in the whole window).</summary>
+    [Parameter] public EventCallback OnToggleSplit { get; set; }
 
     protected override void OnInitialized()
     {
@@ -460,6 +466,10 @@
         "forward" => InvokeAsync(GoForward),
         _ => Task.CompletedTask,
     };
+
+    /// <summary>Ctrl+Alt+S, caught by index.html in the whole window.</summary>
+    [JSInvokable]
+    public Task ToggleSplit() => InvokeAsync(() => OnToggleSplit.InvokeAsync());
 
     private Task GoBack() => GoAsync(State.GoBackAsync, State.CanGoBack);
 

@@ -112,6 +112,48 @@ public class BookTextSaverTests : UiTestContext
     }
 
     [Fact]
+    public async Task HasFailedText_OnlyAfterAFailedSave_UntilTheTextIsInTheFile()
+    {
+        using var tv = Alpha();
+        var (session, saver) = await OpenAsync(tv);
+        var doc = Doc(saver);
+        SetText(Blocks(doc)[1]!, "Zweiter Text, neu");
+
+        // Waiting for its debounce is no failure.
+        saver.Pending = doc.ToJsonString();
+        Assert.False(saver.HasFailedText);
+
+        using (new FileStream(BookFile(tv), FileMode.Open, FileAccess.Read, FileShare.Read))
+        {
+            saver.Save();
+            Assert.True(saver.HasFailedText);
+
+            // More typing keeps it failed: the earlier text is still in no page.
+            saver.Pending = doc.ToJsonString();
+            Assert.True(saver.HasFailedText);
+        }
+
+        saver.Save();
+        Assert.False(saver.HasFailedText);
+
+        // Left in the page because the file cannot be read: failed until the page is saved.
+        using (new FileStream(BookFile(tv), FileMode.Open, FileAccess.Read, FileShare.None))
+        {
+            saver.Pending = SplitFirst(saver);
+            saver.Save();
+            saver.SaveDirtyPage();
+            Assert.Null(saver.Pending);
+            Assert.True(saver.ShownPageIsDirty);
+            Assert.True(saver.HasFailedText);
+        }
+
+        saver.SaveDirtyPage();
+        Assert.False(session.Vault.FindBook("Buch - Alpha")!.Page.IsDirty);
+        Assert.False(saver.HasFailedText);
+        Assert.False(saver.ShownPageIsDirty);
+    }
+
+    [Fact]
     public async Task Save_ConflictOpen_IsRefusedAndTheDeletedFileIsNotRecreated()
     {
         using var tv = Alpha();

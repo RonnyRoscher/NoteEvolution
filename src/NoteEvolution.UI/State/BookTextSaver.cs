@@ -31,8 +31,27 @@ public sealed class BookTextSaver(AppState state, ILogger logger)
     /// <summary>What the editor shows; <c>null</c> before the first document.</summary>
     public ShownText? Shown { get; set; }
 
+    private string? _pending;
+
+    /// <summary><see cref="Pending"/> is there because a save of it failed (not only waiting for its debounce).</summary>
+    private bool _pendingFailed;
+
+    /// <summary>A failed save of this editor's text left it in the shown book page (see <see cref="HasFailedText"/>).</summary>
+    private bool _keptInPage;
+
     /// <summary>The editor's latest document that is not saved yet.</summary>
-    public string? Pending { get; set; }
+    public string? Pending
+    {
+        get => _pending;
+        set
+        {
+            _pending = value;
+            if (value is null)
+            {
+                _pendingFailed = false;
+            }
+        }
+    }
 
     /// <summary>The editor must show the book again, even if the snapshot looks the same.</summary>
     public bool ReloadNeeded { get; set; }
@@ -41,13 +60,18 @@ public sealed class BookTextSaver(AppState state, ILogger logger)
     public AdoptMessage? Message { get; set; }
 
     /// <summary>
-    /// Text the editor shows is not in the file: <see cref="Pending"/> waits for the next try, or the shown book page
-    /// holds changes that could not be saved.
+    /// This editor's own text is not in the file because saving it failed: <see cref="Pending"/> waits for the next try
+    /// (text merely waiting for its debounce does not count), or the shown book page still holds it.
     /// </summary>
-    public bool HasUnsavedText =>
-        Pending is not null
-        || (Shown is { } shown && ReferenceEquals(shown.Session, state.Session)
-            && shown.Session.Vault.FindBook(shown.BookLink)?.Page is { IsDirty: true });
+    public bool HasFailedText => (Pending is not null && _pendingFailed) || (_keptInPage && ShownPageIsDirty);
+
+    /// <summary>
+    /// The shown book page holds changes that could not be saved, from whichever editor or merge; the page is shared by
+    /// every editor showing the book.
+    /// </summary>
+    public bool ShownPageIsDirty =>
+        Shown is { } shown && ReferenceEquals(shown.Session, state.Session)
+        && shown.Session.Vault.FindBook(shown.BookLink)?.Page is { IsDirty: true };
 
     /// <summary>
     /// Saves <see cref="Pending"/> into the shown book. On a write failure the file's version is read again and the
@@ -74,6 +98,7 @@ public sealed class BookTextSaver(AppState state, ILogger logger)
                 {
                     // A partly changed page that cannot be read again: the text waits for the next try.
                     Pending = json;
+                    _pendingFailed = true;
                 }
                 else
                 {
@@ -122,10 +147,12 @@ public sealed class BookTextSaver(AppState state, ILogger logger)
         {
             // The page is the file's again; the text waits for the next save (the editor keeps showing it).
             Pending = json;
+            _pendingFailed = true;
             return;
         }
 
         // The file cannot even be read: the page keeps the text and is saved by SaveDirtyPage, then the links follow.
+        _keptInPage = true;
         Shown = shown with { Snapshot = snapshot, FromEditor = true };
         QueueEffects(session, book.LinkName, result.Effects);
     }
@@ -147,6 +174,8 @@ public sealed class BookTextSaver(AppState state, ILogger logger)
         ReloadNeeded = true;
         if (TryApply(shown, book, json, out _, out var result))
         {
+            // The text is in the page now; if the merge cannot save it, it is still this editor's.
+            _keptInPage = true;
             QueueEffects(shown.Session, book.LinkName, result.Effects);
         }
     }
@@ -157,6 +186,12 @@ public sealed class BookTextSaver(AppState state, ILogger logger)
     /// </summary>
     public void SaveDirtyPage()
     {
+        if (!ShownPageIsDirty)
+        {
+            // Saved meanwhile (here, by another editor or by a merge): nothing of this editor's text is left in it.
+            _keptInPage = false;
+        }
+
         if (Shown is not { } shown || !ReferenceEquals(shown.Session, state.Session)
             || shown.Session.Vault.FindBook(shown.BookLink)?.Page is not { IsDirty: true, IsReadOnly: false } page
             || shown.Session.HasOpenConflict(page.FilePath) || _poisoned.Contains(page))
@@ -166,6 +201,7 @@ public sealed class BookTextSaver(AppState state, ILogger logger)
 
         if (shown.Session.TrySave(page, out _))
         {
+            _keptInPage = false;
             if (Message?.Key == "EditorSaveFailed")
             {
                 Message = null;

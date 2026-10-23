@@ -12,8 +12,10 @@
 @* The book text (spec 7): the whole book as manuscript in the TipTap editor. Every change is saved 1000 ms after the
    last one by reconciling the editor's document into the book page (BookTextSaver). The cursor element sets the
    current section; the editor marks the nodes of the range (AppState.CurrentRange) and the section bar sits at the
-   bottom of that marking; revealed elements (outline, jumps) are scrolled to once the editor shows the book. *@
-<div class="ne-editor-pane">
+   bottom of that marking; revealed elements (outline, jumps) are scrolled to once the editor shows the book. The
+   editor shows its own BookView (one half of a split): its cursor, section, marking and reveals are that view's; the
+   editor getting the focus makes it the active view, and only the active view's editor shows the section bar. *@
+<div class="@PaneClass">
     @if (State.CurrentBook is null)
     {
         <div class="ne-placeholder">@L["EditorNoBook"]</div>
@@ -33,9 +35,9 @@
         }
     }
     <div class="ne-editor-host" hidden="@(State.CurrentBook is null)" inert="@(ReadOnlyReason is not null)" @ref="_host"></div>
-    @if (State.CurrentBook is not null)
+    @if (State.CurrentBook is not null && IsActive)
     {
-        <SectionBar Top="_barTop" Visible="_barVisible" Element="State.CurrentElement" Locked="ReadOnlyReason is not null"
+        <SectionBar Top="_barTop" Visible="_barVisible" Element="MyView.ElementIn(State.CurrentBook)" Locked="ReadOnlyReason is not null"
                     OnCommand="OnSectionCommand" OnStatus="OnStatusChosen"
                     OnReference="OnReferenceChosen" OnLevel="OnLevelChosen" OnSource="OnSourceChosen" />
     }
@@ -85,22 +87,49 @@
     /// <summary>The nodes last given to the editor to mark (<see cref="PushMarkedAsync"/>); <c>null</c> after that failed.</summary>
     private IReadOnlyList<MarkedNode>? _marked = [];
 
-    /// <summary>Why the book page cannot be edited now: it is read-only, or a conflict for its file is open (R26).</summary>
+    /// <summary>
+    /// The book view this editor shows (one half of a split view); without one the first of <see cref="AppState.Views"/>,
+    /// so an editor rendered without it behaves as before the split. Taken once, when the editor starts.
+    /// </summary>
+    [Parameter] public BookView? View { get; set; }
+
+    /// <summary>The view this editor shows: <see cref="View"/>, else the first view (see <see cref="OnInitialized"/>).</summary>
+    private BookView MyView { get; set; } = default!;
+
+    /// <summary>Whether <see cref="MyView"/> is the active view (the one the position members of <see cref="AppState"/> forward to).</summary>
+    private bool IsActive => ReferenceEquals(MyView, State.ActiveView);
+
+    /// <summary>The pane is marked <c>active</c> only in a split view, as the half the user works in.</summary>
+    private string PaneClass => State.IsSplit && IsActive ? "ne-editor-pane active" : "ne-editor-pane";
+
+    /// <summary>
+    /// Why the book page cannot be edited now: it is read-only, a conflict for its file is open (R26), or, in the half
+    /// that is not the active one, the other half holds text it could not save (typing here would save a document
+    /// without it over it; see <see cref="AppState.ActivateAsync"/>).
+    /// </summary>
     private string? ReadOnlyReason => State switch
     {
         { CurrentBook.Page.IsReadOnly: true } => "EditorReadOnly",
         { Session: { } session, CurrentBook.Page: { } page } when session.HasOpenConflict(page.FilePath) => "EditorConflict",
+        _ when OtherHalfHasUnsavedText => "EditorOtherHalfUnsaved",
         _ => null,
     };
 
+    /// <summary>In a split view, this half is not the active one and another half's editor holds text whose save failed.</summary>
+    private bool OtherHalfHasUnsavedText =>
+        State.IsSplit && !IsActive
+        && State.Views.Any(v => !ReferenceEquals(v, MyView) && v.HasFailedEditorText?.Invoke() == true);
+
     protected override void OnInitialized()
     {
+        MyView = View ?? State.Views[0];
         _saver = new BookTextSaver(State, Logger);
         State.Changed += OnStateChanged;
-        State.RevealRequested += OnRevealRequested;
-        State.FlushEditor = FlushAsync;
-        State.WarnUnsavedText = WarnUnsavedText;
-        State.HasUnsavedEditorText = HasUnsavedText;
+        MyView.RevealRequested += OnRevealRequested;
+        MyView.FlushEditor = FlushAsync;
+        MyView.WarnUnsavedText = WarnUnsavedText;
+        MyView.HasUnsavedEditorText = HasUnsavedText;
+        MyView.HasFailedEditorText = HasFailedText;
         TrackSession();
     }
 
@@ -137,20 +166,25 @@
 
         _disposed = true;
         State.Changed -= OnStateChanged;
-        State.RevealRequested -= OnRevealRequested;
-        if (State.FlushEditor == (Func<Task>)FlushAsync)
+        MyView.RevealRequested -= OnRevealRequested;
+        if (MyView.FlushEditor == (Func<Task>)FlushAsync)
         {
-            State.FlushEditor = null;
+            MyView.FlushEditor = null;
         }
 
-        if (State.WarnUnsavedText == (Func<bool>)WarnUnsavedText)
+        if (MyView.WarnUnsavedText == (Func<bool>)WarnUnsavedText)
         {
-            State.WarnUnsavedText = null;
+            MyView.WarnUnsavedText = null;
         }
 
-        if (State.HasUnsavedEditorText == (Func<bool>)HasUnsavedText)
+        if (MyView.HasUnsavedEditorText == (Func<bool>)HasUnsavedText)
         {
-            State.HasUnsavedEditorText = null;
+            MyView.HasUnsavedEditorText = null;
+        }
+
+        if (MyView.HasFailedEditorText == (Func<bool>)HasFailedText)
+        {
+            MyView.HasFailedEditorText = null;
         }
 
         Unsubscribe();
@@ -179,7 +213,7 @@
 
     /// <summary>
     /// Saves the pending text now (the debounce is skipped) and shows what the book has. Registered as
-    /// <see cref="AppState.FlushEditor"/>: whoever changes the book page behind the editor's back awaits it first.
+    /// <see cref="MyView"/>'s <see cref="BookView.FlushEditor"/>: whoever changes the book page behind the editor's back awaits it first.
     /// </summary>
     public async Task FlushAsync()
     {
@@ -201,12 +235,12 @@
     }
 
     /// <summary>
-    /// Registered as <see cref="AppState.WarnUnsavedText"/>: before the window closes (after a flush), says whether text
+    /// Registered as <see cref="MyView"/>'s <see cref="BookView.WarnUnsavedText"/>: before the window closes (after a flush), says whether text
     /// could not be saved and, if so, shows that closing again loses it (R33).
     /// </summary>
     private bool WarnUnsavedText()
     {
-        if (_disposed || !_saver.HasUnsavedText)
+        if (!HasUnsavedText())
         {
             return false;
         }
@@ -216,15 +250,57 @@
         return true;
     }
 
-    /// <summary>Registered as <see cref="AppState.HasUnsavedEditorText"/>: whether text could not be saved (after a flush).</summary>
-    private bool HasUnsavedText() => !_disposed && _saver.HasUnsavedText;
+    /// <summary>
+    /// Registered as <see cref="MyView"/>'s <see cref="BookView.HasUnsavedEditorText"/>: whether text could not be saved
+    /// (after a flush). Each editor answers for its own text: its pending text, or what a failed save of it left in the
+    /// book page. The shown book page holding other changes that could not be saved is one page for all halves: if no
+    /// other editor answers, the first view's editor does, so the user is told once when the window closes (without a
+    /// split: the pending text or the page's unsaved changes, as before).
+    /// </summary>
+    private bool HasUnsavedText()
+    {
+        if (_disposed)
+        {
+            return false;
+        }
 
-    public Task OnDocumentChanged(string docJson)
+        if (_saver.Pending is not null || _saver.HasFailedText)
+        {
+            return true;
+        }
+
+        return _saver.ShownPageIsDirty && ReferenceEquals(MyView, State.Views[0])
+               && !State.Views.Skip(1).Any(v => v.HasUnsavedEditorText?.Invoke() == true);
+    }
+
+    /// <summary>
+    /// Registered as <see cref="MyView"/>'s <see cref="BookView.HasFailedEditorText"/>: whether a save of this editor's
+    /// own text failed and the text is not in the file yet (asked at any time).
+    /// </summary>
+    private bool HasFailedText() => !_disposed && _saver.HasFailedText;
+
+    /// <summary>
+    /// Takes the editor's changed document as pending text, saved after the debounce. A change in an editor that is not
+    /// the active one makes its view active first (the editor may have kept the focus); if that is refused (the other
+    /// half could not save its text), the change is not taken and the editor shows the book again.
+    /// </summary>
+    public async Task OnDocumentChanged(string docJson)
     {
         // A change from before a newly loaded document, or in a page that cannot be saved, is not taken.
         if (_loading || _saver.Shown is null || ReadOnlyReason is not null)
         {
-            return Task.CompletedTask;
+            return;
+        }
+
+        if (!IsActive && !await ActivateAsync())
+        {
+            if (!_disposed)
+            {
+                _saver.ReloadNeeded = true;
+                await SyncAsync();
+            }
+
+            return;
         }
 
         _saver.Pending = docJson;
@@ -232,11 +308,13 @@
         CancelDebounce();
         var source = _debounce = new CancellationTokenSource();
         _ = SaveAfterDelayAsync(source.Token);
-        return Task.CompletedTask;
     }
 
     /// <summary>
-    /// Takes the cursor element and its section into <see cref="AppState"/> (without a cursor the section stays).
+    /// Takes the cursor element and its section into <see cref="MyView"/> (without a cursor the section stays): through
+    /// <see cref="AppState"/> while it is the active view (the back/forward dwell, the session's focus), else into the view
+    /// alone. A report never makes the view active (<see cref="OnEditorFocused"/> does): the editor also reports its kept
+    /// cursor after a reload, e.g. when the other half saved.
     /// Components are only notified when the element or the section changed, not for every keystroke. The editor is
     /// never reloaded for it (it reports the cursor after a reload of the same book), and typed text waits for its
     /// debounce. A report while the document of another book or session is loaded is not taken: the editor's selection
@@ -244,21 +322,29 @@
     /// </summary>
     public Task OnCursorChanged(CursorInfo? cursor)
     {
-        var before = State.Cursor;
+        var before = MyView.Cursor;
         if (_newTarget || cursor == before)
         {
             return Task.CompletedTask;
         }
 
-        var section = State.CurrentSectionKey;
-        State.Cursor = cursor;
+        var section = MyView.CurrentSectionKey;
+        if (IsActive)
+        {
+            State.Cursor = cursor;
+        }
+        else
+        {
+            MyView.Cursor = cursor;
+        }
+
         if (cursor is not null && State.CurrentBook is { } book)
         {
-            State.CurrentSectionKey = State.CurrentElement is { } element ? BookElements.SectionOf(book, element) : Guid.Empty;
+            SetSection(MyView.ElementIn(book) is { } element ? BookElements.SectionOf(book, element) : Guid.Empty);
         }
 
         if (before is null || cursor is null || (before.Kind, before.Key, before.TextBlockKey) != (cursor.Kind, cursor.Key, cursor.TextBlockKey)
-            || section != State.CurrentSectionKey)
+            || section != MyView.CurrentSectionKey)
         {
             _notifyingCursor = true;
             try
@@ -275,19 +361,50 @@
     }
 
     /// <summary>
+    /// The editor got the focus: <see cref="MyView"/> becomes the active view, after the other editor saved its text
+    /// (<see cref="AppState.TryActivateAsync"/>).
+    /// </summary>
+    public Task OnEditorFocused() => ActivateAsync();
+
+    /// <summary>Makes <see cref="MyView"/> the active view if it is not; <c>false</c> if it is not active afterwards (see <see cref="AppState.TryActivateAsync"/>).</summary>
+    private Task<bool> ActivateAsync() => State.TryActivateAsync(MyView, Logger);
+
+    /// <summary>Sets <see cref="MyView"/>'s section: the active view's through <see cref="AppState"/>, which tells the session.</summary>
+    private void SetSection(Guid section)
+    {
+        if (IsActive)
+        {
+            State.CurrentSectionKey = section;
+        }
+        else
+        {
+            MyView.CurrentSectionKey = section;
+        }
+    }
+
+    /// <summary>
     /// Runs the structure command or the status command (ToggleRemark, AddRemark) on the cursor element, or Merge and
     /// Wrap on the range (<see cref="ManuscriptCommands"/>), and shows its message; the editor's shortcuts and the buttons of the section bar both come here. The range
     /// buttons and shortcuts (RangeUp, RangeDown) only move the range
-    /// (<see cref="AppState.ChangeRange"/>): the document stays as it is, the editor just marks the new range.
+    /// (<see cref="BookView.ChangeRange"/> of <see cref="MyView"/>): the document stays as it is, the editor just marks the
+    /// new range. A command from an editor that is not the active one makes its view active first.
     /// </summary>
     public async Task OnSectionCommand(SectionCommand command)
     {
+        if (!await ActivateAsync())
+        {
+            return;
+        }
+
         if (command is SectionCommand.RangeUp or SectionCommand.RangeDown)
         {
             _notifyingCursor = true;
             try
             {
-                State.ChangeRange(command == SectionCommand.RangeUp ? 1 : -1);
+                if (MyView.ChangeRange(State.CurrentBook, command == SectionCommand.RangeUp ? 1 : -1))
+                {
+                    State.Notify();
+                }
             }
             finally
             {
@@ -373,18 +490,18 @@
     /// <summary>
     /// A click on a cross reference jumps to its target (spec 2.3): the heading or text block becomes the element at the
     /// cursor and is revealed, a jump in the back/forward history (<see cref="AppState.JumpTo"/>). A reference without a
-    /// target goes nowhere.
+    /// target goes nowhere. The jump lands in this editor: its view becomes the active one first.
     /// </summary>
-    public Task OnReferenceClicked(Guid targetId)
+    public async Task OnReferenceClicked(Guid targetId)
     {
-        if (State.CurrentBook is not { } book || CrossRefIndex.Of(book).Target(targetId) is not { } target)
+        if (State.CurrentBook is not { } book || CrossRefIndex.Of(book).Target(targetId) is not { } target
+            || !await ActivateAsync())
         {
-            return Task.CompletedTask;
+            return;
         }
 
         State.JumpTo(target.Heading?.Key ?? target.TextBlock!.Key);
         State.Notify();
-        return Task.CompletedTask;
     }
 
     /// <summary>Removes the note from the block's sources and the usage from the note, after saving the pending text.</summary>
@@ -444,11 +561,17 @@
 
     /// <summary>
     /// Adopts the dropped note (<see cref="NoteAdoption"/>) after the given text block, at the start of the given
-    /// heading's section, or at the start of the current section.
+    /// heading's section, or at the start of the current section. The note lands in this editor: its view becomes the
+    /// active one first.
     /// </summary>
     public async Task OnNoteDropped(Guid noteBlockKey, Guid? afterTextBlockKey)
     {
-        var section = State.CurrentSectionKey;
+        if (!await ActivateAsync())
+        {
+            return;
+        }
+
+        var section = MyView.CurrentSectionKey;
         _saver.Message = await NoteAdoption.AdoptAsync(
             State,
             noteBlockKey,
@@ -485,7 +608,10 @@
 
     private void OnPagesChanged(string path) => _ = InvokeAsync(SyncAsync);
 
-    /// <summary>Shows the current book (if it is not shown yet), then reveals the element (see <see cref="RevealPendingAsync"/>).</summary>
+    /// <summary>
+    /// <see cref="MyView"/> asked for an element: shows the current book (if it is not shown yet), then reveals it (see
+    /// <see cref="RevealPendingAsync"/>).
+    /// </summary>
     private void OnRevealRequested(Guid elementKey) => _ = InvokeAsync(SyncAsync);
 
     private void OnConflictsChanged() => _ = InvokeAsync(StateHasChanged);
@@ -652,22 +778,22 @@
     /// <summary>
     /// After the book changed under an unmoved cursor (a structure command, an undo, an outline change) the cursor
     /// element may belong to another section now: the current section follows it, as in <see cref="OnCursorChanged"/>.
-    /// Components are notified only if the section changed.
+    /// Components are notified only if the section changed. It is <see cref="MyView"/>'s cursor and section.
     /// </summary>
     private void FollowCursorSection()
     {
-        if (State.Cursor is null || State.CurrentBook is not { } book)
+        if (MyView.Cursor is null || State.CurrentBook is not { } book)
         {
             return;
         }
 
-        var section = State.CurrentElement is { } element ? BookElements.SectionOf(book, element) : Guid.Empty;
-        if (section == State.CurrentSectionKey)
+        var section = MyView.ElementIn(book) is { } element ? BookElements.SectionOf(book, element) : Guid.Empty;
+        if (section == MyView.CurrentSectionKey)
         {
             return;
         }
 
-        State.CurrentSectionKey = section;
+        SetSection(section);
         _notifyingCursor = true;
         try
         {
@@ -680,7 +806,7 @@
     }
 
     /// <summary>
-    /// Gives the editor the nodes of the current range to mark (none without a cursor), if they differ from the ones it
+    /// Gives the editor the nodes of <see cref="MyView"/>'s range to mark (none without a cursor), if they differ from the ones it
     /// was given last. Marking changes no document, so nothing is saved or loaded for it; the editor keeps the nodes for
     /// the documents it loads later.
     /// </summary>
@@ -691,7 +817,7 @@
             return;
         }
 
-        IReadOnlyList<MarkedNode> nodes = State.CurrentRange?.Nodes ?? [];
+        IReadOnlyList<MarkedNode> nodes = MyView.RangeIn(State.CurrentBook)?.Nodes ?? [];
         if (_marked is not null && _marked.SequenceEqual(nodes))
         {
             return;
@@ -710,13 +836,14 @@
         }
     }
 
-    /// <summary>Scrolls to the element <see cref="AppState.RevealElement"/> asked for, now that the book is shown.</summary>
+    /// <summary>Scrolls to the element <see cref="MyView"/> is to reveal (<see cref="AppState.RevealElement"/>), now that the book is shown.</summary>
     private async Task RevealPendingAsync()
     {
-        var offset = State.PendingRevealOffset;
-        if (State.TakePendingReveal() is { } elementKey)
+        var offset = MyView.PendingRevealOffset;
+        var focus = MyView.PendingRevealFocus;
+        if (MyView.TakePendingReveal() is { } elementKey)
         {
-            await Editor.RevealAsync(elementKey, offset);
+            await Editor.RevealAsync(elementKey, offset, focus);
         }
     }
 

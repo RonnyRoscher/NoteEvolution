@@ -147,6 +147,11 @@
                 const element = container ? splitter?.parentElement : splitter?.previousElementSibling;
                 return element ? element.getBoundingClientRect().height : 0;
             },
+            // Called by the divider of the split view (SplitDivider.razor): the top edge of its container.
+            paneTop(splitter) {
+                const element = splitter?.parentElement;
+                return element ? element.getBoundingClientRect().top : 0;
+            },
             // Called by the search for a cross reference target (ReferencePicker.razor): keeps the option with the
             // index in view while the arrow keys move the selection.
             scrollOptionIntoView(list, index) {
@@ -189,6 +194,19 @@
             }
             window.neNav.header?.invokeMethodAsync('Navigate', e.key === 'ArrowLeft' ? 'back' : 'forward')
                 .catch(() => { });
+        }, true);
+
+        // Ctrl+Alt+S switches the split view on or off, also in the editor. While a modal dialog is open nothing happens.
+        document.addEventListener('keydown', e => {
+            if (!(e.ctrlKey && e.altKey && !e.shiftKey && e.key.toLowerCase() === 's')) {
+                return;
+            }
+
+            e.preventDefault();
+            if (document.querySelector('[aria-modal="true"]')) {
+                return;
+            }
+            window.neNav.header?.invokeMethodAsync('ToggleSplit').catch(() => { });
         }, true);
 
         // Should the start never report back (an error before the shell runs), the app shows itself after 30 s anyway.

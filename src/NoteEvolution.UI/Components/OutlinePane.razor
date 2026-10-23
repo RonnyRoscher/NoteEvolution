@@ -20,7 +20,8 @@ else
 {
     _warnings = WarningsByNode(book);
     <div class="ne-outline-pane">
-        <RecentChangesList Height="Settings.RecentListHeight" Collapsed="Settings.RecentListCollapsed" CollapsedChanged="SetRecentListCollapsed" />
+        <RecentChangesList Height="Settings.RecentListHeight" Collapsed="Settings.RecentListCollapsed" CollapsedChanged="SetRecentListCollapsed"
+                           BeforeJump="ActivateAsync" />
         @if (!Settings.RecentListCollapsed)
         {
             <RowSplitter Height="Settings.RecentListHeight" HeightChanged="h => Settings.RecentListHeight = h" DragEnded="SaveSettings" />
@@ -73,7 +74,16 @@ else
     private VaultSession? _watchedSession;
     private ElementReference _scroll;
 
-    /// <summary>The section last scrolled into view; the outline scrolls again only when the current section changes.</summary>
+    /// <summary>
+    /// The book view this outline belongs to (one half of a split view): its section is the one marked, and a click makes
+    /// it the active view before it jumps. Without one the first of <see cref="AppState.Views"/>, as before the split.
+    /// </summary>
+    [Parameter] public BookView? View { get; set; }
+
+    /// <summary>The view this outline belongs to: <see cref="View"/>, else the first view.</summary>
+    private BookView MyView => View ?? State.Views[0];
+
+    /// <summary>The section last scrolled into view; the outline scrolls again only when its view's section changes.</summary>
     private Guid? _shownSectionKey;
 
     /// <summary>The key of the heading whose title is being edited inline.</summary>
@@ -98,17 +108,17 @@ else
     }
 
     /// <summary>
-    /// Keeps the current section's row in view when it changes (a click in the editor moves to another section). Only
+    /// Keeps the row of its view's section in view when it changes (a click in the editor moves to another section). Only
     /// then: scrolling the outline by hand is not undone by the next render.
     /// </summary>
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (State.CurrentBook is null || State.CurrentSectionKey == _shownSectionKey)
+        if (State.CurrentBook is null || MyView.CurrentSectionKey == _shownSectionKey)
         {
             return;
         }
 
-        _shownSectionKey = State.CurrentSectionKey;
+        _shownSectionKey = MyView.CurrentSectionKey;
         try
         {
             await JS.InvokeVoidAsync("neLayout.scrollSelectedIntoView", _scroll);
@@ -178,10 +188,12 @@ else
     }
 
     /// <summary>A click on a coverage bar: the same as a click on the title, and the notes pane shows what fits there.</summary>
-    internal void SelectFromCoverage(OutlineNode node)
+    internal async Task SelectFromCoverage(OutlineNode node)
     {
-        Select(node);
-        State.RequestNotesTab(NotesTab.Relevant);
+        if (await Select(node))
+        {
+            State.RequestNotesTab(NotesTab.Relevant);
+        }
     }
 
     private void ToggleCoverage()
@@ -271,16 +283,29 @@ else
 
     internal bool IsDropHint(Guid key, bool before) => _dropHint == (key, before);
 
-    internal bool IsSelected(OutlineNode node) => State.CurrentSectionKey == node.Key;
+    internal bool IsSelected(OutlineNode node) => MyView.CurrentSectionKey == node.Key;
 
     /// <summary>
-    /// Scrolls the editor to the node's heading (the prologue: the start of the book) and puts the cursor there; the
-    /// node becomes the current section. A second click reveals it again. A jump in the back/forward history.
+    /// Makes <see cref="MyView"/> the active view if it is not (the active editor saves its pending text first);
+    /// <c>false</c> if it is not active afterwards (see <see cref="AppState.TryActivateAsync"/>).
     /// </summary>
-    internal void Select(OutlineNode node)
+    internal Task<bool> ActivateAsync() => State.TryActivateAsync(MyView, Logger);
+
+    /// <summary>
+    /// Makes this outline's view the active one, then scrolls its editor to the node's heading (the prologue: the start of
+    /// the book) and puts the cursor there; the node becomes the current section. A second click reveals it again. A jump
+    /// in the back/forward history. <c>false</c> (nothing happens) if the view cannot be made active.
+    /// </summary>
+    internal async Task<bool> Select(OutlineNode node)
     {
+        if (!await ActivateAsync())
+        {
+            return false;
+        }
+
         State.JumpTo(node.Key);
         State.Notify();
+        return true;
     }
 
     internal void StartRename(OutlineNode node)
@@ -343,7 +368,9 @@ else
     {
         var title = L["OutlineNewTitle"].Value;
         var added = Guid.Empty;
-        if (await ApplyAsync(book => added = OutlineEditor.AddHeading(book, parentKey, title), "OutlineMoveInvalid") == ApplyResult.Saved)
+        // The new heading becomes the section of this outline's view, made the active one first.
+        if (await ActivateAsync()
+            && await ApplyAsync(book => added = OutlineEditor.AddHeading(book, parentKey, title), "OutlineMoveInvalid") == ApplyResult.Saved)
         {
             // Not revealed: the editor would take the focus from the rename field.
             State.CurrentSectionKey = added;

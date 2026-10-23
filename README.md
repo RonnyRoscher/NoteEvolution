@@ -64,6 +64,13 @@ die Abdeckung ein und aus. Der Schieber zwischen Liste und Gliederung stellt die
 Liste lässt sich mit ▾/▸ einklappen. Höhe und Klappzustand bleiben nach einem Neustart erhalten. Ganz oben in der
 Gliederung steht der Titel des Buchs mit der Wortzahl des ganzen Buchs; ein Klick springt an den Anfang.
 
+**Geteilte Ansicht:** Der Knopf „⇅“ links neben ◀ (oder Strg+Alt+S) zeigt das Buch in zwei Hälften übereinander, jede mit
+eigener Gliederung und eigenem Editor, so lässt sich an zwei Stellen des Buchs zugleich arbeiten. Ein Klick in eine
+Hälfte macht sie zur aktiven (schmaler Akzentstrich oben); nur sie hat die Abschnittsleiste, und Sprünge (Zuletzt
+geändert, ◀ ▶, Quellen) landen in ihr. Der Schieber dazwischen stellt das Verhältnis ein (ziehen oder Pfeil hoch/runter,
+20 bis 80 %). Der Einklapp-Knopf der Gliederung gilt für beide Hälften. Teilung und Verhältnis bleiben nach einem
+Neustart erhalten.
+
 Am unteren Rand der Markierung stehen die Abschnittsknöpfe und die Quellen:
 
 | Befehl | Tastenkürzel |
@@ -439,6 +446,11 @@ Querverweise und Navigation
       „Text“ zurück; „Rückgängig“ nimmt beides zurück. Ausgegraute Ebenen nennen im Tooltip den Grund.
 - [ ] ◀ ▶ und Alt+Pfeil links/rechts: nach einigen Sprüngen und Klicks (je ≥ 2 s) zurück und vor, auch über einen
       Buchwechsel; bei offenem Dialog tut Alt+Pfeil nichts.
+- [ ] Geteilte Ansicht: „⇅“ (und Strg+Alt+S, auch im Editor) zeigt zwei Hälften mit je Gliederung und Editor; bei
+      offenem Dialog tut Strg+Alt+S nichts. Der Schieber lässt sich ziehen und mit Pfeil hoch/runter in 5-%-Schritten
+      zwischen 20 und 80 % stellen. Ein Klick in die untere Hälfte macht sie aktiv (Akzentstrich, Abschnittsleiste und
+      „Relevant“ wechseln); Tippen oben, dann sofort unten klicken: nichts geht verloren. Ausschalten, während unten
+      aktiv ist: die obere Hälfte bleibt mit ihrer Stelle. Neustart behält Teilung und Verhältnis.
 - [ ] PDF: ein Verweis steht als „→ Titel (S. n)“ mit richtiger Seitenzahl; Klick auf Titel und Seitenzahl springt
       im PDF-Betrachter zur Stelle.
 - [ ] Systemanzeige: „App“ entspricht etwa NoteEvolution plus `ollama*.exe` und `llama-server.exe` im Task-Manager

@@ -141,6 +141,16 @@ public class EditorInteropTests
     }
 
     [Fact]
+    public async Task EditorFocused_Forwarded()
+    {
+        var interop = await InitAsync();
+
+        await interop.EditorFocused();
+
+        Assert.Equal(1, _callbacks.Focused);
+    }
+
+    [Fact]
     public async Task SectionBoxMoved_Forwarded()
     {
         var interop = await InitAsync();
@@ -160,11 +170,13 @@ public class EditorInteropTests
         await interop.RevealAsync(Guid.Parse(Key));
         await interop.RevealAsync(Guid.Empty);
         await interop.RevealAsync(Guid.Parse(Key), 7);
+        await interop.RevealAsync(Guid.Parse(Key), 2, focus: false);
 
         var options = _js.Calls.Single(c => c.Method == "createEditor").Args[2]!;
         Assert.Equal(40, options.GetType().GetProperty("barHeight")!.GetValue(options));
         Assert.Equal(
-            [("setDocument", ["{}", true, false]), ("reveal", [Key, 0]), ("reveal", [null, 0]), ("reveal", [Key, 7])],
+            [("setDocument", ["{}", true, false]), ("reveal", [Key, 0, true]), ("reveal", [null, 0, true]), ("reveal", [Key, 7, true]),
+                ("reveal", [Key, 2, false])],
             _js.Calls.Where(c => c.Method is "setDocument" or "reveal").Select(c => (c.Method, c.Args)).ToArray(),
             new CallComparer());
     }
@@ -207,6 +219,14 @@ public class EditorInteropTests
         public Task OnCursorChanged(CursorInfo? cursor)
         {
             Cursors.Add(cursor);
+            return Task.CompletedTask;
+        }
+
+        public int Focused { get; private set; }
+
+        public Task OnEditorFocused()
+        {
+            Focused++;
             return Task.CompletedTask;
         }
 

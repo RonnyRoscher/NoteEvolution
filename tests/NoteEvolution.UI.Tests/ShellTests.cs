@@ -140,6 +140,20 @@ public class ShellTests : UiTestContext
     }
 
     [Fact]
+    public void BookArea_KeepsRoomForTheOutlineAndTheEditorsMinimum_SoTheNotesPaneGivesWayFirst()
+    {
+        Settings.OutlineWidth = 260;
+        var cut = Render<Shell>();
+
+        Assert.Contains("min-width: 460px", cut.Find(".ne-book-area").GetAttribute("style"));
+
+        // Collapsed, the outline takes 32 px.
+        cut.Find(".ne-outline .ne-collapse").Click();
+
+        Assert.Contains("min-width: 232px", cut.Find(".ne-book-area").GetAttribute("style"));
+    }
+
+    [Fact]
     public void Splitter_NotesShownNarrowerThanStored_DragStartsFromWhatIsShown()
     {
         // The pane was widened to 920 px, then the window got narrower and the pane shows only 530 px.

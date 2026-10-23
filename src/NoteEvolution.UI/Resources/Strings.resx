@@ -148,6 +148,9 @@
   <data name="EditorConflict" xml:space="preserve">
     <value>Die Buchdatei wurde gleichzeitig von einem anderen Programm geändert. Bis der Konflikt gelöst ist, wird hier nichts gespeichert.</value>
   </data>
+  <data name="EditorOtherHalfUnsaved" xml:space="preserve">
+    <value>Die andere Hälfte enthält Text, der nicht gespeichert werden konnte.</value>
+  </data>
   <data name="EditorLoadFailed" xml:space="preserve">
     <value>Der Editor konnte nicht geladen werden.</value>
   </data>
@@ -1627,5 +1630,17 @@
   </data>
   <data name="NotesCountFiltered" xml:space="preserve">
     <value>{0} von {1} Notizen</value>
+  </data>
+  <data name="SplitToggleTitle" xml:space="preserve">
+    <value>Buch geteilt anzeigen</value>
+  </data>
+  <data name="ResizeSplit" xml:space="preserve">
+    <value>Höhe der Hälften ändern</value>
+  </data>
+  <data name="KeysNavigation2Keys" xml:space="preserve">
+    <value>Strg+Alt+S</value>
+  </data>
+  <data name="KeysNavigation2" xml:space="preserve">
+    <value>Buch geteilt anzeigen ein / aus</value>
   </data>
 </root>
