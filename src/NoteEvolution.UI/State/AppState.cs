@@ -17,10 +17,9 @@ public enum NotesTab
 /// <see cref="Notify"/>; components subscribe to <see cref="Changed"/> (unsubscribing on dispose) and re-render via
 /// <c>InvokeAsync</c>, since it may be raised from any thread.
 /// </summary>
-/// <param name="time">The clock of the cursor dwell (<see cref="NavigationHistory.DwellTime"/>); <see cref="TimeProvider.System"/> if <c>null</c>.</param>
-public sealed class AppState(TimeProvider? time = null)
+public sealed class AppState
 {
-    private readonly TimeProvider _time = time ?? TimeProvider.System;
+    private readonly TimeProvider _time;
 
     /// <summary>The back/forward history; locked, since the dwell timer records from another thread.</summary>
     private readonly NavigationHistory _history = new();
@@ -31,11 +30,82 @@ public sealed class AppState(TimeProvider? time = null)
     /// <summary>Counts the dwells stopped, so a timer that fires after it was replaced records nothing.</summary>
     private long _dwellVersion;
 
+    private readonly BookView _first = new();
+    private BookView? _second;
+    private BookView _active;
     private VaultSession? _session;
     private Book? _currentBook;
-    private CursorInfo? _cursor;
-    private Guid _currentSectionKey;
     private readonly HashSet<Guid> _whereToOpenNotes = [];
+
+    /// <param name="time">The clock of the cursor dwell (<see cref="NavigationHistory.DwellTime"/>); <see cref="TimeProvider.System"/> if <c>null</c>.</param>
+    public AppState(TimeProvider? time = null)
+    {
+        _time = time ?? TimeProvider.System;
+        _active = _first;
+        Views = [_first];
+    }
+
+    /// <summary>The book views: one without a split, two with it (the upper and the lower half).</summary>
+    public IReadOnlyList<BookView> Views { get; private set; }
+
+    /// <summary>The view the position members (<see cref="Cursor"/>, <see cref="CurrentSectionKey"/> …) refer to.</summary>
+    public BookView ActiveView => _active;
+
+    /// <summary>Whether the book is shown in two halves.</summary>
+    public bool IsSplit => _second is not null;
+
+    /// <summary>
+    /// Shows the book in two halves or in one. A new second view starts at the active view's section, without a cursor.
+    /// Unsplitting while the second view is active makes the first one active, with its own place. Raises
+    /// <see cref="Notify"/>. The caller saves the second editor's pending text before unsplitting.
+    /// </summary>
+    public void SetSplit(bool split)
+    {
+        if (split != IsSplit)
+        {
+            if (split)
+            {
+                _second = new BookView { CurrentSectionKey = _active.CurrentSectionKey };
+                Views = [_first, _second];
+            }
+            else
+            {
+                _second = null;
+                Views = [_first];
+                _active = _first;
+                _session?.SetFocus(_currentBook, _active.CurrentSectionKey);
+            }
+        }
+
+        Notify();
+    }
+
+    /// <summary>
+    /// Makes <paramref name="view"/> the active one, after the previous active view's editor saved its pending text (an
+    /// exception from that propagates and nothing changes); nothing happens if it is active already. Raises
+    /// <see cref="Notify"/>.
+    /// </summary>
+    public async Task ActivateAsync(BookView view)
+    {
+        if (ReferenceEquals(view, _active))
+        {
+            return;
+        }
+
+        if (!Views.Contains(view))
+        {
+            throw new ArgumentException("The view does not belong to this state.", nameof(view));
+        }
+
+        if (_active.FlushEditor is { } flush)
+        {
+            await flush();
+        }
+
+        _active = view;
+        _session?.SetFocus(_currentBook, _active.CurrentSectionKey);
+        Notify();
+    }
 
     /// <summary>
     /// The open vault; <c>null</c> until one is opened. Another session puts the range back to level 0 and clears the
@@ -49,7 +119,11 @@ public sealed class AppState(TimeProvider? time = null)
         {
             if (!ReferenceEquals(value, _session))
             {
-                RangeLevel = 0;
+                foreach (var view in Views)
+                {
+                    view.RangeLevel = 0;
+                }
+
                 lock (_history)
                 {
                     StopDwell();
@@ -58,13 +132,13 @@ public sealed class AppState(TimeProvider? time = null)
             }
 
             _session = value;
-            _session?.SetFocus(_currentBook, _currentSectionKey);
+            _session?.SetFocus(_currentBook, _active.CurrentSectionKey);
         }
     }
 
     /// <summary>
     /// The book the editor shows. Another book (by link name; not the same book taken from the vault again, see
-    /// <see cref="RefreshBook"/>) puts the range back to level 0.
+    /// <see cref="RefreshBook"/>) puts the range back to level 0 and every inactive view back to the start of the book.
     /// </summary>
     public Book? CurrentBook
     {
@@ -74,10 +148,16 @@ public sealed class AppState(TimeProvider? time = null)
             if (!string.Equals(value?.LinkName, _currentBook?.LinkName, StringComparison.OrdinalIgnoreCase))
             {
                 RangeLevel = 0;
+                foreach (var view in Views.Where(v => !ReferenceEquals(v, _active)))
+                {
+                    view.CurrentSectionKey = value?.Root.Key ?? Guid.Empty;
+                    view.Cursor = null;
+                    view.RangeLevel = 0;
+                }
             }
 
             _currentBook = value;
-            _session?.SetFocus(_currentBook, _currentSectionKey);
+            _session?.SetFocus(_currentBook, _active.CurrentSectionKey);
         }
     }
 
@@ -87,11 +167,11 @@ public sealed class AppState(TimeProvider? time = null)
     /// </summary>
     public Guid CurrentSectionKey
     {
-        get => _currentSectionKey;
+        get => _active.CurrentSectionKey;
         set
         {
-            _currentSectionKey = value;
-            _session?.SetFocus(_currentBook, _currentSectionKey);
+            _active.CurrentSectionKey = value;
+            _session?.SetFocus(_currentBook, value);
         }
     }
 
@@ -102,16 +182,11 @@ public sealed class AppState(TimeProvider? time = null)
     /// </summary>
     public CursorInfo? Cursor
     {
-        get => _cursor;
+        get => _active.Cursor;
         set
         {
-            var moved = value?.Key != _cursor?.Key;
-            if (moved)
-            {
-                RangeLevel = 0;
-            }
-
-            _cursor = value;
+            var moved = value?.Key != _active.Cursor?.Key;
+            _active.Cursor = value;
             if (moved)
             {
                 StartDwell();
@@ -123,32 +198,20 @@ public sealed class AppState(TimeProvider? time = null)
     /// The level of the marked range around <see cref="CurrentElement"/> (package B, spec 2): 0 = the element with
     /// everything below it, −1 = the element alone, k &gt; 0 = its k-th ancestor; see <see cref="BookRanges"/>.
     /// </summary>
-    public int RangeLevel { get; set; }
+    public int RangeLevel
+    {
+        get => _active.RangeLevel;
+        set => _active.RangeLevel = value;
+    }
 
     /// <summary>The marked range of <see cref="RangeLevel"/> around <see cref="CurrentElement"/>; <c>null</c> without an element.</summary>
-    public RangeInfo? CurrentRange =>
-        CurrentBook is { } book && CurrentElement is { } element ? BookRanges.Of(book, element, RangeLevel) : null;
+    public RangeInfo? CurrentRange => _active.RangeIn(CurrentBook);
 
     /// <summary>Whether the range can grow: there is one and it is not the whole book yet.</summary>
-    public bool CanRangeUp => RangeBounds() is { } bounds && bounds.Level < bounds.Max;
+    public bool CanRangeUp => _active.CanRangeUp(CurrentBook);
 
     /// <summary>Whether the range can shrink: there is one and it is not at level −1.</summary>
-    public bool CanRangeDown => RangeBounds() is { Level: > -1 };
-
-    /// <summary>
-    /// <see cref="RangeLevel"/> clamped as <see cref="BookRanges.Of"/> clamps it, and the level of the whole book, around
-    /// <see cref="CurrentElement"/> (without computing the range); <c>null</c> without an element.
-    /// </summary>
-    private (int Level, int Max)? RangeBounds()
-    {
-        if (CurrentBook is not { } book || CurrentElement is not { } element)
-        {
-            return null;
-        }
-
-        var max = BookRanges.MaxLevel(book, element);
-        return (Math.Clamp(RangeLevel, -1, max), max);
-    }
+    public bool CanRangeDown => _active.CanRangeDown(CurrentBook);
 
     /// <summary>The text block the editor cursor is in (also in one of its details); <c>null</c> on a heading or without a cursor.</summary>
     public Guid? CursorTextBlockKey => Cursor is { Kind: not ElementKind.Heading } c ? c.TextBlockKey ?? c.Key : null;
@@ -159,33 +222,15 @@ public sealed class AppState(TimeProvider? time = null)
     /// <see cref="CurrentSectionKey"/> (the nearest heading before it); <c>null</c> without a cursor, or when neither
     /// is found (the start of the book).
     /// </summary>
-    public BookElement? CurrentElement
-    {
-        get
-        {
-            if (Cursor is not { } cursor || CurrentBook is not { } book)
-            {
-                return null;
-            }
-
-            return BookElements.Find(book, cursor.Key)
-                   ?? (cursor.TextBlockKey is { } textBlock && book.FindTextBlock(textBlock) is not null
-                       ? new BookElement(ElementKind.TextBlock, textBlock)
-                       : null)
-                   ?? (book.FindNode(CurrentSectionKey) is { Block: not null } heading
-                       ? new BookElement(ElementKind.Heading, heading.Key)
-                       : null);
-        }
-    }
+    public BookElement? CurrentElement => _active.ElementIn(CurrentBook);
 
     /// <summary>
-    /// The element the editor is to scroll to and put the cursor at, until the editor has done so (after its next
-    /// document load if the book is still being loaded); <c>null</c> if none.
+    /// The element the active editor is to scroll to and put the cursor at, until it has done so; see <see cref="BookView.PendingReveal"/>.
     /// </summary>
-    public Guid? PendingReveal { get; private set; }
+    public Guid? PendingReveal => _active.PendingReveal;
 
     /// <summary>Where in the text of <see cref="PendingReveal"/> the cursor goes, in characters as the editor shows them.</summary>
-    public int PendingRevealOffset { get; private set; }
+    public int PendingRevealOffset => _active.PendingRevealOffset;
 
     /// <summary>The note the notes pane should show (e.g. after a click on a source chip).</summary>
     public Guid? FocusedNoteKey { get; set; }
@@ -216,27 +261,72 @@ public sealed class AppState(TimeProvider? time = null)
     public bool CloseWhereTo(Guid noteKey) => _whereToOpenNotes.Remove(noteKey);
 
     /// <summary>
-    /// Saves the editor's pending text, <c>null</c> while no editor is shown. The editor registers it; whoever is
-    /// about to change the book page behind the editor's back (adopting a note) awaits it first, so no typed text
-    /// is lost and the editor's page is current.
+    /// Saves the pending text of every editor in turn, <c>null</c> while no editor is shown. An editor registers it with its
+    /// <see cref="BookView"/>; setting it here sets the first view's. Whoever is about to change the book page behind the
+    /// editors' back (adopting a note) awaits it first, so no typed text is lost and the editors' page is current.
     /// </summary>
-    public Func<Task>? FlushEditor { get; set; }
+    public Func<Task>? FlushEditor
+    {
+        get
+        {
+            // A snapshot: the callbacks registered now. A single one is returned as it is, so its owner can recognise it.
+            var flushes = Views.Select(v => v.FlushEditor).OfType<Func<Task>>().ToList();
+            return flushes.Count switch
+            {
+                0 => null,
+                1 => flushes[0],
+                _ => async () =>
+                {
+                    foreach (var flush in flushes)
+                    {
+                        await flush();
+                    }
+                },
+            };
+        }
+        set => _first.FlushEditor = value;
+    }
 
     /// <summary>
-    /// Asked on the UI thread when the window is about to close, after <see cref="FlushEditor"/>: <c>true</c> if the
-    /// editor still holds text it could not save, after telling the user so; <c>null</c> while no editor is shown.
+    /// Asked on the UI thread when the window is about to close, after <see cref="FlushEditor"/>: <c>true</c> if an
+    /// editor still holds text it could not save, after telling the user so (every editor is asked); <c>null</c> while
+    /// no editor is shown. Setting it sets the first view's.
     /// </summary>
-    public Func<bool>? WarnUnsavedText { get; set; }
+    public Func<bool>? WarnUnsavedText
+    {
+        get => AskAll(v => v.WarnUnsavedText);
+        set => _first.WarnUnsavedText = value;
+    }
 
     /// <summary>
-    /// Asked on the UI thread after <see cref="FlushEditor"/>: <c>true</c> if the editor still holds text it could not
+    /// Asked on the UI thread after <see cref="FlushEditor"/>: <c>true</c> if an editor still holds text it could not
     /// save (without telling the user, unlike <see cref="WarnUnsavedText"/>); <c>null</c> while no editor is shown.
+    /// Setting it sets the first view's.
     /// </summary>
-    public Func<bool>? HasUnsavedEditorText { get; set; }
+    public Func<bool>? HasUnsavedEditorText
+    {
+        get => AskAll(v => v.HasUnsavedEditorText);
+        set => _first.HasUnsavedEditorText = value;
+    }
+
+    /// <summary>
+    /// A callback asking every view's callback registered now (none skipped), <c>true</c> if any said so; <c>null</c> if
+    /// no view has one; a single one is returned as it is.
+    /// </summary>
+    private Func<bool>? AskAll(Func<BookView, Func<bool>?> select)
+    {
+        var asks = Views.Select(select).OfType<Func<bool>>().ToList();
+        return asks.Count switch
+        {
+            0 => null,
+            1 => asks[0],
+            _ => () => asks.Aggregate(false, (any, ask) => ask() | any),
+        };
+    }
 
     public event Action? Changed;
 
-    /// <summary>An element is to be revealed in the editor (see <see cref="RevealElement"/>).</summary>
+    /// <summary>An element is to be revealed in the active view's editor (see <see cref="RevealElement"/>); raised besides the view's own event.</summary>
     public event Action<Guid>? RevealRequested;
 
     /// <summary>A note is to be brought into view in the notes pane (see <see cref="RevealNote"/>).</summary>
@@ -262,13 +352,10 @@ public sealed class AppState(TimeProvider? time = null)
     /// </summary>
     public void ChangeRange(int delta)
     {
-        if (CurrentBook is not { } book || CurrentElement is not { } element)
+        if (_active.ChangeRange(CurrentBook, delta))
         {
-            return;
+            Notify();
         }
-
-        RangeLevel = Math.Clamp(BookRanges.Of(book, element, RangeLevel).Level + delta, -1, BookRanges.MaxLevel(book, element));
-        Notify();
     }
 
     /// <summary>Asks the shell to show the AI model dialog, which offers the download.</summary>
@@ -312,18 +399,12 @@ public sealed class AppState(TimeProvider? time = null)
             }
         }
 
-        PendingReveal = elementKey;
-        PendingRevealOffset = offset;
+        _active.RequestReveal(elementKey, offset);
         RevealRequested?.Invoke(elementKey);
     }
 
     /// <summary>Returns <see cref="PendingReveal"/> and clears it; called by the editor when it reveals the element.</summary>
-    public Guid? TakePendingReveal()
-    {
-        var pending = PendingReveal;
-        PendingReveal = null;
-        return pending;
-    }
+    public Guid? TakePendingReveal() => _active.TakePendingReveal();
 
     /// <summary>
     /// The active block: <see cref="CurrentElement"/>, else the current section (the book root: the start of the book);
@@ -556,10 +637,24 @@ public sealed class AppState(TimeProvider? time = null)
         var books = Session?.Vault.Books ?? [];
         var book = CurrentBook is null ? null : Session?.Vault.FindBook(CurrentBook.LinkName);
         CurrentBook = book ?? books.FirstOrDefault();
-        if (CurrentBook?.FindNode(CurrentSectionKey) is null)
+        foreach (var view in Views)
         {
-            CurrentSectionKey = CurrentBook?.Root.Key ?? Guid.Empty;
-            Cursor = null;
+            if (CurrentBook?.FindNode(view.CurrentSectionKey) is not null)
+            {
+                continue;
+            }
+
+            var root = CurrentBook?.Root.Key ?? Guid.Empty;
+            if (ReferenceEquals(view, _active))
+            {
+                CurrentSectionKey = root;
+                Cursor = null;
+            }
+            else
+            {
+                view.CurrentSectionKey = root;
+                view.Cursor = null;
+            }
         }
     }
 }
