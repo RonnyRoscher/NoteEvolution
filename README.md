@@ -70,12 +70,33 @@ Am unteren Rand der Markierung stehen die Abschnittsknöpfe und die Quellen:
 | Neuer Abschnitt danach (gleiche Ebene) | Alt+Enter |
 | Neuer Unterabschnitt (als erstes Element) | Alt+Umschalt+Enter |
 | Überschrift ein-/ausrücken | Tab / Umschalt+Tab in der Überschrift |
-| Überschrift entfernen (Inhalt bleibt) | Rücktaste am Anfang des Titels |
+| Überschrift entfernen (der Titel wird ein Textblock, der Inhalt bleibt) | Rücktaste am Anfang des Titels |
 | Abschnitt löschen | nur Knopf |
 
 Jeder Befehl lässt sich mit „Rückgängig“ in der Kopfzeile zurücknehmen, solange danach nichts an der Buchdatei
 geändert wurde. „N Quellen ▸“ klappt die Quellen des Abschnitts auf; ein Klick springt im Reiter Journal zur Notiz.
 Ist „Verwendete ausblenden“ eingeschaltet, erscheint die Notiz stattdessen als Karte oben im Notizbereich.
+
+**Ebene:** Die Knöpfe **Text · H1 … H6** in der Leiste zeigen die Ebene des Elements am Cursor hervorgehoben; ein
+Klick auf eine andere Ebene wandelt es um. Ein Textblock wird so zur Überschrift (erste Zeile als Titel, der Rest als
+Textblock darunter, seine Unterpunkte behalten ihre Hierarchie und stehen unter der neuen Überschrift), eine
+Überschrift wechselt die Ebene oder wird mit „Text“ wieder ein Textblock. Nicht möglich (ausgegraut, mit Grund im
+Tooltip) sind Ebenen, die die Gliederung zerreißen würden, etwa eine Ebene unter der übergeordneten Überschrift oder
+eine Überschrift aus einem Block, der in der ersten Zeile einen Verweis trägt. „Überschrift entfernen“ behält den
+Titel jetzt als Textblock (mit derselben `id::`, damit Verweise darauf gültig bleiben).
+
+**Querverweise:** „Verweis einfügen“ in der Leiste öffnet eine Auswahl aller Überschriften und Textblöcke des Buchs
+(mit Suchfeld, Pfeiltasten und Enter); der Verweis steht als Logseq-Blockverweis `((id))` im Text und erscheint im
+Editor als „→ Titel“. Ein Klick darauf springt zum Ziel. Verweise wandern mit, wenn Blöcke verschoben, umgewandelt
+oder zusammengefügt werden. Hat das Element am Cursor eingehende Verweise, zeigt die Leiste „↩ N Verweise hierher“;
+aufgeklappt springt jeder Eintrag zur verweisenden Stelle. Ein Verweis ohne Ziel steht rot als „Verweis fehlt“ da;
+die Verknüpfungsprüfung listet solche unter „Querverweise ohne Ziel“ und entfernt sie nach einer Rückfrage. Verweise
+auf Notizen außerhalb des Buchs bleiben unverändert. Im PDF steht ein Verweis als „→ Titel (S. n)“; Titel und
+Seitenzahl sind anklickbar.
+
+**Vor und zurück:** ◀ und ▶ links neben „Rückgängig“ (oder Alt+Pfeil links/rechts) springen zu früher ausgewählten
+Blöcken, auch über Buchgrenzen. Ein Block zählt, wenn der Cursor mindestens 2 s darin war oder per Sprung (Verweis,
+„Zuletzt geändert“, Quellen) erreicht wurde; gemerkt werden die letzten 50, nur für die laufende Sitzung.
 
 Der Reiter **Journal** ist beim Start ausgewählt und zeigt jede Journal-Datei als eine Karte (ein Tag, mit Datum
 und „In Logseq öffnen“); ihre Hauptpunkte stehen darin als Kästen mit Linie, jeder mit seinen Knöpfen untereinander
@@ -251,9 +272,9 @@ verglichen; dadurch weiß jede Überschrift, worum es in ihren Unterabschnitten 
   `--limit N` für einen kurzen Lauf).
 
 **Systemanzeige:** Rechts in der Kopfzeile stehen Prozessorlast, belegter Arbeitsspeicher und freier Platz auf dem
-Laufwerk des Vaults, dazu den Anteil von NoteEvolution und die Größe der Analysedateien des Vaults (`vectors.db` und
-`understanding.db`): „CPU 63 % (App 12 %) · RAM 9,8/15,8 GB (App 0,6 GB) · Frei 112 GB · Analyse 38 MB“, alle 2 s;
-der Tooltip zeigt zusätzlich den Anteil von Ollama. Über 90 % CPU oder unter 1 GB freiem Arbeitsspeicher erscheint der Wert in der Warnfarbe.
+Laufwerk des Vaults, dazu den Anteil von NoteEvolution und, wenn es läuft, von Ollama sowie die Größe der
+Analysedateien des Vaults (`vectors.db` und `understanding.db`): „CPU 63 % (App 12 % · Ollama 40 %) · RAM 9,8/15,8 GB
+(App 0,6 · Ollama 4,9 GB) · Frei 112 GB · Analyse 38 MB“, alle 2 s. Über 90 % CPU oder unter 1 GB freiem Arbeitsspeicher erscheint der Wert in der Warnfarbe.
 Abschaltbar in den Einstellungen.
 
 ## Manuelle Abnahme
@@ -338,7 +359,9 @@ Logseq und Obsidian
 Assistenten und Prüfung
 - [ ] Verknüpfungsprüfung beim Start und auf Abruf (fehlende `used-in` werden ergänzt, Waisen und kaputte Quellen
       werden gelistet).
-- [ ] `[handled]`-Assistent: einen Eintrag abwählen, umwandeln, Datei prüfen.
+- [ ] `[handled]`-Assistent: alle Häkchen sind anfangs aus; eine Stelle außer „Stelle unbekannt“ wählen setzt das
+      Häkchen; „Umwandeln“ schreibt nur die angehakten Notizen, meldet „N umgewandelt“, das Fenster bleibt offen und
+      die umgewandelten Notizen verschwinden aus der Liste; Dateien prüfen.
 - [ ] Entwurfs-Assistent auf einer schlichten Gliederung: Überschrift umschalten, umwandeln, Buchliste und Datei prüfen;
       alle Textblöcke und Unterpunkte haben danach `status:: relevant`, Überschriften nicht.
 - [ ] `[handled]`-Assistent: der ganze Notiztext steht da; eine Stelle wählen zeigt ihren Text und Abschnitt daneben.
@@ -390,6 +413,21 @@ Sprachmodell (Ollama, Modell `qwen2.5:7b` geladen)
 - [ ] Reiter „Abdeckung“: Kennzahlen, Sortierung „Wenigste zuerst“, Notizen ohne passenden Ort.
 - [ ] Klick auf den Fortschritt in der Kopfzeile öffnet die Aufschlüsselung; Escape schließt sie.
 - [ ] Nach einer Berechnung sind alle Buch- und Notizdateien unverändert (`git diff`).
+
+Querverweise und Navigation
+- [ ] „Verweis einfügen“: Auswahl filtern, mit Pfeiltasten und Enter eine Überschrift wählen; im Editor steht
+      „→ Titel“, in der Datei `((id))`, das Ziel hat `id::`. Klick auf den Verweis springt hin; am Ziel zeigt die
+      Leiste „↩ 1 Verweis hierher“, der Eintrag springt zurück.
+- [ ] Zielblock verschieben, mit einem anderen zusammenfügen und Ebene wechseln: der Verweis zeigt weiter auf ihn
+      (Beschriftung aktualisiert). Ziel löschen: „Verweis fehlt“ rot; Verknüpfungsprüfung listet ihn unter
+      „Querverweise ohne Ziel“ und entfernt ihn erst nach der Rückfrage.
+- [ ] Ebenen-Knöpfe: Textblock mit Unterpunkten zu H2 machen (Unterpunkte bleiben geschachtelt darunter), wieder auf
+      „Text“ zurück; „Rückgängig“ nimmt beides zurück. Ausgegraute Ebenen nennen im Tooltip den Grund.
+- [ ] ◀ ▶ und Alt+Pfeil links/rechts: nach einigen Sprüngen und Klicks (je ≥ 2 s) zurück und vor, auch über einen
+      Buchwechsel; bei offenem Dialog tut Alt+Pfeil nichts.
+- [ ] PDF: ein Verweis steht als „→ Titel (S. n)“ mit richtiger Seitenzahl; Klick auf Titel und Seitenzahl springt
+      im PDF-Betrachter zur Stelle.
+- [ ] Systemanzeige mit laufendem Ollama: Anteil in Klammern neben App, kein Tooltip; ohne Ollama fehlt der Teil.
 
 PDF
 - [ ] PDF-Export für das ganze Buch in A4 und A5 sowie für „Aktueller Abschnitt“: der native Speichern-Dialog schlägt
