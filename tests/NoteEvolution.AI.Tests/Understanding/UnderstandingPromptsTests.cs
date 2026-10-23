@@ -26,6 +26,17 @@ public class UnderstandingPromptsTests
     }
 
     [Fact]
+    public void Summary_AsksForTheContentItself_NotAboutTheText()
+    {
+        var (system, _) = UnderstandingPrompts.Summary(Heading("Kapitel A", "Eigener Text."), []);
+
+        Assert.Contains("1 bis 3 möglichst knappe Sätze", system);
+        Assert.Contains("„Der Abschnitt beschreibt, wie …“", system);
+        Assert.Contains("„Der Autor erklärt, dass …“", system);
+        Assert.Contains("„Das Buch richtet sich an Menschen, die …“", system);
+    }
+
+    [Fact]
     public void Core_ContainsNoteText()
     {
         var note = new UnderstandingItem(UnderstandingKind.Note, "fp", "id", "Titel", "Der Notiztext.", [], Guid.NewGuid());

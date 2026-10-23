@@ -66,3 +66,22 @@ test('reveal puts the cursor at the start of the text or an offset into it, clam
     api.destroy();
     host.remove();
 });
+
+test('splitAtCursor splits the text block at the cursor, as Ctrl+Enter does', () => {
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const dotnet = { invokeMethodAsync: () => Promise.resolve() };
+    const api = createEditor(host, dotnet, { barHeight: 0 });
+    api.setDocument(JSON.stringify({ type: 'doc', content: [block(A, 'Erster Text'), block(B, 'Zweiter Text')] }), false, false);
+    const editor = host.querySelector('.ne-doc').editor;
+
+    api.reveal(A, 7);
+    api.splitAtCursor();
+
+    const blocks = [];
+    editor.state.doc.forEach(node => blocks.push([node.textContent, node.attrs.key === A, node.attrs.splitFrom ?? null]));
+    assert.deepEqual(blocks, [['Erster ', true, null], ['Text', false, A], ['Zweiter Text', false, null]]);
+
+    api.destroy();
+    host.remove();
+});

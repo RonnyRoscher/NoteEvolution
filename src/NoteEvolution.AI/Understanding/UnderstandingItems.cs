@@ -126,7 +126,7 @@ public static class UnderstandingItems
 
         var ownText = OwnText(node);
         var identity = "book:" + book.LinkName + "/" + string.Join(" › ", path) + "#" + index;
-        var fingerprint = Hash([PromptVersion.ToString(), chatModel, node.Title, ownText, .. childFingerprints]);
+        var fingerprint = Hash([PromptVersion.ToString(), chatModel, UnderstandingPrompts.SummarySystem, node.Title, ownText, .. childFingerprints]);
         return new UnderstandingItem(UnderstandingKind.Heading, fingerprint, identity, node.Title, ownText,
             childFingerprints, node.Key);
     }

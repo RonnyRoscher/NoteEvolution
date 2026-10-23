@@ -58,6 +58,12 @@ public enum SectionCommand
 
     /// <summary>Button only: a new empty remark detail at the end of the details of the cursor's text block.</summary>
     AddRemark,
+
+    /// <summary>
+    /// Button: splits the text block at the cursor in two, as Ctrl+Enter does in the editor itself
+    /// (<see cref="IEditorInterop.SplitAtCursorAsync"/>); the editor saves the result like typed text.
+    /// </summary>
+    Split,
 }
 
 /// <summary>What the editor reports; implemented by the component that shows it (<c>EditorPane</c>).</summary>
@@ -117,6 +123,9 @@ public interface IEditorInterop : IAsyncDisposable
     /// <see cref="Guid.Empty"/> is the start of the book. An element the editor does not show is ignored.
     /// </summary>
     Task RevealAsync(Guid elementKey, int offset = 0);
+
+    /// <summary>Splits the text block at the cursor in two, as Ctrl+Enter does, and gives the editor the focus back.</summary>
+    Task SplitAtCursorAsync();
 
     /// <summary>
     /// Marks the nodes of the range (<see cref="RangeInfo.Nodes"/>); the editor draws a box per contiguous piece and

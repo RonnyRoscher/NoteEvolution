@@ -2,12 +2,14 @@
 @using NoteEvolution.Core.Format
 @using NoteEvolution.Core.Model
 @using NoteEvolution.Core.Storage
+@using Microsoft.JSInterop
 @implements IDisposable
 @inject AppState State
 @inject UiSettings Settings
 @inject IPlatformServices Platform
 @inject IStringLocalizer<Strings> L
 @inject ILogger<OutlinePane> Logger
+@inject IJSRuntime JS
 
 @if (State.CurrentBook is not { } book)
 {
@@ -33,7 +35,7 @@ else
             <div class="ne-outline-error" role="alert">@_error</div>
         }
         @* Only the tree scrolls: the list, the splitter, the label and the toggle above it stay in view. *@
-        <div class="ne-outline-scroll">
+        <div class="ne-outline-scroll" @ref="_scroll">
             <ul class="ne-outline-tree">
                 @if (book.Root.TextBlocks.Any())
                 {
@@ -62,6 +64,10 @@ else
     private (Guid Key, bool Before)? _dropHint;
     private bool _watching;
     private VaultSession? _watchedSession;
+    private ElementReference _scroll;
+
+    /// <summary>The section last scrolled into view; the outline scrolls again only when the current section changes.</summary>
+    private Guid? _shownSectionKey;
 
     /// <summary>The key of the heading whose title is being edited inline.</summary>
     internal Guid? RenamingKey => _renamingKey;
@@ -82,6 +88,28 @@ else
     {
         State.Changed += OnStateChanged;
         TrackSession();
+    }
+
+    /// <summary>
+    /// Keeps the current section's row in view when it changes (a click in the editor moves to another section). Only
+    /// then: scrolling the outline by hand is not undone by the next render.
+    /// </summary>
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (State.CurrentBook is null || State.CurrentSectionKey == _shownSectionKey)
+        {
+            return;
+        }
+
+        _shownSectionKey = State.CurrentSectionKey;
+        try
+        {
+            await JS.InvokeVoidAsync("neLayout.scrollSelectedIntoView", _scroll);
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or InvalidOperationException or TaskCanceledException)
+        {
+            // Not essential: the row stays where it is.
+        }
     }
 
     public void Dispose()

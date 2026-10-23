@@ -986,6 +986,10 @@ export function createEditor(host, dotnet, options = {}) {
          * of the document), or textOffset characters into that text (clamped to it), and scrolls it into view; an
          * unknown key does nothing.
          */
+        /** The split button of the section bar: Ctrl+Enter at the cursor, with the focus back in the editor. */
+        splitAtCursor() {
+            editor.chain().focus().command(splitTextBlock).run();
+        },
         reveal(key, textOffset = 0) {
             const doc = editor.state.doc;
             let target = key ? null : { pos: 0, at: TextSelection.atStart(doc).from, size: 0 };
