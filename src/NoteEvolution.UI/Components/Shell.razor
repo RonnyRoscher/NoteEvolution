@@ -45,7 +45,7 @@
                     <SplitDivider @key="@("divider")" Ratio="Settings.SplitRatio" RatioChanged="r => Settings.SplitRatio = r" DragEnded="SaveSettings" />
                 }
 
-                <div @key="view" class="ne-book-half @(State.IsSplit && ReferenceEquals(view, State.ActiveView) ? "active" : null)" style="@HalfStyle(i)">
+                <div @key="view" class="ne-book-half @(Halves.Count > 1 && ReferenceEquals(view, State.ActiveView) ? "active" : null)" style="@HalfStyle(i)">
                     <section class="ne-pane ne-outline @(Settings.OutlineCollapsed ? "collapsed" : null)" style="@PaneStyle(Settings.OutlineWidth, Settings.OutlineCollapsed)">
                         @* The pane's title "Gliederung" stands in the outline pane, below the "Zuletzt geändert" list. The collapse button
                            (once, in the upper half) collapses the outlines of both halves. *@
@@ -483,7 +483,7 @@
     /// <summary>The flex share of half <paramref name="index"/>: the upper half takes the ratio, the lower the rest; none without the split view.</summary>
     private string? HalfStyle(int index)
     {
-        if (!State.IsSplit)
+        if (Halves.Count < 2)
         {
             return null;
         }

@@ -19,6 +19,9 @@
 @code {
     public const double KeyStep = 0.05;
 
+    /// <summary>The room the divider takes between the halves (app.css, <c>.ne-row-splitter</c>: 1px high, its grip area has negative margins).</summary>
+    public const double Thickness = 1;
+
     private ElementReference _element;
     private bool _dragging;
     private double _top;
@@ -70,7 +73,8 @@
         // Without a known container size (no layout) the share cannot be derived from the pointer.
         if (_height > 0)
         {
-            await SetRatioAsync((e.ClientY - _top) / _height);
+            // The halves share the container minus the divider; the divider's middle follows the pointer.
+            await SetRatioAsync((e.ClientY - _top - Thickness / 2) / (_height - Thickness));
         }
     }
 

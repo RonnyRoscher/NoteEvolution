@@ -105,6 +105,18 @@ public class SplitViewTests : UiTestContext
     }
 
     [Fact]
+    public void SavedSplit_WithoutVault_ShowsOneHalf_WithoutShareOrAccent()
+    {
+        Settings.SplitView = true;
+
+        var cut = Render<Shell>();
+
+        var half = Assert.Single(cut.FindAll(".ne-book-half"));
+        Assert.Null(half.GetAttribute("style"));
+        Assert.DoesNotContain("active", half.ClassList);
+    }
+
+    [Fact]
     public void Startup_WithSavedSplit_ShowsTwoHalves()
     {
         Settings.SplitView = true;
