@@ -243,6 +243,52 @@ public class LevelConversionTests
         Assert.Equal("type:: book\n\n- ## Gedanke\n\t-\n\t  status:: bemerkung\n" + Dates("\t  "), Serialize(book));
     }
 
+    [Theory]
+    [InlineData("Titel\n  eingerückt\n    tiefer", "  eingerückt\n    tiefer")]
+    [InlineData("Titel\n\n \n  eingerückt\nZeile  \n\n", "  eingerückt\nZeile  ")]
+    [InlineData("Titel\n \n", null)]
+    public void HeadingTextSplit_TrimsOnlyBlankLinesOfTheFurtherText(string text, string? further)
+    {
+        Assert.Equal(("Titel", further), HeadingText.Split(text));
+    }
+
+    [Fact]
+    public void ToHeading_SubPointStartingWithHeadingMarks_StaysText()
+    {
+        const string text = "type:: book\n\n- # Eins\n\t- Titel\n\t\t- # kein Titel\n\t\t- ## auch keiner\n";
+        var book = Load(text);
+
+        ManuscriptEditor.ToHeading(book, KeyOf(book, "Titel"), 2, Now);
+
+        // As text blocks the sub-points would read as headings: their marks are escaped, the editor shows them as before.
+        Assert.Equal(
+            "type:: book\n\n- # Eins\n\t- ## Titel\n" +
+            "\t\t- \\# kein Titel\n" + Dates("\t\t  ") +
+            "\t\t- \\## auch keiner\n" + Dates("\t\t  "),
+            Serialize(book));
+        var reloaded = Book.Load(book.Page);
+        Assert.Empty(reloaded.Warnings);
+        Assert.Equal(["Eins", "Titel"], reloaded.Root.Children.SelectMany(n => n.Children.Prepend(n)).Select(n => n.Title));
+    }
+
+    [Fact]
+    public void ToHeading_ReferenceInTheFirstLine_Blocked()
+    {
+        var text = "type:: book\n\n- # Eins\n\t- Siehe ((" + Id + ")) dort\n\t  Weiter\n\t- Ziel\n\t  id:: " + Id + "\n";
+        var book = Load(text);
+        var element = ElementOf(book, "Siehe ((" + Id + ")) dort\nWeiter");
+
+        // A heading holds no reference (its title is plain text): the level buttons refuse, Text stays possible.
+        Assert.Equal("LevelBlockedReference", ManuscriptEditor.LevelBlocked(book, element, 2));
+        Assert.Null(ManuscriptEditor.LevelBlocked(book, element, 0));
+        Assert.Throws<ArgumentException>(() => ManuscriptEditor.ToHeading(book, element.Key, 2, Now));
+        Assert.Equal(text, Serialize(book));
+
+        // A reference in the further text is no obstacle.
+        var further = Load("type:: book\n\n- # Eins\n\t- Titel\n\t  Siehe ((" + Id + "))\n");
+        Assert.Null(ManuscriptEditor.LevelBlocked(further, ElementOf(further, "Titel\nSiehe ((" + Id + "))"), 2));
+    }
+
     [Fact]
     public void ToHeading_Blocked_ThrowsAndChangesNothing()
     {

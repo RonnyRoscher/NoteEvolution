@@ -324,6 +324,10 @@
     <value>Auf dieser Ebene käme eine Unterüberschrift unter H6</value>
     <comment>Titel eines ausgegrauten Ebenen-Knopfs an einer Überschrift, deren Unterüberschriften tiefer als H6 rutschten</comment>
   </data>
+  <data name="LevelBlockedReference" xml:space="preserve">
+    <value>Überschriften enthalten keine Verweise</value>
+    <comment>Titel eines ausgegrauten Ebenen-Knopfs H1 bis H6 an einem Textblock oder Unterpunkt, dessen erste Zeile (der Titel) einen Verweis enthält</comment>
+  </data>
   <data name="LevelBlockedAboveH1" xml:space="preserve">
     <value>Auf dieser Ebene käme eine Unterüberschrift über H1</value>
     <comment>Titel eines ausgegrauten Ebenen-Knopfs an einer Überschrift, deren (nicht tiefere) Unterüberschrift über H1 rutschte</comment>

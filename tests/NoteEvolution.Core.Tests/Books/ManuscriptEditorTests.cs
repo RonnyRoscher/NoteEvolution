@@ -323,6 +323,21 @@ public class ManuscriptEditorTests
     }
 
     [Fact]
+    public void RemoveHeading_TitleThatLooksLikeAHeading_IsEscaped_StaysText()
+    {
+        var book = Load("type:: book\n\n- # Eins\n\t- Text\n\t- ## # Kein Titel\n\t- ### - kein Punkt\n");
+
+        ManuscriptEditor.RemoveHeading(book, KeyOf(book, "## # Kein Titel"));
+        ManuscriptEditor.RemoveHeading(book, KeyOf(book, "### - kein Punkt"));
+
+        // Read as structure the titles would become a heading again and a bullet: escaped, they show as before.
+        Assert.Equal("type:: book\n\n- # Eins\n\t- Text\n\t- \\# Kein Titel\n\t- \\- kein Punkt\n", Serialize(book));
+        var reloaded = Book.Load(book.Page);
+        Assert.Empty(reloaded.Root.Children.Single().Children);
+        Assert.Empty(reloaded.Warnings);
+    }
+
+    [Fact]
     public void RemoveHeading_EmptyTitleWithoutId_NoTextBlock_RevealsPreviousElement()
     {
         var book = Load("type:: book\n\n- # Eins\n\t- Text\n\t- ## \n");

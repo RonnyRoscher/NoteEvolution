@@ -174,12 +174,13 @@ public static class ManuscriptEditor
 
     /// <summary>
     /// The detached text block made from a heading's title for <see cref="RemoveHeading"/>: the heading's text without
-    /// its hashes, with the heading's raw <c>id::</c> and, with <paramref name="now"/>, both dates; <c>null</c> for an
-    /// empty title without id.
+    /// its hashes (its first line escaped, see <see cref="HeadingText.AsTextBlockContent"/>), with the heading's raw
+    /// <c>id::</c> and, with <paramref name="now"/>, both dates; <c>null</c> for an empty title without id.
     /// </summary>
     private static Block? TitleBlock(Block heading, int level, DateTimeOffset? now)
     {
-        var content = HeadingText.WithoutMarks(heading.Content, level);
+        // A title "# …" as text would read as a heading again: escaped, it shows as it did.
+        var content = HeadingText.AsTextBlockContent(HeadingText.WithoutMarks(heading.Content, level), shownUnescaped: false);
         var id = heading.GetProperty("id");
         if (string.IsNullOrWhiteSpace(content) && id is null)
         {
@@ -202,7 +203,8 @@ public static class ManuscriptEditor
     /// outside 0–6. A text block or detail cannot become a heading above the level of its section (it would take over
     /// sections not its own), except in the prologue. A heading cannot go above the level of its parent heading + 1 (that
     /// is outdenting), nor so deep that a sub-heading would fall below H6, nor so high that a sub-heading of an irregular
-    /// outline (one that is not deeper) would rise above H1. Text is always possible.
+    /// outline (one that is not deeper) would rise above H1. A text block or detail whose first line (the title) holds a
+    /// reference cannot become a heading either (a heading holds no reference). Text is always possible.
     /// </summary>
     /// <exception cref="ArgumentException">The element is not in the book.</exception>
     public static string? LevelBlocked(Book book, BookElement element, int level)
@@ -220,8 +222,9 @@ public static class ManuscriptEditor
         if (element.Kind != ElementKind.Heading)
         {
             var section = BookElements.TextBlockOf(book, element)!.Section;
-            return level > 0 && level < section.Level
-                ? "LevelBlockedAboveSection"
+            return level == 0 ? null
+                : BlockRefs.Find(HeadingSplit(BlockOf(book, element)).Title).Count > 0 ? "LevelBlockedReference"
+                : level < section.Level ? "LevelBlockedAboveSection"
                 : null;
         }
 
@@ -246,8 +249,8 @@ public static class ManuscriptEditor
     /// Makes the text block or detail <paramref name="elementKey"/> a heading of <paramref name="level"/> (spec 4.2). The
     /// block's first line (as the editor shows it, without heading marks and a <c>#notiz</c> tag) is the title; the
     /// further text becomes the first text block under it, and each direct sub-point a text block with its deeper
-    /// sub-points as details. The heading stands in the block's place, a detail's heading right after its text block;
-    /// it takes over the section's items that follow there up to the next heading that is not deeper (above the
+    /// sub-points as details (a sub-point "# …" escaped, so it stays text). The heading stands in the block's place, a
+    /// detail's heading right after its text block; it takes over the section's items that follow there up to the next heading that is not deeper (above the
     /// section's level these are the section's own following text blocks, at its level also its following sub-sections,
     /// and the heading then follows the section). The block's properties (<c>id::</c>, <c>source::</c>, the status, also
     /// from a <c>#notiz</c> tag, and any other, <c>created::</c> included) go to the first text block: the block itself
@@ -286,7 +289,7 @@ public static class ManuscriptEditor
         var section = textBlock.Section;
 
         var hasTag = NoteTag.Has(block.Content);
-        var (title, further) = HeadingText.Split(BlockTextEscape.Unescape(hasTag ? NoteTag.Remove(block.Content) : block.Content));
+        var (title, further) = HeadingSplit(block);
         if (further is not null)
         {
             // Escaped anew as the editor saves it, so that no line of it reads as structure as the first one of a block.
@@ -343,6 +346,12 @@ public static class ManuscriptEditor
 
         foreach (var subPoint in subPoints)
         {
+            // As a text block a sub-point "# …" would read as a heading: escaped, it shows as it did.
+            if (HeadingText.AsTextBlockContent(subPoint.Content, shownUnescaped: true) is var escaped && escaped != subPoint.Content)
+            {
+                subPoint.SetContent(escaped);
+            }
+
             StampAsTextBlock(subPoint, now);
             page.MoveBlock(subPoint, heading, position++);
         }
@@ -386,6 +395,13 @@ public static class ManuscriptEditor
 
         Shift(node, level - node.Level);
     }
+
+    /// <summary>
+    /// The title and further text of a heading made from <paramref name="block"/> (<see cref="HeadingText.Split"/>), from
+    /// its text as the editor shows it: unescaped, without a <c>#notiz</c> tag.
+    /// </summary>
+    private static (string Title, string? Further) HeadingSplit(Block block) =>
+        HeadingText.Split(BlockTextEscape.Unescape(NoteTag.Has(block.Content) ? NoteTag.Remove(block.Content) : block.Content));
 
     private static bool IsKey(BlockProperty property, string key) => property.Key.Equals(key, StringComparison.OrdinalIgnoreCase);
 
