@@ -1,0 +1,127 @@
+@* The horizontal divider between the two halves of the split view: dragging it (or pressing the arrow up / down keys
+   while it has the focus) changes the share of the upper half. *@
+@using Microsoft.JSInterop
+@using NoteEvolution.UI.State
+@inject IStringLocalizer<Strings> L
+@inject IJSRuntime JS
+
+<div @ref="_element" class="ne-row-splitter ne-split-divider @(_dragging ? "dragging" : null)" role="separator" aria-orientation="horizontal"
+     tabindex="0" aria-label="@L["ResizeSplit"]" title="@L["ResizeSplit"]"
+     aria-valuemin="@((int)Math.Round(UiSettings.MinSplitRatio * 100))" aria-valuemax="@((int)Math.Round(UiSettings.MaxSplitRatio * 100))"
+     aria-valuenow="@((int)Math.Round(Ratio * 100))"
+     @onpointerdown="Start" @onkeydown="KeyDown"></div>
+@if (_dragging)
+{
+    @* Covers the window while dragging, so the pointer is followed even over the editors. *@
+    <div class="ne-row-splitter-overlay" @onpointermove="Move" @onpointerup="End" @onpointerleave="End"></div>
+}
+
+@code {
+    public const double KeyStep = 0.05;
+
+    private ElementReference _element;
+    private bool _dragging;
+    private double _top;
+    private double _height;
+
+    /// <summary>The share of the upper half in the container, <see cref="UiSettings.MinSplitRatio"/> to <see cref="UiSettings.MaxSplitRatio"/>.</summary>
+    [Parameter] public double Ratio { get; set; } = UiSettings.DefaultSplitRatio;
+
+    [Parameter] public EventCallback<double> RatioChanged { get; set; }
+
+    /// <summary>Raised once when a drag ends or a key changed the share, e.g. to save it.</summary>
+    [Parameter] public EventCallback DragEnded { get; set; }
+
+    private async Task Start(PointerEventArgs e)
+    {
+        _top = await JsNumberAsync("neLayout.paneTop");
+        _height = await JsNumberAsync("neLayout.paneHeight", true);
+        _dragging = true;
+    }
+
+    /// <summary>
+    /// Follows the pointer. A move without a pressed button ends the drag where it is: the button went up before the
+    /// overlay was there to see it (<see cref="Start"/> awaits the container's size first).
+    /// </summary>
+    private async Task Move(PointerEventArgs e)
+    {
+        if (e.Buttons == 0)
+        {
+            await StopAsync();
+            return;
+        }
+
+        await SetAsync(e);
+    }
+
+    private async Task End(PointerEventArgs e)
+    {
+        if (!_dragging)
+        {
+            return;
+        }
+
+        await SetAsync(e);
+        await StopAsync();
+    }
+
+    private async Task SetAsync(PointerEventArgs e)
+    {
+        // Without a known container size (no layout) the share cannot be derived from the pointer.
+        if (_height > 0)
+        {
+            await SetRatioAsync((e.ClientY - _top) / _height);
+        }
+    }
+
+    private async Task StopAsync()
+    {
+        if (!_dragging)
+        {
+            return;
+        }
+
+        _dragging = false;
+        await DragEnded.InvokeAsync();
+    }
+
+    private async Task KeyDown(KeyboardEventArgs e)
+    {
+        var step = e.Key switch
+        {
+            "ArrowUp" => -KeyStep,
+            "ArrowDown" => KeyStep,
+            _ => 0,
+        };
+        if (step == 0)
+        {
+            return;
+        }
+
+        await SetRatioAsync(Ratio + step);
+        await DragEnded.InvokeAsync();
+    }
+
+    private async Task SetRatioAsync(double ratio)
+    {
+        // Rounded to hundredths, so repeated steps do not drift (0.45 + 0.05 stays 0.5).
+        ratio = Math.Round(Math.Clamp(ratio, UiSettings.MinSplitRatio, UiSettings.MaxSplitRatio), 2);
+        if (ratio != Ratio)
+        {
+            await RatioChanged.InvokeAsync(ratio);
+        }
+    }
+
+    /// <summary>A number from the host page (index.html, <c>neLayout</c>); 0 if unknown.</summary>
+    private async Task<double> JsNumberAsync(string identifier, params object?[] args)
+    {
+        try
+        {
+            return await JS.InvokeAsync<double>(identifier, [_element, .. args]);
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or InvalidOperationException or TaskCanceledException)
+        {
+            return 0;
+        }
+    }
+}

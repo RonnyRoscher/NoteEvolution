@@ -1628,4 +1628,16 @@
   <data name="NotesCountFiltered" xml:space="preserve">
     <value>{0} von {1} Notizen</value>
   </data>
+  <data name="SplitToggleTitle" xml:space="preserve">
+    <value>Buch geteilt anzeigen</value>
+  </data>
+  <data name="ResizeSplit" xml:space="preserve">
+    <value>Höhe der Hälften ändern</value>
+  </data>
+  <data name="KeysNavigation2Keys" xml:space="preserve">
+    <value>Strg+Alt+S</value>
+  </data>
+  <data name="KeysNavigation2" xml:space="preserve">
+    <value>Buch geteilt anzeigen ein / aus</value>
+  </data>
 </root>

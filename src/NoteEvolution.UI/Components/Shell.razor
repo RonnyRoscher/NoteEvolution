@@ -19,7 +19,7 @@
 <div class="ne-shell" data-theme="@ThemeAttribute" style="--font-size: @(Settings.FontSizePt)pt; --line-width: @(Settings.LineWidthCh)ch;">
     <HeaderBar OnOpenVault="PickVaultAsync" OnPdfExport="() => Show(Dialog.Pdf)" OnLinkCheck="() => Show(Dialog.LinkCheck)"
                OnSettings="() => Show(Dialog.Settings)" OnShortcuts="() => Show(Dialog.Shortcuts)" OnHandledWizard="() => Show(Dialog.Handled)" OnDraftWizard="() => ShowDraft(null)"
-               OnConvertPage="ShowDraft" />
+               OnConvertPage="ShowDraft" OnToggleSplit="ToggleSplitAsync" />
 
     @if (_hintVisible)
     {
@@ -34,39 +34,58 @@
     }
 
     <main class="ne-main">
-        <section class="ne-pane ne-outline @(Settings.OutlineCollapsed ? "collapsed" : null)" style="@PaneStyle(Settings.OutlineWidth, Settings.OutlineCollapsed)">
-            @* The pane's title "Gliederung" stands in the outline pane, below the "Zuletzt geändert" list. *@
-            <div class="ne-pane-head">
-                <button type="button" class="ne-collapse" title="@(Settings.OutlineCollapsed ? L["Expand"] : L["Collapse"])"
-                        @onclick="ToggleOutline">@(Settings.OutlineCollapsed ? "›" : "‹")</button>
-            </div>
-            @if (!Settings.OutlineCollapsed)
+        @* The book: one half, or two with the split view (each with its own outline and editor). *@
+        <div class="ne-book-area">
+            @for (var i = 0; i < Halves.Count; i++)
             {
-                <OutlinePane />
-            }
-        </section>
-        @if (!Settings.OutlineCollapsed)
-        {
-            <Splitter Width="Settings.OutlineWidth" WidthChanged="w => Settings.OutlineWidth = w" DragEnded="SaveSettings" />
-        }
+                var view = Halves[i];
+                var first = i == 0;
+                if (!first)
+                {
+                    <SplitDivider @key="@("divider")" Ratio="Settings.SplitRatio" RatioChanged="r => Settings.SplitRatio = r" DragEnded="SaveSettings" />
+                }
 
-        <section class="ne-pane ne-editor" aria-label="@L["Editor"]">
-            @if (_opening)
-            {
-                <div class="ne-placeholder">@L["VaultOpening"]</div>
-            }
-            else if (State.Session is null)
-            {
-                <div class="ne-welcome">
-                    <p>@L["NoVaultOpen"]</p>
-                    <button type="button" class="ne-open-vault" @onclick="PickVaultAsync">@L["OpenVault"]</button>
+                <div @key="view" class="ne-book-half @(State.IsSplit && ReferenceEquals(view, State.ActiveView) ? "active" : null)" style="@HalfStyle(i)">
+                    <section class="ne-pane ne-outline @(Settings.OutlineCollapsed ? "collapsed" : null)" style="@PaneStyle(Settings.OutlineWidth, Settings.OutlineCollapsed)">
+                        @* The pane's title "Gliederung" stands in the outline pane, below the "Zuletzt geändert" list. The collapse button
+                           (once, in the upper half) collapses the outlines of both halves. *@
+                        @if (first)
+                        {
+                            <div class="ne-pane-head">
+                                <button type="button" class="ne-collapse" title="@(Settings.OutlineCollapsed ? L["Expand"] : L["Collapse"])"
+                                        @onclick="ToggleOutline">@(Settings.OutlineCollapsed ? "›" : "‹")</button>
+                            </div>
+                        }
+                        @if (!Settings.OutlineCollapsed)
+                        {
+                            <OutlinePane @key="view" View="view" />
+                        }
+                    </section>
+                    @if (!Settings.OutlineCollapsed)
+                    {
+                        <Splitter Width="Settings.OutlineWidth" WidthChanged="w => Settings.OutlineWidth = w" DragEnded="SaveSettings" />
+                    }
+
+                    <section class="ne-pane ne-editor" aria-label="@L["Editor"]">
+                        @if (_opening)
+                        {
+                            <div class="ne-placeholder">@L["VaultOpening"]</div>
+                        }
+                        else if (State.Session is null)
+                        {
+                            <div class="ne-welcome">
+                                <p>@L["NoVaultOpen"]</p>
+                                <button type="button" class="ne-open-vault" @onclick="PickVaultAsync">@L["OpenVault"]</button>
+                            </div>
+                        }
+                        else
+                        {
+                            <EditorPane @key="view" View="view" />
+                        }
+                    </section>
                 </div>
             }
-            else
-            {
-                <EditorPane />
-            }
-        </section>
+        </div>
 
         @if (!Settings.NotesCollapsed)
         {
@@ -401,6 +420,7 @@
 
         // Asks the language-model server in the background; vault sessions start their work once it is ready.
         _ = _language?.RefreshAsync(CancellationToken.None);
+        State.SetSplit(Settings.SplitView);
         State.Changed += OnStateChanged;
         State.AiModelDialogRequested += OnAiModelDialogRequested;
         State.BookSelected += RememberBook;
@@ -456,6 +476,51 @@
     /// </summary>
     private double NotesMinPointerX =>
         (Settings.OutlineCollapsed ? CollapsedPaneWidth : Settings.OutlineWidth) + EditorMinWidth;
+
+    /// <summary>The views shown as halves: both with the split view, but only the first while no vault is open.</summary>
+    private IReadOnlyList<BookView> Halves => State.Session is null ? State.Views.Take(1).ToList() : State.Views;
+
+    /// <summary>The flex share of half <paramref name="index"/>: the upper half takes the ratio, the lower the rest; none without the split view.</summary>
+    private string? HalfStyle(int index)
+    {
+        if (!State.IsSplit)
+        {
+            return null;
+        }
+
+        var share = index == 0 ? Settings.SplitRatio : 1 - Settings.SplitRatio;
+        return $"flex: {share.ToString("0.####", CultureInfo.InvariantCulture)} 1 0";
+    }
+
+    /// <summary>
+    /// Switches the split view on or off and remembers it. Switching off first saves the lower editor's pending text,
+    /// because its view goes away (<see cref="AppState.SetSplit"/> saves nothing).
+    /// </summary>
+    private async Task ToggleSplitAsync()
+    {
+        var split = !State.IsSplit;
+        if (!split && State.Views.Count > 1 && State.Views[^1].FlushEditor is { } flush)
+        {
+            try
+            {
+                await flush();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Saving the lower editor's text before unsplitting the book failed");
+            }
+
+            // The save failed: the half stays, so the text it still holds is not lost.
+            if (State.Views.Count > 1 && State.Views[^1].HasUnsavedEditorText?.Invoke() == true)
+            {
+                return;
+            }
+        }
+
+        Settings.SplitView = split;
+        State.SetSplit(split);
+        SaveSettings();
+    }
 
     private static string PaneStyle(double width, bool collapsed) =>
         collapsed ? "" : $"width: {width.ToString(CultureInfo.InvariantCulture)}px";

@@ -969,6 +969,7 @@ public class DialogTests : UiTestContext
         Assert.All(entries, e => Assert.NotEqual(e + "Keys", Text(e + "Keys")));
         Assert.Contains("Strg+Enter", cut.FindAll(".ne-shortcuts-keys").Select(e => e.TextContent));
         Assert.Contains("Alt+Pfeil links / rechts", cut.FindAll(".ne-shortcuts-keys").Select(e => e.TextContent));
+        Assert.Contains("Strg+Alt+S", cut.FindAll(".ne-shortcuts-keys").Select(e => e.TextContent));
     }
 
     private static void OpenAndClose(IRenderedComponent<Shell> cut, string button, string dialog, string close)
