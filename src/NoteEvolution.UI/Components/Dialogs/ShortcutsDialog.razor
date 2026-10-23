@@ -1,0 +1,32 @@
+@* The legend of all keyboard shortcuts, opened from the header. Each entry is a resource key: its keys are in
+   "<key>Keys", its description in "<key>". *@
+@inject IStringLocalizer<Strings> L
+
+<Modal Title="@L["ShortcutsTitle"]" CssClass="ne-shortcuts-dialog" OnClose="OnClose">
+<ChildContent>
+    @foreach (var (group, entries) in Groups)
+    {
+        <h3 class="ne-shortcuts-group">@L[group]</h3>
+        <dl class="ne-shortcuts-list">
+            @foreach (var entry in entries)
+            {
+                <dt class="ne-shortcuts-keys">@L[entry + "Keys"]</dt>
+                <dd class="ne-shortcuts-what">@L[entry]</dd>
+            }
+        </dl>
+    }
+</ChildContent>
+</Modal>
+
+@code {
+    /// <summary>The groups in their order: the resource key of the title and the keys of the entries.</summary>
+    internal static readonly (string Group, string[] Entries)[] Groups =
+    [
+        ("KeysGroupText", ["KeysText1", "KeysText2", "KeysText3", "KeysText4", "KeysText5", "KeysText6", "KeysText7", "KeysText8"]),
+        ("KeysGroupOutline", ["KeysOutline1", "KeysOutline2", "KeysOutline3", "KeysOutline4", "KeysOutline5"]),
+        ("KeysGroupNavigation", ["KeysNavigation1"]),
+        ("KeysGroupLists", ["KeysLists1", "KeysLists2", "KeysLists3", "KeysLists4"]),
+    ];
+
+    [Parameter] public EventCallback OnClose { get; set; }
+}

@@ -449,7 +449,7 @@ public static class ManuscriptCommands
     /// block or a whole section the user may not see as the cursor's place); <c>null</c> if there is none.
     /// </summary>
     private static BookElement? TargetOf(AppState state, Book book, SectionCommand command) =>
-        command is not (SectionCommand.Delete or SectionCommand.ToggleRemark) ? state.CurrentElement
+        command is not (SectionCommand.Delete or SectionCommand.ToggleRemark or SectionCommand.Split) ? state.CurrentElement
         : state.Cursor is { } cursor ? BookElements.Find(book, cursor.Key)
         : null;
 
@@ -477,7 +477,7 @@ public static class ManuscriptCommands
             SectionCommand.Indent => element.Kind == ElementKind.Heading && ManuscriptEditor.CanIndent(book, element.Key),
             SectionCommand.Outdent => element.Kind == ElementKind.Heading && ManuscriptEditor.CanOutdent(book, element.Key),
             SectionCommand.RemoveHeading => element.Kind == ElementKind.Heading,
-            SectionCommand.ToggleRemark or SectionCommand.AddRemark => element.Kind != ElementKind.Heading,
+            SectionCommand.ToggleRemark or SectionCommand.AddRemark or SectionCommand.Split => element.Kind != ElementKind.Heading,
             _ => false,
         };
 

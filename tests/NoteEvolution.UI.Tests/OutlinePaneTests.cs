@@ -43,6 +43,27 @@ public class OutlinePaneTests : UiTestContext
         [.. cut.FindAll(".ne-outline-row").Select(Title)];
 
     [Fact]
+    public async Task CurrentSectionChange_ScrollsItsRowIntoView_OnlyThen()
+    {
+        using var tv = Alpha();
+        await OpenSessionAsync(tv);
+        var cut = Render<OutlinePane>();
+        int Scrolls() => JSInterop.Invocations.Count(i => i.Identifier == "neLayout.scrollSelectedIntoView");
+        var before = Scrolls();
+
+        State.CurrentSectionKey = State.CurrentBook!.Root.Children.ElementAt(1).Key;
+        State.Notify();
+
+        cut.WaitForAssertion(() => Assert.Equal(before + 1, Scrolls()));
+
+        // Another render with the same section (e.g. after a save) leaves a hand-scrolled outline alone.
+        State.Notify();
+        cut.Render();
+
+        Assert.Equal(before + 1, Scrolls());
+    }
+
+    [Fact]
     public async Task Renders_TitlesWithCounts()
     {
         using var tv = Alpha();

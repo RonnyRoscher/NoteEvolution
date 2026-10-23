@@ -297,6 +297,17 @@
             return;
         }
 
+        // The editor splits the block itself and saves the result like typed text (its own Ctrl+Z takes it back).
+        if (command == SectionCommand.Split)
+        {
+            if (ManuscriptCommands.CanRun(State, command))
+            {
+                await Editor.SplitAtCursorAsync();
+            }
+
+            return;
+        }
+
         // Merge goes through the link service, which names its undo action itself.
         var undo = command switch
         {

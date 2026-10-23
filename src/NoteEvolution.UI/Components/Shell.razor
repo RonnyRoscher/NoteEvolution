@@ -18,7 +18,7 @@
 
 <div class="ne-shell" data-theme="@ThemeAttribute" style="--font-size: @(Settings.FontSizePt)pt; --line-width: @(Settings.LineWidthCh)ch;">
     <HeaderBar OnOpenVault="PickVaultAsync" OnPdfExport="() => Show(Dialog.Pdf)" OnLinkCheck="() => Show(Dialog.LinkCheck)"
-               OnSettings="() => Show(Dialog.Settings)" OnHandledWizard="() => Show(Dialog.Handled)" OnDraftWizard="() => ShowDraft(null)"
+               OnSettings="() => Show(Dialog.Settings)" OnShortcuts="() => Show(Dialog.Shortcuts)" OnHandledWizard="() => Show(Dialog.Handled)" OnDraftWizard="() => ShowDraft(null)"
                OnConvertPage="ShowDraft" />
 
     @if (_hintVisible)
@@ -100,6 +100,9 @@
         case Dialog.Settings:
             <SettingsDialog OnClose="CloseDialog" OnNoteFoldersChanged="ReopenVaultAsync" />
             break;
+        case Dialog.Shortcuts:
+            <ShortcutsDialog OnClose="CloseDialog" />
+            break;
         case Dialog.Handled:
             <HandledWizard OnClose="CloseDialog" />
             break;
@@ -159,6 +162,7 @@
         Pdf,
         LinkCheck,
         Settings,
+        Shortcuts,
         Handled,
         Draft,
     }

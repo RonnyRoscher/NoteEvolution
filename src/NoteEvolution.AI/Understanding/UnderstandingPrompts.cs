@@ -9,8 +9,9 @@ public static class UnderstandingPrompts
     public const int CoreTokens = 120;
     public const int CheckTokens = 120;
 
-    private const string SummarySystem =
-        "Du fasst Abschnitte eines deutschsprachigen Buchs zusammen. Antworte nur mit der Zusammenfassung: 2 bis 4 sachliche Sätze auf Deutsch darüber, worum es in dem Abschnitt geht, einschließlich seiner Unterabschnitte. Keine Einleitung, keine Aufzählung, kein Markdown.";
+    /// <summary>The instructions for a heading's summary; part of its fingerprint, so a change here recomputes the summaries.</summary>
+    internal const string SummarySystem =
+        "Du fasst Abschnitte eines deutschsprachigen Buchs zusammen. Antworte nur mit der Zusammenfassung: 1 bis 3 möglichst knappe Sätze auf Deutsch, die den Inhalt des Abschnitts einschließlich seiner Unterabschnitte selbst wiedergeben. Schreibe die Aussagen direkt, ohne über den Text, den Abschnitt, das Buch, den Autor oder die Leser zu sprechen: nicht „Der Abschnitt beschreibt, wie …“, „Der Autor erklärt, dass …“ oder „Das Buch richtet sich an Menschen, die …“, sondern etwa „Feste Schlafzeiten stabilisieren den Tagesrhythmus.“ Keine Einleitung, keine Aufzählung, kein Markdown.";
 
     private const string CoreSystem =
         "Du bestimmst die Kernaussage einer persönlichen Notiz. Antworte nur mit 1 bis 2 sachlichen Sätzen auf Deutsch, was die Notiz im Kern sagt. Keine Einleitung, kein Markdown.";

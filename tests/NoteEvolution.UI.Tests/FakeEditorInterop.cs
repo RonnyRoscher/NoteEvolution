@@ -78,6 +78,12 @@ public sealed class FakeEditorInterop : IEditorInterop
         }
     }
 
+    public Task SplitAtCursorAsync()
+    {
+        Calls.Add("split");
+        return Task.CompletedTask;
+    }
+
     public Task RevealAsync(Guid elementKey, int offset = 0)
     {
         Reveals.Add(elementKey);

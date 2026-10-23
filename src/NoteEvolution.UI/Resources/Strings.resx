@@ -240,6 +240,9 @@
   <data name="SectionMerge" xml:space="preserve">
     <value>Zusammenfügen</value>
   </data>
+  <data name="SectionSplit" xml:space="preserve">
+    <value>Teilen</value>
+  </data>
   <data name="SectionWrap" xml:space="preserve">
     <value>Unter neue Überschrift</value>
   </data>
@@ -1466,5 +1469,131 @@
   <data name="RecentBlocks" xml:space="preserve">
     <value>{0} Blöcke</value>
     <comment>Zuletzt geändert: Anzahl der an einem Tag geänderten Textblöcke eines Abschnitts (mindestens 2)</comment>
+  </data>
+  <data name="Shortcuts" xml:space="preserve">
+    <value>Tastenkürzel</value>
+  </data>
+  <data name="ShortcutsTitle" xml:space="preserve">
+    <value>Alle Tastenkürzel</value>
+  </data>
+  <data name="KeysGroupText" xml:space="preserve">
+    <value>Editor: Text</value>
+  </data>
+  <data name="KeysText1Keys" xml:space="preserve">
+    <value>Enter</value>
+  </data>
+  <data name="KeysText1" xml:space="preserve">
+    <value>Neuer Unterpunkt im Textblock</value>
+  </data>
+  <data name="KeysText2Keys" xml:space="preserve">
+    <value>Umschalt+Enter</value>
+  </data>
+  <data name="KeysText2" xml:space="preserve">
+    <value>Zeilenumbruch</value>
+  </data>
+  <data name="KeysText3Keys" xml:space="preserve">
+    <value>Strg+Enter</value>
+  </data>
+  <data name="KeysText3" xml:space="preserve">
+    <value>Textblock an der Cursorstelle teilen (wie „Teilen“)</value>
+  </data>
+  <data name="KeysText4Keys" xml:space="preserve">
+    <value>Tab / Umschalt+Tab</value>
+  </data>
+  <data name="KeysText4" xml:space="preserve">
+    <value>Unterpunkt ein- / ausrücken</value>
+  </data>
+  <data name="KeysText5Keys" xml:space="preserve">
+    <value>Strg+B / Strg+I</value>
+  </data>
+  <data name="KeysText5" xml:space="preserve">
+    <value>Fett / kursiv</value>
+  </data>
+  <data name="KeysText6Keys" xml:space="preserve">
+    <value>Strg+Z / Strg+Y</value>
+  </data>
+  <data name="KeysText6" xml:space="preserve">
+    <value>Im Editor rückgängig / wiederholen</value>
+  </data>
+  <data name="KeysText7Keys" xml:space="preserve">
+    <value>Strg+Umschalt+N</value>
+  </data>
+  <data name="KeysText7" xml:space="preserve">
+    <value>Element am Cursor zwischen Bemerkung und Entwurf umschalten</value>
+  </data>
+  <data name="KeysText8Keys" xml:space="preserve">
+    <value>Rücktaste / Entf</value>
+  </data>
+  <data name="KeysText8" xml:space="preserve">
+    <value>Neben einem Verweis: den Verweis löschen</value>
+  </data>
+  <data name="KeysGroupOutline" xml:space="preserve">
+    <value>Editor: Gliederung</value>
+  </data>
+  <data name="KeysOutline1Keys" xml:space="preserve">
+    <value>Alt+Enter</value>
+  </data>
+  <data name="KeysOutline1" xml:space="preserve">
+    <value>Neues Element danach (gleiche Ebene)</value>
+  </data>
+  <data name="KeysOutline2Keys" xml:space="preserve">
+    <value>Alt+Umschalt+Enter</value>
+  </data>
+  <data name="KeysOutline2" xml:space="preserve">
+    <value>Neues Unterelement (als erstes Element)</value>
+  </data>
+  <data name="KeysOutline3Keys" xml:space="preserve">
+    <value>Tab / Umschalt+Tab</value>
+  </data>
+  <data name="KeysOutline3" xml:space="preserve">
+    <value>In einer Überschrift: Überschrift ein- / ausrücken</value>
+  </data>
+  <data name="KeysOutline4Keys" xml:space="preserve">
+    <value>Rücktaste</value>
+  </data>
+  <data name="KeysOutline4" xml:space="preserve">
+    <value>Am Anfang eines Titels: Überschrift entfernen (der Titel wird Text)</value>
+  </data>
+  <data name="KeysOutline5Keys" xml:space="preserve">
+    <value>Alt+Pfeil hoch / runter</value>
+  </data>
+  <data name="KeysOutline5" xml:space="preserve">
+    <value>Markierten Bereich erweitern / verkleinern</value>
+  </data>
+  <data name="KeysGroupNavigation" xml:space="preserve">
+    <value>Navigation</value>
+  </data>
+  <data name="KeysNavigation1Keys" xml:space="preserve">
+    <value>Alt+Pfeil links / rechts</value>
+  </data>
+  <data name="KeysNavigation1" xml:space="preserve">
+    <value>Zurück / vor zu früher ausgewählten Blöcken</value>
+  </data>
+  <data name="KeysGroupLists" xml:space="preserve">
+    <value>Listen und Felder</value>
+  </data>
+  <data name="KeysLists1Keys" xml:space="preserve">
+    <value>Pfeil hoch / runter, Enter</value>
+  </data>
+  <data name="KeysLists1" xml:space="preserve">
+    <value>Verweis-Auswahl: Eintrag wählen und einfügen</value>
+  </data>
+  <data name="KeysLists2Keys" xml:space="preserve">
+    <value>Escape</value>
+  </data>
+  <data name="KeysLists2" xml:space="preserve">
+    <value>Verweis-Auswahl schließen, Umbenennen verwerfen, Aufschlüsselung des Sprachmodells schließen</value>
+  </data>
+  <data name="KeysLists3Keys" xml:space="preserve">
+    <value>Enter</value>
+  </data>
+  <data name="KeysLists3" xml:space="preserve">
+    <value>Umbenennen in der Gliederung übernehmen</value>
+  </data>
+  <data name="KeysLists4Keys" xml:space="preserve">
+    <value>Pfeil hoch / runter</value>
+  </data>
+  <data name="KeysLists4" xml:space="preserve">
+    <value>Auf dem Schieber unter „Zuletzt geändert“: Höhe der Liste ändern</value>
   </data>
 </root>

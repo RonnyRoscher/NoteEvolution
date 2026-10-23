@@ -152,6 +152,11 @@
             scrollOptionIntoView(list, index) {
                 list?.querySelectorAll('[role="option"]')[index]?.scrollIntoView({ block: 'nearest' });
             },
+            // Called by the outline (OutlinePane.razor): keeps the current section's row in view when the cursor moves to
+            // another section.
+            scrollSelectedIntoView(container) {
+                container?.querySelector('.ne-outline-row.selected')?.scrollIntoView({ block: 'nearest' });
+            },
         };
 
         // The arrow keys on a row splitter change the list's height (RowSplitter.razor); they must not also scroll a

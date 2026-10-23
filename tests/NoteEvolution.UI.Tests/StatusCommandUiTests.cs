@@ -137,6 +137,27 @@ public class StatusCommandUiTests : UiTestContext
     }
 
     [Fact]
+    public async Task SplitButton_OnTextBlockOnly_SplitsInTheEditor()
+    {
+        var cut = await RenderAsync();
+
+        // On a heading there is nothing to split.
+        await MoveToAsync(cut, "# Zwei");
+        cut.WaitForAssertion(() => Assert.True(cut.Find(".ne-sec-split").HasAttribute("disabled")));
+        Assert.Equal(Text("SectionSplit"), cut.Find(".ne-sec-split").TextContent.Trim());
+        await cut.InvokeAsync(() => Editor.Callbacks!.OnSectionCommand(SectionCommand.Split));
+        Assert.DoesNotContain("split", Editor.Calls);
+
+        // On a text block the editor splits it at the cursor, as with Ctrl+Enter; the book changes only through its save.
+        await MoveToAsync(cut, "Dritter Text");
+        cut.WaitForAssertion(() => Assert.False(cut.Find(".ne-sec-split").HasAttribute("disabled")));
+        cut.Find(".ne-sec-split").Click();
+
+        cut.WaitForAssertion(() => Assert.Single(Editor.Calls, c => c == "split"));
+        Assert.Equal(BookText, _vault.Read(BookPath));
+    }
+
+    [Fact]
     public async Task StatusSelect_DisabledOnHeadingAndConflict()
     {
         var cut = await RenderAsync();

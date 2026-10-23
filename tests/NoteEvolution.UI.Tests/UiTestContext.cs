@@ -52,6 +52,9 @@ public abstract class UiTestContext : BunitContext
         // Keeps the selected option of a list in view (index.html).
         JSInterop.SetupVoid("neLayout.scrollOptionIntoView", _ => true).SetVoidResult();
 
+        // Keeps the current section's row of the outline in view (index.html).
+        JSInterop.SetupVoid("neLayout.scrollSelectedIntoView", _ => true).SetVoidResult();
+
         // The header registers for Alt+Left/Right, which index.html catches in the whole window.
         JSInterop.SetupVoid("neNav.register", _ => true).SetVoidResult();
     }
