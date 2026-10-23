@@ -22,9 +22,12 @@ namespace NoteEvolution.UI.Editor;
 /// <see cref="BlockDateText"/>); they are only shown, <see cref="FromJson"/> ignores them.
 /// </para>
 /// <para>
-/// A block reference <c>((id))</c> in a paragraph is an inline atom <c>blockRef{id, label, title, missing}</c> (with the
-/// marks of the text around it, see <see cref="RefLabels"/>); it is one unit of the shown text and is written back as
-/// <c>((id))</c>, its label, title and missing are only shown.
+/// A block reference <c>((id))</c> in a paragraph is an inline atom <c>blockRef{id, label, title, missing, foreign}</c>
+/// (with the marks of the text around it, see <see cref="RefLabels"/>); it is one unit of the shown text and is written
+/// back as <c>((id))</c>, its label, title, missing and foreign are only shown. A reference to a block outside the book (no
+/// cross reference, spec 2.1) is such a node too, with <c>foreign</c> and its reference text as label
+/// (<see cref="RefLabel.ForeignOf"/>): every reference is one position of the shown text, as <see cref="InlineMarkdown"/>
+/// counts it.
 /// </para>
 /// </summary>
 public static class EditorDocMapper
@@ -32,7 +35,7 @@ public static class EditorDocMapper
     /// <param name="snapshot">The book section to show.</param>
     /// <param name="datesOf">The dates label of a text block by its key; <c>null</c> (or a <c>null</c> label): none.</param>
     /// <param name="refOf">The label of a reference by its target id; <c>null</c>: the reference text as its label. A
-    /// <c>null</c> label: no cross reference (a block outside the book, spec 2.1), the reference stays plain text.</param>
+    /// <c>null</c> label: no cross reference (a block outside the book, spec 2.1), a foreign node.</param>
     public static string ToJson(
         SectionSnapshot snapshot, Func<Guid, BlockDateLabel?>? datesOf = null, Func<Guid, RefLabel?>? refOf = null)
     {
@@ -164,6 +167,10 @@ public static class EditorDocMapper
                         ["missing"] = label.Missing,
                     },
                 };
+                if (label.Foreign)
+                {
+                    item["attrs"]!["foreign"] = true;
+                }
             }
             else
             {
@@ -198,17 +205,17 @@ public static class EditorDocMapper
     }
 
     /// <summary>
-    /// The runs of <see cref="Display"/>, each cross reference with its label; a reference without label (no cross
-    /// reference, see <see cref="ToJson"/>) is text and joins the text around it.
+    /// The runs of <see cref="Display"/>, each reference with its label (one without label is foreign, see
+    /// <see cref="ToJson"/>).
     /// </summary>
     private static List<(InlineRun Run, Guid? Id, RefLabel? Label)> Shown(string markdown, Func<Guid, RefLabel?> refOf)
     {
         var result = new List<(InlineRun Run, Guid? Id, RefLabel? Label)>();
         foreach (var run in Display(markdown))
         {
-            if (run.Text != "\n" && RefOf(run) is { } id && refOf(id) is { } label)
+            if (run.Text != "\n" && RefOf(run) is { } id)
             {
-                result.Add((run, id, label));
+                result.Add((run, id, refOf(id) ?? RefLabel.ForeignOf(id)));
             }
             else if (run.Text != "\n" && result.Count > 0 && result[^1] is { Id: null } last && last.Run.Text != "\n"
                      && last.Run.Bold == run.Bold && last.Run.Italic == run.Italic)

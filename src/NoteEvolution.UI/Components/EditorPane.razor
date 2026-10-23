@@ -709,8 +709,8 @@
 
     /// <summary>
     /// The cross references in the texts of the snapshot, with their labels from the book (<see cref="RefLabels"/>).
-    /// A reference to a block outside the book (a note) is none: it stays text, the editor gets no label to turn it into
-    /// a reference node.
+    /// A reference to a block outside the book (a note) is no cross reference but gets its foreign label too
+    /// (<see cref="RefLabel.ForeignOf"/>), so one typed as text becomes a node as well: one position of the shown text.
     /// </summary>
     private ShownRefs RefsOf(SectionSnapshot snapshot, Book book)
     {
@@ -721,17 +721,15 @@
                      .SelectMany(t => t.Paragraphs.Select(p => p.Text).Prepend(t.Text))
                      .SelectMany(text => BlockRefs.Find(text).Select(r => r.Id)))
         {
-            if (labels.ContainsKey(id) || labelOf(id) is { } label && labels.TryAdd(id, label))
-            {
-                order.Add(id);
-            }
+            labels.TryAdd(id, labelOf(id));
+            order.Add(id);
         }
 
         return new ShownRefs(order, labels);
     }
 
     /// <summary>The reference labels of the book; an id the session's vault knows outside the book is no reference.</summary>
-    private Func<Guid, RefLabel?> LabelsOf(Book book) =>
+    private Func<Guid, RefLabel> LabelsOf(Book book) =>
         RefLabels.Of(book, L, State.Session?.Vault is { } vault ? id => vault.FindBlockById(id) is not null : null);
 
     /// <summary>

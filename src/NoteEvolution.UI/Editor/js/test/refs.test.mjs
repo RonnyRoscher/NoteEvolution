@@ -174,12 +174,35 @@ test('setRefLabels turns a typed reference into a node, keeps the cursor and the
 
     const content = s.editor.getJSON().content[0].content[0].content;
     assert.deepEqual(content.map(n => n.type), ['text', 'blockRef', 'text', 'blockRef', 'text', 'blockRef', 'text']);
-    assert.deepEqual({ ...content[5].attrs }, { id: A, label: '→ Zwei', title: 'Buch › Zwei', missing: false });
+    assert.deepEqual({ ...content[5].attrs }, { id: A, label: '→ Zwei', title: 'Buch › Zwei', missing: false, foreign: false });
     assert.deepEqual(content[5].marks, [{ type: 'italic' }]);
     assert.equal(s.host.querySelectorAll('.ne-ref')[2].textContent, '→ Zwei');
     // The cursor stays at the end: the 40 characters became one position.
     assert.equal(s.editor.state.selection.from, end - typed.length + 1);
     assert.equal(undoDepth(s.editor.state), depth);
     assert.equal(s.calls.filter(c => c.method === 'DocumentChanged').length, changes);
+    s.done();
+});
+
+test('a foreign reference shows its reference text like text, goes nowhere and is one position; a typed one becomes a node', () => {
+    const s = setUp();
+    const N = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+    const typed = `((${N}))`;
+    // Paragraph start 2 + 13 positions: the end of the paragraph.
+    s.editor.commands.insertContentAt(15, { type: 'text', text: ` ${typed}` });
+    const end = s.editor.state.doc.child(0).child(0).content.size + 2;
+    s.editor.commands.setTextSelection(end);
+
+    s.api.setRefLabels([{ id: N, label: typed, title: '', missing: false, foreign: true }]);
+
+    const content = s.editor.getJSON().content[0].content[0].content;
+    assert.deepEqual(content.map(n => n.type), ['text', 'blockRef', 'text', 'blockRef', 'text', 'blockRef']);
+    assert.equal(content[5].attrs.foreign, true);
+    assert.equal(s.para().content.size, 15);
+    const dom = s.host.querySelectorAll('.ne-ref')[2];
+    assert.equal(dom.textContent, typed);
+    assert.equal(dom.classList.contains('foreign'), true);
+    dom.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true }));
+    assert.deepEqual(s.calls.filter(c => c.method === 'ReferenceClicked'), []);
     s.done();
 });

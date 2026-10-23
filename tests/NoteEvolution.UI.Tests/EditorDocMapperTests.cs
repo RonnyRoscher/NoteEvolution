@@ -292,17 +292,36 @@ public class EditorDocMapperTests
     }
 
     [Fact]
-    public void ToJson_ReferenceWithoutLabel_IsPlainText_KeepsItsMarkdown()
+    public void ToJson_ReferenceToANote_IsAForeignNode_KeepsItsMarkdown()
     {
-        // No label: a block outside the book (a note), no cross reference; it stays text and joins the text around it.
+        // A block outside the book (a note) is no cross reference (spec 2.1), but still one unit of the shown text: a
+        // foreign node that shows the reference text, so offsets count it as one position like any reference.
         var note = Guid.Parse("0190a000-0000-7000-8000-0000000000aa");
         var text = $"Siehe (({note.ToString("D").ToUpperInvariant()})) und {A}";
         RefLabel? LabelOrNone(Guid id) => id == note ? null : Label(id);
         var json = EditorDocMapper.ToJson(OneBlock(text), refOf: LabelOrNone);
 
-        Assert.Equal([$"Siehe {BlockRefs.Format(note)} und ", $"<ref {RefA}>"], Inline(FirstPara(JsonNode.Parse(json)!)));
+        var para = FirstPara(JsonNode.Parse(json)!);
+        Assert.Equal(["Siehe ", $"<ref {note}>", " und ", $"<ref {RefA}>"], Inline(para));
+        var foreign = para["content"]![1]!["attrs"]!;
+        Assert.Equal(BlockRefs.Format(note), (string?)foreign["label"]);
+        Assert.True((bool)foreign["foreign"]!);
+        Assert.False(para["content"]![3]!["attrs"]!.AsObject().ContainsKey("foreign"));
         var back = (SnapshotTextBlock)EditorDocMapper.FromJson(json, Scope, false).Nodes.Single();
         Assert.Equal(text, back.Text);
+    }
+
+    [Fact]
+    public void FromJson_ChangedTextWithAForeignNode_WritesTheReferenceBack()
+    {
+        var note = Guid.Parse("0190a000-0000-7000-8000-0000000000aa");
+        var doc = JsonNode.Parse(EditorDocMapper.ToJson(OneBlock($"Siehe {BlockRefs.Format(note)} hier"), refOf: _ => null))!;
+        var content = FirstPara(doc)["content"]!.AsArray();
+        content[0]!["text"] = "Neu: ";
+
+        var back = (SnapshotTextBlock)EditorDocMapper.FromJson(doc.ToJsonString(), Scope, false).Nodes.Single();
+
+        Assert.Equal($"Neu: {BlockRefs.Format(note)} hier", back.Text);
     }
 
     [Fact]

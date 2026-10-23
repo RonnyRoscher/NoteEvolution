@@ -131,6 +131,8 @@ const Para = Node.create({
  * A cross reference ((id)) to a heading or text block of the book (spec 2.3): one non-editable inline unit that shows
  * its label ("→ Titel", "→ Verweis fehlt" with missing) and the target's path as its tooltip. C# writes it back as
  * ((id)); label, title and missing come from the book and are only shown. A click calls options.onClicked(id).
+ * A foreign reference (to a block outside the book, no cross reference) is such a node too, so every reference is one
+ * position of the text as .NET counts it: it shows its reference text like plain text and a click goes nowhere.
  */
 const BlockRef = Node.create({
     name: 'blockRef',
@@ -147,13 +149,14 @@ const BlockRef = Node.create({
             label: { default: '', parseHTML: el => el.textContent, rendered: false },
             title: { default: '', parseHTML: el => el.getAttribute('title') ?? '', rendered: false },
             missing: { default: false, parseHTML: el => el.classList.contains('missing'), rendered: false },
+            foreign: { default: false, parseHTML: el => el.classList.contains('foreign'), rendered: false },
         };
     },
     parseHTML() {
         return [{ tag: 'span[data-ref]' }];
     },
     renderHTML({ node, HTMLAttributes }) {
-        const attrs = { ...HTMLAttributes, class: node.attrs.missing ? 'ne-ref missing' : 'ne-ref' };
+        const attrs = { ...HTMLAttributes, class: refClass(node) };
         if (node.attrs.title) {
             attrs.title = node.attrs.title;
         }
@@ -164,18 +167,25 @@ const BlockRef = Node.create({
     addNodeView() {
         return ({ node }) => {
             const dom = document.createElement('span');
-            dom.className = node.attrs.missing ? 'ne-ref missing' : 'ne-ref';
+            dom.className = refClass(node);
             dom.contentEditable = 'false';
             dom.setAttribute('data-ref', node.attrs.id ?? '');
             dom.textContent = node.attrs.label;
             if (node.attrs.title) {
                 dom.title = node.attrs.title;
             }
-            dom.addEventListener('click', () => this.options.onClicked(node.attrs.id));
+            if (!node.attrs.foreign) {
+                dom.addEventListener('click', () => this.options.onClicked(node.attrs.id));
+            }
             return { dom };
         };
     },
 });
+
+/** The CSS classes of a blockRef node: ne-ref, plus missing or foreign. */
+function refClass(node) {
+    return node.attrs.foreign ? 'ne-ref foreign' : node.attrs.missing ? 'ne-ref missing' : 'ne-ref';
+}
 
 /**
  * Backspace right after a reference or Delete right before it removes the reference whole (the browser's own deletion
@@ -201,8 +211,8 @@ function deleteReference(state, dispatch, forward) {
 const refPattern = /\(\(([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\)\)/gi;
 
 /**
- * Adds to tr what setRefLabels changes in doc: blockRef nodes whose label, title or missing differ from labels (a Map
- * of lower-case id → { label, title, missing }) get the new ones, and a reference typed as text whose id labels has
+ * Adds to tr what setRefLabels changes in doc: blockRef nodes whose label, title, missing or foreign differ from labels
+ * (a Map of lower-case id → { label, title, missing, foreign }) get the new ones, and a reference typed as text whose id labels has
  * becomes a blockRef node with the text's marks, unless the selection touches its inside (it is converted by a later
  * call then).
  */
@@ -211,8 +221,9 @@ function updateRefs(tr, doc, labels, selection) {
     doc.descendants((node, pos) => {
         if (node.type.name === 'blockRef') {
             const label = labels.get((node.attrs.id ?? '').toLowerCase());
-            if (label && (label.label !== node.attrs.label || label.title !== node.attrs.title || label.missing !== node.attrs.missing)) {
-                tr.setNodeMarkup(pos, undefined, { ...node.attrs, label: label.label, title: label.title, missing: label.missing });
+            if (label && (label.label !== node.attrs.label || label.title !== node.attrs.title
+                || label.missing !== node.attrs.missing || label.foreign !== node.attrs.foreign)) {
+                tr.setNodeMarkup(pos, undefined, { ...node.attrs, ...label });
             }
             return false;
         }
@@ -1050,7 +1061,7 @@ export function createEditor(host, dotnet, options = {}) {
          */
         setRefLabels(list) {
             const labels = new Map(list.map(item => [String(item.id).toLowerCase(),
-                { label: item.label ?? '', title: item.title ?? '', missing: item.missing === true }]));
+                { label: item.label ?? '', title: item.title ?? '', missing: item.missing === true, foreign: item.foreign === true }]));
             const tr = editor.state.tr;
             updateRefs(tr, editor.state.doc, labels, editor.state.selection);
             if (tr.docChanged) {

@@ -118,14 +118,14 @@ public class EditorInteropTests
     }
 
     [Fact]
-    public async Task SetRefLabels_Serializes_IdLabelTitleMissing()
+    public async Task SetRefLabels_Serializes_IdLabelTitleMissingForeign()
     {
         var interop = await InitAsync();
 
         await interop.SetRefLabelsAsync(new Dictionary<Guid, RefLabel> { [Guid.Parse(Key)] = new("Eins", "Buch: Eins", true) });
 
         var payload = JsonSerializer.Serialize(_js.Calls.Single(c => c.Method == "setRefLabels").Args.Single());
-        Assert.Equal($$"""[{"id":"{{Key}}","label":"Eins","title":"Buch: Eins","missing":true}]""", payload);
+        Assert.Equal($$"""[{"id":"{{Key}}","label":"Eins","title":"Buch: Eins","missing":true,"foreign":false}]""", payload);
     }
 
     [Fact]

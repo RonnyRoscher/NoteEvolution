@@ -5,8 +5,15 @@ using NoteEvolution.UI.Resources;
 
 namespace NoteEvolution.UI.Editor;
 
-/// <summary>What the editor shows of a cross reference: its text, its tooltip and whether its target is missing.</summary>
-public sealed record RefLabel(string Text, string Title, bool Missing);
+/// <summary>
+/// What the editor shows of a reference: its text, its tooltip, whether its target is missing and whether it is foreign
+/// (a block outside the book, no cross reference: it shows its reference text like plain text and goes nowhere).
+/// </summary>
+public sealed record RefLabel(string Text, string Title, bool Missing, bool Foreign = false)
+{
+    /// <summary>The label of a foreign reference: the reference text, no tooltip.</summary>
+    public static RefLabel ForeignOf(Guid id) => new(BlockRefs.Format(id), "", false, true);
+}
 
 /// <summary>The labels of the cross references of a book as the editor shows them (spec 2.3).</summary>
 public static class RefLabels
@@ -23,19 +30,19 @@ public static class RefLabels
     /// The label of a reference by its target id, from the book's <see cref="CrossRefIndex"/>: "→ Titel" for a heading
     /// (tooltip: its path), "→ Abschnitt: Textanfang …" for a text block (tooltip: the section's path › the start of the
     /// text), "→ Verweis fehlt" with <see cref="RefLabel.Missing"/> for an id neither the book nor
-    /// <paramref name="knownElsewhere"/> knows. <c>null</c> for a block known elsewhere that is no target of the book (a
-    /// note): that is no cross reference and stays plain text (spec 2.1).
+    /// <paramref name="knownElsewhere"/> knows. A block known elsewhere that is no target of the book (a note) is no cross
+    /// reference (spec 2.1): <see cref="RefLabel.ForeignOf"/>, still one unit of the shown text.
     /// </summary>
     /// <param name="knownElsewhere">Whether the vault has a block with the id; <c>null</c>: none is known elsewhere.</param>
-    public static Func<Guid, RefLabel?> Of(Book book, IStringLocalizer<Strings> l, Func<Guid, bool>? knownElsewhere = null)
+    public static Func<Guid, RefLabel> Of(Book book, IStringLocalizer<Strings> l, Func<Guid, bool>? knownElsewhere = null)
     {
         var index = CrossRefIndex.Of(book, knownElsewhere);
-        var labels = new Dictionary<Guid, RefLabel?>();
+        var labels = new Dictionary<Guid, RefLabel>();
         return id =>
         {
             if (!labels.TryGetValue(id, out var label))
             {
-                labels[id] = label = index.IsForeign(id) ? null : Label(book, index.Target(id), l);
+                labels[id] = label = index.IsForeign(id) ? RefLabel.ForeignOf(id) : Label(book, index.Target(id), l);
             }
 
             return label;

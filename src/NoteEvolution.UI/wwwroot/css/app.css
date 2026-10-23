@@ -1442,6 +1442,20 @@ html, body {
     color: var(--danger);
 }
 
+/* A reference to a block outside the book (a note) is no cross reference: it looks like the text around it. */
+.ne-ref.foreign {
+    padding: 0;
+    background: none;
+    color: inherit;
+    font-family: inherit;
+    font-size: inherit;
+    cursor: text;
+}
+
+.ne-ref.foreign:hover {
+    text-decoration: none;
+}
+
 .ne-ref.ProseMirror-selectednode {
     outline: 1px solid var(--accent);
 }
