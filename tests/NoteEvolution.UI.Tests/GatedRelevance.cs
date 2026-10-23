@@ -47,6 +47,9 @@ internal sealed class GatedRelevance(IRelevanceService inner) : IRelevanceServic
         return Inner.Placements(noteKey, noteText, book, limit);
     }
 
+    public IReadOnlyList<SearchHit> Sources(Book book, Guid textBlockKey, Func<Guid, bool> include, int limit = 5) =>
+        Inner.Sources(book, textBlockKey, include, limit);
+
     public IReadOnlyList<TopicHit> Topics(Guid noteKey, string noteText, Book book, int limit = 3) =>
         Inner.Topics(noteKey, noteText, book, limit);
 

@@ -1596,4 +1596,34 @@
   <data name="KeysLists4" xml:space="preserve">
     <value>Auf dem Schieber unter „Zuletzt geändert“: Höhe der Liste ändern</value>
   </data>
+  <data name="SectionFindSources" xml:space="preserve">
+    <value>Quellen suchen</value>
+  </data>
+  <data name="SectionFindSourcesTitle" xml:space="preserve">
+    <value>Notizen suchen, aus denen dieser Textblock stammen könnte</value>
+  </data>
+  <data name="SourceFinderTitle" xml:space="preserve">
+    <value>Mögliche Quellen</value>
+  </data>
+  <data name="SourceFinderSearching" xml:space="preserve">
+    <value>Suche …</value>
+  </data>
+  <data name="SourceFinderNone" xml:space="preserve">
+    <value>Keine passenden Notizen gefunden</value>
+  </data>
+  <data name="SourceFinderUsed" xml:space="preserve">
+    <value>verwendet</value>
+  </data>
+  <data name="SourceFinderUsedIn" xml:space="preserve">
+    <value>Verwendet in: {0}</value>
+  </data>
+  <data name="SourceFinderLink" xml:space="preserve">
+    <value>Als Quelle verknüpfen</value>
+  </data>
+  <data name="EditorSourceConflict" xml:space="preserve">
+    <value>Die Quelle kann nicht verknüpft werden, solange ein Konflikt mit einer Änderung von außen offen ist.</value>
+  </data>
+  <data name="EditorSourceFailed" xml:space="preserve">
+    <value>Die Notiz konnte nicht als Quelle verknüpft werden.</value>
+  </data>
 </root>

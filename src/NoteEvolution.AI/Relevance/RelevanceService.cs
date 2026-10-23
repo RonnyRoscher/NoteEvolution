@@ -68,6 +68,15 @@ public sealed class RelevanceService : IRelevanceService
         return [.. hits.Select(hit => new SearchHit(hit.Key, hit.Score))];
     }
 
+    public IReadOnlyList<SearchHit> Sources(Book book, Guid textBlockKey, Func<Guid, bool> include, int limit = 5)
+    {
+        if (!IsAvailable || limit <= 0 || book.FindTextBlock(textBlockKey) is not { } textBlock) return [];
+        var text = EmbeddingText.ForTextBlock(textBlock);
+        if (IsBlank(text) || Embed(text) is not { } vector || IsZero(vector)) return [];
+
+        return [.. _index.Nearest(vector, limit, include).Select(hit => new SearchHit(hit.Key, hit.Score))];
+    }
+
     public IReadOnlyList<SectionHit> WhereTo(Guid noteKey, string noteText, Book book, int limit = 5)
     {
         if (!IsAvailable || limit <= 0) return [];
