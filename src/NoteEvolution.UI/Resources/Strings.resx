@@ -882,6 +882,49 @@
     <value>{0} Querverweise ohne Ziel stehen in einem Buch, das nicht sicher lesbar ist, und wurden nicht entfernt.</value>
     <comment>{0} = Anzahl</comment>
   </data>
+  <data name="LinkCheckAppendixRefs" xml:space="preserve">
+    <value>Verweise auf fehlende Einträge</value>
+  </data>
+  <data name="LinkCheckAppendixRefsHint" xml:space="preserve">
+    <value>Diese Stellen nennen eine Quelle oder einen Autor, den es im Anhang nicht mehr gibt. Ein Klick springt zur Stelle; „Verweise entfernen“ nimmt die Quellenangaben aus dem Text und die fehlenden Autoren aus den Quellen und lässt den übrigen Text stehen.</value>
+  </data>
+  <data name="LinkCheckAppendixRefsRemove" xml:space="preserve">
+    <value>Verweise entfernen</value>
+  </data>
+  <data name="LinkCheckAppendixRefsConfirm" xml:space="preserve">
+    <value>{0} Verweise entfernen? Das lässt sich nicht rückgängig machen.</value>
+    <comment>Rückfrage vor „Verweise entfernen“ bei den fehlenden Anhang-Einträgen; {0} = Anzahl (mehr als einer)</comment>
+  </data>
+  <data name="LinkCheckAppendixRefsConfirmOne" xml:space="preserve">
+    <value>1 Verweis entfernen? Das lässt sich nicht rückgängig machen.</value>
+    <comment>Rückfrage vor „Verweise entfernen“ bei den fehlenden Anhang-Einträgen, ein Verweis</comment>
+  </data>
+  <data name="LinkCheckAppendixRefsRemoved" xml:space="preserve">
+    <value>{0} Verweise auf fehlende Einträge entfernt.</value>
+    <comment>{0} = Anzahl</comment>
+  </data>
+  <data name="LinkCheckAppendixRefsReadOnly" xml:space="preserve">
+    <value>{0} Verweise auf fehlende Einträge stehen in einem Buch, das nicht sicher lesbar ist, und wurden nicht entfernt.</value>
+    <comment>{0} = Anzahl</comment>
+  </data>
+  <data name="LinkCheckAppendixSourceMissing" xml:space="preserve">
+    <value>Quelle nicht im Anhang</value>
+  </data>
+  <data name="LinkCheckAppendixAuthorMissing" xml:space="preserve">
+    <value>Autor nicht unter den Menschen</value>
+  </data>
+  <data name="LinkCheckDuplicateSections" xml:space="preserve">
+    <value>Doppelte Anhang-Abschnitte</value>
+  </data>
+  <data name="LinkCheckDuplicateSectionsHint" xml:space="preserve">
+    <value>Diese Abschnitte gehören zu einem Anhang-Teil, den es schon gibt. Die App nutzt nur den ersten; die übrigen bleiben unverändert und gehören nicht zum Buchtext. Führen Sie sie in Logseq zusammen.</value>
+  </data>
+  <data name="LinkCheckDuplicateAbbreviations" xml:space="preserve">
+    <value>Doppelte Kürzel</value>
+  </data>
+  <data name="LinkCheckDuplicateAbbreviationsHint" xml:space="preserve">
+    <value>Mehrere Menschen im selben Buch haben dasselbe Kürzel. Es wird nichts geändert; ändern Sie ein Kürzel im Fenster „Menschen“.</value>
+  </data>
   <data name="LinkCheckBookMissing" xml:space="preserve">
     <value>Buch „{0}“ nicht gefunden</value>
     <comment>{0} = Seitenname des Buchs</comment>

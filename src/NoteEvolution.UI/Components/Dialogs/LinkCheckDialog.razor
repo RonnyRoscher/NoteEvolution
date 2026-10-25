@@ -30,8 +30,13 @@
         {
             <p class="ne-linkcheck-crossrefs-removed" role="status">@L["LinkCheckCrossRefsRemoved", _crossRefsRemoved]</p>
         }
+        @if (_appendixRefsRemoved > 0)
+        {
+            <p class="ne-linkcheck-appendixrefs-removed" role="status">@L["LinkCheckAppendixRefsRemoved", _appendixRefsRemoved]</p>
+        }
         @if (_report.Orphans.Count == 0 && _report.Broken.Count == 0 && _report.Missing.Count == 0
-             && _report.MissingCrossRefs.Count == 0)
+             && _report.MissingCrossRefs.Count == 0 && _report.MissingAppendixRefs.Count == 0
+             && _report.DuplicateAppendixSections.Count == 0 && _report.DuplicateAbbreviations.Count == 0)
         {
             <p class="ne-linkcheck-clean">@L["LinkCheckClean"]</p>
         }
@@ -111,6 +116,78 @@
                 <button type="button" class="ne-linkcheck-crossrefs-remove" @onclick="() => _confirmingRemoval = true">@L["LinkCheckCrossRefsRemove"]</button>
             }
         }
+
+        @if (_report.MissingAppendixRefs.Count > 0)
+        {
+            <h3 class="ne-linkcheck-appendixrefs-title">@L["LinkCheckAppendixRefs"]</h3>
+            <p class="ne-dialog-hint">@L["LinkCheckAppendixRefsHint"]</p>
+            <ul class="ne-linkcheck-appendixrefs">
+                @foreach (var missing in _report.MissingAppendixRefs)
+                {
+                    <li class="ne-linkcheck-appendixref">
+                        @if (missing.IsAuthor)
+                        {
+                            @* The source entry lies in the appendix, which the editor does not show: no place to jump to. *@
+                            <span class="ne-linkcheck-book">@missing.BookLinkName</span>
+                            <span class="ne-linkcheck-block">@BlockText(missing.ElementKey)</span>
+                            <span class="ne-linkcheck-target">@L["LinkCheckAppendixAuthorMissing"]</span>
+                        }
+                        else
+                        {
+                            <button type="button" class="ne-linkcheck-goto" @onclick="() => GoToAsync(missing.BookLinkName, missing.ElementKey)">
+                                <span class="ne-linkcheck-book">@missing.BookLinkName</span>
+                                <span class="ne-linkcheck-block">@BlockText(missing.ElementKey)</span>
+                            </button>
+                            <span class="ne-linkcheck-target">@L["LinkCheckAppendixSourceMissing"]</span>
+                        }
+                    </li>
+                }
+            </ul>
+            @if (_confirmingAppendixRemoval)
+            {
+                var count = _report.MissingAppendixRefs.Count;
+                <p class="ne-linkcheck-appendixrefs-confirm" role="alert">
+                    @(count == 1 ? L["LinkCheckAppendixRefsConfirmOne"] : L["LinkCheckAppendixRefsConfirm", count])
+                </p>
+                <button type="button" class="ne-linkcheck-appendixrefs-yes" @onclick="RemoveAppendixRefsAsync">@L["Yes"]</button>
+                <button type="button" class="ne-linkcheck-appendixrefs-no" @onclick="() => _confirmingAppendixRemoval = false">@L["Cancel"]</button>
+            }
+            else
+            {
+                <button type="button" class="ne-linkcheck-appendixrefs-remove" @onclick="() => _confirmingAppendixRemoval = true">@L["LinkCheckAppendixRefsRemove"]</button>
+            }
+        }
+
+        @if (_report.DuplicateAppendixSections.Count > 0)
+        {
+            <h3 class="ne-linkcheck-duplicate-sections-title">@L["LinkCheckDuplicateSections"]</h3>
+            <p class="ne-dialog-hint">@L["LinkCheckDuplicateSectionsHint"]</p>
+            <ul class="ne-linkcheck-duplicate-sections">
+                @foreach (var section in _report.DuplicateAppendixSections)
+                {
+                    <li class="ne-linkcheck-duplicate-section">
+                        <span class="ne-linkcheck-book">@section.BookLinkName</span>
+                        <span class="ne-linkcheck-block">@section.Title</span>
+                    </li>
+                }
+            </ul>
+        }
+
+        @if (_report.DuplicateAbbreviations.Count > 0)
+        {
+            <h3 class="ne-linkcheck-duplicate-abbreviations-title">@L["LinkCheckDuplicateAbbreviations"]</h3>
+            <p class="ne-dialog-hint">@L["LinkCheckDuplicateAbbreviationsHint"]</p>
+            <ul class="ne-linkcheck-duplicate-abbreviations">
+                @foreach (var duplicate in _report.DuplicateAbbreviations)
+                {
+                    <li class="ne-linkcheck-duplicate-abbreviation">
+                        <span class="ne-linkcheck-book">@duplicate.BookLinkName</span>
+                        <span class="ne-linkcheck-note">@duplicate.Abbreviation</span>
+                        <span class="ne-linkcheck-block">@string.Join(", ", duplicate.Names)</span>
+                    </li>
+                }
+            </ul>
+        }
     }
     </ChildContent>
     <Footer>
@@ -123,6 +200,8 @@
     private int _fixed;
     private int _crossRefsRemoved;
     private bool _confirmingRemoval;
+    private int _appendixRefsRemoved;
+    private bool _confirmingAppendixRemoval;
     private string? _message;
 
     [Parameter] public EventCallback OnClose { get; set; }
@@ -230,8 +309,46 @@
     private async Task RemoveCrossRefsAsync()
     {
         _confirmingRemoval = false;
+        if (_report is { } report)
+        {
+            await RemoveAsync(
+                report.MissingCrossRefs.Select(source => source.ElementKey),
+                session =>
+                {
+                    _crossRefsRemoved = session.Checker.RemoveMissingCrossRefs(report, out var readOnly);
+                    return readOnly > 0 ? L["LinkCheckCrossRefsReadOnly", readOnly].Value : null;
+                },
+                "Removing cross references without target failed");
+        }
+    }
+
+    /// <summary>
+    /// Removes the <c>{{quelle}}</c> macros and the <c>autoren::</c> ids that lack their appendix entry, the same way as
+    /// <see cref="RemoveCrossRefsAsync"/>.
+    /// </summary>
+    private async Task RemoveAppendixRefsAsync()
+    {
+        _confirmingAppendixRemoval = false;
+        if (_report is { } report)
+        {
+            await RemoveAsync(
+                report.MissingAppendixRefs.Select(missing => missing.ElementKey),
+                session =>
+                {
+                    _appendixRefsRemoved = session.Checker.RemoveMissingAppendixRefs(report, out var readOnly);
+                    return readOnly > 0 ? L["LinkCheckAppendixRefsReadOnly", readOnly].Value : null;
+                },
+                "Removing references to missing appendix entries failed");
+        }
+    }
+
+    /// <param name="elementKeys">The blocks that change: their books may not have an open conflict.</param>
+    /// <param name="remove">Does the removal; returns the message for entries left in read-only books, or <c>null</c>.</param>
+    /// <param name="failure">The log message if saving fails.</param>
+    private async Task RemoveAsync(IEnumerable<Guid> elementKeys, Func<VaultSession, string?> remove, string failure)
+    {
         _message = null;
-        if (State.Session is not { } session || _report is not { } report)
+        if (State.Session is not { } session)
         {
             return;
         }
@@ -246,13 +363,13 @@
         catch (Exception ex)
         {
             // The editor's text may not be saved, so the book is not changed behind it.
-            Logger.LogError(ex, "Saving the editor before removing cross references failed");
+            Logger.LogError(ex, "Saving the editor before removing references failed");
             _message = L["LinkCheckResolveFailed"];
             return;
         }
 
-        var pages = report.MissingCrossRefs
-            .Select(source => session.Vault.FindBlockByKey(source.ElementKey)?.Page)
+        var pages = elementKeys
+            .Select(key => session.Vault.FindBlockByKey(key)?.Page)
             .OfType<Page>().Distinct().ToList();
         if (pages.Any(page => session.HasOpenConflict(page.FilePath)))
         {
@@ -262,16 +379,12 @@
 
         try
         {
-            _crossRefsRemoved = session.Checker.RemoveMissingCrossRefs(report, out var readOnly);
-            if (readOnly > 0)
-            {
-                _message = L["LinkCheckCrossRefsReadOnly", readOnly];
-            }
+            _message = remove(session);
         }
         catch (FileChangedExternallyException ex)
         {
             // A book file changed in the meantime: bring the change in, then the user decides again.
-            Logger.LogWarning(ex, "A book changed externally before removing cross references");
+            Logger.LogWarning(ex, "A book changed externally before removing references");
             foreach (var page in pages)
             {
                 session.HandleExternalChange(page.FilePath);
@@ -281,7 +394,7 @@
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
         {
-            Logger.LogWarning(ex, "Removing cross references without target failed");
+            Logger.LogWarning(ex, "{Failure}", failure);
             _message = L["LinkCheckResolveFailed"];
         }
 

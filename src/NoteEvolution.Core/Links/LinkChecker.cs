@@ -17,12 +17,34 @@ public sealed record OrphanUsage(Guid NoteBlockKey, UsedInEntry Entry);
 /// <param name="TextBlockKey"><see cref="Block.Key"/> of the book block (text block or paragraph) carrying the source.</param>
 public sealed record BrokenSource(string BookLinkName, Guid TextBlockKey, Guid MissingNoteId);
 
+/// <summary>A reference that needs an appendix entry and has none (<see cref="AppendixIndex.MissingTargets"/>).</summary>
+/// <param name="ElementKey">The element holding the <c>{{quelle}}</c> macro, or the source entry whose <c>autoren::</c> names the person.</param>
+/// <param name="MissingId">The id of the source or person that is no entry.</param>
+/// <param name="IsAuthor">Whether it is an author id of a source entry (otherwise a source citation in the text).</param>
+public sealed record MissingAppendixRef(string BookLinkName, Guid ElementKey, Guid MissingId, bool IsAuthor);
+
+/// <summary>An appendix section after the first of its kind: it counts as appendix, but is not used.</summary>
+public sealed record DuplicateAppendixSection(string BookLinkName, Guid SectionKey, string Title);
+
+/// <summary>Several people with the same abbreviation (ignoring case); nothing is changed, the names are told.</summary>
+public sealed record DuplicateAbbreviation(string BookLinkName, string Abbreviation, IReadOnlyList<string> Names);
+
 /// <param name="MissingCrossRefs">The block references <c>((id))</c> in the books whose target is gone, in book order.</param>
+/// <param name="MissingAppendixRefs">
+/// The <c>{{quelle}}</c> macros without a source entry and the <c>autoren::</c> ids without a person entry. A missing
+/// <c>((id))</c> in the text stays in <paramref name="MissingCrossRefs"/>: after a deletion a person reference cannot
+/// be told from a cross reference.
+/// </param>
+/// <param name="DuplicateAppendixSections">Appendix sections after the first of their kind (a hint only).</param>
+/// <param name="DuplicateAbbreviations">Abbreviations several people share (a hint only).</param>
 public sealed record LinkCheckReport(
     IReadOnlyList<MissingUsage> Missing,
     IReadOnlyList<OrphanUsage> Orphans,
     IReadOnlyList<BrokenSource> Broken,
-    IReadOnlyList<CrossRefSource> MissingCrossRefs);
+    IReadOnlyList<CrossRefSource> MissingCrossRefs,
+    IReadOnlyList<MissingAppendixRef> MissingAppendixRefs,
+    IReadOnlyList<DuplicateAppendixSection> DuplicateAppendixSections,
+    IReadOnlyList<DuplicateAbbreviation> DuplicateAbbreviations);
 
 public enum OrphanResolution
 {
@@ -43,6 +65,7 @@ public sealed class LinkChecker(IVault vault, ILinkService links, IPageWriter wr
 {
     private const string SourceKey = "source";
     private const string UsedInKey = "used-in";
+    private const string AuthorsKey = "autoren";
 
     /// <summary>
     /// Reads the vault and reports missing usages, orphans, broken sources and cross references without target
@@ -77,8 +100,23 @@ public sealed class LinkChecker(IVault vault, ILinkService links, IPageWriter wr
         }
 
         return new LinkCheckReport(
-            missing, FindOrphans(), broken, [.. vault.Books.SelectMany(book => CrossRefIndex.Of(book, KnownInVault).Missing)]);
+            missing, FindOrphans(), broken, [.. vault.Books.SelectMany(book => CrossRefIndex.Of(book, KnownInVault).Missing)],
+            [.. vault.Books.SelectMany(MissingAppendixRefsOf)],
+            [.. vault.Books.SelectMany(book => book.DuplicateAppendixSections.Select(
+                section => new DuplicateAppendixSection(book.LinkName, section.Key, section.Title)))],
+            [.. vault.Books.SelectMany(DuplicateAbbreviationsOf)]);
     }
+
+    private static IEnumerable<MissingAppendixRef> MissingAppendixRefsOf(Book book) =>
+        AppendixIndex.Of(book).MissingTargets.Select(
+            m => new MissingAppendixRef(book.LinkName, m.ElementKey, m.MissingId, book.IsInAppendix(m.ElementKey)));
+
+    private static IEnumerable<DuplicateAbbreviation> DuplicateAbbreviationsOf(Book book) =>
+        Appendix.People(book)
+            .Where(person => person.Abbreviation.Trim().Length > 0)
+            .GroupBy(person => person.Abbreviation.Trim(), StringComparer.OrdinalIgnoreCase)
+            .Where(group => group.Count() > 1)
+            .Select(group => new DuplicateAbbreviation(book.LinkName, group.Key, [.. group.Select(person => person.Name)]));
 
     /// <summary>
     /// Removes the block references of <see cref="LinkCheckReport.MissingCrossRefs"/> whose target is still gone from
@@ -152,6 +190,95 @@ public sealed class LinkChecker(IVault vault, ILinkService links, IPageWriter wr
         }
 
         return removed;
+    }
+
+    /// <summary>
+    /// Removes the <see cref="LinkCheckReport.MissingAppendixRefs"/> that are still missing now: the source macros
+    /// from their texts (<see cref="SourceCitations.Remove"/>, the rest of the text stays) and the author ids from the
+    /// <c>autoren::</c> of their source entries (the source stays). Each changed book is saved through the page
+    /// writer; read-only books are left out. No <c>updated::</c>, as with <see cref="RemoveMissingCrossRefs(LinkCheckReport)"/>.
+    /// </summary>
+    /// <returns>The number of macros and author ids removed.</returns>
+    /// <exception cref="IOException">Saving failed: that book's blocks are put back as they were.</exception>
+    public int RemoveMissingAppendixRefs(LinkCheckReport report) => RemoveMissingAppendixRefs(report, out _);
+
+    /// <inheritdoc cref="RemoveMissingAppendixRefs(LinkCheckReport)"/>
+    /// <param name="report">The check whose missing appendix references go.</param>
+    /// <param name="readOnly">The number of the report's entries left in place because their book is read-only.</param>
+    public int RemoveMissingAppendixRefs(LinkCheckReport report, out int readOnly)
+    {
+        var removed = 0;
+        readOnly = 0;
+        foreach (var book in vault.Books.Where(book => report.MissingAppendixRefs.Any(m => m.BookLinkName == book.LinkName)))
+        {
+            var mine = report.MissingAppendixRefs.Where(m => m.BookLinkName == book.LinkName).ToList();
+            if (book.Page.IsReadOnly)
+            {
+                readOnly += mine.Count;
+                continue;
+            }
+
+            // Only what is still missing now: an entry may have been added since the check.
+            var stillMissing = AppendixIndex.Of(Book.Load(book.Page)).MissingTargets.ToHashSet();
+            var changed = new List<(Block Block, IReadOnlyList<RawLine> Lines, bool WasDirty)>();
+            foreach (var element in mine.Where(m => stillMissing.Contains((m.ElementKey, m.MissingId))).GroupBy(m => m.ElementKey))
+            {
+                if (book.Page.AllBlocks().FirstOrDefault(b => b.Key == element.Key) is not { } block)
+                {
+                    continue;
+                }
+
+                var ids = element.Select(m => m.MissingId).ToHashSet();
+                changed.Add((block, [.. block.Lines], block.IsDirty));
+                if (element.Any(m => m.IsAuthor))
+                {
+                    removed += RemoveAuthors(block, ids);
+                }
+                else
+                {
+                    removed += SourceCitations.Find(block.Content).Count(c => ids.Contains(c.Id));
+                    block.SetContent(SourceCitations.Remove(block.Content, ids));
+                }
+            }
+
+            if (changed.Count == 0)
+            {
+                continue;
+            }
+
+            try
+            {
+                writer.Save(book.Page);
+            }
+            catch
+            {
+                foreach (var (block, lines, wasDirty) in changed)
+                {
+                    block.RestoreLines(lines, wasDirty);
+                }
+
+                throw;
+            }
+        }
+
+        return removed;
+    }
+
+    /// <summary>Drops <paramref name="ids"/> from the block's <c>autoren::</c> (the property goes if none is left); returns how many went.</summary>
+    private static int RemoveAuthors(Block block, IReadOnlySet<Guid> ids)
+    {
+        var all = BlockRefs.Find(block.GetProperty(AuthorsKey) ?? "").Select(r => r.Id).ToList();
+        var kept = all.Where(id => !ids.Contains(id)).ToList();
+        if (kept.Count == 0)
+        {
+            block.RemoveProperty(AuthorsKey);
+        }
+        else if (kept.Count < all.Count)
+        {
+            block.SetProperty(AuthorsKey, string.Join(", ", kept.Select(BlockRefs.Format)));
+        }
+
+        return all.Count - kept.Count;
     }
 
     /// <summary>

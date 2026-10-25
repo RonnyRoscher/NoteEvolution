@@ -112,6 +112,49 @@ die Verknüpfungsprüfung listet solche unter „Querverweise ohne Ziel“ und e
 auf Notizen außerhalb des Buchs bleiben unverändert. Im PDF steht ein Verweis als „→ Titel (S. n)“; Titel und
 Seitenzahl sind anklickbar.
 
+**Anhang: Glossar, Menschen, Quellen:** Am Buchende kann ein Buch ein Glossar, eine Liste der Menschen, die
+inspiriert haben, und ein Quellenverzeichnis führen. Jeder Teil ist eine Überschrift der obersten Ebene, erkannt an
+`anhang:: glossar`, `anhang:: menschen` bzw. `anhang:: quellen` (nicht am Titel; Standardtitel „Glossar“, „Menschen,
+die mich inspiriert haben“, „Quellen“); ein Teil entsteht mit seinem ersten Eintrag und steht immer hinter dem
+Buchtext, in der Reihenfolge Glossar, Menschen, Quellen. Neue Abschnitte („+ Abschnitt“, „Neuer Abschnitt danach“,
+„Als Überschrift“, Ziehen ans Ende) landen vor dem Anhang. Der Anhang zählt nicht zum Buchtext: keine Wortzahl, nicht
+in „Zuletzt geändert“, „Relevant“, „Wohin damit?“ und Abdeckung, nicht in der Auswahl „Verweis einfügen“; der Editor
+zeigt ihn nicht.
+
+- **Fenster:** Unten in der Gliederung steht die Zeile „Anhang: Glossar · Menschen · Quellen“; jedes Wort öffnet das
+  Fenster seiner Liste (auch wenn der Abschnitt noch fehlt). Links stehen die Einträge mit Suchfeld, rechts die Felder
+  des gewählten Eintrags, dazu „Neu“ und „Löschen“. Gespeichert wird beim Wechsel des Eintrags und beim Schließen; ein
+  Prüffehler (leerer Name oder Begriff, ungültiges oder doppeltes Kürzel) hält das Fenster offen. Ein Glossareintrag
+  hat Begriff, Formen (`formen::`) und Erklärung; ein Mensch Name, Kürzel (`kuerzel::`, 1–6 Zeichen, im Buch
+  eindeutig; das Fenster schlägt die Initialen vor), Themen (`themen::`) und Beschreibung; eine Quelle Titel, Art
+  (`art::`), Autoren (`autoren::`), Jahr, Herausgeber und URL. Neue Autoren, die es unter den Menschen noch nicht gibt,
+  legt das Speichern dort an. „Löschen“ eines Eintrags, auf den verwiesen wird, fragt vorher nach („Trotzdem
+  löschen“); die Verweise werden zu „Verweis fehlt“. Jede Änderung lässt sich mit „Rückgängig“ zurücknehmen.
+- **Einfügen:** „Mensch einfügen“ und „Quelle einfügen“ in der Leiste öffnen eine Auswahl wie bei „Verweis einfügen“
+  (Suche, Pfeiltasten, Enter, zuletzt „Neu anlegen …“, das den Eintrag anlegt und danach einfügt). Ein Mensch steht
+  als `((id))` im Text und im Editor als hochgestelltes Kürzel; ein Klick öffnet das Fenster „Menschen“ beim Eintrag.
+  Eine Quelle steht als `{{quelle ((id))}}` bzw. mit **Fundstelle** als `{{quelle ((id)) S. 12}}`, im Editor als
+  hochgestellte Nummer („[3]“, mit Fundstelle „[3, S. 12]“); die Nummer vergibt das erste Zitat in der
+  Lesereihenfolge des PDFs (ohne Relevant und Bemerkung, ohne Anhang), eine Quelle ohne Zitat dort hat keine („[–]“).
+  Die Fundstelle eines vorhandenen Zitats ändert man mit einem **Doppelklick** auf die Nummer („Fundstelle ändern“,
+  „Übernehmen“). Ein Klick auf die Nummer öffnet das Fenster „Quellen“.
+- **Glossar-Markierung:** Pro Begriff (oder eine seiner Formen) wird das erste Vorkommen in einem Textblock (ganzes
+  Wort, ohne Rücksicht auf Groß- und Kleinschreibung, längste Form zuerst) gepunktet unterstrichen; im Text ändert
+  sich nichts. Der Tooltip zeigt Begriff und Erklärung, **Strg+Klick** öffnet das Fenster „Glossar“ beim Eintrag.
+- **PDF:** Menschen erscheinen als hochgestelltes Kürzel, Quellen als hochgestellte Nummer (mit Fundstelle in
+  normaler Größe dahinter), das erste Vorkommen eines Glossarbegriffs gepunktet unterstrichen; alle drei verlinken auf
+  ihren Eintrag. Nach dem Buchtext folgen die Teile Glossar (alphabetisch), Menschen und Quellen (nach Nummer, „[3]
+  Autor; Autor: Titel. Herausgeber, Jahr. URL“), je auf neuer Seite und im Inhaltsverzeichnis; aufgeführt ist nur, was
+  im exportierten Text vorkommt. Beim **Teilexport** („Aktueller Abschnitt“) enthält der Anhang nur, was in diesem
+  Abschnitt vorkommt; die Quellennummern gelten für das ganze Buch.
+- **Verknüpfungsprüfung:** „Verweise auf fehlende Einträge“ (Quellenangaben ohne Quelle und Autoren ohne Menschen-
+  Eintrag; „Verweise entfernen“ nach Rückfrage), „Doppelte Anhang-Abschnitte“ und „Doppelte Kürzel“ (nur Hinweise).
+  Ein gelöschter Mensch im Text erscheint, weil er von einem Querverweis nicht zu unterscheiden ist, weiter unter
+  „Querverweise ohne Ziel“.
+- **Logseq:** Der Anhang ist gewöhnliches Logseq-Markdown und lässt sich dort bearbeiten. Ein Eintrag ohne `id::` bekommt
+  beim ersten Speichern durch die App eine; unbekannte Eigenschaften bleiben; doppelte Kürzel werden gemeldet, nicht
+  gelöscht. Tippen und Speichern im Editor lässt den Anhang unverändert.
+
 **Vor und zurück:** ◀ und ▶ links neben „Rückgängig“ (oder Alt+Pfeil links/rechts) springen zu früher ausgewählten
 Blöcken, auch über Buchgrenzen. Ein Block zählt, wenn der Cursor mindestens 2 s darin war oder per Sprung (Verweis,
 „Zuletzt geändert“, Quellen) erreicht wurde; gemerkt werden die letzten 50, nur für die laufende Sitzung.
@@ -467,6 +510,30 @@ Querverweise und Navigation
 - [ ] Aufschlüsselung des Sprachmodell-Fortschritts: alle Balken liegen innerhalb des weißen Kastens.
 - [ ] Zusammenfassungen in „Zuletzt geändert“ (nach der Neuberechnung) beginnen nicht mit „Der Autor erklärt“,
       „Der Abschnitt beschreibt“ o. Ä.
+
+Anhang: Glossar, Menschen, Quellen
+- [ ] Ein Buch mit Anhang (je einige Einträge, Autoren, Zitate mit Fundstelle) in Logseq öffnen: keine Fehler, die drei
+      Abschnitte stehen am Ende, Zitate erscheinen als Makro, Menschen als Blockverweis.
+- [ ] Im Editor tippen und ca. 1 s warten, Buch schließen: `git diff` der Buchdatei zeigt nur die getippte Stelle,
+      der Anhang ist unverändert (nichts gelöscht, verschoben oder neu datiert).
+- [ ] Neue Abschnitte (Gliederung „+ Abschnitt“, „Neuer Abschnitt danach“ auf dem letzten Abschnitt, „Als Überschrift“,
+      Ziehen ans Ende) landen vor dem Anhang.
+- [ ] Fenster „Glossar“, „Menschen“, „Quellen“ über die Anhang-Zeile: Eintrag anlegen, ändern, löschen (mit Rückfrage,
+      wenn darauf verwiesen wird), „Rückgängig“; neuer Autor einer Quelle erscheint danach unter „Menschen“.
+- [ ] „Mensch einfügen“ und „Quelle einfügen“ (auch mit „Neu anlegen …“ und Fundstelle): Kürzel und Nummer im Editor,
+      Tooltips, Klick öffnet das Fenster; Doppelklick auf eine Nummer ändert die Fundstelle; ein Glossarbegriff im Text
+      ist gepunktet unterstrichen, Strg+Klick öffnet das Glossar.
+- [ ] Eintrag in Logseq ohne `id::` anlegen und im Buch etwas ändern: der Eintrag bleibt und hat danach eine `id::`;
+      eine unbekannte Eigenschaft bleibt; zwei Menschen mit gleichem Kürzel landen in der Verknüpfungsprüfung unter
+      „Doppelte Kürzel“, ohne dass etwas gelöscht wird.
+- [ ] Verknüpfungsprüfung: einen Menschen und eine Quelle löschen, auf die verwiesen wird: „Verweise auf fehlende
+      Einträge“ listet die Quellenangabe und den Autor, „Verweise entfernen“ fragt nach und entfernt sie (Datei prüfen);
+      der gelöschte Mensch im Text steht unter „Querverweise ohne Ziel“.
+- [ ] PDF-Anhang: nach dem Buchtext folgen Glossar, Menschen und Quellen auf neuen Seiten und im Inhaltsverzeichnis;
+      hochgestellte Kürzel und Nummern, gepunktete Glossarmarkierung, Klick springt zum Eintrag; Quellen stehen nach
+      Nummer, Blöcke mit Status Relevant oder Bemerkung zählen nicht.
+- [ ] Teilexport („Aktueller Abschnitt“): der Anhang enthält nur, was in diesem Abschnitt vorkommt; die Quellennummern
+      sind dieselben wie im ganzen Buch.
 
 PDF
 - [ ] PDF-Export für das ganze Buch in A4 und A5 sowie für „Aktueller Abschnitt“: der native Speichern-Dialog schlägt
