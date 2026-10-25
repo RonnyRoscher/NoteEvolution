@@ -211,6 +211,93 @@ public class AppendixEditorTests : UiTestContext
     }
 
     [Fact]
+    public async Task EntriesWithoutId_PickerListsThem_InsertGivesTheIdWithOneUndo()
+    {
+        var text = Head + Text + AppendixText.Replace($"\t  id:: {AnnaId}\n", "").Replace($"\t  id:: {SourceId}\n", "")
+            .Replace($"\t  autoren:: (({AnnaId}))\n", "");
+        var vault = await OpenAsync(text);
+        var cut = await RenderAsync();
+        var session = State.Session!;
+
+        await MoveToAsync(cut, "Achtsamkeit ist ein Wort", 11);
+        await cut.InvokeAsync(() => cut.Find(".ne-sec-person").Click());
+        cut.WaitForAssertion(() => Assert.Equal(
+            ["Anna Berg (AB)", L("AppendixPickerNew")], cut.FindAll(".ne-ref-option").Select(o => o.TextContent.Trim())));
+        await cut.InvokeAsync(() => cut.Find(".ne-ref-query").KeyDown("Enter"));
+
+        var anna = Appendix.People(Book).Single();
+        Assert.NotEqual(Guid.Empty, anna.Id);
+        var file = vault.Read(BookPath);
+        Assert.Contains($"\t- Achtsamkeit(({anna.Id:D})) ist ein Wort\n", file);
+        Assert.Contains($"\t  themen:: Achtsamkeit, Stille\n\t  id:: {anna.Id:D}\n", file);
+        Assert.Equal(L("UndoPersonRef"), session.Undo.NextDescription);
+        var key = KeyOf($"Achtsamkeit(({anna.Id:D})) ist ein Wort");
+        cut.WaitForAssertion(() => Assert.Contains(InlineOf(key), n => (string?)n!["type"] == "personRef"));
+
+        // One undo takes the reference and the new id back.
+        session.Undo.Undo();
+        Assert.Equal(text, vault.Read(BookPath));
+
+        // A source without an id works the same way.
+        await cut.InvokeAsync(() => State.FlushEditor!());
+        await MoveToAsync(cut, "Noch einmal Achtsamkeit", 4);
+        await cut.InvokeAsync(() => cut.Find(".ne-sec-insert-source").Click());
+        cut.WaitForAssertion(() => Assert.Equal(
+            ["Achtsam leben", L("AppendixPickerNew")], cut.FindAll(".ne-ref-option").Select(o => o.TextContent.Trim())));
+        await cut.InvokeAsync(() => cut.FindAll(".ne-ref-option")[0].Click());
+
+        var source = Appendix.Sources(Book).Single();
+        Assert.NotEqual(Guid.Empty, source.Id);
+        Assert.Contains($"\t- Noch{{{{quelle (({source.Id:D}))}}}} einmal Achtsamkeit\n", vault.Read(BookPath));
+    }
+
+    [Fact]
+    public async Task GlossaryEntryWithoutId_IsMarked()
+    {
+        await OpenAsync(Head + Text + AppendixText.Replace($"\t  id:: {GlossaryId}\n", ""));
+        await RenderAsync();
+        var entry = Appendix.Glossary(Book).Single();
+        Assert.Equal(Guid.Empty, entry.Id);
+
+        Assert.Equal(
+            [new GlossaryMark(KeyOf("Achtsamkeit ist ein Wort"), 0, 11, "Achtsamkeit — Bewusstes Wahrnehmen.", entry.Key)],
+            Editor.AppendixLabels[^1].Marks);
+    }
+
+    [Fact]
+    public async Task OwnSave_PushesTheMarksAgain_EvenIfTheBookShowsTheSame()
+    {
+        var vault = await OpenAsync();
+        var cut = await RenderAsync();
+        cut.WaitForAssertion(() => Assert.NotEmpty(Editor.AppendixLabels));
+        var marks = Editor.AppendixLabels[^1].Marks;
+        var pushes = Editor.AppendixLabels.Count;
+
+        // The term was deleted and typed again before the autosave: the editor lost its mark, the book's text is the same.
+        await cut.InvokeAsync(() => Editor.Callbacks!.OnDocumentChanged(Editor.Json));
+        Time.Advance(TimeSpan.FromMilliseconds(1000));
+        await cut.InvokeAsync(() => State.FlushEditor!());
+
+        Assert.Equal(BookText, vault.Read(BookPath));
+        Assert.True(Editor.AppendixLabels.Count > pushes);
+        Assert.Equal(marks, Editor.AppendixLabels[^1].Marks);
+        Assert.Single(Editor.Documents);
+    }
+
+    [Fact]
+    public async Task BookWithoutAppendix_OwnSave_PushesNoAppendixLabels()
+    {
+        await OpenAsync(Head + Text);
+        var cut = await RenderAsync();
+
+        await cut.InvokeAsync(() => Editor.Callbacks!.OnDocumentChanged(Editor.Json));
+        Time.Advance(TimeSpan.FromMilliseconds(1000));
+        await cut.InvokeAsync(() => State.FlushEditor!());
+
+        Assert.Empty(Editor.AppendixLabels);
+    }
+
+    [Fact]
     public async Task BookWithoutAppendix_PushesNoAppendixLabels()
     {
         await OpenAsync(Head + Text);

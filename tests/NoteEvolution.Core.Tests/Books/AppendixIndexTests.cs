@@ -83,10 +83,11 @@ public class AppendixIndexTests
         var hits = AppendixIndex.Of(book).GlossaryHits;
 
         Assert.Equal(2, hits.Count);
-        var achtsam = hits.Single(h => h.EntryId == Guid.Parse(G1));
+        var glossary = Appendix.Glossary(book);
+        var achtsam = hits.Single(h => h.EntryKey == glossary[0].Key);
         Assert.Equal(KeyOf(book, "Doch"), achtsam.ParagraphKey);
         Assert.Equal(("Doch ".Length, "Achtsamkeit".Length), (achtsam.Start, achtsam.Length));
-        var ueber = hits.Single(h => h.EntryId == Guid.Parse(G2));
+        var ueber = hits.Single(h => h.EntryKey == glossary[1].Key);
         Assert.Equal(KeyOf(book, "Straße"), ueber.ParagraphKey);
         Assert.Equal(("Straße und ".Length, 4), (ueber.Start, ueber.Length));
     }

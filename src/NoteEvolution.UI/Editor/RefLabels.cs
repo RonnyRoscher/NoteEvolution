@@ -181,15 +181,15 @@ public static class AppendixLabels
 
     /// <summary>
     /// The glossary terms to mark: the first hit of each (<see cref="AppendixIndex.GlossaryHits"/>), with the term and its
-    /// explanation as tooltip and the entry's key for the glossary window.
+    /// explanation as tooltip and the entry's key for the glossary window; an entry without an <c>id::</c> too.
     /// </summary>
     public static List<GlossaryMark> Marks(Book book, AppendixIndex index)
     {
-        var entries = Appendix.Glossary(book).Where(g => g.Id != Guid.Empty).DistinctBy(g => g.Id).ToDictionary(g => g.Id);
+        var entries = Appendix.Glossary(book).ToDictionary(g => g.Key);
         var marks = new List<GlossaryMark>();
         foreach (var hit in index.GlossaryHits)
         {
-            if (entries.TryGetValue(hit.EntryId, out var entry))
+            if (entries.TryGetValue(hit.EntryKey, out var entry))
             {
                 var explanation = entry.Explanation.ReplaceLineEndings(" ").Trim();
                 marks.Add(new GlossaryMark(

@@ -763,10 +763,11 @@
         {
             // After its own save the editor keeps its document (cursor, undo history) even where the book holds a
             // text slightly normalized; it is compared with the book's version from now on (R33).
+            var ownSave = shown!.FromEditor;
             _saver.Shown = shown with { Snapshot = fresh, FromEditor = false };
             await ShowDatesAsync(DatesOf(fresh, book));
             // Before the cross references: a citation typed as text becomes a node before its inner reference could.
-            await ShowAppendixAsync(AppendixOf(fresh, book));
+            await ShowAppendixAsync(AppendixOf(fresh, book), book, ownSave);
             await ShowRefLabelsAsync(fresh, book);
             StateHasChanged();
             await RevealPendingAsync();
@@ -798,7 +799,7 @@
             _newTarget = false;
         }
 
-        await ShowAppendixAsync(appendixLoaded);
+        await ShowAppendixAsync(appendixLoaded, book);
 
         _saver.Shown = new ShownText(session, book.LinkName, fresh);
         _shownChips = _showChips;
@@ -980,11 +981,15 @@
 
     /// <summary>
     /// Gives the editor the appendix labels and marks (after its own save, a load, a change of the appendix) when they or
-    /// the references to people and sources changed; a book without appendix pushes nothing.
+    /// the references to people and sources changed; a book without appendix pushes nothing. With
+    /// <paramref name="afterOwnSave"/> (the editor's own save) the editor's text may have lost a mark or turned a typed
+    /// reference into text while the book shows the same as before (a term deleted and typed again): what the book has is
+    /// pushed unless the book has no appendix.
     /// </summary>
-    private async Task ShowAppendixAsync(ShownAppendix appendix)
+    private async Task ShowAppendixAsync(ShownAppendix appendix, Book book, bool afterOwnSave = false)
     {
-        if (!appendix.SameAs(_shownAppendix))
+        var hasAppendix = book.Root.Children.Any(node => node.AppendixKind != AppendixKind.None);
+        if (!appendix.SameAs(_shownAppendix) || (afterOwnSave && hasAppendix))
         {
             await Editor.SetAppendixLabelsAsync(appendix.People, appendix.Sources, appendix.Marks);
         }
@@ -1068,9 +1073,9 @@
     public async Task OnAppendixPicked(AppendixPick pick)
     {
         var undo = L[pick.Kind == AppendixKind.People ? "UndoPersonRef" : "UndoSourceRef"].Value;
-        if (pick.EntryId is { } id)
+        if (pick.EntryKey is { } key)
         {
-            _saver.Message = await ManuscriptCommands.InsertAppendixRefAsync(State, pick.Kind, id, pick.Locator, undo, Logger);
+            _saver.Message = await ManuscriptCommands.InsertAppendixRefAsync(State, pick.Kind, key, pick.Locator, undo, Logger);
             StateHasChanged();
             return;
         }

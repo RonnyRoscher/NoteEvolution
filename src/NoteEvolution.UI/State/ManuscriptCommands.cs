@@ -10,9 +10,10 @@ namespace NoteEvolution.UI.State;
 
 /// <summary>
 /// What an insert picker of the section bar chose (<see cref="ManuscriptCommands.InsertAppendixRefAsync"/>): a person or
-/// a source by <c>id::</c>, or <c>null</c> for „Neu anlegen …“, and for a source the locator typed (<c>null</c>: none).
+/// a source by its <see cref="Block.Key"/> (it may have no <c>id::</c> yet), or <c>null</c> for „Neu anlegen …“, and for
+/// a source the locator typed (<c>null</c>: none).
 /// </summary>
-public sealed record AppendixPick(AppendixKind Kind, Guid? EntryId, string? Locator);
+public sealed record AppendixPick(AppendixKind Kind, Guid? EntryKey, string? Locator);
 
 /// <summary>
 /// The structure commands of the manuscript (spec 3) on the element at the editor cursor
@@ -164,10 +165,13 @@ public static class ManuscriptCommands
             state, null, (book, key, offset, now) => ManuscriptEditor.InsertReference(book, key, offset, targetKey, now), undoDescription, logger);
 
     /// <summary>
-    /// Inserts a reference to an appendix entry at the cursor (appendix spec 3), as <see cref="InsertReferenceAsync"/>
-    /// inserts a cross reference: for a person (<see cref="AppendixKind.People"/>) a block reference <c>((id))</c>, for a
-    /// source a citation <c>{{quelle ((id)) Fundstelle}}</c> with <paramref name="locator"/> (none if empty). An id that
-    /// is no person or source of the book shows <c>SectionCommandFailed</c>.
+    /// Inserts a reference to the appendix entry <paramref name="entryKey"/> (its <see cref="Block.Key"/>) at the cursor
+    /// (appendix spec 3), as <see cref="InsertReferenceAsync"/> inserts a cross reference: for a person
+    /// (<see cref="AppendixKind.People"/>) a block reference <c>((id))</c>, for a source a citation
+    /// <c>{{quelle ((id)) Fundstelle}}</c> with <paramref name="locator"/> (none if empty)
+    /// (<see cref="ManuscriptEditor.InsertAppendixRef"/>). An entry without an <c>id::</c> gets one, saved with the
+    /// reference under the same undo action. A key that is no person or source of the book shows
+    /// <c>SectionCommandFailed</c>.
     /// </summary>
     /// <param name="at">
     /// The cursor to insert at instead of the current one, e.g. the one a picker opened at before the appendix window
@@ -175,21 +179,16 @@ public static class ManuscriptCommands
     /// </param>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="kind"/> is neither people nor sources.</exception>
     public static Task<AdoptMessage?> InsertAppendixRefAsync(
-        AppState state, AppendixKind kind, Guid entryId, string? locator, string undoDescription, ILogger logger, CursorInfo? at = null)
+        AppState state, AppendixKind kind, Guid entryKey, string? locator, string undoDescription, ILogger logger, CursorInfo? at = null)
     {
         if (kind is not (AppendixKind.People or AppendixKind.Sources))
         {
             throw new ArgumentOutOfRangeException(nameof(kind), kind, "Only people and sources are referred to in the text.");
         }
 
-        return InsertAtCursorAsync(state, at, (book, key, offset, now) =>
-        {
-            var markdown = kind == AppendixKind.People
-                ? Appendix.PersonById(book, entryId) is not null ? BlockRefs.Format(entryId) : null
-                : Appendix.SourceById(book, entryId) is not null ? SourceCitations.Format(entryId, locator) : null;
-            ManuscriptEditor.InsertText(
-                book, key, offset, markdown ?? throw new ArgumentException("The book has no such entry.", nameof(entryId)), now);
-        }, undoDescription, logger);
+        return InsertAtCursorAsync(
+            state, at, (book, key, offset, now) => ManuscriptEditor.InsertAppendixRef(book, key, offset, kind, entryKey, locator, now),
+            undoDescription, logger);
     }
 
     /// <summary>

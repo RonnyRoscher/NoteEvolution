@@ -29,7 +29,7 @@ internal enum PdfRunKind
 /// <summary>
 /// A stretch of a paragraph with uniform emphasis: text, or a cross reference to <see cref="RefTarget"/>.
 /// <paramref name="LinkTarget"/> is the id of a section of the PDF the run links to (<c>person-{id}</c>,
-/// <c>source-{id}</c>, <c>glossary-{id}</c>); null for a run without a link.
+/// <c>source-{id}</c>, <c>glossary-{key}</c> by the entry's block key); null for a run without a link.
 /// </summary>
 internal sealed record PdfRun(
     string Text, bool Bold, bool Italic, Guid? RefTarget = null, PdfRunKind Kind = PdfRunKind.Text, string? LinkTarget = null);
@@ -63,7 +63,7 @@ internal sealed partial class PdfContent : IDisposable
     private readonly Dictionary<Guid, GlossaryEntry> _glossary = [];
     private readonly Dictionary<Guid, List<GlossaryHit>> _hitsByElement = [];
 
-    /// <summary>The appendix entries the exported text uses, by id.</summary>
+    /// <summary>The appendix entries the exported text uses: people and sources by id, glossary entries by block key.</summary>
     private readonly HashSet<Guid> _usedPeople = [];
     private readonly HashSet<Guid> _usedSources = [];
     private readonly HashSet<Guid> _usedGlossary = [];
@@ -98,9 +98,10 @@ internal sealed partial class PdfContent : IDisposable
             _sources.TryAdd(source.Id, source);
         }
 
-        foreach (var entry in Appendix.Glossary(book).Where(g => g.Id != Guid.Empty))
+        // By block key: an entry written in Logseq without an id:: is marked and listed too.
+        foreach (var entry in Appendix.Glossary(book))
         {
-            _glossary.TryAdd(entry.Id, entry);
+            _glossary.TryAdd(entry.Key, entry);
         }
 
         // Terms are marked at their first occurrence in the exported part; the source numbers stay those of the book.
@@ -293,7 +294,7 @@ internal sealed partial class PdfContent : IDisposable
                 && end > start && (places.Count == 0 || start >= places[^1].End))
             {
                 places.Add((start, end, number));
-                _usedGlossary.Add(hit.EntryId);
+                _usedGlossary.Add(hit.EntryKey);
             }
         }
 
@@ -358,8 +359,12 @@ internal sealed partial class PdfContent : IDisposable
         }
 
         _usedPeople.Add(id);
-        yield return new PdfRun(person.Abbreviation, run.Bold, run.Italic, Kind: PdfRunKind.Superscript, LinkTarget: Anchor("person", id));
+        yield return new PdfRun(MarkOf(person), run.Bold, run.Italic, Kind: PdfRunKind.Superscript, LinkTarget: Anchor("person", id));
     }
+
+    /// <summary>What the text shows of a person: the abbreviation, the name if it has none (as the editor does).</summary>
+    private static string MarkOf(PersonEntry person) =>
+        person.Abbreviation.Length > 0 ? person.Abbreviation : ExportText.Clean(person.Name);
 
     private IEnumerable<PdfRun> CitationRuns(InlineRun run, SourceCitation citation)
     {
@@ -412,7 +417,7 @@ internal sealed partial class PdfContent : IDisposable
 
                 if (isMark)
                 {
-                    link = run.Text[i] == MarkEnd ? null : Anchor("glossary", hits[run.Text[i] - MarkStart].EntryId);
+                    link = run.Text[i] == MarkEnd ? null : Anchor("glossary", hits[run.Text[i] - MarkStart].EntryKey);
                 }
 
                 from = i + 1;
@@ -436,8 +441,8 @@ internal sealed partial class PdfContent : IDisposable
 
         var german = StringComparer.Create(new CultureInfo("de-DE"), ignoreCase: true);
 
-        var glossary = _glossary.Values.Where(entry => _usedGlossary.Contains(entry.Id)).OrderBy(entry => entry.Term, german);
-        AddAppendixPart(AppendixKind.Glossary, "Glossar", glossary.Select(entry => (Anchor("glossary", entry.Id), GlossaryRuns(entry))));
+        var glossary = _glossary.Values.Where(entry => _usedGlossary.Contains(entry.Key)).OrderBy(entry => entry.Term, german);
+        AddAppendixPart(AppendixKind.Glossary, "Glossar", glossary.Select(entry => (Anchor("glossary", entry.Key), GlossaryRuns(entry))));
 
         var people = _people.Values.Where(person => _usedPeople.Contains(person.Id)).OrderBy(person => person.Name, german);
         AddAppendixPart(
@@ -489,11 +494,15 @@ internal sealed partial class PdfContent : IDisposable
         }
     }
 
-    /// <summary>"Name (Kürzel)", the topics in italics, the description.</summary>
+    /// <summary>"Name (Kürzel)" ("Name" without an abbreviation), the topics in italics, the description.</summary>
     private static IEnumerable<PdfRun> PersonRuns(PersonEntry person)
     {
         yield return new PdfRun(ExportText.Clean(person.Name), true, false);
-        yield return new PdfRun($" ({person.Abbreviation})", false, false);
+        if (person.Abbreviation.Length > 0)
+        {
+            yield return new PdfRun($" ({person.Abbreviation})", false, false);
+        }
+
         if (person.Topics.Count > 0)
         {
             yield return new PdfRun("\n" + string.Join(", ", person.Topics), false, true);

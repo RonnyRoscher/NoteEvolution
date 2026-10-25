@@ -185,8 +185,8 @@ public static partial class Appendix
         string.IsNullOrWhiteSpace(entry.Title) ? "AppendixTitleEmpty" : null;
 
     /// <summary>
-    /// The <c>id::</c> of the person called each name (ignoring case); a name nobody has is added as a person with a
-    /// suggested abbreviation. Blank names are skipped.
+    /// The <c>id::</c> of the person called each name (ignoring case); a person written in Logseq without one gets it
+    /// now. A name nobody has is added as a person with a suggested abbreviation. Blank names are skipped.
     /// </summary>
     public static IReadOnlyList<Guid> EnsureAuthors(Book book, IReadOnlyList<string> names)
     {
@@ -194,10 +194,10 @@ public static partial class Appendix
         foreach (var name in names.Select(n => n.Trim()).Where(n => n.Length > 0))
         {
             var known = People(Current(book)).FirstOrDefault(person =>
-                person.Id != Guid.Empty && string.Equals(person.Name, name, StringComparison.OrdinalIgnoreCase));
+                string.Equals(person.Name, name, StringComparison.OrdinalIgnoreCase));
             if (known is not null)
             {
-                ids.Add(known.Id);
+                ids.Add(known.Id != Guid.Empty ? known.Id : EntryBlock(book, known.Key).EnsureId());
                 continue;
             }
 

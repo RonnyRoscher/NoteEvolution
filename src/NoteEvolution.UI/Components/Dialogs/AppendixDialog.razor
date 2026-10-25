@@ -110,7 +110,7 @@
     /// <summary>Opens the dialog with a new, empty entry (the "Neu anlegen" of an insert picker).</summary>
     [Parameter] public bool StartWithNew { get; set; }
 
-    /// <summary>The <c>id::</c> of an entry after its first successful save as a new one.</summary>
+    /// <summary>The key (<see cref="Block.Key"/>) of an entry after its first successful save as a new one.</summary>
     [Parameter] public EventCallback<Guid> OnCreated { get; set; }
 
     [Parameter] public EventCallback OnClose { get; set; }
@@ -171,12 +171,28 @@
         }
     }
 
-    private IEnumerable<Row> Entries(Book book) => Kind switch
+    private static readonly StringComparer German = StringComparer.Create(new CultureInfo("de-DE"), ignoreCase: true);
+
+    /// <summary>
+    /// The entries as the PDF lists them (appendix spec 2): glossary and people alphabetically, sources by their number
+    /// (one without a number last), then by title.
+    /// </summary>
+    private IEnumerable<Row> Entries(Book book)
     {
-        AppendixKind.Glossary => Appendix.Glossary(book).Select(e => new Row(e.Key, Shown(e.Term))),
-        AppendixKind.People => Appendix.People(book).Select(e => new Row(e.Key, Shown(e.Name))),
-        _ => Appendix.Sources(book).Select(e => new Row(e.Key, Shown(e.Title))),
-    };
+        switch (Kind)
+        {
+            case AppendixKind.Glossary:
+                return Appendix.Glossary(book).OrderBy(e => e.Term, German).Select(e => new Row(e.Key, Shown(e.Term)));
+            case AppendixKind.People:
+                return Appendix.People(book).OrderBy(e => e.Name, German).Select(e => new Row(e.Key, Shown(e.Name)));
+            default:
+                var index = AppendixIndex.Of(book);
+                return Appendix.Sources(book)
+                    .OrderBy(e => index.SourceNumber(e.Id) ?? int.MaxValue)
+                    .ThenBy(e => e.Title, German)
+                    .Select(e => new Row(e.Key, Shown(e.Title)));
+        }
+    }
 
     private string Shown(string text) => text.Length > 0 ? text : L["AppendixUntitled"].Value;
 
@@ -362,7 +378,7 @@
         return true;
     }
 
-    /// <summary>Tells <see cref="OnCreated"/> the <c>id::</c> the new entry got.</summary>
+    /// <summary>Takes the <c>id::</c> the new entry got and tells <see cref="OnCreated"/> its key.</summary>
     private async Task ReportCreatedAsync(Draft draft)
     {
         if (State.CurrentBook is not { } book)
@@ -376,10 +392,10 @@
             AppendixKind.People => Appendix.People(book).FirstOrDefault(e => e.Key == draft.Key)?.Id,
             _ => Appendix.Sources(book).FirstOrDefault(e => e.Key == draft.Key)?.Id,
         };
-        if (id is { } created && created != Guid.Empty)
+        if (id is { } created)
         {
             draft.Id = created;
-            await OnCreated.InvokeAsync(created);
+            await OnCreated.InvokeAsync(draft.Key);
         }
     }
 

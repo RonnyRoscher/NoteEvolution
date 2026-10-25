@@ -647,6 +647,34 @@ public static class ManuscriptEditor
         Insert(book, ReferringElement(book, elementKey), offset, now, null, () => markdown);
 
     /// <summary>
+    /// Inserts a reference to the appendix entry <paramref name="entryKey"/> (its <see cref="Block.Key"/>) into the text
+    /// of the text block or detail <paramref name="elementKey"/>, as <see cref="InsertReference"/> inserts a cross
+    /// reference: for a person (<see cref="AppendixKind.People"/>) <c>((id))</c>, for a source the citation
+    /// <c>{{quelle ((id)) Fundstelle}}</c> with <paramref name="locator"/> (<see cref="SourceCitations.Format"/>). An entry
+    /// written in Logseq without an <c>id::</c> gets one now, without a date, in the same change.
+    /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="kind"/> is neither people nor sources.</exception>
+    /// <exception cref="ArgumentException">
+    /// The element is a heading or not in the book, or the section of <paramref name="kind"/> has no such entry.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">A block has no place for properties (an open code fence); nothing is changed.</exception>
+    public static void InsertAppendixRef(
+        Book book, Guid elementKey, int offset, AppendixKind kind, Guid entryKey, string? locator, DateTimeOffset now)
+    {
+        if (kind is not (AppendixKind.People or AppendixKind.Sources))
+        {
+            throw new ArgumentOutOfRangeException(nameof(kind), kind, "Only people and sources are referred to in the text.");
+        }
+
+        var element = ReferringElement(book, elementKey);
+        var entry = book.AppendixSection(kind)?.TextBlocks.FirstOrDefault(text => text.Key == entryKey)?.Block
+                    ?? throw new ArgumentException("The appendix has no such entry.", nameof(entryKey));
+        Insert(book, element, offset, now, entry, () => kind == AppendixKind.People
+            ? BlockRefs.Format(entry.EnsureId())
+            : SourceCitations.Format(entry.EnsureId(), locator));
+    }
+
+    /// <summary>
     /// The source citation the editor shows at <paramref name="shownOffset"/> of the text block or detail
     /// <paramref name="elementKey"/> (see <see cref="ContentOffset"/>), if it cites <paramref name="sourceId"/>; its span
     /// is in the block's content. <c>null</c> if there is none.

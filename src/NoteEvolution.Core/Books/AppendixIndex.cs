@@ -6,14 +6,16 @@ using NoteEvolution.Core.Text;
 namespace NoteEvolution.Core.Books;
 
 /// <summary>A glossary term found in the text.</summary>
-/// <param name="EntryId">The <see cref="GlossaryEntry.Id"/> of the entry.</param>
+/// <param name="EntryKey">
+/// The <see cref="GlossaryEntry.Key"/> of the entry: an entry written in Logseq without an <c>id::</c> is marked too.
+/// </param>
 /// <param name="ParagraphKey">The key of the text block or detail that holds the hit.</param>
 /// <param name="Start">
 /// The offset in the text as the editor shows it (a block reference or source citation counts as one unit; see
 /// <see cref="ManuscriptEditor.ContentOffset"/>).
 /// </param>
 /// <param name="Length">The length of the hit in the same units.</param>
-public sealed record GlossaryHit(Guid EntryId, Guid ParagraphKey, int Start, int Length);
+public sealed record GlossaryHit(Guid EntryKey, Guid ParagraphKey, int Start, int Length);
 
 /// <summary>
 /// What the appendix of a book derives from its text, computed from a snapshot of the book: the reading order of the
@@ -176,7 +178,7 @@ public sealed partial class AppendixIndex
         var hits = new List<GlossaryHit>();
         var texts = elements.Where(e => e is { IsHeading: false, Exported: true });
         var pending = glossary
-            .Where(entry => entry.Id != Guid.Empty && entry.Term.Length > 0)
+            .Where(entry => entry.Term.Length > 0)
             .ToDictionary(entry => entry, entry => new[] { entry.Term }.Concat(entry.Forms).ToList());
         foreach (var element in texts)
         {
@@ -190,7 +192,7 @@ public sealed partial class AppendixIndex
             {
                 if (EarliestHit(shown, terms) is { } hit)
                 {
-                    hits.Add(new GlossaryHit(entry.Id, element.Key, hit.Start, hit.Length));
+                    hits.Add(new GlossaryHit(entry.Key, element.Key, hit.Start, hit.Length));
                     pending.Remove(entry);
                 }
             }

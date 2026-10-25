@@ -26,7 +26,7 @@
             var candidate = _matches[i];
             <button type="button" role="option" aria-selected="@(i == _selected ? "true" : "false")"
                     class="ne-ref-option ne-appendix-option @(i == _selected ? "ne-ref-selected" : "")"
-                    title="@candidate.Label" @onclick="() => PickAsync(candidate.Id)">@candidate.Label</button>
+                    title="@candidate.Label" @onclick="() => PickAsync(candidate.Key)">@candidate.Label</button>
         }
         <button type="button" role="option" aria-selected="@(_selected == _matches.Count ? "true" : "false")"
                 class="ne-ref-option ne-appendix-picker-new @(_selected == _matches.Count ? "ne-ref-selected" : "")"
@@ -65,8 +65,8 @@
     [Parameter]
     public EventCallback OnCancel { get; set; }
 
-    /// <summary>An entry offered: its <c>id::</c> and the label shown and searched.</summary>
-    private sealed record Candidate(Guid Id, string Label);
+    /// <summary>An entry offered: its block key and the label shown and searched.</summary>
+    private sealed record Candidate(Guid Key, string Label);
 
     protected override void OnParametersSet()
     {
@@ -126,7 +126,7 @@
                 _scrollPending = true;
                 break;
             case "Enter":
-                await PickAsync(_selected < _matches.Count ? _matches[_selected].Id : null);
+                await PickAsync(_selected < _matches.Count ? _matches[_selected].Key : null);
                 break;
             case "Escape":
                 await OnCancel.InvokeAsync();
@@ -134,32 +134,32 @@
         }
     }
 
-    private Task PickAsync(Guid? id)
+    private Task PickAsync(Guid? key)
     {
         var locator = Kind == AppendixKind.Sources && _locator.Trim().Length > 0 ? _locator.Trim() : null;
-        return OnPick.InvokeAsync(new AppendixPick(Kind, id, locator));
+        return OnPick.InvokeAsync(new AppendixPick(Kind, key, locator));
     }
 
     /// <summary>
-    /// The entries with an <c>id::</c> (one without has none to refer to yet; the window gives it one when it saves it):
-    /// people as "Name (Kürzel)" by name, sources as "Titel – Autor; Autor" by title.
+    /// The entries, also those written in Logseq without an <c>id::</c> (inserting one gives it its id): people as
+    /// "Name (Kürzel)" by name, sources as "Titel – Autor; Autor" by title.
     /// </summary>
     private List<Candidate> CandidatesOf(Book book)
     {
         var comparer = StringComparer.Create(new CultureInfo("de-DE"), ignoreCase: true);
         if (Kind == AppendixKind.People)
         {
-            return [.. Appendix.People(book).Where(p => p.Id != Guid.Empty)
+            return [.. Appendix.People(book)
                 .OrderBy(p => p.Name, comparer)
-                .Select(p => new Candidate(p.Id, p.Abbreviation.Length > 0 ? $"{p.Name} ({p.Abbreviation})" : p.Name))];
+                .Select(p => new Candidate(p.Key, p.Abbreviation.Length > 0 ? $"{p.Name} ({p.Abbreviation})" : p.Name))];
         }
 
-        return [.. Appendix.Sources(book).Where(s => s.Id != Guid.Empty)
+        return [.. Appendix.Sources(book)
             .OrderBy(s => s.Title, comparer)
             .Select(s =>
             {
                 var authors = string.Join("; ", s.AuthorIds.Select(id => Appendix.PersonById(book, id)?.Name).OfType<string>());
-                return new Candidate(s.Id, authors.Length > 0 ? $"{s.Title} – {authors}" : s.Title);
+                return new Candidate(s.Key, authors.Length > 0 ? $"{s.Title} – {authors}" : s.Title);
             })];
     }
 }

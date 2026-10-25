@@ -1,6 +1,7 @@
 using System.Text;
 using NoteEvolution.Core.Books;
 using NoteEvolution.Core.Format;
+using NoteEvolution.Core.Links;
 using NoteEvolution.Core.Tests.Links;
 using NoteEvolution.TestSupport;
 
@@ -196,6 +197,58 @@ public class AppendixSectionTests
         var glossary = s.Book.AppendixSection(AppendixKind.Glossary)!.Key;
         Assert.Throws<ArgumentException>(() =>
             s.Links.AdoptAsHeading(s.Book, s.Note("Thema").Key, glossary, asSubheading: true, "(ohne Titel)"));
+    }
+
+    [Fact]
+    public void Adopt_IntoTheAppendix_IsRefused()
+    {
+        using var s = new LinkSetup(TestBook, Journal);
+        var glossary = s.Book.AppendixSection(AppendixKind.Glossary)!;
+        var entry = glossary.TextBlocks.Single().Key;
+        var note = s.Note("Thema").Key;
+
+        InsertPosition[] positions =
+        [
+            new InsertPosition.After(entry),
+            new InsertPosition.SectionStart(glossary.Key),
+            new InsertPosition.SectionEnd(glossary.Key),
+        ];
+        foreach (var position in positions)
+        {
+            Assert.Throws<ArgumentException>(() => s.Links.Adopt(s.Book, note, position));
+            Assert.Equal(TestBook, s.ReadBook());
+        }
+
+        IntoPosition[] into =
+        [
+            new IntoPosition.AtCursor(entry, 0),
+            new IntoPosition.FirstChild(entry),
+            new IntoPosition.FirstChild(glossary.Key),
+        ];
+        foreach (var position in into)
+        {
+            Assert.Throws<ArgumentException>(() => s.Links.AdoptInto(s.Book, note, position));
+            Assert.Equal(TestBook, s.ReadBook());
+        }
+
+        Assert.Equal(Journal, s.ReadJournal());
+    }
+
+    [Fact]
+    public void ToHeading_LastTextBlockOfTheText_GoesBeforeTheAppendix()
+    {
+        using var s = new LinkSetup(TestBook, Journal);
+        var book = s.Book;
+        var last = book.ContentChildren.Last().TextBlocks.Single().Key;
+
+        // "Als Überschrift" at the top level on the last text block of the last section of the text.
+        var key = ManuscriptEditor.ToHeading(book, last, 1, Now);
+
+        book = Book.Load(book.Page);
+        Assert.Equal(["Eins", "Zwei", "Text zwei", "Glossar"], book.Root.Children.Select(n => n.Title));
+        Assert.Equal(key, book.ContentChildren.Last().Key);
+        Assert.Equal(AppendixKind.None, book.FindNode(key)!.AppendixKind);
+        Assert.EndsWith(Glossary, Serialize(book));
     }
 
     [Fact]

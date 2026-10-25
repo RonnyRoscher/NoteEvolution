@@ -76,6 +76,7 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
         EnsureWritable(bookPage);
         var (notePage, note) = FindWritableNote(noteBlockKey);
 
+        // An appendix entry is no element (BookElements.Find): FindElement refuses it like an unknown key.
         var (textBlock, element) = position switch
         {
             IntoPosition.AtCursor at => FindElement(book, at.ElementKey, detailOnly: false),
@@ -1467,9 +1468,24 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
         }
     }
 
-    /// <summary>Parent block and child index for <paramref name="position"/>; the items of a section are its block's children.</summary>
+    /// <summary>
+    /// Parent block and child index for <paramref name="position"/>; the items of a section are its block's children.
+    /// A note is not adopted into the appendix: a key there is refused.
+    /// </summary>
     private static (Block? Parent, int Index) Resolve(Book book, InsertPosition position)
     {
+        var key = position switch
+        {
+            InsertPosition.After after => after.TextBlockKey,
+            InsertPosition.SectionStart start => start.SectionKey,
+            InsertPosition.SectionEnd end => end.SectionKey,
+            _ => Guid.Empty,
+        };
+        if (book.IsInAppendix(key))
+        {
+            throw new ArgumentException("A note is not adopted into the appendix.", nameof(position));
+        }
+
         switch (position)
         {
             case InsertPosition.After after:

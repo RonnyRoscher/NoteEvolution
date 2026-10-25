@@ -199,6 +199,44 @@ public class AppendixPdfTests
     }
 
     [Fact]
+    public void GlossaryEntryWithoutId_MarkedLinkedAndListed()
+    {
+        var body = "- # Erstes\n\t- Ein Satz über Gelassenheit.\n";
+        var appendix = "- # Glossar\n  anhang:: glossar\n\t- Gelassenheit\n\t  Innere Ruhe.\n";
+        var bytes = PdfExportTests.Export(PdfSamples.Load(BookText(body, withAppendix: false) + appendix)).Bytes;
+        var pages = PdfExportTests.PageTexts(bytes);
+
+        Assert.Equal(4, pages.Count);
+        Assert.StartsWith("Glossar Gelassenheit Innere Ruhe.", pages[3]);
+        using var pdf = PdfDocument.Open(bytes);
+        // The mark links to the glossary page.
+        Assert.Equal([4], Links(pdf.GetPage(3)));
+    }
+
+    [Fact]
+    public void PersonWithoutAbbreviation_ShowsTheName_NoEmptyBrackets()
+    {
+        var body = $"- # Erstes\n\t- Ein Gedanke von (({Anna})).\n";
+        var appendix = $"- # Menschen\n  anhang:: menschen\n\t- Anna Beispiel\n\t  id:: {Anna}\n";
+        var pages = Pages(BookText(body, withAppendix: false) + appendix);
+
+        // The raised name sits on a baseline of its own, so the extraction lists it apart.
+        Assert.Contains("Anna Beispiel", pages[2]);
+        Assert.Contains("Ein Gedanke von .", pages[2]);
+        Assert.StartsWith("Menschen Anna Beispiel", pages[3]);
+        Assert.DoesNotContain("()", pages[3]);
+    }
+
+    [Fact]
+    public void CitationLocator_AsWritten()
+    {
+        var body = $"- # Erstes\n\t- Satz {Cite(Buch, "#3 [[Kapitel]]")} hier.\n";
+        var pages = Pages(BookText(body));
+
+        Assert.Contains("Satz #3 [[Kapitel]] hier.", pages[2]);
+    }
+
+    [Fact]
     public void BookWithoutAppendix_PdfUnchanged()
     {
         // Hashes of the extracted texts, taken before the appendix change.

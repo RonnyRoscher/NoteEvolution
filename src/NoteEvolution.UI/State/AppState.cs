@@ -441,7 +441,7 @@ public sealed class AppState
 
     /// <summary>
     /// Someone asked for the appendix dialog of a kind with a new entry (see <see cref="RequestNewAppendixEntry"/>); the
-    /// shell shows it and calls the action with the new entry's <c>id::</c> once it is saved.
+    /// shell shows it and calls the action with the new entry's block key once it is saved.
     /// </summary>
     public event Action<AppendixKind, Action<Guid>>? NewAppendixEntryRequested;
 
@@ -476,7 +476,7 @@ public sealed class AppState
 
     /// <summary>
     /// Asks the shell to show the appendix dialog for <paramref name="kind"/> with a new, empty entry (the „Neu anlegen …“
-    /// of an insert picker); <paramref name="onCreated"/> gets the entry's <c>id::</c> after its first save.
+    /// of an insert picker); <paramref name="onCreated"/> gets the entry's block key after its first save.
     /// </summary>
     public void RequestNewAppendixEntry(AppendixKind kind, Action<Guid> onCreated) => NewAppendixEntryRequested?.Invoke(kind, onCreated);
 

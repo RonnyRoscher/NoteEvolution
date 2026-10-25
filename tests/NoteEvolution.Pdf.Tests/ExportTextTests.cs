@@ -26,6 +26,20 @@ public class ExportTextTests
             "Satz {{quelle ((6650a1c2-1b7e-4c1d-9a0f-2b3c4d5e6f70)) S. 12}} hier",
             ExportText.Clean("Satz {{quelle ((6650a1c2-1b7e-4c1d-9a0f-2b3c4d5e6f70)) S. 12}} ((6650a1c2-1b7e-4c1d-9a0f-2b3c4d5e6f71))hier"));
 
+    [Theory]
+    [InlineData("S.  #3")]
+    [InlineData("[[x]] und #[[y]]")]
+    [InlineData("Kap. #tag ((6650a1c2-1b7e-4c1d-9a0f-2b3c4d5e6f71))")]
+    public void Clean_LeavesTheLocatorOfACitationUntouched(string locator)
+    {
+        var citation = "{{quelle ((6650a1c2-1b7e-4c1d-9a0f-2b3c4d5e6f70)) " + locator + "}}";
+
+        // The text around the citations is cleaned as before.
+        Assert.Equal(
+            "Satz a " + citation + " und " + citation + " b",
+            ExportText.Clean("Satz [[a]] " + citation + "  und #tag " + citation + " b"));
+    }
+
     [Fact]
     public void Clean_KeepBlockRefs_KeepsWellFormedRefsOnly() =>
         Assert.Equal(

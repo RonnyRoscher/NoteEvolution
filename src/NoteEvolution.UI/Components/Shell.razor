@@ -184,7 +184,7 @@
 
     private Guid? _appendixEntry;
 
-    /// <summary>What gets the new entry's id (a picker's „Neu anlegen …“); <c>null</c>: the dialog was opened to browse.</summary>
+    /// <summary>What gets the new entry's block key (a picker's „Neu anlegen …“); <c>null</c>: the dialog was opened to browse.</summary>
     private Action<Guid>? _appendixOnCreated;
 
     private bool _appendixStartWithNew;
@@ -231,11 +231,11 @@
     });
 
     /// <summary>Passes the first entry created on to the picker that asked for it, once.</summary>
-    private void OnAppendixCreated(Guid id)
+    private void OnAppendixCreated(Guid key)
     {
         var onCreated = _appendixOnCreated;
         _appendixOnCreated = null;
-        onCreated?.Invoke(id);
+        onCreated?.Invoke(key);
     }
 
     private void CloseDialog()

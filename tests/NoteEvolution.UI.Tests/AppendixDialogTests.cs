@@ -243,7 +243,7 @@ public class AppendixDialogTests : UiTestContext
     }
 
     [Fact]
-    public async Task NewEntry_OnCreated_GetsTheIdAfterTheFirstSave()
+    public async Task NewEntry_OnCreated_GetsTheKeyAfterTheFirstSave()
     {
         await OpenAsync(GlossaryText);
         var created = new List<Guid>();
@@ -254,7 +254,61 @@ public class AppendixDialogTests : UiTestContext
 
         var entry = Appendix.Glossary(State.CurrentBook!).Single(e => e.Term == "Gelassenheit");
         Assert.NotEqual(Guid.Empty, entry.Id);
-        Assert.Equal([entry.Id], created);
+        Assert.Equal([entry.Key], created);
+    }
+
+    [Fact]
+    public async Task List_GlossaryAndPeopleAlphabetical_SourcesByNumberThenTitle()
+    {
+        const string ZId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2";
+        const string MId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb3";
+        // In the text Z is cited first (number 1), then M (2); the other sources are not cited.
+        var text =
+            "title:: Alpha\ntype:: book\n\n- # Eins\n" +
+            $"\t- Erst {{{{quelle (({ZId}))}}}} dann {{{{quelle (({MId}))}}}}\n" +
+            "- # Glossar\n  anhang:: glossar\n\t- Zuversicht\n\t- Übermut\n\t- achtsamkeit\n\t- Mut\n" +
+            "- # Menschen, die mich inspiriert haben\n  anhang:: menschen\n\t- Zoe Zeh\n\t- Ömer Öz\n\t- Anna Berg\n" +
+            "- # Quellen\n  anhang:: quellen\n" +
+            "\t- Wenig zitiert\n" +
+            $"\t- Mitte\n\t  id:: {MId}\n" +
+            "\t- Anfang ohne Zitat\n" +
+            $"\t- Zuerst zitiert\n\t  id:: {ZId}\n";
+        await OpenAsync(text);
+
+        Assert.Equal(
+            ["achtsamkeit", "Mut", "Übermut", "Zuversicht"],
+            RenderDialog(AppendixKind.Glossary).FindAll(".ne-appendix-list button").Select(b => b.TextContent));
+        Assert.Equal(
+            ["Anna Berg", "Ömer Öz", "Zoe Zeh"],
+            RenderDialog(AppendixKind.People).FindAll(".ne-appendix-list button").Select(b => b.TextContent));
+        Assert.Equal(
+            ["Zuerst zitiert", "Mitte", "Anfang ohne Zitat", "Wenig zitiert"],
+            RenderDialog(AppendixKind.Sources).FindAll(".ne-appendix-list button").Select(b => b.TextContent));
+    }
+
+    [Fact]
+    public async Task Sources_AuthorWithoutId_IsLinkedByName_GetsItsId_NoDuplicate()
+    {
+        var text = Head +
+                   "- # Menschen, die mich inspiriert haben\n  anhang:: menschen\n\t- Anna Berg\n\t  kuerzel:: AB\n";
+        var vault = await OpenAsync(text);
+        var cut = RenderDialog(AppendixKind.Sources);
+
+        cut.Find(".ne-appendix-new").Click();
+        cut.Find(".ne-appendix-title").Change("Atmen lernen");
+        cut.Find(".ne-appendix-authors").Change("Anna Berg");
+        await CloseAsync(cut);
+
+        var book = State.CurrentBook!;
+        var anna = Assert.Single(Appendix.People(book));
+        Assert.NotEqual(Guid.Empty, anna.Id);
+        Assert.Equal([anna.Id], Appendix.Sources(book).Single().AuthorIds);
+        Assert.Empty(AppendixIndex.Of(book).MissingTargets);
+        Assert.Contains($"\t- Anna Berg\n\t  kuerzel:: AB\n\t  id:: {anna.Id:D}\n", vault.Read(BookPath));
+
+        // One undo takes the source and the person's new id back.
+        State.Session!.Undo.Undo();
+        Assert.Equal(text, vault.Read(BookPath));
     }
 
     [Fact]
