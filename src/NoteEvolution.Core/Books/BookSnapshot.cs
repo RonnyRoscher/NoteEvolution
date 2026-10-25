@@ -59,12 +59,18 @@ public static class BookSnapshot
     /// <summary>
     /// Without <paramref name="includeSubsections"/>: only the text blocks of the node (not used by the UI).
     /// Manuscript: the node's subtree in file order with headings; the node's own heading comes first
-    /// (the root has none). Texts are unescaped (<see cref="BlockTextEscape"/>).
+    /// (the root has none). Texts are unescaped (<see cref="BlockTextEscape"/>). The appendix sections are no part of the
+    /// book's text and are never included (spec 1.3).
     /// </summary>
-    /// <exception cref="ArgumentException">No node has <paramref name="scopeKey"/>.</exception>
+    /// <exception cref="ArgumentException">No node has <paramref name="scopeKey"/>, or it is in the appendix.</exception>
     public static SectionSnapshot Create(Book book, IVault vault, Guid scopeKey, bool includeSubsections)
     {
         var scope = book.FindNode(scopeKey) ?? throw new ArgumentException("No section has this key.", nameof(scopeKey));
+        if (book.IsInAppendix(scopeKey))
+        {
+            throw new ArgumentException("The appendix is not shown in the editor.", nameof(scopeKey));
+        }
+
         var nodes = new List<SnapshotNode>();
         if (includeSubsections)
         {
@@ -95,7 +101,7 @@ public static class BookSnapshot
         {
             switch (item)
             {
-                case OutlineNode child:
+                case OutlineNode { AppendixKind: AppendixKind.None } child:
                     AddSubtree(nodes, child, vault);
                     break;
                 case TextBlock text:

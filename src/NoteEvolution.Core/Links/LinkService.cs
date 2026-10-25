@@ -171,6 +171,11 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
         }
 
         var section = book.FindNode(sectionKey) ?? throw new ArgumentException("No section has this key.", nameof(sectionKey));
+        if (book.IsInAppendix(sectionKey))
+        {
+            throw new ArgumentException("A note is not adopted into the appendix.", nameof(sectionKey));
+        }
+
         var level = asSubheading ? section.Level + 1 : Math.Max(section.Level, 1);
         if (level > OutlineEditor.MaxLevel)
         {
@@ -178,13 +183,17 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
         }
 
         // A sub-heading goes before the section's first sub-section, a heading of the same level right after the
-        // section's subtree: no existing block changes its section.
+        // section's subtree: no existing block changes its section. A top-level heading goes before the appendix.
         var firstSubsection = section.Items.ToList().FindIndex(item => item is OutlineNode);
         var (parent, index) = asSubheading
             ? (section.Block, firstSubsection >= 0 ? firstSubsection : section.Items.Count)
             : section.Block is { } sectionBlock
                 ? (sectionBlock.Parent, IndexOf(bookPage, sectionBlock) + 1)
                 : (null, bookPage.Roots.Count);
+        if (parent is null)
+        {
+            index = book.BeforeAppendix(index);
+        }
 
         // Everything is built detached first, so that a text that would not stay one block throws before anything changed.
         var text = NoteTag.Has(note.Content) ? NoteTag.Remove(note.Content) : note.Content;

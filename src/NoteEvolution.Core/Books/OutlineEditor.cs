@@ -7,7 +7,9 @@ namespace NoteEvolution.Core.Books;
 /// memory and find their blocks by <see cref="Block.Key"/> through the <see cref="Book"/> view; they do not save.
 /// The caller saves the page (e.g. via <c>IPageWriter</c>) and reloads the <see cref="Book"/>, because the view
 /// is stale after an operation. Every operation validates its arguments first; if it throws, the page is unchanged.
-/// <see cref="Guid.Empty"/> stands for the root (level 0), the parent of the top-level headings.
+/// <see cref="Guid.Empty"/> stands for the root (level 0), the parent of the top-level headings. The appendix
+/// sections (<see cref="OutlineNode.AppendixKind"/>) are no section of the book's text: they are neither changed nor
+/// a parent here, and new or moved top-level headings go before the first of them.
 /// </summary>
 public static class OutlineEditor
 {
@@ -16,11 +18,12 @@ public static class OutlineEditor
 
     /// <summary>
     /// Adds a heading <c>"#" * (parent level + 1) + " " + title</c> as the last child of the parent
-    /// (for the root: the last root block).
+    /// (for the root: the last root block before the appendix).
     /// </summary>
     /// <returns>The <see cref="Block.Key"/> of the new heading.</returns>
     /// <exception cref="ArgumentException">
-    /// Unknown parent, a title that is blank or spans several lines, or a parent that is already level 6.
+    /// Unknown parent or one in the appendix, a title that is blank or spans several lines, or a parent that is already
+    /// level 6.
     /// </exception>
     public static Guid AddHeading(Book book, Guid parentKey, string title)
     {
@@ -32,7 +35,8 @@ public static class OutlineEditor
         }
 
         var heading = Block.CreateDetached(HeadingText.WithTitle("", parent.Level + 1, title));
-        book.Page.InsertBlock(parent.Block, ChildBlocks(book, parent).Count, heading);
+        var index = ChildBlocks(book, parent).Count;
+        book.Page.InsertBlock(parent.Block, parent.Block is null ? book.BeforeAppendix(index) : index, heading);
         return heading.Key;
     }
 
@@ -40,7 +44,7 @@ public static class OutlineEditor
     /// Replaces the title of a heading; its <c>#</c> prefix, further content lines and properties
     /// (<c>collapsed::</c>, <c>id::</c>) stay.
     /// </summary>
-    /// <exception cref="ArgumentException">Unknown heading (or the root), or a blank / multi-line title.</exception>
+    /// <exception cref="ArgumentException">Unknown heading (or the root), one in the appendix, or a blank / multi-line title.</exception>
     public static void Rename(Book book, Guid nodeKey, string title)
     {
         var node = FindHeading(book, nodeKey, nameof(nodeKey));
@@ -55,11 +59,12 @@ public static class OutlineEditor
     /// Moves a heading with everything below it to <paramref name="index"/> among the headings
     /// (<see cref="OutlineNode"/> children, without the moved node itself) of the new parent. Text blocks of the
     /// new parent keep their place in the file. Every heading in the moved subtree gets the level
-    /// <c>new parent level + 1 + depth below the moved heading</c>; only the <c>#</c> prefix changes.
+    /// <c>new parent level + 1 + depth below the moved heading</c>; only the <c>#</c> prefix changes. At the root, an
+    /// index after the last section of the book's text means before the first appendix section.
     /// </summary>
     /// <exception cref="ArgumentException">
-    /// Unknown heading or parent, the new parent is the node itself or inside its subtree, or the subtree would
-    /// get a heading deeper than level 6.
+    /// Unknown heading or parent, either in the appendix, the new parent is the node itself or inside its subtree, or
+    /// the subtree would get a heading deeper than level 6.
     /// </exception>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="index"/> is not within 0..number of headings.</exception>
     public static void MoveSection(Book book, Guid nodeKey, Guid newParentKey, int index)
@@ -77,6 +82,10 @@ public static class OutlineEditor
         var headings = newParent.Children.Where(child => child != node).ToList();
         ArgumentOutOfRangeException.ThrowIfNegative(index);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(index, headings.Count);
+        if (headings.FindIndex(heading => heading.AppendixKind != AppendixKind.None) is >= 0 and var firstAppendix)
+        {
+            index = Math.Min(index, firstAppendix);
+        }
 
         var deepest = newParent.Level + Height(node);
         if (deepest > MaxLevel)
@@ -92,8 +101,15 @@ public static class OutlineEditor
         Relevel(node, newParent.Level + 1);
     }
 
-    private static OutlineNode FindSection(Book book, Guid key, string paramName) =>
-        book.FindNode(key) ?? throw new ArgumentException("There is no such heading in the book.", paramName);
+    /// <summary>The section (or the root) <paramref name="key"/> of the book's text.</summary>
+    /// <exception cref="ArgumentException">Unknown key, or a heading in the appendix.</exception>
+    private static OutlineNode FindSection(Book book, Guid key, string paramName)
+    {
+        var node = book.FindNode(key) ?? throw new ArgumentException("There is no such heading in the book.", paramName);
+        return book.IsInAppendix(key)
+            ? throw new ArgumentException("The appendix is not changed by outline commands.", paramName)
+            : node;
+    }
 
     internal static OutlineNode FindHeading(Book book, Guid key, string paramName)
     {

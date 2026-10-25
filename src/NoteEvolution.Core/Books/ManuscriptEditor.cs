@@ -10,14 +10,15 @@ namespace NoteEvolution.Core.Books;
 /// <see cref="OutlineEditor"/>, they change <c>book.Page</c> in memory and find their blocks through the
 /// <see cref="Book"/> view; the caller saves the page and reloads the
 /// <see cref="Book"/>. Every command validates first; if it throws (<see cref="ArgumentException"/>, also for an unknown key), the page is unchanged.
-/// New headings are empty (<c>"#" * level + " "</c>), new text blocks and details are empty blocks.
+/// New headings are empty (<c>"#" * level + " "</c>), new text blocks and details are empty blocks. The appendix is
+/// no element of the manuscript (<see cref="BookElements.Find"/>): every command refuses it.
 /// </summary>
 public static class ManuscriptEditor
 {
     /// <summary>
     /// Adds a new empty element after <paramref name="current"/>: for a heading of level n a level-n heading after its
     /// whole section, for a text block a text block directly after it, for a detail a detail of the same depth after
-    /// it and its deeper details.
+    /// it and its deeper details. A new top-level heading goes before the appendix.
     /// </summary>
     /// <param name="now">
     /// With a time, a new text block gets both dates and a new detail stamps <c>updated::</c> on its text block; a new
@@ -29,7 +30,13 @@ public static class ManuscriptEditor
     {
         var block = BlockOf(book, current);
         var content = current.Kind == ElementKind.Heading ? EmptyHeading(book.FindNode(current.Key)!.Level) : "";
-        return Insert(book, block.Parent, IndexOf(book.Page, block) + 1, content, current.Kind, current, now);
+        var index = IndexOf(book.Page, block) + 1;
+        if (current.Kind == ElementKind.Heading && block.Parent is null)
+        {
+            index = book.BeforeAppendix(index);
+        }
+
+        return Insert(book, block.Parent, index, content, current.Kind, current, now);
     }
 
     /// <summary>
@@ -66,11 +73,11 @@ public static class ManuscriptEditor
 
     /// <summary>
     /// Moves the heading one level deeper, with its sub-sections: it becomes the last sub-section of the previous
-    /// heading of the same level (<see cref="OutlineEditor.MoveSection"/>).
+    /// heading of the same level (<see cref="OutlineEditor.MoveSection"/>), never of an appendix section.
     /// </summary>
     /// <exception cref="ArgumentException">
-    /// Unknown heading, no previous heading of the same level in the same section, or the subtree would get a heading
-    /// deeper than level 6.
+    /// Unknown heading or one in the appendix, no previous heading of the same level in the same section, or the
+    /// subtree would get a heading deeper than level 6.
     /// </exception>
     public static void Indent(Book book, Guid headingKey)
     {
@@ -84,7 +91,7 @@ public static class ManuscriptEditor
     /// Moves the heading one level higher, with its sub-sections: it is placed directly after the section of its
     /// former parent heading, and every heading of its subtree gets one <c>#</c> less.
     /// </summary>
-    /// <exception cref="ArgumentException">Unknown heading, or a level-1 heading.</exception>
+    /// <exception cref="ArgumentException">Unknown heading, one in the appendix, or a level-1 heading.</exception>
     public static void Outdent(Book book, Guid headingKey)
     {
         var node = OutlineEditor.FindHeading(book, headingKey, nameof(headingKey));
@@ -102,12 +109,13 @@ public static class ManuscriptEditor
     /// <summary>Whether <see cref="Indent"/> is possible; <c>false</c> for an unknown key.</summary>
     public static bool CanIndent(Book book, Guid headingKey) =>
         book.FindNode(headingKey) is { Block: not null } node
+        && !book.IsInAppendix(headingKey)
         && PreviousSameLevel(node) is { } previous
         && previous.Level + OutlineEditor.Height(node) <= OutlineEditor.MaxLevel;
 
     /// <summary>Whether <see cref="Outdent"/> is possible; <c>false</c> for an unknown key.</summary>
     public static bool CanOutdent(Book book, Guid headingKey) =>
-        book.FindNode(headingKey) is { Block: not null } node && CanOutdent(node);
+        book.FindNode(headingKey) is { Block: not null } node && !book.IsInAppendix(headingKey) && CanOutdent(node);
 
     /// <summary>
     /// Removes the heading but keeps its content: its title (with any further lines of the heading's text) becomes a
@@ -122,7 +130,7 @@ public static class ManuscriptEditor
     /// (<see cref="RemovedHeading.Reveal"/>): the new text block, else the first moved item, else the element before the
     /// heading in the file, else <see cref="Guid.Empty"/>.
     /// </returns>
-    /// <exception cref="ArgumentException">Unknown heading.</exception>
+    /// <exception cref="ArgumentException">Unknown heading, or one in the appendix.</exception>
     public static RemovedHeading RemoveHeading(Book book, Guid headingKey, DateTimeOffset? now = null)
     {
         var node = OutlineEditor.FindHeading(book, headingKey, nameof(headingKey));
@@ -379,7 +387,9 @@ public static class ManuscriptEditor
     /// of its subtree shifts by the same difference, so the outline below it stays as it is. Only the <c>#</c> marks
     /// change.
     /// </summary>
-    /// <exception cref="ArgumentException">Unknown heading, or <see cref="LevelBlocked"/> refuses the level (also Text).</exception>
+    /// <exception cref="ArgumentException">
+    /// Unknown heading or one in the appendix, or <see cref="LevelBlocked"/> refuses the level (also Text).
+    /// </exception>
     public static void SetHeadingLevel(Book book, Guid headingKey, int level)
     {
         var node = OutlineEditor.FindHeading(book, headingKey, nameof(headingKey));
@@ -774,9 +784,13 @@ public static class ManuscriptEditor
         return index;
     }
 
-    /// <summary>The last heading of the same level before <paramref name="node"/> in its section, or <c>null</c>.</summary>
+    /// <summary>
+    /// The last heading of the same level before <paramref name="node"/> in its section, or <c>null</c>; an appendix
+    /// section does not count.
+    /// </summary>
     private static OutlineNode? PreviousSameLevel(OutlineNode node) =>
-        node.Parent!.Children.TakeWhile(sibling => sibling != node).LastOrDefault(sibling => sibling.Level == node.Level);
+        node.Parent!.Children.TakeWhile(sibling => sibling != node)
+            .LastOrDefault(sibling => sibling.Level == node.Level && sibling.AppendixKind == AppendixKind.None);
 
     private static bool CanOutdent(OutlineNode node) => node.Level > 1 && node.Parent is { Block: not null };
 

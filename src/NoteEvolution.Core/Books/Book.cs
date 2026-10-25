@@ -15,6 +15,9 @@ public sealed partial class Book
     private readonly Dictionary<Guid, TextBlock> _textBlocksById = [];
     private readonly List<OutlineWarning> _warnings = [];
 
+    /// <summary>Keys of every block in an appendix section's subtree, the heading included.</summary>
+    private readonly HashSet<Guid> _appendixKeys = [];
+
     [GeneratedRegex(@"^(?<hashes>#{1,6}) (?<title>.*)$")]
     private static partial Regex HeadingRegex();
 
@@ -43,12 +46,54 @@ public sealed partial class Book
 
     public IReadOnlyList<OutlineWarning> Warnings => _warnings;
 
+    /// <summary>The top-level headings of the book's text: the root's children without the appendix sections.</summary>
+    public IEnumerable<OutlineNode> ContentChildren => Root.Children.Where(node => node.AppendixKind == AppendixKind.None);
+
+    /// <summary>Words of the book's text, without the appendix (the same as <c>Root.WordCount</c>).</summary>
+    public int ContentWordCount => Root.WordCount;
+
+    /// <summary>
+    /// The appendix sections after the first of their kind, in file order: they count as appendix (not as text), but
+    /// only the first one of a kind is used.
+    /// </summary>
+    public IReadOnlyList<OutlineNode> DuplicateAppendixSections =>
+        [.. Root.Children.Where(node => node.AppendixKind != AppendixKind.None && AppendixSection(node.AppendixKind) != node)];
+
     public static bool IsBook(Page page) =>
         string.Equals(page.GetPageProperty("type")?.Trim(), "book", StringComparison.OrdinalIgnoreCase);
 
     public static Book Load(Page page) => new(page);
 
     public OutlineNode? FindNode(Guid key) => _nodes.GetValueOrDefault(key);
+
+    /// <summary>The first appendix section of <paramref name="kind"/>; <c>null</c> if the book has none.</summary>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="kind"/> is <see cref="AppendixKind.None"/>.</exception>
+    public OutlineNode? AppendixSection(AppendixKind kind)
+    {
+        ArgumentOutOfRangeException.ThrowIfEqual(kind, AppendixKind.None);
+        return Root.Children.FirstOrDefault(node => node.AppendixKind == kind);
+    }
+
+    /// <summary>Whether the block <paramref name="key"/> is an appendix section's heading or lies below one.</summary>
+    internal bool IsInAppendix(Guid key) => _appendixKeys.Contains(key);
+
+    /// <summary>
+    /// <paramref name="rootIndex"/> (an index among the page's root blocks for a new or moved top-level heading),
+    /// but at most the index of the first appendix section: the book's text stays before the appendix.
+    /// </summary>
+    internal int BeforeAppendix(int rootIndex)
+    {
+        var roots = Page.Roots;
+        for (var i = 0; i < Math.Min(rootIndex, roots.Count); i++)
+        {
+            if (IsInAppendix(roots[i].Key))
+            {
+                return i;
+            }
+        }
+
+        return rootIndex;
+    }
 
     public TextBlock? FindTextBlock(Guid key) => _textBlocks.GetValueOrDefault(key);
 
@@ -67,8 +112,14 @@ public sealed partial class Book
                         block.Key, $"Überschrift ‚{title}‘ ist nicht tiefer als ‚{section.Title}‘"));
                 }
 
-                var node = new OutlineNode(block, title, level, section);
+                var kind = section == Root ? AppendixKinds.Parse(block.GetProperty(AppendixKinds.Key)) : AppendixKind.None;
+                var node = new OutlineNode(block, title, level, section, kind);
                 _nodes[node.Key] = node;
+                if (kind != AppendixKind.None)
+                {
+                    AddAppendixKeys(block);
+                }
+
                 section.Add(node);
                 AddItems(node, block.Children);
             }
@@ -85,6 +136,15 @@ public sealed partial class Book
 
                 section.Add(textBlock);
             }
+        }
+    }
+
+    private void AddAppendixKeys(Block block)
+    {
+        _appendixKeys.Add(block.Key);
+        foreach (var child in block.Children)
+        {
+            AddAppendixKeys(child);
         }
     }
 
