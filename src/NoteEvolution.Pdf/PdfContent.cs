@@ -83,7 +83,7 @@ internal sealed partial class PdfContent : IDisposable
     [GeneratedRegex(@"^[A-Za-z][A-Za-z0-9+.-]*://")]
     private static partial Regex RemoteRegex();
 
-    private PdfContent(Book book, Func<Guid, bool>? knownElsewhere)
+    private PdfContent(Book book, OutlineNode scope, Func<Guid, bool>? knownElsewhere)
     {
         _book = book;
         _refs = CrossRefIndex.Of(book, knownElsewhere);
@@ -103,7 +103,8 @@ internal sealed partial class PdfContent : IDisposable
             _glossary.TryAdd(entry.Id, entry);
         }
 
-        foreach (var hit in _appendix.GlossaryHits)
+        // Terms are marked at their first occurrence in the exported part; the source numbers stay those of the book.
+        foreach (var hit in _appendix.GlossaryHitsIn(scope))
         {
             if (!_hitsByElement.TryGetValue(hit.ParagraphKey, out var hits))
             {
@@ -137,7 +138,7 @@ internal sealed partial class PdfContent : IDisposable
             throw new ArgumentException($"Der Anhang ist kein Teil des Buchtexts: {scopeKey}.", nameof(scopeKey));
         }
 
-        var content = new PdfContent(book, knownElsewhere);
+        var content = new PdfContent(book, scope, knownElsewhere);
         try
         {
             if (scope.Level > 0)
@@ -269,22 +270,17 @@ internal sealed partial class PdfContent : IDisposable
         AddParagraph(text[position..], hits);
     }
 
-    /// <summary>The glossary hits of an exported element in text order; their entries count as used.</summary>
+    /// <summary>The glossary hits of an exported element in text order.</summary>
     private List<GlossaryHit> UsedHits(Guid elementKey)
     {
-        var hits = _hitsByElement.GetValueOrDefault(elementKey)?.OrderBy(hit => hit.Start).ToList() ?? [];
-        foreach (var hit in hits)
-        {
-            _usedGlossary.Add(hit.EntryId);
-        }
-
-        return hits;
+        return _hitsByElement.GetValueOrDefault(elementKey)?.OrderBy(hit => hit.Start).ToList() ?? [];
     }
 
     /// <summary>
     /// <paramref name="content"/> with a start mark (carrying the number of the hit in <paramref name="hits"/>) and an
     /// end mark around each hit. The hits are offsets in the text as the editor shows it, mapped to the content's
-    /// Markdown. A hit that overlaps the one before, or has no place in the Markdown, stays unmarked.
+    /// Markdown. A hit that overlaps the one before, or has no place in the Markdown, stays unmarked and its entry unlisted;
+    /// a marked hit makes its entry used.
     /// </summary>
     private string WithMarks(string content, Guid elementKey, List<GlossaryHit> hits)
     {
@@ -297,6 +293,7 @@ internal sealed partial class PdfContent : IDisposable
                 && end > start && (places.Count == 0 || start >= places[^1].End))
             {
                 places.Add((start, end, number));
+                _usedGlossary.Add(hit.EntryId);
             }
         }
 

@@ -150,19 +150,21 @@ public class AppendixPdfTests
     {
         var book = PdfSamples.Load(BookText(Body()));
         var second = book.ContentChildren.Last().Key;
-        var pages = PdfExportTests.PageTexts(PdfExportTests.Export(book, second).Bytes);
+        var bytes = PdfExportTests.Export(book, second).Bytes;
+        var pages = PdfExportTests.PageTexts(bytes);
 
-        // The second chapter cites the video (book number 2) and the book (1); it uses the glossary term, but its first
-        // occurrence in the book is in the first chapter, so only the persons and sources of this section are listed.
+        // The second chapter cites the video (book number 2) and the book (1). The glossary term is first used in the
+        // first chapter, but is marked at its first occurrence here and listed; Anna is cited in the first chapter only.
+        Assert.Equal(6, pages.Count);
         Assert.Contains("2 1 Nochmal Achtsamkeit und und .", pages[2]);
-        // Carl is the author of the cited book, Anna is cited in the first chapter only.
-        Assert.StartsWith("Menschen, die mich inspiriert haben Carl Muster (CM)", pages[^2]);
-        var last = pages[^1];
-        Assert.StartsWith("Quellen", last);
-        Assert.DoesNotContain("Glossar", string.Join(" ", pages));
-        Assert.Contains("[1] Carl Muster: Das Buch", last);
-        Assert.Contains("[2] Ein Video", last);
+        Assert.StartsWith("Glossar Achtsamkeit", pages[3]);
+        Assert.StartsWith("Menschen, die mich inspiriert haben Carl Muster (CM)", pages[4]);
+        Assert.StartsWith("Quellen", pages[5]);
+        Assert.Contains("[1] Carl Muster: Das Buch", pages[5]);
+        Assert.Contains("[2] Ein Video", pages[5]);
         Assert.DoesNotContain("Anna Beispiel", string.Join(" ", pages));
+        using var pdf = PdfDocument.Open(bytes);
+        Assert.Equal([4, 6, 6], Links(pdf.GetPage(3)));
     }
 
     [Fact]

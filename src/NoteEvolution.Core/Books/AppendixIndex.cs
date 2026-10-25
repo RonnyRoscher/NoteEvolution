@@ -28,6 +28,7 @@ public sealed partial class AppendixIndex
     private readonly List<Guid> _readingOrder = [];
     private readonly Dictionary<Guid, int> _sourceNumbers = [];
     private readonly List<GlossaryHit> _glossaryHits = [];
+    private IReadOnlyList<GlossaryEntry> _glossary = [];
     private readonly Dictionary<Guid, int> _referenceCounts = [];
     private readonly List<(Guid ElementKey, Guid MissingId)> _missingTargets = [];
 
@@ -113,7 +114,8 @@ public sealed partial class AppendixIndex
             }
         }
 
-        index.FindGlossaryHits(Appendix.Glossary(book), elements.Where(e => e is { IsHeading: false, Exported: true }));
+        index._glossary = Appendix.Glossary(book);
+        index._glossaryHits.AddRange(FindGlossaryHits(index._glossary, elements));
         return index;
     }
 
@@ -157,8 +159,22 @@ public sealed partial class AppendixIndex
         }
     }
 
-    private void FindGlossaryHits(IReadOnlyList<GlossaryEntry> glossary, IEnumerable<Element> texts)
+    /// <summary>
+    /// The first hit of every glossary term (or one of its forms) within <paramref name="scope"/> and its subtree only,
+    /// as <see cref="GlossaryHits"/> has it for the whole book: for a partial export, whose terms are marked at their first
+    /// occurrence in the exported part.
+    /// </summary>
+    public IReadOnlyList<GlossaryHit> GlossaryHitsIn(OutlineNode scope)
     {
+        var elements = new List<Element>();
+        Collect(scope, elements);
+        return FindGlossaryHits(_glossary, elements);
+    }
+
+    private static List<GlossaryHit> FindGlossaryHits(IReadOnlyList<GlossaryEntry> glossary, IEnumerable<Element> elements)
+    {
+        var hits = new List<GlossaryHit>();
+        var texts = elements.Where(e => e is { IsHeading: false, Exported: true });
         var pending = glossary
             .Where(entry => entry.Id != Guid.Empty && entry.Term.Length > 0)
             .ToDictionary(entry => entry, entry => new[] { entry.Term }.Concat(entry.Forms).ToList());
@@ -174,11 +190,13 @@ public sealed partial class AppendixIndex
             {
                 if (EarliestHit(shown, terms) is { } hit)
                 {
-                    _glossaryHits.Add(new GlossaryHit(entry.Id, element.Key, hit.Start, hit.Length));
+                    hits.Add(new GlossaryHit(entry.Id, element.Key, hit.Start, hit.Length));
                     pending.Remove(entry);
                 }
             }
         }
+
+        return hits;
     }
 
     /// <summary>
