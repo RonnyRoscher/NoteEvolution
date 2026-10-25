@@ -128,6 +128,9 @@
         case Dialog.Draft:
             <DraftWizard OnClose="CloseDialog" InitialPage="_draftPage" OnConverted="OnDraftConverted" />
             break;
+        case Dialog.Appendix:
+            <AppendixDialog @key="(_appendixKind, _appendixEntry)" Kind="_appendixKind" InitialEntry="_appendixEntry" OnClose="CloseDialog" />
+            break;
     }
 
     @* Above the other dialogs: it may be asked for from the settings, which stay open underneath. *@
@@ -175,6 +178,11 @@
     /// <summary>The offer waits for the other dialogs (the link check, the AI model) to close.</summary>
     private bool _languageOfferPending;
 
+    /// <summary>The section and entry of the appendix dialog (<see cref="AppState.RequestAppendixDialog"/>).</summary>
+    private AppendixKind _appendixKind;
+
+    private Guid? _appendixEntry;
+
     private enum Dialog
     {
         None,
@@ -184,9 +192,19 @@
         Shortcuts,
         Handled,
         Draft,
+        Appendix,
     }
 
     private void Show(Dialog dialog) => _dialog = dialog;
+
+    /// <summary>Someone asked for the glossary, people or sources window (the outline's appendix row).</summary>
+    private void OnAppendixDialogRequested(AppendixKind kind, Guid? entry) => _ = InvokeAsync(() =>
+    {
+        _appendixKind = kind;
+        _appendixEntry = entry;
+        _dialog = Dialog.Appendix;
+        StateHasChanged();
+    });
 
     private void CloseDialog()
     {
@@ -423,6 +441,7 @@
         State.SetSplit(Settings.SplitView);
         State.Changed += OnStateChanged;
         State.AiModelDialogRequested += OnAiModelDialogRequested;
+        State.AppendixDialogRequested += OnAppendixDialogRequested;
         State.BookSelected += RememberBook;
         // The host page's splash screen (index.html) says what the start waits for and fades out after it (the last
         // vault is open, or there is none). It is only a display, so the start never waits for it.
@@ -457,6 +476,7 @@
     {
         State.Changed -= OnStateChanged;
         State.AiModelDialogRequested -= OnAiModelDialogRequested;
+        State.AppendixDialogRequested -= OnAppendixDialogRequested;
         State.BookSelected -= RememberBook;
         if (_subscribed is not null)
         {

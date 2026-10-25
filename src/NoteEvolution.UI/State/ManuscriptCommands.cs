@@ -366,7 +366,7 @@ public static class ManuscriptCommands
     /// The session and the book to change; or, when the command may not run, no book and the message to show
     /// (<c>null</c> when there is simply no book).
     /// </returns>
-    private static async Task<(AdoptMessage? Message, VaultSession? Session, Book? Book)> PrepareAsync(AppState state, ILogger logger)
+    internal static async Task<(AdoptMessage? Message, VaultSession? Session, Book? Book)> PrepareAsync(AppState state, ILogger logger)
     {
         try
         {
@@ -382,6 +382,15 @@ public static class ManuscriptCommands
             return (new AdoptMessage("SectionCommandUnsaved", true), null, null);
         }
 
+        return Prepare(state);
+    }
+
+    /// <summary>
+    /// The part of <see cref="PrepareAsync"/> after the editor was flushed: text it could not save refuses the command,
+    /// then the book is taken from the vault and checked for being writable and free of an open conflict (R26).
+    /// </summary>
+    internal static (AdoptMessage? Message, VaultSession? Session, Book? Book) Prepare(AppState state)
+    {
         if (state.HasUnsavedEditorText?.Invoke() == true)
         {
             return (new AdoptMessage("SectionCommandUnsaved", true), null, null);
@@ -603,7 +612,7 @@ public static class ManuscriptCommands
     /// brings the command's change into the file together with it, but without an undo entry (none is pushed after a
     /// failed save).
     /// </summary>
-    private static AdoptMessage SaveFailed(VaultSession session, Page page, Exception? error)
+    internal static AdoptMessage SaveFailed(VaultSession session, Page page, Exception? error)
     {
         if (session.HasOpenConflict(page.FilePath))
         {
@@ -743,30 +752,6 @@ public static class ManuscriptCommands
     }
 
     /// <summary>
-    /// Undoes a structure command: puts the page of <paramref name="path"/> back to its state <paramref name="before"/>
-    /// the command and saves it, but only while the page is exactly what the command left (<paramref name="after"/>);
-    /// a later change (e.g. a title typed into a new heading) is never overwritten.
-    /// </summary>
-    private sealed class StructureUndo(
-        string description, VaultSession session, string path, PageStructureSnapshot before, PageStructureSnapshot after) : IUndoAction
-    {
-        public string Description => description;
-
-        /// <exception cref="InvalidOperationException">The page changed after the command, or saving it failed.</exception>
-        public void Undo()
-        {
-            var page = session.Vault.FindPageByPath(path);
-            if (page is null || !after.Matches(page))
-            {
-                throw new InvalidOperationException($"'{path}' changed after the structure command; it is not undone.");
-            }
-
-            before.RestoreInto(page);
-            SaveUndone(session, page, path);
-        }
-    }
-
-    /// <summary>
     /// Undoes removing a heading (<see cref="RemovedHeading.RestoreInto"/>) and saves the page: the heading comes back
     /// around the blocks it held, also after later edits elsewhere or in those blocks' text, and the text block made
     /// from its title goes. Refused (no change) when the heading's former parent is gone, a moved block is gone or was
@@ -787,7 +772,7 @@ public static class ManuscriptCommands
             }
 
             removed.RestoreInto(page);
-            SaveUndone(session, page, path);
+            StructureUndo.SaveUndone(session, page, path);
         }
     }
 
@@ -811,23 +796,7 @@ public static class ManuscriptCommands
             }
 
             wrapped.RestoreInto(book);
-            SaveUndone(session, book.Page, book.Page.FilePath);
-        }
-    }
-
-    /// <summary>Saves the page after an undo; if that fails, the vault takes the file's version again where it should.</summary>
-    /// <exception cref="InvalidOperationException">Saving failed.</exception>
-    private static void SaveUndone(VaultSession session, Page page, string path)
-    {
-        if (!session.TrySave(page, out var error))
-        {
-            if (error is not FileChangedExternallyException && !session.HasOpenConflict(path))
-            {
-                // The restored page was not written: the vault takes the file's version again.
-                PageReload.FromDisk(session, page);
-            }
-
-            throw new InvalidOperationException($"Saving '{path}' after undoing the structure command failed.", error);
+            StructureUndo.SaveUndone(session, book.Page, book.Page.FilePath);
         }
     }
 }

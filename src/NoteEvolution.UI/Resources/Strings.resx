@@ -1655,4 +1655,100 @@
   <data name="KeysNavigation2" xml:space="preserve">
     <value>Buch geteilt anzeigen ein / aus</value>
   </data>
+  <data name="UndoAppendix" xml:space="preserve">
+    <value>Anhang ändern</value>
+  </data>
+  <data name="AppendixDeleteReferenced" xml:space="preserve">
+    <value>{0} Verweise im Buch werden zu ‚Verweis fehlt‘. Trotzdem löschen?</value>
+  </data>
+  <data name="AppendixNameEmpty" xml:space="preserve">
+    <value>Der Name darf nicht leer sein.</value>
+  </data>
+  <data name="AppendixAbbreviationInvalid" xml:space="preserve">
+    <value>Das Kürzel darf 1–6 Zeichen aus Buchstaben, Ziffern, Punkt und Bindestrich haben.</value>
+  </data>
+  <data name="AppendixAbbreviationTaken" xml:space="preserve">
+    <value>Dieses Kürzel ist im Buch schon vergeben.</value>
+  </data>
+  <data name="AppendixTermEmpty" xml:space="preserve">
+    <value>Der Begriff darf nicht leer sein.</value>
+  </data>
+  <data name="AppendixTitleEmpty" xml:space="preserve">
+    <value>Der Titel darf nicht leer sein.</value>
+  </data>
+  <data name="AppendixSearch" xml:space="preserve">
+    <value>Suchen</value>
+  </data>
+  <data name="AppendixNew" xml:space="preserve">
+    <value>Neu</value>
+  </data>
+  <data name="AppendixDelete" xml:space="preserve">
+    <value>Löschen</value>
+  </data>
+  <data name="AppendixDeleteConfirm" xml:space="preserve">
+    <value>Trotzdem löschen</value>
+  </data>
+  <data name="AppendixNoEntries" xml:space="preserve">
+    <value>Noch keine Einträge.</value>
+  </data>
+  <data name="AppendixUntitled" xml:space="preserve">
+    <value>(ohne Namen)</value>
+  </data>
+  <data name="AppendixPickEntry" xml:space="preserve">
+    <value>Wähle links einen Eintrag oder lege einen neuen an.</value>
+  </data>
+  <data name="AppendixTerm" xml:space="preserve">
+    <value>Begriff</value>
+  </data>
+  <data name="AppendixForms" xml:space="preserve">
+    <value>Formen (mit Komma getrennt)</value>
+  </data>
+  <data name="AppendixExplanation" xml:space="preserve">
+    <value>Erklärung</value>
+  </data>
+  <data name="AppendixName" xml:space="preserve">
+    <value>Name</value>
+  </data>
+  <data name="AppendixAbbreviation" xml:space="preserve">
+    <value>Kürzel</value>
+  </data>
+  <data name="AppendixTopics" xml:space="preserve">
+    <value>Themen (mit Komma getrennt)</value>
+  </data>
+  <data name="AppendixDescription" xml:space="preserve">
+    <value>Beschreibung</value>
+  </data>
+  <data name="AppendixSourceKind" xml:space="preserve">
+    <value>Art</value>
+  </data>
+  <data name="AppendixKindBook" xml:space="preserve">
+    <value>Buch</value>
+  </data>
+  <data name="AppendixKindVideo" xml:space="preserve">
+    <value>Video</value>
+  </data>
+  <data name="AppendixKindArticle" xml:space="preserve">
+    <value>Artikel</value>
+  </data>
+  <data name="AppendixKindWebsite" xml:space="preserve">
+    <value>Webseite</value>
+  </data>
+  <data name="AppendixKindOther" xml:space="preserve">
+    <value>Sonstiges</value>
+  </data>
+  <data name="AppendixSourceTitle" xml:space="preserve">
+    <value>Titel</value>
+  </data>
+  <data name="AppendixAuthors" xml:space="preserve">
+    <value>Autoren (mit Komma getrennt)</value>
+  </data>
+  <data name="AppendixYear" xml:space="preserve">
+    <value>Jahr</value>
+  </data>
+  <data name="AppendixPublisher" xml:space="preserve">
+    <value>Herausgeber</value>
+  </data>
+  <data name="AppendixUrl" xml:space="preserve">
+    <value>URL</value>
+  </data>
 </root>

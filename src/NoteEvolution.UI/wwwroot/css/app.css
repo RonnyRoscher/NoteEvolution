@@ -2528,3 +2528,85 @@ html, body {
     white-space: nowrap;
     font-variant-numeric: tabular-nums;
 }
+
+/* Appendix dialog (glossary, people, sources): the list on the left, the fields of the entry on the right */
+.ne-modal.ne-appendix-dialog {
+    width: min(860px, 94vw);
+}
+
+.ne-appendix-dialog .ne-modal-body {
+    display: flex;
+    gap: 14px;
+    min-height: 320px;
+}
+
+.ne-appendix-side {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    flex: 0 0 240px;
+    min-width: 0;
+}
+
+.ne-appendix-list {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+}
+
+.ne-appendix-list button {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 4px 8px;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: var(--fg);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ne-appendix-list button.selected {
+    background: var(--accent);
+    color: var(--accent-fg);
+}
+
+.ne-appendix-fields {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    gap: 8px;
+    min-width: 0;
+}
+
+.ne-appendix-fields label {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    font-size: 12px;
+    color: var(--fg-muted);
+}
+
+.ne-appendix-fields input,
+.ne-appendix-fields select,
+.ne-appendix-fields textarea {
+    font: inherit;
+    color: var(--fg);
+}
+
+.ne-appendix-fields textarea {
+    min-height: 6em;
+    resize: vertical;
+}
+
+.ne-appendix-confirm {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    color: var(--danger);
+}

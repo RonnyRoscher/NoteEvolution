@@ -1,0 +1,426 @@
+@using NoteEvolution.Core.Books
+@using NoteEvolution.Core.Model
+@using NoteEvolution.UI.State
+@inject AppState State
+@inject IStringLocalizer<Strings> L
+@inject ILogger<AppendixDialog> Logger
+
+<Modal Title="@TitleText" CssClass="ne-appendix-dialog" OnClose="CloseAsync">
+    <ChildContent>
+        @if (State.CurrentBook is not { } book)
+        {
+            <p class="ne-dialog-hint">@L["AppendixNoEntries"]</p>
+        }
+        else
+        {
+            <div class="ne-appendix-side">
+                <input type="search" class="ne-appendix-search" placeholder="@L["AppendixSearch"]" aria-label="@L["AppendixSearch"]"
+                       @bind="_search" @bind:event="oninput" />
+                <div class="ne-appendix-list" role="listbox">
+                    @{
+                        var shown = Entries(book).Where(e => Matches(e.Text)).ToList();
+                    }
+                    @if (shown.Count == 0)
+                    {
+                        <p class="ne-dialog-hint">@L["AppendixNoEntries"]</p>
+                    }
+                    @foreach (var entry in shown)
+                    {
+                        var key = entry.Key;
+                        <button type="button" role="option" class="@(key == _draft?.Key ? "selected" : null)"
+                                aria-selected="@(key == _draft?.Key)" @onclick="() => SwitchToAsync(key)">@entry.Text</button>
+                    }
+                </div>
+                <button type="button" class="ne-appendix-new" @onclick="NewAsync">@L["AppendixNew"]</button>
+            </div>
+            <div class="ne-appendix-fields">
+                @if (_error is not null)
+                {
+                    <p class="ne-dialog-error" role="alert">@_error</p>
+                }
+                @if (_draft is not { } draft)
+                {
+                    <p class="ne-dialog-hint">@L["AppendixPickEntry"]</p>
+                }
+                else
+                {
+                    @switch (Kind)
+                    {
+                        case AppendixKind.Glossary:
+                            <label>@L["AppendixTerm"]<input class="ne-appendix-term" @bind="draft.Text" /></label>
+                            <label>@L["AppendixForms"]<input class="ne-appendix-forms" @bind="draft.List" /></label>
+                            <label>@L["AppendixExplanation"]<textarea class="ne-appendix-explanation" @bind="draft.Rest"></textarea></label>
+                            break;
+                        case AppendixKind.People:
+                            <label>@L["AppendixName"]<input class="ne-appendix-name" value="@draft.Text" @onchange="e => NameChanged(draft, e.Value?.ToString() ?? string.Empty)" /></label>
+                            <label>@L["AppendixAbbreviation"]<input class="ne-appendix-abbreviation" value="@draft.Abbreviation" @onchange="e => AbbreviationChanged(draft, e.Value?.ToString() ?? string.Empty)" /></label>
+                            <label>@L["AppendixTopics"]<input class="ne-appendix-topics" @bind="draft.List" /></label>
+                            <label>@L["AppendixDescription"]<textarea class="ne-appendix-description" @bind="draft.Rest"></textarea></label>
+                            break;
+                        default:
+                            <label>@L["AppendixSourceKind"]
+                                <select class="ne-appendix-kind" @bind="draft.SourceKind">
+                                    @foreach (var kind in Enum.GetValues<SourceKind>())
+                                    {
+                                        <option value="@kind">@L[KindKey(kind)]</option>
+                                    }
+                                </select>
+                            </label>
+                            <label>@L["AppendixSourceTitle"]<input class="ne-appendix-title" @bind="draft.Text" /></label>
+                            <label>@L["AppendixAuthors"]<input class="ne-appendix-authors" list="ne-appendix-people" @bind="draft.List" /></label>
+                            <datalist id="ne-appendix-people">
+                                @foreach (var person in Appendix.People(book).Where(p => p.Name.Length > 0))
+                                {
+                                    <option value="@person.Name"></option>
+                                }
+                            </datalist>
+                            <label>@L["AppendixYear"]<input class="ne-appendix-year" @bind="draft.Year" /></label>
+                            <label>@L["AppendixPublisher"]<input class="ne-appendix-publisher" @bind="draft.Publisher" /></label>
+                            <label>@L["AppendixUrl"]<input class="ne-appendix-url" @bind="draft.Url" /></label>
+                            break;
+                    }
+
+                    @if (_confirmCount is { } count)
+                    {
+                        <div class="ne-appendix-confirm" role="alert">
+                            <span>@L["AppendixDeleteReferenced", count]</span>
+                            <button type="button" class="ne-appendix-delete-confirm" @onclick="() => DeleteAsync(true)">@L["AppendixDeleteConfirm"]</button>
+                            <button type="button" class="ne-appendix-delete-cancel" @onclick="() => _confirmCount = null">@L["Cancel"]</button>
+                        </div>
+                    }
+                    else if (draft.Key != Guid.Empty)
+                    {
+                        <div>
+                            <button type="button" class="ne-appendix-delete" @onclick="() => DeleteAsync(false)">@L["AppendixDelete"]</button>
+                        </div>
+                    }
+                }
+            </div>
+        }
+    </ChildContent>
+</Modal>
+
+@code {
+    /// <summary>Which appendix section the dialog edits.</summary>
+    [Parameter, EditorRequired] public AppendixKind Kind { get; set; }
+
+    /// <summary>The entry (its <see cref="Block.Key"/>) that is selected when the dialog opens.</summary>
+    [Parameter] public Guid? InitialEntry { get; set; }
+
+    /// <summary>Opens the dialog with a new, empty entry (the "Neu anlegen" of an insert picker).</summary>
+    [Parameter] public bool StartWithNew { get; set; }
+
+    /// <summary>The <c>id::</c> of an entry after its first successful save as a new one.</summary>
+    [Parameter] public EventCallback<Guid> OnCreated { get; set; }
+
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    private string TitleText => L[Kind switch
+    {
+        AppendixKind.Glossary => "OutlineAppendixGlossary",
+        AppendixKind.People => "OutlineAppendixPeople",
+        _ => "OutlineAppendixSources",
+    }].Value;
+
+    private string _search = "";
+    private string? _error;
+    private Draft? _draft;
+    private int? _confirmCount;
+
+    /// <summary>What the shown entry looked like when it was loaded or last saved; a draft that differs is saved.</summary>
+    private string _loaded = "";
+
+    /// <summary>The fields of the selected entry as typed; <see cref="Key"/> is empty while the entry is new (not in the file yet).</summary>
+    private sealed class Draft
+    {
+        public Guid Key { get; set; }
+        public Guid Id { get; set; }
+        public string Text { get; set; } = "";
+        public string List { get; set; } = "";
+        public string Rest { get; set; } = "";
+        public string Abbreviation { get; set; } = "";
+        public bool AbbreviationTouched { get; set; }
+        public SourceKind SourceKind { get; set; }
+        public string Year { get; set; } = "";
+        public string Publisher { get; set; } = "";
+        public string Url { get; set; } = "";
+
+        /// <summary>Authors of the source that are no person (any more); they stay in the entry.</summary>
+        public List<Guid> UnknownAuthors { get; } = [];
+
+        public string Signature =>
+            string.Join('\u0001', Text, List, Rest, Abbreviation, SourceKind, Year, Publisher, Url);
+    }
+
+    private sealed record Row(Guid Key, string Text);
+
+    protected override void OnInitialized()
+    {
+        if (State.CurrentBook is not { } book)
+        {
+            return;
+        }
+
+        if (StartWithNew)
+        {
+            Load(book, null);
+        }
+        else if (InitialEntry is { } key)
+        {
+            Load(book, key);
+        }
+    }
+
+    private IEnumerable<Row> Entries(Book book) => Kind switch
+    {
+        AppendixKind.Glossary => Appendix.Glossary(book).Select(e => new Row(e.Key, Shown(e.Term))),
+        AppendixKind.People => Appendix.People(book).Select(e => new Row(e.Key, Shown(e.Name))),
+        _ => Appendix.Sources(book).Select(e => new Row(e.Key, Shown(e.Title))),
+    };
+
+    private string Shown(string text) => text.Length > 0 ? text : L["AppendixUntitled"].Value;
+
+    private bool Matches(string text) =>
+        _search.Length == 0 || text.Contains(_search, StringComparison.CurrentCultureIgnoreCase);
+
+    private static string KindKey(SourceKind kind) => kind switch
+    {
+        SourceKind.Book => "AppendixKindBook",
+        SourceKind.Video => "AppendixKindVideo",
+        SourceKind.Article => "AppendixKindArticle",
+        SourceKind.Website => "AppendixKindWebsite",
+        _ => "AppendixKindOther",
+    };
+
+    private static string Join(IEnumerable<string> items) => string.Join(", ", items);
+
+    private static List<string> Split(string text) =>
+        [.. text.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)];
+
+    private static string? Blank(string text) => string.IsNullOrWhiteSpace(text) ? null : text.Trim();
+
+    /// <summary>Takes the fields of the entry with <paramref name="key"/> (a new, empty one for <c>null</c>).</summary>
+    private void Load(Book book, Guid? key)
+    {
+        _error = null;
+        _confirmCount = null;
+        var draft = new Draft();
+        switch (Kind)
+        {
+            case AppendixKind.Glossary:
+                if (Appendix.Glossary(book).FirstOrDefault(e => e.Key == key) is { } glossary)
+                {
+                    (draft.Key, draft.Id, draft.Text, draft.List, draft.Rest) =
+                        (glossary.Key, glossary.Id, glossary.Term, Join(glossary.Forms), glossary.Explanation);
+                }
+
+                break;
+            case AppendixKind.People:
+                if (Appendix.People(book).FirstOrDefault(e => e.Key == key) is { } person)
+                {
+                    (draft.Key, draft.Id, draft.Text, draft.Abbreviation, draft.List, draft.Rest) =
+                        (person.Key, person.Id, person.Name, person.Abbreviation, Join(person.Topics), person.Description);
+                    draft.AbbreviationTouched = person.Abbreviation.Length > 0;
+                }
+                else
+                {
+                    draft.Abbreviation = Appendix.SuggestAbbreviation(book, "");
+                }
+
+                break;
+            default:
+                if (Appendix.Sources(book).FirstOrDefault(e => e.Key == key) is { } source)
+                {
+                    (draft.Key, draft.Id, draft.Text, draft.SourceKind) = (source.Key, source.Id, source.Title, source.Kind);
+                    (draft.Year, draft.Publisher, draft.Url) = (source.Year ?? "", source.Publisher ?? "", source.Url ?? "");
+                    var names = new List<string>();
+                    foreach (var author in source.AuthorIds)
+                    {
+                        if (Appendix.PersonById(book, author) is { } named)
+                        {
+                            names.Add(named.Name);
+                        }
+                        else
+                        {
+                            draft.UnknownAuthors.Add(author);
+                        }
+                    }
+
+                    draft.List = Join(names);
+                }
+
+                break;
+        }
+
+        _draft = draft;
+        _loaded = draft.Signature;
+    }
+
+    private void NameChanged(Draft draft, string name)
+    {
+        draft.Text = name;
+        if (!draft.AbbreviationTouched && State.CurrentBook is { } book)
+        {
+            draft.Abbreviation = Appendix.SuggestAbbreviation(book, name, draft.Key == Guid.Empty ? null : draft.Key);
+        }
+    }
+
+    private static void AbbreviationChanged(Draft draft, string abbreviation)
+    {
+        draft.Abbreviation = abbreviation;
+        draft.AbbreviationTouched = true;
+    }
+
+    /// <summary>An entry of the list was chosen: the entry shown so far is saved first; if that is refused it stays.</summary>
+    private async Task SwitchToAsync(Guid key)
+    {
+        if (key == _draft?.Key || !await SaveAsync() || State.CurrentBook is not { } book)
+        {
+            return;
+        }
+
+        Load(book, key);
+    }
+
+    private async Task NewAsync()
+    {
+        if (!await SaveAsync() || State.CurrentBook is not { } book)
+        {
+            return;
+        }
+
+        Load(book, null);
+    }
+
+    private async Task CloseAsync()
+    {
+        if (await SaveAsync())
+        {
+            await OnClose.InvokeAsync();
+        }
+    }
+
+    /// <summary>
+    /// Saves the shown entry if it was changed. A problem with its fields (the resource text) or a refused save is
+    /// shown and keeps the entry open. A new entry that was not filled in is not saved.
+    /// </summary>
+    /// <returns><c>true</c> if nothing is left unsaved.</returns>
+    private async Task<bool> SaveAsync()
+    {
+        if (_draft is not { } draft || State.CurrentBook is not { } book || draft.Signature == _loaded)
+        {
+            return true;
+        }
+
+        var isNew = draft.Key == Guid.Empty;
+        if (Validate(book, draft) is { } problem)
+        {
+            _error = L[problem].Value;
+            return false;
+        }
+
+        var key = draft.Key;
+        var message = await AppendixCommands.ApplyAsync(State, b =>
+        {
+            if (isNew)
+            {
+                key = Appendix.Add(b, Kind);
+            }
+
+            switch (Kind)
+            {
+                case AppendixKind.Glossary:
+                    Appendix.Save(b, new GlossaryEntry(key, draft.Id, draft.Text.Trim(), Split(draft.List), draft.Rest.Trim()));
+                    break;
+                case AppendixKind.People:
+                    Appendix.Save(b, new PersonEntry(
+                        key, draft.Id, draft.Text.Trim(), draft.Abbreviation.Trim(), Split(draft.List), draft.Rest.Trim()));
+                    break;
+                default:
+                    var authors = new List<Guid>(Appendix.EnsureAuthors(b, Split(draft.List)));
+                    authors.AddRange(draft.UnknownAuthors);
+                    Appendix.Save(b, new SourceEntry(
+                        key, draft.Id, draft.Text.Trim(), draft.SourceKind, authors,
+                        Blank(draft.Year), Blank(draft.Url), Blank(draft.Publisher)));
+                    break;
+            }
+        }, L[AppendixCommands.UndoKey].Value, Logger);
+        if (message is not null)
+        {
+            _error = L[message.Key].Value;
+            return false;
+        }
+
+        _error = null;
+        draft.Key = key;
+        _loaded = draft.Signature;
+        if (isNew)
+        {
+            await ReportCreatedAsync(draft);
+        }
+
+        return true;
+    }
+
+    /// <summary>Tells <see cref="OnCreated"/> the <c>id::</c> the new entry got.</summary>
+    private async Task ReportCreatedAsync(Draft draft)
+    {
+        if (State.CurrentBook is not { } book)
+        {
+            return;
+        }
+
+        Guid? id = Kind switch
+        {
+            AppendixKind.Glossary => Appendix.Glossary(book).FirstOrDefault(e => e.Key == draft.Key)?.Id,
+            AppendixKind.People => Appendix.People(book).FirstOrDefault(e => e.Key == draft.Key)?.Id,
+            _ => Appendix.Sources(book).FirstOrDefault(e => e.Key == draft.Key)?.Id,
+        };
+        if (id is { } created && created != Guid.Empty)
+        {
+            draft.Id = created;
+            await OnCreated.InvokeAsync(created);
+        }
+    }
+
+    /// <summary>The resource key of the problem with the fields; <c>null</c> if they can be saved.</summary>
+    private string? Validate(Book book, Draft draft)
+    {
+        var text = draft.Text.Trim();
+        return Kind switch
+        {
+            AppendixKind.Glossary => Appendix.ValidationError(book, new GlossaryEntry(draft.Key, draft.Id, text, [], "")),
+            AppendixKind.People => Appendix.ValidationError(
+                book, new PersonEntry(draft.Key, draft.Id, text, draft.Abbreviation.Trim(), [], "")),
+            _ => Appendix.ValidationError(
+                book, new SourceEntry(draft.Key, draft.Id, text, draft.SourceKind, [], null, null, null)),
+        };
+    }
+
+    private async Task DeleteAsync(bool confirmed)
+    {
+        if (_draft is not { Key: var key } draft || key == Guid.Empty || State.CurrentBook is not { } book)
+        {
+            return;
+        }
+
+        var count = draft.Id == Guid.Empty ? 0 : AppendixIndex.Of(book).ReferenceCount(draft.Id);
+        if (count > 0 && !confirmed)
+        {
+            _confirmCount = count;
+            return;
+        }
+
+        var message = await AppendixCommands.ApplyAsync(State, b => Appendix.Delete(b, key), L[AppendixCommands.UndoKey].Value, Logger);
+        _confirmCount = null;
+        if (message is not null)
+        {
+            _error = L[message.Key].Value;
+            return;
+        }
+
+        _error = null;
+        _draft = null;
+        _loaded = "";
+    }
+}
