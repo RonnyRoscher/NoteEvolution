@@ -141,7 +141,7 @@ public sealed class RelevanceService : IRelevanceService
     private List<ScoredTopic>? ScoreTopics(Book book, float[] noteVector)
     {
         var topics = new List<ScoredTopic>();
-        foreach (var child in book.Root.Children)
+        foreach (var child in book.ContentChildren)
         {
             if (!AddTopics(book, child, noteVector, topics, out _)) return null;
         }
@@ -367,8 +367,8 @@ public sealed class RelevanceService : IRelevanceService
         return vector;
     }
 
-    /// <summary>Every section of the book in outline order, the root first.</summary>
-    private static IEnumerable<OutlineNode> Sections(Book book) => Walk(book.Root);
+    /// <summary>Every section of the book's text in outline order, the root first; the appendix sections are not included.</summary>
+    private static IEnumerable<OutlineNode> Sections(Book book) => book.ContentChildren.SelectMany(Walk).Prepend(book.Root);
 
     private static IEnumerable<OutlineNode> Walk(OutlineNode node) => node.Children.SelectMany(Walk).Prepend(node);
 

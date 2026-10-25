@@ -310,4 +310,15 @@ public partial class ReferencePickerTests : UiTestContext
         Assert.Equal(external, _vault.Read(BookPath));
         Assert.False(session.Undo.CanUndo);
     }
+
+    [Fact]
+    public void ReferencePicker_OffersNoAppendixEntries()
+    {
+        var text = BookText + "- # Glossar\n  anhang:: glossar\n\t- Achtsamkeit\n";
+        var book = Book.Load(LogseqParser.Parse("Buch - Alpha.md", System.Text.Encoding.UTF8.GetBytes(text)));
+
+        var cut = Render<ReferencePicker>(p => p.Add(x => x.Book, book));
+
+        Assert.Equal(AllCandidates, cut.FindAll(".ne-ref-option").Select(o => o.TextContent.Trim()));
+    }
 }

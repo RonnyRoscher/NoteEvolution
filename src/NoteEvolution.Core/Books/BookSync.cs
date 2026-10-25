@@ -67,11 +67,16 @@ public static class BookSync
     /// own text or paragraphs changed <c>updated::</c>. Moving a block, renaming a heading or saving without a change
     /// stamps nothing. Without <paramref name="now"/>, nothing is stamped.
     /// </para>
+    /// <para>
+    /// The appendix sections are no part of the snapshot (<see cref="BookSnapshot.Create"/>): their blocks are never
+    /// removed, moved, written or stamped here, also with the root as the scope.
+    /// </para>
     /// </summary>
     /// <exception cref="ReadOnlyPageException">The book page is read-only.</exception>
     /// <exception cref="ArgumentException">
-    /// Unknown scope, an inconsistent snapshot (empty or duplicate keys, a text block or paragraph with the key
-    /// of a heading), or a text that would change the block tree (see <see cref="Block.SetContent"/>); nothing is changed.
+    /// Unknown scope or one in the appendix, an inconsistent snapshot (empty or duplicate keys, a key of a block in the
+    /// appendix, a text block or paragraph with the key of a heading), or a text that would change the block tree
+    /// (see <see cref="Block.SetContent"/>); nothing is changed.
     /// </exception>
     public static SyncResult Apply(Book book, SectionSnapshot snapshot, IVault? vault = null, DateTimeOffset? now = null)
     {
@@ -148,6 +153,11 @@ public static class BookSync
             _snapshot = snapshot;
             _scope = book.FindNode(snapshot.ScopeKey)
                      ?? throw new ArgumentException("No section has this key.", nameof(snapshot));
+            if (book.IsInAppendix(snapshot.ScopeKey))
+            {
+                throw new ArgumentException("The appendix is not edited through a snapshot.", nameof(snapshot));
+            }
+
             CollectHeadings(book.Root);
             Validate();
             foreach (var block in _page.AllBlocks())
@@ -272,6 +282,11 @@ public static class BookSync
             if (key == Guid.Empty || !_listed.Add(key))
             {
                 throw new ArgumentException($"The snapshot key {key} is empty or not unique.", "snapshot");
+            }
+
+            if (_book.IsInAppendix(key))
+            {
+                throw new ArgumentException($"The snapshot key {key} is that of a block in the appendix.", "snapshot");
             }
         }
 
@@ -444,7 +459,7 @@ public static class BookSync
             return true;
         }
 
-        /// <summary>The headings and text blocks of the scope's subtree in file order.</summary>
+        /// <summary>The headings and text blocks of the scope's subtree in file order, without the appendix.</summary>
         private List<Block> Linearize()
         {
             var view = new List<Block>();
@@ -461,6 +476,11 @@ public static class BookSync
         {
             foreach (var child in ChildrenOf(section))
             {
+                if (_book.IsInAppendix(child.Key))
+                {
+                    continue;
+                }
+
                 view.Add(child);
                 if (_headings.Contains(child.Key))
                 {
@@ -527,8 +547,8 @@ public static class BookSync
         }
 
         /// <summary>
-        /// Rule 5: text blocks of the area (the section, or the scope's subtree) and descendants of the reconciled
-        /// text blocks that are not in the snapshot are removed. Siblings go front to back, so that each recorded
+        /// Rule 5: text blocks of the area (the section, or the scope's subtree without the appendix sections) and
+        /// descendants of the reconciled text blocks that are not in the snapshot are removed. Siblings go front to back, so that each recorded
         /// index is right for restoring the deletions in reverse order.
         /// </summary>
         private void RemoveMissing()
@@ -536,7 +556,7 @@ public static class BookSync
             var sections = new List<OutlineNode> { _scope };
             for (var i = 0; Manuscript && i < sections.Count; i++)
             {
-                sections.AddRange(sections[i].Children);
+                sections.AddRange(sections[i].Children.Where(child => child.AppendixKind == AppendixKind.None));
             }
 
             foreach (var section in sections)

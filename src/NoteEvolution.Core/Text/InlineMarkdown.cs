@@ -119,10 +119,11 @@ public static class InlineMarkdown
 
     /// <summary>
     /// The length in <paramref name="text"/> of the shown character at <paramref name="i"/>: 2 for <c>\*</c> and
-    /// <c>\_</c>, the whole reference for a block reference (the editor shows it as one node), else 1.
+    /// <c>\_</c>, the whole reference for a block reference or source citation (the editor shows each as one node), else 1.
     /// </summary>
     private static int ShownCharLength(string text, int i) =>
         text[i] == '\\' && i + 1 < text.Length && text[i + 1] is '*' or '_' ? 2
+        : SourceCitations.LengthAt(text, i) is > 0 and var citation ? citation
         : BlockRefs.LengthAt(text, i) is > 0 and var length ? length
         : 1;
 
@@ -326,6 +327,8 @@ public static class InlineMarkdown
     {
         if (text[i] == '\\')
             return i + 1 < text.Length ? 2 : 1;
+        if (SourceCitations.LengthAt(text, i) is > 0 and var citation)
+            return citation;
         var closer = text[i] switch
         {
             '`' => "`",

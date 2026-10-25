@@ -187,6 +187,153 @@ function refClass(node) {
     return node.attrs.foreign ? 'ne-ref foreign' : node.attrs.missing ? 'ne-ref missing' : 'ne-ref';
 }
 
+// The label, tooltip and missing state of a person or citation: they come from the book and are only shown.
+const shownAttributes = {
+    label: { default: '', parseHTML: el => el.textContent, rendered: false },
+    title: { default: '', parseHTML: el => el.getAttribute('title') ?? '', rendered: false },
+    missing: { default: false, parseHTML: el => el.classList.contains('missing'), rendered: false },
+};
+
+/** A non-editable superscript unit showing node.attrs.label, with its tooltip, of the given class (plus missing). */
+function superscript(node, className, data) {
+    const dom = document.createElement('sup');
+    dom.className = node.attrs.missing ? `${className} missing` : className;
+    dom.contentEditable = 'false';
+    for (const [name, value] of Object.entries(data)) {
+        dom.setAttribute(name, value ?? '');
+    }
+    dom.textContent = node.attrs.label;
+    if (node.attrs.title) {
+        dom.title = node.attrs.title;
+    }
+    return dom;
+}
+
+/**
+ * A reference ((id)) to a person of the appendix (appendix spec 3.1): one non-editable inline unit, superscript, that
+ * shows the person's abbreviation and as tooltip the name and topics. C# writes it back as ((id)). A click calls
+ * options.onClicked(id). A reference whose person is gone is a missing blockRef again (see updateRefs).
+ */
+const PersonRef = Node.create({
+    name: 'personRef',
+    group: 'inline',
+    inline: true,
+    atom: true,
+    selectable: true,
+    addOptions() {
+        return { onClicked: () => {} };
+    },
+    addAttributes() {
+        return {
+            id: { default: null, parseHTML: el => el.getAttribute('data-person'), renderHTML: attrs => ({ 'data-person': attrs.id }) },
+            ...shownAttributes,
+        };
+    },
+    parseHTML() {
+        return [{ tag: 'sup[data-person]' }];
+    },
+    renderHTML({ node, HTMLAttributes }) {
+        const attrs = { ...HTMLAttributes, class: 'ne-person-ref' };
+        if (node.attrs.title) {
+            attrs.title = node.attrs.title;
+        }
+        return ['sup', attrs, node.attrs.label];
+    },
+    renderText: ({ node }) => `((${node.attrs.id}))`,
+    addNodeView() {
+        return ({ node }) => {
+            const dom = superscript(node, 'ne-person-ref', { 'data-person': node.attrs.id });
+            dom.addEventListener('click', () => this.options.onClicked(node.attrs.id));
+            return { dom };
+        };
+    },
+});
+
+/** The macro of a citation as the book file holds it. */
+function citeMacro(id, locator) {
+    return `{{quelle ((${id}))${locator ? ` ${locator}` : ''}}}`;
+}
+
+/** The label of a citation: "[3]", "[3, S. 12]", or the missing label of a source that is no entry. */
+function citeLabel(source, locator) {
+    if (source.missing) {
+        return source.label;
+    }
+    return locator ? `[${source.label}, ${locator}]` : `[${source.label}]`;
+}
+
+/** The text block or detail key and the offset in its text of the inline node at pos (null outside a paragraph). */
+function elementAt(doc, pos) {
+    const $pos = doc.resolve(pos);
+    if ($pos.depth < 2 || $pos.parent.type.name !== 'para') {
+        return null;
+    }
+    const key = $pos.index(1) === 0 ? $pos.node(1).attrs.key : $pos.parent.attrs.key;
+    return key ? { key, offset: $pos.parentOffset } : null;
+}
+
+/**
+ * A source citation {{quelle ((id)) Fundstelle}} (appendix spec 3.2): one non-editable inline unit, superscript, that
+ * shows "[3]" or "[3, S. 12]" ("[–]" while no exported text cites the source, red "Verweis fehlt" without the source)
+ * and the full reference as its tooltip. C# writes it back from id and locator. A click calls options.onClicked(id)
+ * after options.clickDelay ms, unless a double click follows: that calls options.onEdit(id, key, offset) with the key of
+ * its text block or detail and its offset there, to change the locator.
+ */
+const SourceCite = Node.create({
+    name: 'sourceCite',
+    group: 'inline',
+    inline: true,
+    atom: true,
+    selectable: true,
+    addOptions() {
+        return { onClicked: () => {}, onEdit: () => {}, clickDelay: 250 };
+    },
+    addAttributes() {
+        return {
+            id: { default: null, parseHTML: el => el.getAttribute('data-cite'), renderHTML: attrs => ({ 'data-cite': attrs.id }) },
+            locator: {
+                default: null,
+                parseHTML: el => el.getAttribute('data-locator') || null,
+                renderHTML: attrs => (attrs.locator ? { 'data-locator': attrs.locator } : {}),
+            },
+            ...shownAttributes,
+        };
+    },
+    parseHTML() {
+        return [{ tag: 'sup[data-cite]' }];
+    },
+    renderHTML({ node, HTMLAttributes }) {
+        const attrs = { ...HTMLAttributes, class: 'ne-source-cite' };
+        if (node.attrs.title) {
+            attrs.title = node.attrs.title;
+        }
+        return ['sup', attrs, node.attrs.label];
+    },
+    renderText: ({ node }) => citeMacro(node.attrs.id, node.attrs.locator),
+    addNodeView() {
+        return ({ node, getPos, editor }) => {
+            const dom = superscript(node, 'ne-source-cite', { 'data-cite': node.attrs.id });
+            let timer = 0;
+            dom.addEventListener('click', () => {
+                clearTimeout(timer);
+                timer = setTimeout(() => this.options.onClicked(node.attrs.id), this.options.clickDelay);
+            });
+            dom.addEventListener('dblclick', event => {
+                clearTimeout(timer);
+                event.preventDefault();
+                const at = typeof getPos === 'function' ? elementAt(editor.state.doc, getPos()) : null;
+                if (at) {
+                    this.options.onEdit(node.attrs.id, at.key, at.offset);
+                }
+            });
+            return { dom, destroy: () => clearTimeout(timer) };
+        };
+    },
+});
+
+/** The inline atoms that stand for a reference: one unit of the text, deleted whole. */
+const referenceNodes = new Set(['blockRef', 'personRef', 'sourceCite']);
+
 /**
  * Backspace right after a reference or Delete right before it removes the reference whole (the browser's own deletion
  * would act on the label's characters).
@@ -198,7 +345,7 @@ function deleteReference(state, dispatch, forward) {
     }
     const $pos = selection.$from;
     const node = forward ? $pos.nodeAfter : $pos.nodeBefore;
-    if (!node || node.type.name !== 'blockRef') {
+    if (!node || !referenceNodes.has(node.type.name)) {
         return false;
     }
     if (dispatch) {
@@ -219,6 +366,14 @@ const refPattern = /\(\(([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f
 function updateRefs(tr, doc, labels, selection) {
     const replacements = [];
     doc.descendants((node, pos) => {
+        if (node.type.name === 'personRef' || node.type.name === 'sourceCite') {
+            // A person who is gone leaves a missing cross reference (setAppendixLabels shows the others).
+            const label = labels.get((node.attrs.id ?? '').toLowerCase());
+            if (node.type.name === 'personRef' && label?.missing) {
+                tr.setNodeMarkup(pos, doc.type.schema.nodes.blockRef, { id: node.attrs.id, ...label });
+            }
+            return false;
+        }
         if (node.type.name === 'blockRef') {
             const label = labels.get((node.attrs.id ?? '').toLowerCase());
             if (label && (label.label !== node.attrs.label || label.title !== node.attrs.title
@@ -246,6 +401,155 @@ function updateRefs(tr, doc, labels, selection) {
         tr.replaceWith(from, to, doc.type.schema.nodes.blockRef.create(attrs, null, marks));
     }
 }
+
+const citePattern = /\{\{quelle \(\(([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\)\)(?: ([^}\r\n]*))?\}\}/gi;
+
+/**
+ * Adds to tr what setAppendixLabels changes in doc. people and sources are Maps of lower-case id → { label, title,
+ * missing }. A blockRef or personRef whose id people has becomes (or stays) a personRef with that label; a sourceCite
+ * takes the label of its source (in brackets with its locator, see citeLabel). A reference or citation typed as text
+ * whose id people or sources has becomes such a node with the text's marks, unless the selection touches its inside.
+ */
+function updateAppendix(tr, doc, people, sources, selection) {
+    const schema = doc.type.schema;
+    const replacements = [];
+    const touched = (from, to) => selection.from < to && selection.to > from;
+    doc.descendants((node, pos) => {
+        const id = (node.attrs.id ?? '').toLowerCase();
+        switch (node.type.name) {
+            case 'blockRef':
+            case 'personRef': {
+                const person = people.get(id);
+                if (person && (node.type.name === 'blockRef' || person.label !== node.attrs.label
+                    || person.title !== node.attrs.title || person.missing !== node.attrs.missing)) {
+                    tr.setNodeMarkup(pos, schema.nodes.personRef, { id: node.attrs.id, ...person });
+                }
+                return false;
+            }
+            case 'sourceCite': {
+                const source = sources.get(id);
+                if (source) {
+                    const attrs = { label: citeLabel(source, node.attrs.locator), title: source.title, missing: source.missing };
+                    if (attrs.label !== node.attrs.label || attrs.title !== node.attrs.title || attrs.missing !== node.attrs.missing) {
+                        tr.setNodeMarkup(pos, undefined, { ...node.attrs, ...attrs });
+                    }
+                }
+                return false;
+            }
+        }
+        if (!node.isText) {
+            return true;
+        }
+        const cites = [];
+        for (const match of node.text.matchAll(citePattern)) {
+            const from = pos + match.index;
+            const to = from + match[0].length;
+            cites.push([from, to]);
+            const source = sources.get(match[1].toLowerCase());
+            if (source && !touched(from, to)) {
+                const locator = (match[2] ?? '').trim() || null;
+                const attrs = { id: match[1].toLowerCase(), locator, label: citeLabel(source, locator), title: source.title, missing: source.missing };
+                replacements.push({ from, to, node: schema.nodes.sourceCite.create(attrs, null, node.marks) });
+            }
+        }
+        for (const match of node.text.matchAll(refPattern)) {
+            const from = pos + match.index;
+            const to = from + match[0].length;
+            const person = people.get(match[1].toLowerCase());
+            // The reference inside a citation is part of the citation.
+            if (person && !touched(from, to) && !cites.some(([a, b]) => from >= a && to <= b)) {
+                replacements.push({ from, to, node: schema.nodes.personRef.create({ id: match[1].toLowerCase(), ...person }, null, node.marks) });
+            }
+        }
+        return false;
+    });
+    // From the back, so the positions found stay valid (setNodeMarkup keeps every size).
+    for (const { from, to, node } of replacements.sort((a, b) => b.from - a.from)) {
+        tr.replaceWith(from, to, node);
+    }
+}
+
+/** The paragraphs of a document by key, as { start, size } of their text: a text block's key names its first paragraph. */
+function paragraphsByKey(doc) {
+    const result = new Map();
+    doc.forEach((node, offset) => {
+        if (node.type.name !== 'textBlock') {
+            return;
+        }
+        node.forEach((para, paraOffset, index) => {
+            const key = index === 0 ? node.attrs.key : para.attrs.key;
+            if (key && !result.has(key)) {
+                result.set(key, { start: offset + 2 + paraOffset, size: para.content.size });
+            }
+        });
+    });
+    return result;
+}
+
+/**
+ * The glossary marks as inline decorations ne-glossary-mark with their tooltip and data-glossary (the entry key):
+ * marks is an array of { key, start, length, title, entryKey }, the offsets in the paragraph's text as the editor shows
+ * it (each reference node one position). A mark outside its paragraph, or for a key the document does not hold, is
+ * ignored.
+ */
+function glossaryDecorations(doc, marks) {
+    const paragraphs = paragraphsByKey(doc);
+    const decorations = [];
+    for (const mark of marks) {
+        const para = paragraphs.get(mark.key);
+        if (!para || mark.length <= 0 || mark.start < 0 || mark.start + mark.length > para.size) {
+            continue;
+        }
+        const from = para.start + mark.start;
+        decorations.push(Decoration.inline(from, from + mark.length, {
+            class: 'ne-glossary-mark',
+            title: mark.title ?? '',
+            'data-glossary': mark.entryKey ?? '',
+        }));
+    }
+    return DecorationSet.create(doc, decorations);
+}
+
+const glossaryKey = new PluginKey('glossaryMarks');
+
+/**
+ * Marks the first occurrence of each glossary term (appendix spec 3.3): options.marks() returns the current list. The
+ * decorations are computed anew for a transaction with the glossaryKey meta (new marks) and for every new state; typing
+ * moves them along until C# sends the marks of the saved text. Ctrl+click (Cmd on a Mac) on one calls
+ * options.onClicked(entryKey).
+ */
+const GlossaryMarks = Extension.create({
+    name: 'glossaryMarks',
+    addOptions() {
+        return { marks: () => [], onClicked: () => {} };
+    },
+    addProseMirrorPlugins() {
+        const decorate = doc => glossaryDecorations(doc, this.options.marks());
+        return [
+            new Plugin({
+                key: glossaryKey,
+                state: {
+                    init: (_, state) => decorate(state.doc),
+                    apply: (tr, decorations, _old, state) => (tr.getMeta(glossaryKey) ? decorate(state.doc) : decorations.map(tr.mapping, tr.doc)),
+                },
+                props: {
+                    decorations: state => glossaryKey.getState(state),
+                    handleDOMEvents: {
+                        click: (_view, event) => {
+                            const mark = event.ctrlKey || event.metaKey ? event.target?.closest?.('.ne-glossary-mark') : null;
+                            if (!mark) {
+                                return false;
+                            }
+                            event.preventDefault();
+                            this.options.onClicked(mark.getAttribute('data-glossary'));
+                            return true;
+                        },
+                    },
+                },
+            }),
+        ];
+    },
+});
 
 /** A text block with its dates at the top right, its source chips below and a handle to drag it. */
 class TextBlockView {
@@ -806,7 +1110,8 @@ function dropTarget(view, event) {
 /**
  * Creates the editor in host. dotnet receives DocumentChanged(json), CursorChanged(kind, key, textBlockKey, offset),
  * EditorFocused() (whenever the editor gets the focus, before the cursor report that may follow), SectionCommand(name), SectionBoxMoved(barTop, visible), ChipClicked(noteId), ChipRemoved(blockKey, noteId),
- * ReferenceClicked(id) and NoteDropped(afterKey). options.barHeight is the height of the section bar C# shows at the marking box's bottom
+ * ReferenceClicked(id), NoteDropped(afterKey), PersonClicked(id), SourceClicked(id), CitationEdit(id, key, offset) and
+ * GlossaryClicked(entryKey). options.citeClickDelay is how long a click on a citation waits for a double click (ms). options.barHeight is the height of the section bar C# shows at the marking box's bottom
  * (.ne-section-bar in the .ne-editor-pane) until the bar can be measured; the bar may wrap into more lines, so its
  * actual height is followed (the gap below the marking, --bar-height, and the scroll distance from the bottom).
  */
@@ -825,6 +1130,8 @@ export function createEditor(host, dotnet, options = {}) {
     let boxFrame = 0;
     // The marked nodes set by setMarked (key → ownTextOnly); kept for every later document.
     let marked = new Map();
+    // The glossary marks set by setAppendixLabels; kept for every later document.
+    let glossaryMarks = [];
 
     /** Reports the element at the cursor when it, or the offset in it, changed. */
     const reportCursor = state => {
@@ -907,6 +1214,12 @@ export function createEditor(host, dotnet, options = {}) {
             Para,
             Text,
             BlockRef.configure({ onClicked: id => call('ReferenceClicked', id) }),
+            PersonRef.configure({ onClicked: id => call('PersonClicked', id) }),
+            SourceCite.configure({
+                onClicked: id => call('SourceClicked', id),
+                onEdit: (id, key, offset) => call('CitationEdit', id, key, offset),
+                clickDelay: options.citeClickDelay ?? 250,
+            }),
             Bold,
             Italic,
             HardBreak.extend({
@@ -920,6 +1233,7 @@ export function createEditor(host, dotnet, options = {}) {
             UniqueKeys,
             FixedHeadings,
             MarkedNodes.configure({ marked: () => marked }),
+            GlossaryMarks.configure({ marks: () => glossaryMarks, onClicked: key => call('GlossaryClicked', key) }),
         ],
         content: { type: 'doc', content: [{ type: 'textBlock', attrs: { key: newKey() }, content: [{ type: 'para' }] }] },
         editorProps: {
@@ -1077,6 +1391,20 @@ export function createEditor(host, dotnet, options = {}) {
             if (tr.docChanged) {
                 editor.view.dispatch(tr.setMeta('addToHistory', false).setMeta(shownOnlyKey, true));
             }
+        },
+        /**
+         * Shows what the book holds of the appendix: people and sources are arrays of { id, label, title, missing }
+         * (see updateAppendix), marks an array of { key, start, length, title, entryKey } (see glossaryDecorations),
+         * kept for later documents. The document stays otherwise, the cursor is kept, nothing goes into the undo history
+         * and no change is reported.
+         */
+        setAppendixLabels(people, sources, marks) {
+            const byId = list => new Map((list ?? []).map(item => [String(item.id).toLowerCase(),
+                { label: item.label ?? '', title: item.title ?? '', missing: item.missing === true }]));
+            glossaryMarks = marks ?? [];
+            const tr = editor.state.tr;
+            updateAppendix(tr, editor.state.doc, byId(people), byId(sources), editor.state.selection);
+            editor.view.dispatch(tr.setMeta(glossaryKey, true).setMeta('addToHistory', false).setMeta(shownOnlyKey, true));
         },
         destroy() {
             cancelAnimationFrame(boxFrame);

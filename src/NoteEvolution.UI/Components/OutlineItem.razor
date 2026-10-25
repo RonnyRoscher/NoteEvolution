@@ -6,7 +6,7 @@
     var isPrologue = Node.Block is null;
     var renaming = !isPrologue && Pane.RenamingKey == Node.Key;
     var draggable = !isPrologue && !renaming && Pane.Editable;
-    var words = isPrologue ? Node.WordCount - Node.Children.Sum(child => child.WordCount) : Node.WordCount;
+    var words = isPrologue ? Node.WordCount - Node.Children.Where(child => child.AppendixKind == AppendixKind.None).Sum(child => child.WordCount) : Node.WordCount;
     var sources = isPrologue ? Node.TextBlocks.SelectMany(text => text.Sources).Distinct().Count() : Node.SourceCount;
     var warnings = Pane.WarningsFor(Node.Key);
     var coverage = Pane.CoverageBarOf(Node);

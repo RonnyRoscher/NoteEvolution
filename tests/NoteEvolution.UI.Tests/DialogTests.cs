@@ -432,6 +432,75 @@ public class DialogTests : UiTestContext
         Assert.Single(cut.FindAll(".ne-linkcheck-crossref"));
     }
 
+    private const string AppendixGone = "0190c000-0000-7000-8000-00000000dead";
+    private const string AppendixPerson = "0190c000-0000-7000-8000-000000000001";
+    private const string AppendixPerson2 = "0190c000-0000-7000-8000-000000000002";
+    private const string AppendixSource = "0190c000-0000-7000-8000-000000000003";
+
+    private static TestVault AppendixProblemVault() => TestVault.Create(
+        ("pages/Buch - Alpha.md",
+            "title:: Alpha\ntype:: book\n\n" +
+            "- # Eins\n" +
+            $"\t- Beleg {{{{quelle (({AppendixGone})) S. 2}}}} dort\n" +
+            $"- # Menschen\n  anhang:: menschen\n\t- Eva\n\t  id:: {AppendixPerson}\n\t  kuerzel:: AB\n" +
+            $"\t- Adam\n\t  id:: {AppendixPerson2}\n\t  kuerzel:: ab\n" +
+            $"- # Quellen\n  anhang:: quellen\n\t- Werk\n\t  id:: {AppendixSource}\n\t  autoren:: (({AppendixPerson})), (({AppendixGone}))\n" +
+            "- # Noch ein Glossar\n  anhang:: glossar\n- # Glossar\n  anhang:: glossar\n"));
+
+    [Fact]
+    public async Task LinkCheckDialog_AppendixProblems_ListedInThreeGroups_RemoveAsksFirst()
+    {
+        using var tv = AppendixProblemVault();
+        await OpenSessionAsync(tv);
+
+        var cut = Render<LinkCheckDialog>();
+
+        Assert.Equal("Verweise auf fehlende Einträge", cut.Find(".ne-linkcheck-appendixrefs-title").TextContent);
+        Assert.Equal("Doppelte Anhang-Abschnitte", cut.Find(".ne-linkcheck-duplicate-sections-title").TextContent);
+        Assert.Equal("Doppelte Kürzel", cut.Find(".ne-linkcheck-duplicate-abbreviations-title").TextContent);
+        Assert.Equal(2, cut.FindAll(".ne-linkcheck-appendixref").Count);
+        Assert.Single(cut.FindAll(".ne-linkcheck-duplicate-section"));
+        Assert.Contains("Eva, Adam", cut.Find(".ne-linkcheck-duplicate-abbreviation").TextContent);
+        Assert.Empty(cut.FindAll(".ne-linkcheck-clean"));
+
+        // Removing asks first, and "Abbrechen" changes nothing.
+        cut.Find(".ne-linkcheck-appendixrefs-remove").Click();
+        Assert.Equal("2 Verweise entfernen? Das lässt sich nicht rückgängig machen.", cut.Find(".ne-linkcheck-appendixrefs-confirm").TextContent.Trim());
+        cut.Find(".ne-linkcheck-appendixrefs-no").Click();
+        Assert.Empty(cut.FindAll(".ne-linkcheck-appendixrefs-confirm"));
+        Assert.Contains("{{quelle", tv.Read("pages/Buch - Alpha.md"));
+
+        cut.Find(".ne-linkcheck-appendixrefs-remove").Click();
+        cut.Find(".ne-linkcheck-appendixrefs-yes").Click();
+
+        var text = tv.Read("pages/Buch - Alpha.md");
+        Assert.Contains("\t- Beleg dort\n", text);
+        Assert.Contains($"autoren:: (({AppendixPerson}))\n", text);
+        Assert.DoesNotContain(AppendixGone, text);
+        cut.WaitForAssertion(() => Assert.Empty(cut.FindAll(".ne-linkcheck-appendixref")));
+        Assert.Contains("2", cut.Find(".ne-linkcheck-appendixrefs-removed").TextContent);
+        // The two hints stay: they are only told.
+        Assert.Single(cut.FindAll(".ne-linkcheck-duplicate-section"));
+        Assert.Single(cut.FindAll(".ne-linkcheck-duplicate-abbreviation"));
+    }
+
+    [Fact]
+    public async Task LinkCheckDialog_AppendixRefsInAReadOnlyBook_NotRemoved_SaysHowMany()
+    {
+        var text = "title:: Alpha\ntype:: book\n\n- # Eins\n" +
+                   $"\t- Beleg {{{{quelle (({AppendixGone}))}}}} dort\n" + "- ```\n  offen\n";
+        using var tv = TestVault.Create(("pages/Buch - Alpha.md", text));
+        await OpenSessionAsync(tv);
+        var cut = Render<LinkCheckDialog>();
+
+        cut.Find(".ne-linkcheck-appendixrefs-remove").Click();
+        cut.Find(".ne-linkcheck-appendixrefs-yes").Click();
+
+        Assert.Equal(text, tv.Read("pages/Buch - Alpha.md"));
+        cut.WaitForAssertion(() => Assert.Equal(string.Format(Text("LinkCheckAppendixRefsReadOnly"), 1), cut.Find(".ne-dialog-error").TextContent));
+        Assert.Single(cut.FindAll(".ne-linkcheck-appendixref"));
+    }
+
     [Fact]
     public void Shell_OpeningAVaultWithLinkProblems_ShowsTheLinkCheck()
     {

@@ -57,6 +57,37 @@ public sealed class TipTapInterop(IJSRuntime js, AppState state) : IEditorIntero
             "setRefLabels",
             [labels.Select(l => new { id = l.Key.ToString("D"), label = l.Value.Text, title = l.Value.Title, missing = l.Value.Missing, foreign = l.Value.Foreign }).ToArray()]);
 
+    /// <summary>
+    /// Passes the people and sources as arrays of <c>{ id, label, title, missing }</c> and the marks as an array of
+    /// <c>{ key, start, length, title, entryKey }</c>.
+    /// </summary>
+    public async Task SetAppendixLabelsAsync(
+        IReadOnlyDictionary<Guid, RefLabel> people, IReadOnlyDictionary<Guid, RefLabel> sources, IReadOnlyList<GlossaryMark> marks) =>
+        await Initialized.InvokeVoidAsync(
+            "setAppendixLabels",
+            Labels(people),
+            Labels(sources),
+            marks.Select(m => new { key = m.ParagraphKey.ToString("D"), start = m.Start, length = m.Length, title = m.Title, entryKey = m.EntryKey.ToString("D") }).ToArray());
+
+    [JSInvokable]
+    public Task PersonClicked(string? personId) =>
+        _callbacks is not null && Guid.TryParse(personId, out var id) ? _callbacks.OnPersonClicked(id) : Task.CompletedTask;
+
+    [JSInvokable]
+    public Task SourceClicked(string? sourceId) =>
+        _callbacks is not null && Guid.TryParse(sourceId, out var id) ? _callbacks.OnSourceClicked(id) : Task.CompletedTask;
+
+    /// <summary>A citation was double-clicked: its source, the key of the text block or detail and its offset there.</summary>
+    [JSInvokable]
+    public Task CitationEdit(string? sourceId, string? elementKey, int offset) =>
+        _callbacks is not null && Guid.TryParse(sourceId, out var id) && Guid.TryParse(elementKey, out var key)
+            ? _callbacks.OnCitationEdit(id, key, offset)
+            : Task.CompletedTask;
+
+    [JSInvokable]
+    public Task GlossaryClicked(string? entryKey) =>
+        _callbacks is not null && Guid.TryParse(entryKey, out var key) ? _callbacks.OnGlossaryClicked(key) : Task.CompletedTask;
+
     [JSInvokable]
     public Task DocumentChanged(string docJson) => _callbacks?.OnDocumentChanged(docJson) ?? Task.CompletedTask;
 
@@ -165,6 +196,9 @@ public sealed class TipTapInterop(IJSRuntime js, AppState state) : IEditorIntero
     }
 
     private IJSObjectReference Initialized => _editor ?? throw new InvalidOperationException("The editor is not initialized.");
+
+    private static object[] Labels(IReadOnlyDictionary<Guid, RefLabel> labels) =>
+        [.. labels.Select(l => new { id = l.Key.ToString("D"), label = l.Value.Text, title = l.Value.Title, missing = l.Value.Missing })];
 
     private static Guid? ParseOrNull(string? value) => Guid.TryParse(value, out var guid) ? guid : null;
 }

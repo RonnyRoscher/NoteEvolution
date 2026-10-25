@@ -689,6 +689,18 @@ html, body {
     margin-top: 4px;
 }
 
+.ne-outline-appendix {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 6px;
+    margin-top: 8px;
+}
+
+.ne-outline-appendix-label {
+    color: var(--fg-muted);
+}
+
 .ne-outline-error {
     margin: 0 0 6px;
     padding: 4px 8px;
@@ -1506,6 +1518,62 @@ html, body {
 
 .ne-ref.ProseMirror-selectednode {
     outline: 1px solid var(--accent);
+}
+
+/* A person (abbreviation) or a source citation ("[3, S. 12]") in the text (appendix spec 3): small and raised; a click
+   opens the appendix window at the entry, red without an entry. */
+.ne-person-ref,
+.ne-source-cite {
+    padding: 0 0.1em;
+    color: var(--accent);
+    font-family: var(--font-ui);
+    font-size: 0.7em;
+    line-height: 0;
+    cursor: pointer;
+    user-select: none;
+}
+
+.ne-person-ref:hover,
+.ne-source-cite:hover {
+    text-decoration: underline;
+}
+
+.ne-source-cite.missing {
+    color: var(--danger);
+}
+
+.ne-person-ref.ProseMirror-selectednode,
+.ne-source-cite.ProseMirror-selectednode {
+    outline: 1px solid var(--accent);
+}
+
+/* The first occurrence of a glossary term: a dotted underline; Ctrl+click opens the glossary at the entry. */
+.ne-glossary-mark {
+    text-decoration: underline dotted;
+    text-decoration-color: var(--fg-muted);
+    text-underline-offset: 0.2em;
+}
+
+/* The locator field of a double-clicked citation, above the section bar. */
+.ne-citation-edit {
+    position: absolute;
+    left: 0;
+    bottom: calc(100% + 6px);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px;
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    z-index: 3;
+}
+
+.ne-citation-edit label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
 }
 
 /* Manuscript look: continuous text, blocks only spaced, sources as a margin mark, chips on request. */
@@ -2515,4 +2583,86 @@ html, body {
     font-size: 12px;
     white-space: nowrap;
     font-variant-numeric: tabular-nums;
+}
+
+/* Appendix dialog (glossary, people, sources): the list on the left, the fields of the entry on the right */
+.ne-modal.ne-appendix-dialog {
+    width: min(860px, 94vw);
+}
+
+.ne-appendix-dialog .ne-modal-body {
+    display: flex;
+    gap: 14px;
+    min-height: 320px;
+}
+
+.ne-appendix-side {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    flex: 0 0 240px;
+    min-width: 0;
+}
+
+.ne-appendix-list {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+}
+
+.ne-appendix-list button {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 4px 8px;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: var(--fg);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ne-appendix-list button.selected {
+    background: var(--accent);
+    color: var(--accent-fg);
+}
+
+.ne-appendix-fields {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    gap: 8px;
+    min-width: 0;
+}
+
+.ne-appendix-fields label {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    font-size: 12px;
+    color: var(--fg-muted);
+}
+
+.ne-appendix-fields input,
+.ne-appendix-fields select,
+.ne-appendix-fields textarea {
+    font: inherit;
+    color: var(--fg);
+}
+
+.ne-appendix-fields textarea {
+    min-height: 6em;
+    resize: vertical;
+}
+
+.ne-appendix-confirm {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    color: var(--danger);
 }

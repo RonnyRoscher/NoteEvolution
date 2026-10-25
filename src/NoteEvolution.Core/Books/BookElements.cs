@@ -18,9 +18,17 @@ public sealed record BookElement(ElementKind Kind, Guid Key);
 /// <summary>Locates the elements of a <see cref="Book"/> (headings, text blocks, details) by their block key.</summary>
 public static class BookElements
 {
-    /// <summary>The element whose block has <paramref name="key"/>; <c>null</c> if no heading, text block or detail has it.</summary>
+    /// <summary>
+    /// The element whose block has <paramref name="key"/>; <c>null</c> if no heading, text block or detail has it, or if
+    /// the block is in the appendix (it has no element: no cursor, no status, no commands).
+    /// </summary>
     public static BookElement? Find(Book book, Guid key)
     {
+        if (book.IsInAppendix(key))
+        {
+            return null;
+        }
+
         if (book.FindNode(key) is { Block: not null })
         {
             return new BookElement(ElementKind.Heading, key);
@@ -68,17 +76,21 @@ public static class BookElements
         return [.. textBlocks.SelectMany(textBlock => textBlock.Sources).Distinct()];
     }
 
-    /// <summary>The key of the last heading in file order; <c>null</c> if the book has none.</summary>
+    /// <summary>The key of the last heading of the book's text in file order; <c>null</c> if the book has none.</summary>
     public static Guid? LastHeadingKey(Book book)
     {
         // The last heading in file order is the last one of the last heading's sub-sections, recursively.
-        var node = book.Root;
+        if (book.ContentChildren.LastOrDefault() is not { } node)
+        {
+            return null;
+        }
+
         while (node.Children.LastOrDefault() is { } last)
         {
             node = last;
         }
 
-        return node.Block is null ? null : node.Key;
+        return node.Key;
     }
 
     private static OutlineNode Heading(Book book, BookElement element) =>

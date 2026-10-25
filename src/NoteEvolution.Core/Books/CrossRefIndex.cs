@@ -6,13 +6,19 @@ public sealed record CrossRefTarget(Guid Id, OutlineNode? Heading, TextBlock? Te
 /// <summary>A referring element: the text block, or the key of the paragraph inside it that holds the reference.</summary>
 public sealed record CrossRefSource(Guid ElementKey, TextBlock TextBlock, Guid TargetId);
 
-/// <summary>Resolves the block references of a book snapshot to their targets, in book order.</summary>
+/// <summary>
+/// Resolves the block references of a book snapshot to their targets, in book order. The appendix (spec 1.3) holds no
+/// targets and no sources: a reference to an appendix entry is no cross reference, and not missing.
+/// </summary>
 public sealed class CrossRefIndex
 {
     private readonly Dictionary<Guid, CrossRefTarget> _targets = [];
     private readonly List<CrossRefSource> _sources = [];
     private readonly Dictionary<Guid, List<CrossRefSource>> _byTarget = [];
     private readonly List<CrossRefSource> _missing = [];
+
+    /// <summary>The ids of the appendix blocks: no targets, but a reference to one is not missing either.</summary>
+    private readonly HashSet<Guid> _appendixIds = [];
     private readonly Func<Guid, bool> _knownElsewhere;
 
     private CrossRefIndex(Func<Guid, bool> knownElsewhere)
@@ -20,7 +26,9 @@ public sealed class CrossRefIndex
         _knownElsewhere = knownElsewhere;
     }
 
-    /// <summary>The references whose id is neither a target of the book nor known elsewhere, in book order.</summary>
+    /// <summary>
+    /// The references whose id is neither a target of the book, nor an appendix block, nor known elsewhere, in book order.
+    /// </summary>
     public IReadOnlyList<CrossRefSource> Missing => _missing;
 
     /// <param name="book">The book whose references are resolved.</param>
@@ -44,7 +52,7 @@ public sealed class CrossRefIndex
 
                 list.Add(source);
             }
-            else if (!index._knownElsewhere(source.TargetId))
+            else if (!index._appendixIds.Contains(source.TargetId) && !index._knownElsewhere(source.TargetId))
             {
                 index._missing.Add(source);
             }
@@ -74,7 +82,11 @@ public sealed class CrossRefIndex
 
         foreach (var item in node.Items)
         {
-            if (item is OutlineNode child)
+            if (item is OutlineNode { AppendixKind: not AppendixKind.None } appendix)
+            {
+                CollectAppendixIds(appendix.Block!);
+            }
+            else if (item is OutlineNode child)
             {
                 Visit(child);
             }
@@ -91,6 +103,19 @@ public sealed class CrossRefIndex
                     Collect(p.Block.Key, p.Text, tb);
                 }
             }
+        }
+    }
+
+    private void CollectAppendixIds(Model.Block block)
+    {
+        if (block.Id is { } id)
+        {
+            _appendixIds.Add(id);
+        }
+
+        foreach (var child in block.Children)
+        {
+            CollectAppendixIds(child);
         }
     }
 

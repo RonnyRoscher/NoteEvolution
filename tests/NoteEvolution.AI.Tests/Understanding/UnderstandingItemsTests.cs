@@ -172,4 +172,12 @@ public class UnderstandingItemsTests
         Assert.Equal("Idee " + new string('d', 75), item.Title);
         Assert.StartsWith("note:pages/C#.md#Idee ", item.Identity);
     }
+
+    [Fact]
+    public void UnderstandingItems_NoAppendixHeadings()
+    {
+        var items = Items(BookText() + "- # Glossar\n  anhang:: glossar\n\t- ## Eintrag\n\t\t- Erklärung.\n");
+
+        Assert.Equal(["Unter A", "Kapitel A", "Kapitel B"], items.Select(i => i.Title));
+    }
 }

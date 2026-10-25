@@ -76,6 +76,7 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
         EnsureWritable(bookPage);
         var (notePage, note) = FindWritableNote(noteBlockKey);
 
+        // An appendix entry is no element (BookElements.Find): FindElement refuses it like an unknown key.
         var (textBlock, element) = position switch
         {
             IntoPosition.AtCursor at => FindElement(book, at.ElementKey, detailOnly: false),
@@ -171,6 +172,11 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
         }
 
         var section = book.FindNode(sectionKey) ?? throw new ArgumentException("No section has this key.", nameof(sectionKey));
+        if (book.IsInAppendix(sectionKey))
+        {
+            throw new ArgumentException("A note is not adopted into the appendix.", nameof(sectionKey));
+        }
+
         var level = asSubheading ? section.Level + 1 : Math.Max(section.Level, 1);
         if (level > OutlineEditor.MaxLevel)
         {
@@ -178,13 +184,17 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
         }
 
         // A sub-heading goes before the section's first sub-section, a heading of the same level right after the
-        // section's subtree: no existing block changes its section.
+        // section's subtree: no existing block changes its section. A top-level heading goes before the appendix.
         var firstSubsection = section.Items.ToList().FindIndex(item => item is OutlineNode);
         var (parent, index) = asSubheading
             ? (section.Block, firstSubsection >= 0 ? firstSubsection : section.Items.Count)
             : section.Block is { } sectionBlock
                 ? (sectionBlock.Parent, IndexOf(bookPage, sectionBlock) + 1)
                 : (null, bookPage.Roots.Count);
+        if (parent is null)
+        {
+            index = book.BeforeAppendix(index);
+        }
 
         // Everything is built detached first, so that a text that would not stay one block throws before anything changed.
         var text = NoteTag.Has(note.Content) ? NoteTag.Remove(note.Content) : note.Content;
@@ -1458,9 +1468,24 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
         }
     }
 
-    /// <summary>Parent block and child index for <paramref name="position"/>; the items of a section are its block's children.</summary>
+    /// <summary>
+    /// Parent block and child index for <paramref name="position"/>; the items of a section are its block's children.
+    /// A note is not adopted into the appendix: a key there is refused.
+    /// </summary>
     private static (Block? Parent, int Index) Resolve(Book book, InsertPosition position)
     {
+        var key = position switch
+        {
+            InsertPosition.After after => after.TextBlockKey,
+            InsertPosition.SectionStart start => start.SectionKey,
+            InsertPosition.SectionEnd end => end.SectionKey,
+            _ => Guid.Empty,
+        };
+        if (book.IsInAppendix(key))
+        {
+            throw new ArgumentException("A note is not adopted into the appendix.", nameof(position));
+        }
+
         switch (position)
         {
             case InsertPosition.After after:

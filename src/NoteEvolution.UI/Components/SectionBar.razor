@@ -11,6 +11,18 @@
    EditorPane places it where the editor reports the marking's bottom; the bar renders with every render of EditorPane
    (its element is an object parameter), which follows the state and the conflicts. *@
 <div class="ne-section-bar" hidden="@(!Visible)" style="top: @(Top.ToString(CultureInfo.InvariantCulture))px">
+    @* The locator of the citation double-clicked in the editor (appendix spec 3.2): Enter saves, Escape cancels. *@
+    @if (CitationLocator is not null)
+    {
+        <div class="ne-citation-edit" role="dialog" aria-label="@L["CitationEditTitle"]">
+            <label>@L["SourcePickerLocator"]
+                <input type="text" class="ne-citation-locator" @ref="_citationInput" value="@_citationText"
+                       @oninput="args => _citationText = args.Value?.ToString() ?? string.Empty" @onkeydown="CitationKeyDownAsync" />
+            </label>
+            <button type="button" class="ne-citation-save" @onclick="() => OnCitationSave.InvokeAsync(_citationText)">@L["CitationEditSave"]</button>
+            <button type="button" class="ne-citation-cancel" @onclick="() => OnCitationCancel.InvokeAsync()">@L["CitationEditCancel"]</button>
+        </div>
+    }
     @* The bar may render on its own (the list toggled) before EditorPane passes the element of a changed book. *@
     @if (State.CurrentBook is { } book && Element is { } element && BookElements.Find(book, element.Key) == element
          && State.CurrentRange is { } range)
@@ -62,12 +74,25 @@
             <span class="ne-sec-ref-area">
                 <button type="button" class="ne-sec-ref" title="@L["SectionInsertRefTitle"]" disabled="@(!canReference)"
                         aria-expanded="@(_picking && canReference ? "true" : "false")"
-                        @onclick="() => _picking = !_picking">@L["SectionInsertRef"]</button>
+                        @onclick="ToggleReferencePicker">@L["SectionInsertRef"]</button>
                 @if (_picking && canReference)
                 {
                     <ReferencePicker Book="book" ExcludeKey="State.Cursor?.Key" OnPick="PickAsync" OnCancel="() => _picking = false" />
                 }
             </span>
+            @* People and sources of the appendix go in at the cursor like a cross reference (appendix spec 3). *@
+            @foreach (var (css, kind, labelKey, titleKey) in AppendixButtons)
+            {
+                <span class="ne-sec-ref-area">
+                    <button type="button" class="@css" title="@L[titleKey]" disabled="@(!canReference)"
+                            aria-expanded="@(_appendixPicking == kind && canReference ? "true" : "false")"
+                            @onclick="() => ToggleAppendixPicker(kind)">@L[labelKey]</button>
+                    @if (_appendixPicking == kind && canReference)
+                    {
+                        <AppendixPicker Book="book" Kind="kind" OnPick="PickAppendixAsync" OnCancel="() => _appendixPicking = null" />
+                    }
+                </span>
+            }
             @* Notes that may be where the text block at the cursor came from (with the local AI only); the list follows
                the cursor to another text block. *@
             @if (CanFindSources)
@@ -230,6 +255,42 @@
     [Parameter]
     public EventCallback<Guid> OnSource { get; set; }
 
+    /// <summary>A person or source (or „Neu anlegen …“) was chosen in „Mensch einfügen“ or „Quelle einfügen“.</summary>
+    [Parameter]
+    public EventCallback<AppendixPick> OnAppendixPick { get; set; }
+
+    /// <summary>The locator of the citation being changed (an empty one: none); <c>null</c> shows no field.</summary>
+    [Parameter]
+    public string? CitationLocator { get; set; }
+
+    /// <summary>The locator field's text is to be saved.</summary>
+    [Parameter]
+    public EventCallback<string> OnCitationSave { get; set; }
+
+    /// <summary>The locator field was closed without saving.</summary>
+    [Parameter]
+    public EventCallback OnCitationCancel { get; set; }
+
+    /// <summary>The insert buttons of the appendix: class, kind, label and tooltip.</summary>
+    private static readonly (string Css, AppendixKind Kind, string Label, string Title)[] AppendixButtons =
+    [
+        ("ne-sec-person", AppendixKind.People, "SectionInsertPerson", "SectionInsertPersonTitle"),
+        ("ne-sec-insert-source", AppendixKind.Sources, "SectionInsertSource", "SectionInsertSourceTitle"),
+    ];
+
+    /// <summary>Which appendix picker is open; <c>null</c>: none.</summary>
+    private AppendixKind? _appendixPicking;
+
+    private ElementReference _citationInput;
+
+    /// <summary>The text of the locator field.</summary>
+    private string _citationText = "";
+
+    /// <summary>The locator the field was opened with; a new one fills the field anew and takes the focus.</summary>
+    private string? _citationShown;
+
+    private bool _citationFocusPending;
+
     /// <summary>Whether „Quellen suchen“ is open.</summary>
     private bool _findingSources;
 
@@ -252,11 +313,68 @@
         if (Locked || !ManuscriptCommands.CanInsertReference(State))
         {
             _picking = false;
+            _appendixPicking = null;
+        }
+
+        if (CitationLocator != _citationShown)
+        {
+            _citationShown = CitationLocator;
+            _citationText = CitationLocator ?? "";
+            _citationFocusPending = CitationLocator is not null;
         }
 
         if (!CanFindSources)
         {
             _findingSources = false;
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_citationFocusPending)
+        {
+            _citationFocusPending = false;
+            await _citationInput.FocusAsync();
+        }
+    }
+
+    /// <summary>Opens the search for a cross reference target (closing an appendix picker), or closes it.</summary>
+    private void ToggleReferencePicker()
+    {
+        _picking = !_picking;
+        if (_picking)
+        {
+            _appendixPicking = null;
+        }
+    }
+
+    /// <summary>Opens the picker of <paramref name="kind"/> (closing the other searches), or closes it.</summary>
+    private void ToggleAppendixPicker(AppendixKind kind)
+    {
+        _appendixPicking = _appendixPicking == kind ? null : kind;
+        if (_appendixPicking is not null)
+        {
+            _picking = false;
+        }
+    }
+
+    /// <summary>Closes the picker and passes the choice on.</summary>
+    private async Task PickAppendixAsync(AppendixPick pick)
+    {
+        _appendixPicking = null;
+        await OnAppendixPick.InvokeAsync(pick);
+    }
+
+    private async Task CitationKeyDownAsync(KeyboardEventArgs args)
+    {
+        switch (args.Key)
+        {
+            case "Enter":
+                await OnCitationSave.InvokeAsync(_citationText);
+                break;
+            case "Escape":
+                await OnCitationCancel.InvokeAsync();
+                break;
         }
     }
 

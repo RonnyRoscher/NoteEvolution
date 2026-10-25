@@ -9,6 +9,13 @@ using NoteEvolution.UI.Editor;
 namespace NoteEvolution.UI.State;
 
 /// <summary>
+/// What an insert picker of the section bar chose (<see cref="ManuscriptCommands.InsertAppendixRefAsync"/>): a person or
+/// a source by its <see cref="Block.Key"/> (it may have no <c>id::</c> yet), or <c>null</c> for „Neu anlegen …“, and for
+/// a source the locator typed (<c>null</c>: none).
+/// </summary>
+public sealed record AppendixPick(AppendixKind Kind, Guid? EntryKey, string? Locator);
+
+/// <summary>
 /// The structure commands of the manuscript (spec 3) on the element at the editor cursor
 /// (<see cref="AppState.CurrentElement"/>), and Merge and Wrap on the marked range (<see cref="AppState.CurrentRange"/>,
 /// package B, spec 4, 5), shared by the editor's shortcuts and the buttons of the marking. Every command is one entry
@@ -153,14 +160,90 @@ public static class ManuscriptCommands
     /// (not expected), a warning is logged and the reference goes at the end of the text.
     /// </summary>
     /// <returns>The message to show, or <c>null</c> if the reference was inserted (or nothing changed) without remark.</returns>
-    public static async Task<AdoptMessage?> InsertReferenceAsync(AppState state, Guid targetKey, string undoDescription, ILogger logger)
+    public static Task<AdoptMessage?> InsertReferenceAsync(AppState state, Guid targetKey, string undoDescription, ILogger logger) =>
+        InsertAtCursorAsync(
+            state, null, (book, key, offset, now) => ManuscriptEditor.InsertReference(book, key, offset, targetKey, now), undoDescription, logger);
+
+    /// <summary>
+    /// Inserts a reference to the appendix entry <paramref name="entryKey"/> (its <see cref="Block.Key"/>) at the cursor
+    /// (appendix spec 3), as <see cref="InsertReferenceAsync"/> inserts a cross reference: for a person
+    /// (<see cref="AppendixKind.People"/>) a block reference <c>((id))</c>, for a source a citation
+    /// <c>{{quelle ((id)) Fundstelle}}</c> with <paramref name="locator"/> (none if empty)
+    /// (<see cref="ManuscriptEditor.InsertAppendixRef"/>). An entry without an <c>id::</c> gets one, saved with the
+    /// reference under the same undo action. A key that is no person or source of the book shows
+    /// <c>SectionCommandFailed</c>.
+    /// </summary>
+    /// <param name="at">
+    /// The cursor to insert at instead of the current one, e.g. the one a picker opened at before the appendix window
+    /// took the focus; <c>null</c>: <see cref="AppState.Cursor"/>.
+    /// </param>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="kind"/> is neither people nor sources.</exception>
+    public static Task<AdoptMessage?> InsertAppendixRefAsync(
+        AppState state, AppendixKind kind, Guid entryKey, string? locator, string undoDescription, ILogger logger, CursorInfo? at = null)
+    {
+        if (kind is not (AppendixKind.People or AppendixKind.Sources))
+        {
+            throw new ArgumentOutOfRangeException(nameof(kind), kind, "Only people and sources are referred to in the text.");
+        }
+
+        return InsertAtCursorAsync(
+            state, at, (book, key, offset, now) => ManuscriptEditor.InsertAppendixRef(book, key, offset, kind, entryKey, locator, now),
+            undoDescription, logger);
+    }
+
+    /// <summary>
+    /// Gives the source citation of <paramref name="sourceId"/> at <paramref name="offset"/> (as the editor shows the text)
+    /// of the text block or detail <paramref name="elementKey"/> the locator <paramref name="locator"/>
+    /// (<see cref="ManuscriptEditor.SetCitationLocator"/>), refused like <see cref="SetStatusAsync"/> and saved with one
+    /// undo action. The cursor goes right after the citation; the book view is taken from the vault again and
+    /// <see cref="AppState.Notify"/> is raised. No such citation shows <c>SectionCommandFailed</c>.
+    /// </summary>
+    /// <returns>The message to show, or <c>null</c> if the locator was set (or nothing changed) without remark.</returns>
+    public static async Task<AdoptMessage?> SetCitationLocatorAsync(
+        AppState state, Guid elementKey, int offset, Guid sourceId, string? locator, string undoDescription, ILogger logger)
+    {
+        Guid? reveal = null;
+        try
+        {
+            var (message, session, book) = await PrepareAsync(state, logger);
+            if (session is null || book is null || BookElements.Find(book, elementKey) is not { Kind: not ElementKind.Heading } element)
+            {
+                return message;
+            }
+
+            (message, reveal) = RunStatus(session, book, () =>
+            {
+                ManuscriptEditor.SetCitationLocator(book, element.Key, offset, sourceId, locator, session.Clock.Now);
+                return element.Key;
+            }, undoDescription, logger);
+            return message;
+        }
+        finally
+        {
+            state.RefreshBook();
+            if (reveal is { } key)
+            {
+                state.RevealElement(key, offset + 1, keepRange: true);
+            }
+
+            state.Notify();
+        }
+    }
+
+    /// <summary>
+    /// What <see cref="InsertReferenceAsync"/> and <see cref="InsertAppendixRefAsync"/> share: <paramref name="insert"/>
+    /// gets the book, the element and the offset in its Markdown; the inserted text shows as one node.
+    /// </summary>
+    private static async Task<AdoptMessage?> InsertAtCursorAsync(
+        AppState state, CursorInfo? at, Action<Book, Guid, int, DateTimeOffset> insert, string undoDescription, ILogger logger)
     {
         Guid? reveal = null;
         var after = 0;
         try
         {
             var (message, session, book) = await PrepareAsync(state, logger);
-            if (session is null || book is null || state.Cursor is not { } cursor || StatusTargetOf(state, book) is not { } element)
+            if (session is null || book is null || (at ?? state.Cursor) is not { } cursor
+                || (at is null ? StatusTargetOf(state, book) : BookElements.Find(book, at.Key)) is not { Kind: not ElementKind.Heading } element)
             {
                 return message;
             }
@@ -177,7 +260,7 @@ public static class ManuscriptCommands
 
                 // The editor shows the reference as one node: one position of its text.
                 after = offset is null ? int.MaxValue : cursor.Offset + 1;
-                ManuscriptEditor.InsertReference(book, element.Key, offset ?? int.MaxValue, targetKey, session.Clock.Now);
+                insert(book, element.Key, offset ?? int.MaxValue, session.Clock.Now);
                 return element.Key;
             }, undoDescription, logger);
             return message;
@@ -366,7 +449,7 @@ public static class ManuscriptCommands
     /// The session and the book to change; or, when the command may not run, no book and the message to show
     /// (<c>null</c> when there is simply no book).
     /// </returns>
-    private static async Task<(AdoptMessage? Message, VaultSession? Session, Book? Book)> PrepareAsync(AppState state, ILogger logger)
+    internal static async Task<(AdoptMessage? Message, VaultSession? Session, Book? Book)> PrepareAsync(AppState state, ILogger logger)
     {
         try
         {
@@ -382,6 +465,15 @@ public static class ManuscriptCommands
             return (new AdoptMessage("SectionCommandUnsaved", true), null, null);
         }
 
+        return Prepare(state);
+    }
+
+    /// <summary>
+    /// The part of <see cref="PrepareAsync"/> after the editor was flushed: text it could not save refuses the command,
+    /// then the book is taken from the vault and checked for being writable and free of an open conflict (R26).
+    /// </summary>
+    internal static (AdoptMessage? Message, VaultSession? Session, Book? Book) Prepare(AppState state)
+    {
         if (state.HasUnsavedEditorText?.Invoke() == true)
         {
             return (new AdoptMessage("SectionCommandUnsaved", true), null, null);
@@ -603,7 +695,7 @@ public static class ManuscriptCommands
     /// brings the command's change into the file together with it, but without an undo entry (none is pushed after a
     /// failed save).
     /// </summary>
-    private static AdoptMessage SaveFailed(VaultSession session, Page page, Exception? error)
+    internal static AdoptMessage SaveFailed(VaultSession session, Page page, Exception? error)
     {
         if (session.HasOpenConflict(page.FilePath))
         {
@@ -743,30 +835,6 @@ public static class ManuscriptCommands
     }
 
     /// <summary>
-    /// Undoes a structure command: puts the page of <paramref name="path"/> back to its state <paramref name="before"/>
-    /// the command and saves it, but only while the page is exactly what the command left (<paramref name="after"/>);
-    /// a later change (e.g. a title typed into a new heading) is never overwritten.
-    /// </summary>
-    private sealed class StructureUndo(
-        string description, VaultSession session, string path, PageStructureSnapshot before, PageStructureSnapshot after) : IUndoAction
-    {
-        public string Description => description;
-
-        /// <exception cref="InvalidOperationException">The page changed after the command, or saving it failed.</exception>
-        public void Undo()
-        {
-            var page = session.Vault.FindPageByPath(path);
-            if (page is null || !after.Matches(page))
-            {
-                throw new InvalidOperationException($"'{path}' changed after the structure command; it is not undone.");
-            }
-
-            before.RestoreInto(page);
-            SaveUndone(session, page, path);
-        }
-    }
-
-    /// <summary>
     /// Undoes removing a heading (<see cref="RemovedHeading.RestoreInto"/>) and saves the page: the heading comes back
     /// around the blocks it held, also after later edits elsewhere or in those blocks' text, and the text block made
     /// from its title goes. Refused (no change) when the heading's former parent is gone, a moved block is gone or was
@@ -787,7 +855,7 @@ public static class ManuscriptCommands
             }
 
             removed.RestoreInto(page);
-            SaveUndone(session, page, path);
+            StructureUndo.SaveUndone(session, page, path);
         }
     }
 
@@ -811,23 +879,7 @@ public static class ManuscriptCommands
             }
 
             wrapped.RestoreInto(book);
-            SaveUndone(session, book.Page, book.Page.FilePath);
-        }
-    }
-
-    /// <summary>Saves the page after an undo; if that fails, the vault takes the file's version again where it should.</summary>
-    /// <exception cref="InvalidOperationException">Saving failed.</exception>
-    private static void SaveUndone(VaultSession session, Page page, string path)
-    {
-        if (!session.TrySave(page, out var error))
-        {
-            if (error is not FileChangedExternallyException && !session.HasOpenConflict(path))
-            {
-                // The restored page was not written: the vault takes the file's version again.
-                PageReload.FromDisk(session, page);
-            }
-
-            throw new InvalidOperationException($"Saving '{path}' after undoing the structure command failed.", error);
+            StructureUndo.SaveUndone(session, book.Page, book.Page.FilePath);
         }
     }
 }

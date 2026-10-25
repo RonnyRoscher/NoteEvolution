@@ -10,6 +10,14 @@ namespace NoteEvolution.UI.Editor;
 /// <param name="Offset">The cursor's character offset in the title or paragraph.</param>
 public sealed record CursorInfo(ElementKind Kind, Guid Key, Guid? TextBlockKey, int Offset);
 
+/// <summary>The first occurrence of a glossary term the editor marks (appendix spec 3.3), as a decoration.</summary>
+/// <param name="ParagraphKey">The text block (its own text) or detail that holds it.</param>
+/// <param name="Start">The offset in the paragraph's text as the editor shows it (see <see cref="GlossaryHit"/>).</param>
+/// <param name="Length">The length in the same units.</param>
+/// <param name="Title">The tooltip: the term and its explanation.</param>
+/// <param name="EntryKey">The <see cref="GlossaryEntry.Key"/> of the entry, for the glossary window.</param>
+public sealed record GlossaryMark(Guid ParagraphKey, int Start, int Length, string Title, Guid EntryKey);
+
 /// <summary>
 /// The structure commands of the current element (spec 3), the commands of the range (package B, spec 2) and the
 /// status commands; the editor sends all but <see cref="Delete"/>, <see cref="Merge"/>, <see cref="Wrap"/> and
@@ -106,6 +114,21 @@ public interface IEditorCallbacks
     /// start of the document (before its first element).
     /// </summary>
     Task OnNoteDropped(Guid noteBlockKey, Guid? afterTextBlockKey);
+
+    /// <summary>A reference to a person was clicked; <paramref name="personId"/> is the entry's <c>id::</c>.</summary>
+    Task OnPersonClicked(Guid personId);
+
+    /// <summary>A source citation was clicked; <paramref name="sourceId"/> is the source's <c>id::</c>.</summary>
+    Task OnSourceClicked(Guid sourceId);
+
+    /// <summary>
+    /// A source citation was double-clicked to change its locator: <paramref name="elementKey"/> is the text block or
+    /// detail holding it and <paramref name="offset"/> its position in the text the editor shows there.
+    /// </summary>
+    Task OnCitationEdit(Guid sourceId, Guid elementKey, int offset);
+
+    /// <summary>A marked glossary term was clicked with Ctrl; <paramref name="entryKey"/> is the entry's block key.</summary>
+    Task OnGlossaryClicked(Guid entryKey);
 }
 
 /// <summary>The TipTap editor behind a narrow interface, so components can be tested without JavaScript.</summary>
@@ -154,4 +177,15 @@ public interface IEditorInterop : IAsyncDisposable
     /// <see cref="IEditorCallbacks.OnDocumentChanged"/> is raised. Ids the editor does not show are ignored.
     /// </summary>
     Task SetRefLabelsAsync(IReadOnlyDictionary<Guid, RefLabel> labels);
+
+    /// <summary>
+    /// Sets what the editor shows of the appendix without replacing the document, as <see cref="SetRefLabelsAsync"/>
+    /// does: <paramref name="people"/> are the labels of the people by <c>id::</c> (a reference to one shows as a person
+    /// node, also one typed as text), <paramref name="sources"/> those of the sources and of cited ids that are no source
+    /// (<see cref="AppendixLabels.Sources"/>; a citation typed as text becomes a citation node), and
+    /// <paramref name="marks"/> the glossary terms to mark, kept for later documents. Ids and keys the editor does not
+    /// show are ignored.
+    /// </summary>
+    Task SetAppendixLabelsAsync(
+        IReadOnlyDictionary<Guid, RefLabel> people, IReadOnlyDictionary<Guid, RefLabel> sources, IReadOnlyList<GlossaryMark> marks);
 }

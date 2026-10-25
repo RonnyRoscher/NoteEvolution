@@ -10,14 +10,15 @@ namespace NoteEvolution.Core.Books;
 /// <see cref="OutlineEditor"/>, they change <c>book.Page</c> in memory and find their blocks through the
 /// <see cref="Book"/> view; the caller saves the page and reloads the
 /// <see cref="Book"/>. Every command validates first; if it throws (<see cref="ArgumentException"/>, also for an unknown key), the page is unchanged.
-/// New headings are empty (<c>"#" * level + " "</c>), new text blocks and details are empty blocks.
+/// New headings are empty (<c>"#" * level + " "</c>), new text blocks and details are empty blocks. The appendix is
+/// no element of the manuscript (<see cref="BookElements.Find"/>): every command refuses it.
 /// </summary>
 public static class ManuscriptEditor
 {
     /// <summary>
     /// Adds a new empty element after <paramref name="current"/>: for a heading of level n a level-n heading after its
     /// whole section, for a text block a text block directly after it, for a detail a detail of the same depth after
-    /// it and its deeper details.
+    /// it and its deeper details. A new top-level heading goes before the appendix.
     /// </summary>
     /// <param name="now">
     /// With a time, a new text block gets both dates and a new detail stamps <c>updated::</c> on its text block; a new
@@ -29,7 +30,13 @@ public static class ManuscriptEditor
     {
         var block = BlockOf(book, current);
         var content = current.Kind == ElementKind.Heading ? EmptyHeading(book.FindNode(current.Key)!.Level) : "";
-        return Insert(book, block.Parent, IndexOf(book.Page, block) + 1, content, current.Kind, current, now);
+        var index = IndexOf(book.Page, block) + 1;
+        if (current.Kind == ElementKind.Heading && block.Parent is null)
+        {
+            index = book.BeforeAppendix(index);
+        }
+
+        return Insert(book, block.Parent, index, content, current.Kind, current, now);
     }
 
     /// <summary>
@@ -66,11 +73,11 @@ public static class ManuscriptEditor
 
     /// <summary>
     /// Moves the heading one level deeper, with its sub-sections: it becomes the last sub-section of the previous
-    /// heading of the same level (<see cref="OutlineEditor.MoveSection"/>).
+    /// heading of the same level (<see cref="OutlineEditor.MoveSection"/>), never of an appendix section.
     /// </summary>
     /// <exception cref="ArgumentException">
-    /// Unknown heading, no previous heading of the same level in the same section, or the subtree would get a heading
-    /// deeper than level 6.
+    /// Unknown heading or one in the appendix, no previous heading of the same level in the same section, or the
+    /// subtree would get a heading deeper than level 6.
     /// </exception>
     public static void Indent(Book book, Guid headingKey)
     {
@@ -84,7 +91,7 @@ public static class ManuscriptEditor
     /// Moves the heading one level higher, with its sub-sections: it is placed directly after the section of its
     /// former parent heading, and every heading of its subtree gets one <c>#</c> less.
     /// </summary>
-    /// <exception cref="ArgumentException">Unknown heading, or a level-1 heading.</exception>
+    /// <exception cref="ArgumentException">Unknown heading, one in the appendix, or a level-1 heading.</exception>
     public static void Outdent(Book book, Guid headingKey)
     {
         var node = OutlineEditor.FindHeading(book, headingKey, nameof(headingKey));
@@ -102,12 +109,13 @@ public static class ManuscriptEditor
     /// <summary>Whether <see cref="Indent"/> is possible; <c>false</c> for an unknown key.</summary>
     public static bool CanIndent(Book book, Guid headingKey) =>
         book.FindNode(headingKey) is { Block: not null } node
+        && !book.IsInAppendix(headingKey)
         && PreviousSameLevel(node) is { } previous
         && previous.Level + OutlineEditor.Height(node) <= OutlineEditor.MaxLevel;
 
     /// <summary>Whether <see cref="Outdent"/> is possible; <c>false</c> for an unknown key.</summary>
     public static bool CanOutdent(Book book, Guid headingKey) =>
-        book.FindNode(headingKey) is { Block: not null } node && CanOutdent(node);
+        book.FindNode(headingKey) is { Block: not null } node && !book.IsInAppendix(headingKey) && CanOutdent(node);
 
     /// <summary>
     /// Removes the heading but keeps its content: its title (with any further lines of the heading's text) becomes a
@@ -122,7 +130,7 @@ public static class ManuscriptEditor
     /// (<see cref="RemovedHeading.Reveal"/>): the new text block, else the first moved item, else the element before the
     /// heading in the file, else <see cref="Guid.Empty"/>.
     /// </returns>
-    /// <exception cref="ArgumentException">Unknown heading.</exception>
+    /// <exception cref="ArgumentException">Unknown heading, or one in the appendix.</exception>
     public static RemovedHeading RemoveHeading(Book book, Guid headingKey, DateTimeOffset? now = null)
     {
         var node = OutlineEditor.FindHeading(book, headingKey, nameof(headingKey));
@@ -379,7 +387,9 @@ public static class ManuscriptEditor
     /// of its subtree shifts by the same difference, so the outline below it stays as it is. Only the <c>#</c> marks
     /// change.
     /// </summary>
-    /// <exception cref="ArgumentException">Unknown heading, or <see cref="LevelBlocked"/> refuses the level (also Text).</exception>
+    /// <exception cref="ArgumentException">
+    /// Unknown heading or one in the appendix, or <see cref="LevelBlocked"/> refuses the level (also Text).
+    /// </exception>
     public static void SetHeadingLevel(Book book, Guid headingKey, int level)
     {
         var node = OutlineEditor.FindHeading(book, headingKey, nameof(headingKey));
@@ -622,14 +632,123 @@ public static class ManuscriptEditor
             throw new ArgumentException("An element cannot refer to itself.", nameof(targetKey));
         }
 
+        Insert(book, element, offset, now, target, () => BlockRefs.Format(target.EnsureId()));
+    }
+
+    /// <summary>
+    /// Inserts <paramref name="markdown"/> (e.g. a reference to a person <c>((id))</c> or a source citation
+    /// <c>{{quelle ((id))}}</c>) into the text of the text block or detail <paramref name="elementKey"/>, at
+    /// <paramref name="offset"/> in its content, as <see cref="InsertReference"/> inserts a cross reference: clamped to
+    /// the content, the line escaped anew at the start of a line, the referring text block stamped <c>updated::</c>.
+    /// </summary>
+    /// <exception cref="ArgumentException">The element is a heading or not in the book.</exception>
+    /// <exception cref="InvalidOperationException">A block has no place for properties (an open code fence); nothing is changed.</exception>
+    public static void InsertText(Book book, Guid elementKey, int offset, string markdown, DateTimeOffset now) =>
+        Insert(book, ReferringElement(book, elementKey), offset, now, null, () => markdown);
+
+    /// <summary>
+    /// Inserts a reference to the appendix entry <paramref name="entryKey"/> (its <see cref="Block.Key"/>) into the text
+    /// of the text block or detail <paramref name="elementKey"/>, as <see cref="InsertReference"/> inserts a cross
+    /// reference: for a person (<see cref="AppendixKind.People"/>) <c>((id))</c>, for a source the citation
+    /// <c>{{quelle ((id)) Fundstelle}}</c> with <paramref name="locator"/> (<see cref="SourceCitations.Format"/>). An entry
+    /// written in Logseq without an <c>id::</c> gets one now, without a date, in the same change.
+    /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="kind"/> is neither people nor sources.</exception>
+    /// <exception cref="ArgumentException">
+    /// The element is a heading or not in the book, or the section of <paramref name="kind"/> has no such entry.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">A block has no place for properties (an open code fence); nothing is changed.</exception>
+    public static void InsertAppendixRef(
+        Book book, Guid elementKey, int offset, AppendixKind kind, Guid entryKey, string? locator, DateTimeOffset now)
+    {
+        if (kind is not (AppendixKind.People or AppendixKind.Sources))
+        {
+            throw new ArgumentOutOfRangeException(nameof(kind), kind, "Only people and sources are referred to in the text.");
+        }
+
+        var element = ReferringElement(book, elementKey);
+        var entry = book.AppendixSection(kind)?.TextBlocks.FirstOrDefault(text => text.Key == entryKey)?.Block
+                    ?? throw new ArgumentException("The appendix has no such entry.", nameof(entryKey));
+        Insert(book, element, offset, now, entry, () => kind == AppendixKind.People
+            ? BlockRefs.Format(entry.EnsureId())
+            : SourceCitations.Format(entry.EnsureId(), locator));
+    }
+
+    /// <summary>
+    /// The source citation the editor shows at <paramref name="shownOffset"/> of the text block or detail
+    /// <paramref name="elementKey"/> (see <see cref="ContentOffset"/>), if it cites <paramref name="sourceId"/>; its span
+    /// is in the block's content. <c>null</c> if there is none.
+    /// </summary>
+    /// <exception cref="ArgumentException">The element is a heading or not in the book.</exception>
+    public static SourceCitation? CitationAt(Book book, Guid elementKey, int shownOffset, Guid sourceId)
+    {
+        var element = ReferringElement(book, elementKey);
+        var content = BlockOf(book, element).Content;
+        // The first place that shows something at the offset is at or before the citation (before emphasis around it).
+        var from = ContentOffset(book, elementKey, shownOffset) ?? 0;
+        foreach (var citation in SourceCitations.Find(content))
+        {
+            if (citation.Start >= from && citation.Id == sourceId)
+            {
+                return citation;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Gives the source citation at <paramref name="shownOffset"/> (see <see cref="CitationAt"/>) the locator
+    /// <paramref name="locator"/> (none if empty, see <see cref="SourceCitations.Format"/>); the referring text block
+    /// gets <c>updated::</c> if the text changed.
+    /// </summary>
+    /// <exception cref="ArgumentException">The element is a heading or not in the book, or there is no such citation.</exception>
+    /// <exception cref="InvalidOperationException">A block has no place for properties (an open code fence); nothing is changed.</exception>
+    public static void SetCitationLocator(Book book, Guid elementKey, int shownOffset, Guid sourceId, string? locator, DateTimeOffset now)
+    {
+        var citation = CitationAt(book, elementKey, shownOffset, sourceId)
+                       ?? throw new ArgumentException("The element shows no citation of the source there.", nameof(shownOffset));
+        var element = ReferringElement(book, elementKey);
+        var block = BlockOf(book, element);
+        var content = block.Content;
+        var changed = content[..citation.Start] + SourceCitations.Format(sourceId, locator) + content[(citation.Start + citation.Length)..];
+        if (changed == content)
+        {
+            return;
+        }
+
+        var owner = BookElements.TextBlockOf(book, element)!.Block;
+        Changing([block, owner], () =>
+        {
+            block.SetContent(changed);
+            BlockDates.StampChanged(owner, now);
+        });
+    }
+
+    /// <summary>
+    /// Puts <paramref name="markdown"/> (computed once nothing failed before) into the element's content at
+    /// <paramref name="offset"/> and stamps its text block; <paramref name="target"/> is a further block the text may
+    /// change (the target of a cross reference getting an <c>id::</c>).
+    /// </summary>
+    private static void Insert(Book book, BookElement element, int offset, DateTimeOffset now, Block? target, Func<string> markdown)
+    {
         var block = BlockOf(book, element);
         var owner = BookElements.TextBlockOf(book, element)!.Block;
-        var saved = new[] { block, owner, target }.Distinct().Select(b => (Block: b, Lines: b.Lines.ToList(), b.IsDirty)).ToList();
+        Changing(target is null ? [block, owner] : [block, owner, target], () =>
+        {
+            var text = markdown();
+            block.SetContent(WithReference(block.Content, Math.Clamp(offset, 0, block.Content.Length), text));
+            BlockDates.StampChanged(owner, now);
+        });
+    }
+
+    /// <summary>Runs <paramref name="change"/>; if it throws, the blocks get their lines back.</summary>
+    private static void Changing(Block[] blocks, Action change)
+    {
+        var saved = blocks.Distinct().Select(b => (Block: b, Lines: b.Lines.ToList(), b.IsDirty)).ToList();
         try
         {
-            var reference = BlockRefs.Format(target.EnsureId());
-            block.SetContent(WithReference(block.Content, Math.Clamp(offset, 0, block.Content.Length), reference));
-            BlockDates.StampChanged(owner, now);
+            change();
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
         {
@@ -774,9 +893,13 @@ public static class ManuscriptEditor
         return index;
     }
 
-    /// <summary>The last heading of the same level before <paramref name="node"/> in its section, or <c>null</c>.</summary>
+    /// <summary>
+    /// The last heading of the same level before <paramref name="node"/> in its section, or <c>null</c>; an appendix
+    /// section does not count.
+    /// </summary>
     private static OutlineNode? PreviousSameLevel(OutlineNode node) =>
-        node.Parent!.Children.TakeWhile(sibling => sibling != node).LastOrDefault(sibling => sibling.Level == node.Level);
+        node.Parent!.Children.TakeWhile(sibling => sibling != node)
+            .LastOrDefault(sibling => sibling.Level == node.Level && sibling.AppendixKind == AppendixKind.None);
 
     private static bool CanOutdent(OutlineNode node) => node.Level > 1 && node.Parent is { Block: not null };
 

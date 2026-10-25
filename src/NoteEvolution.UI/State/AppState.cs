@@ -434,6 +434,18 @@ public sealed class AppState
     public event Action? AiModelDialogRequested;
 
     /// <summary>
+    /// Someone asked for the appendix dialog of a kind (see <see cref="RequestAppendixDialog"/>), optionally with one entry
+    /// selected; the shell shows it.
+    /// </summary>
+    public event Action<AppendixKind, Guid?>? AppendixDialogRequested;
+
+    /// <summary>
+    /// Someone asked for the appendix dialog of a kind with a new entry (see <see cref="RequestNewAppendixEntry"/>); the
+    /// shell shows it and calls the action with the new entry's block key once it is saved.
+    /// </summary>
+    public event Action<AppendixKind, Action<Guid>>? NewAppendixEntryRequested;
+
+    /// <summary>
     /// The user chose another book (<see cref="SelectBook"/>, or back/forward into another book); the shell remembers it
     /// for the next start.
     /// </summary>
@@ -455,6 +467,18 @@ public sealed class AppState
 
     /// <summary>Asks the shell to show the AI model dialog, which offers the download.</summary>
     public void RequestAiModelDialog() => AiModelDialogRequested?.Invoke();
+
+    /// <summary>
+    /// Asks the shell to show the appendix dialog for <paramref name="kind"/> (glossary, people or sources), with the entry
+    /// <paramref name="entryKey"/> selected if given.
+    /// </summary>
+    public void RequestAppendixDialog(AppendixKind kind, Guid? entryKey = null) => AppendixDialogRequested?.Invoke(kind, entryKey);
+
+    /// <summary>
+    /// Asks the shell to show the appendix dialog for <paramref name="kind"/> with a new, empty entry (the „Neu anlegen …“
+    /// of an insert picker); <paramref name="onCreated"/> gets the entry's block key after its first save.
+    /// </summary>
+    public void RequestNewAppendixEntry(AppendixKind kind, Action<Guid> onCreated) => NewAppendixEntryRequested?.Invoke(kind, onCreated);
 
     /// <summary>
     /// Asks the notes pane to bring the note with the block id <paramref name="noteId"/> (the <c>id::</c> a

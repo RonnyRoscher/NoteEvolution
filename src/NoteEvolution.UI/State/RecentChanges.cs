@@ -37,7 +37,8 @@ public static class RecentChanges
     /// </summary>
     public static IReadOnlyList<RecentChange> Of(Book book, Func<OutlineNode, string?> sectionSummary, int limit = 20)
     {
-        var groups = AllTextBlocks(book.Root)
+        // The appendix is not the book's text: its entries never show up as changes.
+        var groups = book.Root.TextBlocks.Concat(book.ContentChildren.SelectMany(AllTextBlocks))
             .Where(block => block.Updated is not null)
             .GroupBy(block => (block.Section, Day: block.Updated!.Value.Date))
             .Select(group => (Blocks: group.ToList(), Latest: group.Max(block => block.Updated!.Value)))

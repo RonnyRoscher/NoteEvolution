@@ -450,6 +450,18 @@
   <data name="OutlineAddRoot" xml:space="preserve">
     <value>Überschrift hinzufügen</value>
   </data>
+  <data name="OutlineAppendix" xml:space="preserve">
+    <value>Anhang:</value>
+  </data>
+  <data name="OutlineAppendixGlossary" xml:space="preserve">
+    <value>Glossar</value>
+  </data>
+  <data name="OutlineAppendixPeople" xml:space="preserve">
+    <value>Menschen</value>
+  </data>
+  <data name="OutlineAppendixSources" xml:space="preserve">
+    <value>Quellen</value>
+  </data>
   <data name="OutlineNewTitle" xml:space="preserve">
     <value>Neue Überschrift</value>
   </data>
@@ -869,6 +881,49 @@
   <data name="LinkCheckCrossRefsReadOnly" xml:space="preserve">
     <value>{0} Querverweise ohne Ziel stehen in einem Buch, das nicht sicher lesbar ist, und wurden nicht entfernt.</value>
     <comment>{0} = Anzahl</comment>
+  </data>
+  <data name="LinkCheckAppendixRefs" xml:space="preserve">
+    <value>Verweise auf fehlende Einträge</value>
+  </data>
+  <data name="LinkCheckAppendixRefsHint" xml:space="preserve">
+    <value>Diese Stellen nennen eine Quelle oder einen Autor, den es im Anhang nicht mehr gibt. Ein Klick springt zur Stelle; „Verweise entfernen“ nimmt die Quellenangaben aus dem Text und die fehlenden Autoren aus den Quellen und lässt den übrigen Text stehen.</value>
+  </data>
+  <data name="LinkCheckAppendixRefsRemove" xml:space="preserve">
+    <value>Verweise entfernen</value>
+  </data>
+  <data name="LinkCheckAppendixRefsConfirm" xml:space="preserve">
+    <value>{0} Verweise entfernen? Das lässt sich nicht rückgängig machen.</value>
+    <comment>Rückfrage vor „Verweise entfernen“ bei den fehlenden Anhang-Einträgen; {0} = Anzahl (mehr als einer)</comment>
+  </data>
+  <data name="LinkCheckAppendixRefsConfirmOne" xml:space="preserve">
+    <value>1 Verweis entfernen? Das lässt sich nicht rückgängig machen.</value>
+    <comment>Rückfrage vor „Verweise entfernen“ bei den fehlenden Anhang-Einträgen, ein Verweis</comment>
+  </data>
+  <data name="LinkCheckAppendixRefsRemoved" xml:space="preserve">
+    <value>{0} Verweise auf fehlende Einträge entfernt.</value>
+    <comment>{0} = Anzahl</comment>
+  </data>
+  <data name="LinkCheckAppendixRefsReadOnly" xml:space="preserve">
+    <value>{0} Verweise auf fehlende Einträge stehen in einem Buch, das nicht sicher lesbar ist, und wurden nicht entfernt.</value>
+    <comment>{0} = Anzahl</comment>
+  </data>
+  <data name="LinkCheckAppendixSourceMissing" xml:space="preserve">
+    <value>Quelle nicht im Anhang</value>
+  </data>
+  <data name="LinkCheckAppendixAuthorMissing" xml:space="preserve">
+    <value>Autor nicht unter den Menschen</value>
+  </data>
+  <data name="LinkCheckDuplicateSections" xml:space="preserve">
+    <value>Doppelte Anhang-Abschnitte</value>
+  </data>
+  <data name="LinkCheckDuplicateSectionsHint" xml:space="preserve">
+    <value>Diese Abschnitte gehören zu einem Anhang-Teil, den es schon gibt. Die App nutzt nur den ersten; die übrigen bleiben unverändert und gehören nicht zum Buchtext. Führen Sie sie in Logseq zusammen.</value>
+  </data>
+  <data name="LinkCheckDuplicateAbbreviations" xml:space="preserve">
+    <value>Doppelte Kürzel</value>
+  </data>
+  <data name="LinkCheckDuplicateAbbreviationsHint" xml:space="preserve">
+    <value>Mehrere Menschen im selben Buch haben dasselbe Kürzel. Es wird nichts geändert; ändern Sie ein Kürzel im Fenster „Menschen“.</value>
   </data>
   <data name="LinkCheckBookMissing" xml:space="preserve">
     <value>Buch „{0}“ nicht gefunden</value>
@@ -1642,5 +1697,149 @@
   </data>
   <data name="KeysNavigation2" xml:space="preserve">
     <value>Buch geteilt anzeigen ein / aus</value>
+  </data>
+  <data name="UndoAppendix" xml:space="preserve">
+    <value>Anhang ändern</value>
+  </data>
+  <data name="AppendixDeleteReferenced" xml:space="preserve">
+    <value>{0} Verweise im Buch werden zu ‚Verweis fehlt‘. Trotzdem löschen?</value>
+  </data>
+  <data name="AppendixNameEmpty" xml:space="preserve">
+    <value>Der Name darf nicht leer sein.</value>
+  </data>
+  <data name="AppendixAbbreviationInvalid" xml:space="preserve">
+    <value>Das Kürzel darf 1–6 Zeichen aus Buchstaben, Ziffern, Punkt und Bindestrich haben.</value>
+  </data>
+  <data name="AppendixAbbreviationTaken" xml:space="preserve">
+    <value>Dieses Kürzel ist im Buch schon vergeben.</value>
+  </data>
+  <data name="AppendixTermEmpty" xml:space="preserve">
+    <value>Der Begriff darf nicht leer sein.</value>
+  </data>
+  <data name="AppendixTitleEmpty" xml:space="preserve">
+    <value>Der Titel darf nicht leer sein.</value>
+  </data>
+  <data name="AppendixSearch" xml:space="preserve">
+    <value>Suchen</value>
+  </data>
+  <data name="AppendixNew" xml:space="preserve">
+    <value>Neu</value>
+  </data>
+  <data name="AppendixDelete" xml:space="preserve">
+    <value>Löschen</value>
+  </data>
+  <data name="AppendixDeleteConfirm" xml:space="preserve">
+    <value>Trotzdem löschen</value>
+  </data>
+  <data name="AppendixNoEntries" xml:space="preserve">
+    <value>Noch keine Einträge.</value>
+  </data>
+  <data name="AppendixUntitled" xml:space="preserve">
+    <value>(ohne Namen)</value>
+  </data>
+  <data name="AppendixPickEntry" xml:space="preserve">
+    <value>Wähle links einen Eintrag oder lege einen neuen an.</value>
+  </data>
+  <data name="AppendixTerm" xml:space="preserve">
+    <value>Begriff</value>
+  </data>
+  <data name="AppendixForms" xml:space="preserve">
+    <value>Formen (mit Komma getrennt)</value>
+  </data>
+  <data name="AppendixExplanation" xml:space="preserve">
+    <value>Erklärung</value>
+  </data>
+  <data name="AppendixName" xml:space="preserve">
+    <value>Name</value>
+  </data>
+  <data name="AppendixAbbreviation" xml:space="preserve">
+    <value>Kürzel</value>
+  </data>
+  <data name="AppendixTopics" xml:space="preserve">
+    <value>Themen (mit Komma getrennt)</value>
+  </data>
+  <data name="AppendixDescription" xml:space="preserve">
+    <value>Beschreibung</value>
+  </data>
+  <data name="AppendixSourceKind" xml:space="preserve">
+    <value>Art</value>
+  </data>
+  <data name="AppendixKindBook" xml:space="preserve">
+    <value>Buch</value>
+  </data>
+  <data name="AppendixKindVideo" xml:space="preserve">
+    <value>Video</value>
+  </data>
+  <data name="AppendixKindArticle" xml:space="preserve">
+    <value>Artikel</value>
+  </data>
+  <data name="AppendixKindWebsite" xml:space="preserve">
+    <value>Webseite</value>
+  </data>
+  <data name="AppendixKindOther" xml:space="preserve">
+    <value>Sonstiges</value>
+  </data>
+  <data name="AppendixSourceTitle" xml:space="preserve">
+    <value>Titel</value>
+  </data>
+  <data name="AppendixAuthors" xml:space="preserve">
+    <value>Autoren (mit Komma getrennt)</value>
+  </data>
+  <data name="AppendixYear" xml:space="preserve">
+    <value>Jahr</value>
+  </data>
+  <data name="AppendixPublisher" xml:space="preserve">
+    <value>Herausgeber</value>
+  </data>
+  <data name="AppendixUrl" xml:space="preserve">
+    <value>URL</value>
+  </data>
+  <data name="SectionInsertPerson" xml:space="preserve">
+    <value>Mensch einfügen</value>
+  </data>
+  <data name="SectionInsertPersonTitle" xml:space="preserve">
+    <value>Fügt an der Cursorstelle einen Verweis auf einen Menschen aus dem Anhang ein</value>
+  </data>
+  <data name="SectionInsertSource" xml:space="preserve">
+    <value>Quelle einfügen</value>
+  </data>
+  <data name="SectionInsertSourceTitle" xml:space="preserve">
+    <value>Fügt an der Cursorstelle ein Zitat einer Quelle aus dem Anhang ein</value>
+  </data>
+  <data name="PersonPickerTitle" xml:space="preserve">
+    <value>Mensch auswählen</value>
+  </data>
+  <data name="SourcePickerTitle" xml:space="preserve">
+    <value>Quelle auswählen</value>
+  </data>
+  <data name="SourcePickerLocator" xml:space="preserve">
+    <value>Fundstelle (z. B. S. 12)</value>
+  </data>
+  <data name="AppendixPickerNew" xml:space="preserve">
+    <value>Neu anlegen …</value>
+  </data>
+  <data name="CiteLabelMissing" xml:space="preserve">
+    <value>Verweis fehlt</value>
+  </data>
+  <data name="CiteTitleMissing" xml:space="preserve">
+    <value>Diese Quelle gibt es im Anhang nicht mehr.</value>
+  </data>
+  <data name="CitationEditTitle" xml:space="preserve">
+    <value>Fundstelle ändern</value>
+  </data>
+  <data name="CitationEditSave" xml:space="preserve">
+    <value>Übernehmen</value>
+  </data>
+  <data name="CitationEditCancel" xml:space="preserve">
+    <value>Abbrechen</value>
+  </data>
+  <data name="UndoPersonRef" xml:space="preserve">
+    <value>Mensch einfügen</value>
+  </data>
+  <data name="UndoSourceRef" xml:space="preserve">
+    <value>Quelle einfügen</value>
+  </data>
+  <data name="UndoCitationLocator" xml:space="preserve">
+    <value>Fundstelle ändern</value>
   </data>
 </root>

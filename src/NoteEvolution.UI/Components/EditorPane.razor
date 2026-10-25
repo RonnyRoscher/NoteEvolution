@@ -39,7 +39,9 @@
     {
         <SectionBar Top="_barTop" Visible="_barVisible" Element="MyView.ElementIn(State.CurrentBook)" Locked="ReadOnlyReason is not null"
                     OnCommand="OnSectionCommand" OnStatus="OnStatusChosen"
-                    OnReference="OnReferenceChosen" OnLevel="OnLevelChosen" OnSource="OnSourceChosen" />
+                    OnReference="OnReferenceChosen" OnLevel="OnLevelChosen" OnSource="OnSourceChosen"
+                    OnAppendixPick="OnAppendixPicked" CitationLocator="@(_citationEdit?.Locator)"
+                    OnCitationSave="SaveCitationAsync" OnCitationCancel="CancelCitationEdit" />
     }
 </div>
 
@@ -69,6 +71,30 @@
 
     /// <summary>The cross references of the text the editor shows (spec 2.3), as last loaded or pushed.</summary>
     private ShownRefs _shownRefs = new([], []);
+
+    /// <summary>What the editor shows of the appendix (appendix spec 3), as last loaded or pushed.</summary>
+    private ShownAppendix _shownAppendix = new([], [], [], []);
+
+    /// <summary>
+    /// The labels of the people and sources, the glossary marks, and the references and citations of the text that name
+    /// a person or source (by id, in order; a change there means one may have been typed as text).
+    /// </summary>
+    private sealed record ShownAppendix(
+        Dictionary<Guid, RefLabel> People, Dictionary<Guid, RefLabel> Sources, List<GlossaryMark> Marks, List<Guid> Units)
+    {
+        public bool SameAs(ShownAppendix other) =>
+            SameLabels(People, other.People) && SameLabels(Sources, other.Sources)
+            && Marks.SequenceEqual(other.Marks) && Units.SequenceEqual(other.Units);
+
+        private static bool SameLabels(Dictionary<Guid, RefLabel> a, Dictionary<Guid, RefLabel> b) =>
+            a.Count == b.Count && a.All(l => b.GetValueOrDefault(l.Key) == l.Value);
+    }
+
+    /// <summary>The citation whose locator is being changed (a double click on it); <c>null</c> while none is.</summary>
+    private CitationEditing? _citationEdit;
+
+    /// <summary>A citation of a source at an offset of a text block or detail, and its locator as the field shows it.</summary>
+    private sealed record CitationEditing(Guid SourceId, Guid ElementKey, int Offset, string Locator);
 
     /// <summary>The references of a text in order (by target id) and the label of each target.</summary>
     private sealed record ShownRefs(List<Guid> Order, Dictionary<Guid, RefLabel> Labels);
@@ -737,8 +763,11 @@
         {
             // After its own save the editor keeps its document (cursor, undo history) even where the book holds a
             // text slightly normalized; it is compared with the book's version from now on (R33).
+            var ownSave = shown!.FromEditor;
             _saver.Shown = shown with { Snapshot = fresh, FromEditor = false };
             await ShowDatesAsync(DatesOf(fresh, book));
+            // Before the cross references: a citation typed as text becomes a node before its inner reference could.
+            await ShowAppendixAsync(AppendixOf(fresh, book), book, ownSave);
             await ShowRefLabelsAsync(fresh, book);
             StateHasChanged();
             await RevealPendingAsync();
@@ -746,22 +775,31 @@
         }
 
         // Another book or session (or the first document): the editor puts no cursor into it before the user does.
+        ShownAppendix appendixLoaded;
         _loading = true;
         _newTarget = !sameTarget;
         try
         {
             var dates = DatesOf(fresh, book);
             var refs = RefsOf(fresh, book);
-            var json = EditorDocMapper.ToJson(fresh, key => dates.GetValueOrDefault(key), LabelsOf(book));
+            var appendix = AppendixOf(fresh, book);
+            var json = EditorDocMapper.ToJson(
+                fresh, key => dates.GetValueOrDefault(key), LabelsOf(book), id => appendix.People.GetValueOrDefault(id),
+                id => appendix.Sources.TryGetValue(id, out var source) ? source : AppendixLabels.MissingSource(L));
             await Editor.SetDocumentAsync(json, _showChips, keepCursor: sameTarget);
             _shownDates = dates;
             _shownRefs = refs;
+            // The document shows the labels; the editor keeps the marks it had (they are no part of the document).
+            _shownAppendix = appendix with { Marks = _shownAppendix.Marks };
+            appendixLoaded = appendix;
         }
         finally
         {
             _loading = false;
             _newTarget = false;
         }
+
+        await ShowAppendixAsync(appendixLoaded, book);
 
         _saver.Shown = new ShownText(session, book.LinkName, fresh);
         _shownChips = _showChips;
@@ -915,6 +953,144 @@
 
         // Only what the editor took counts as shown: after a failed push the next sync pushes the labels again.
         _shownRefs = refs;
+    }
+
+    /// <summary>
+    /// What the editor is to show of the appendix for the snapshot's text (<see cref="AppendixLabels"/>): every person and
+    /// source, a citation whose source is no entry as missing, and the glossary marks.
+    /// </summary>
+    private ShownAppendix AppendixOf(SectionSnapshot snapshot, Book book)
+    {
+        var index = AppendixIndex.Of(book);
+        var people = AppendixLabels.People(book);
+        var sources = AppendixLabels.Sources(book, index);
+        var units = new List<Guid>();
+        foreach (var text in snapshot.Nodes.OfType<SnapshotTextBlock>().SelectMany(t => t.Paragraphs.Select(p => p.Text).Prepend(t.Text)))
+        {
+            foreach (var citation in SourceCitations.Find(text))
+            {
+                sources.TryAdd(citation.Id, AppendixLabels.MissingSource(L));
+                units.Add(citation.Id);
+            }
+
+            units.AddRange(BlockRefs.Find(text).Select(r => r.Id).Where(people.ContainsKey));
+        }
+
+        return new ShownAppendix(people, sources, AppendixLabels.Marks(book, index), units);
+    }
+
+    /// <summary>
+    /// Gives the editor the appendix labels and marks (after its own save, a load, a change of the appendix) when they or
+    /// the references to people and sources changed; a book without appendix pushes nothing. With
+    /// <paramref name="afterOwnSave"/> (the editor's own save) the editor's text may have lost a mark or turned a typed
+    /// reference into text while the book shows the same as before (a term deleted and typed again): what the book has is
+    /// pushed unless the book has no appendix.
+    /// </summary>
+    private async Task ShowAppendixAsync(ShownAppendix appendix, Book book, bool afterOwnSave = false)
+    {
+        var hasAppendix = book.Root.Children.Any(node => node.AppendixKind != AppendixKind.None);
+        if (!appendix.SameAs(_shownAppendix) || (afterOwnSave && hasAppendix))
+        {
+            await Editor.SetAppendixLabelsAsync(appendix.People, appendix.Sources, appendix.Marks);
+        }
+
+        // Only what the editor took counts as shown: after a failed push the next sync pushes the labels again.
+        _shownAppendix = appendix;
+    }
+
+    /// <summary>A click on a person opens the window „Menschen“ at the entry.</summary>
+    public Task OnPersonClicked(Guid personId)
+    {
+        if (State.CurrentBook is { } book && Appendix.PersonById(book, personId) is { } person)
+        {
+            State.RequestAppendixDialog(AppendixKind.People, person.Key);
+        }
+
+        return Task.CompletedTask;
+    }
+
+    /// <summary>A click on a citation opens the window „Quellen“ at the source; one without source goes nowhere.</summary>
+    public Task OnSourceClicked(Guid sourceId)
+    {
+        if (State.CurrentBook is { } book && Appendix.SourceById(book, sourceId) is { } source)
+        {
+            State.RequestAppendixDialog(AppendixKind.Sources, source.Key);
+        }
+
+        return Task.CompletedTask;
+    }
+
+    /// <summary>A Ctrl+click on a marked glossary term opens the window „Glossar“ at the entry.</summary>
+    public Task OnGlossaryClicked(Guid entryKey)
+    {
+        State.RequestAppendixDialog(AppendixKind.Glossary, entryKey);
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// A double click on a citation opens the locator field at the section bar, with the citation's locator; the
+    /// editor saves its text first, so the offset is one of the book's text. Not in a book that cannot be changed.
+    /// </summary>
+    public async Task OnCitationEdit(Guid sourceId, Guid elementKey, int offset)
+    {
+        if (ReadOnlyReason is not null || !await ActivateAsync())
+        {
+            return;
+        }
+
+        await FlushAsync();
+        SourceCitation? citation = null;
+        if (State.CurrentBook is { } book && BookElements.Find(book, elementKey) is { Kind: not ElementKind.Heading })
+        {
+            citation = ManuscriptEditor.CitationAt(book, elementKey, offset, sourceId);
+        }
+
+        _citationEdit = citation is { } found ? new CitationEditing(sourceId, elementKey, offset, found.Locator ?? "") : null;
+        StateHasChanged();
+    }
+
+    /// <summary>Saves the locator typed in the field (<see cref="ManuscriptCommands.SetCitationLocatorAsync"/>) and closes it.</summary>
+    private async Task SaveCitationAsync(string locator)
+    {
+        if (_citationEdit is not { } edit)
+        {
+            return;
+        }
+
+        _citationEdit = null;
+        _saver.Message = await ManuscriptCommands.SetCitationLocatorAsync(
+            State, edit.ElementKey, edit.Offset, edit.SourceId, locator, L["UndoCitationLocator"], Logger);
+        StateHasChanged();
+    }
+
+    private void CancelCitationEdit() => _citationEdit = null;
+
+    /// <summary>
+    /// A person or source chosen in the section bar's picker goes in at the cursor
+    /// (<see cref="ManuscriptCommands.InsertAppendixRefAsync"/>). „Neu anlegen …“ opens the window with a new entry; once
+    /// it is saved, it goes in at the cursor the picker was opened at.
+    /// </summary>
+    public async Task OnAppendixPicked(AppendixPick pick)
+    {
+        var undo = L[pick.Kind == AppendixKind.People ? "UndoPersonRef" : "UndoSourceRef"].Value;
+        if (pick.EntryKey is { } key)
+        {
+            _saver.Message = await ManuscriptCommands.InsertAppendixRefAsync(State, pick.Kind, key, pick.Locator, undo, Logger);
+            StateHasChanged();
+            return;
+        }
+
+        var cursor = State.Cursor;
+        State.RequestNewAppendixEntry(pick.Kind, created => _ = InvokeAsync(async () =>
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            _saver.Message = await ManuscriptCommands.InsertAppendixRefAsync(State, pick.Kind, created, pick.Locator, undo, Logger, cursor);
+            StateHasChanged();
+        }));
     }
 
     /// <summary>
