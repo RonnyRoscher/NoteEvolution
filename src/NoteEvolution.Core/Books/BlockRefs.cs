@@ -12,12 +12,21 @@ public static partial class BlockRefs
     [GeneratedRegex(@"\(\(([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\)\)")]
     private static partial Regex RefRegex();
 
-    /// <summary>All well-formed references in text order; anything else in double parentheses is ignored.</summary>
+    /// <summary>
+    /// All well-formed references in text order; anything else in double parentheses is ignored, and so is the
+    /// reference inside a <see cref="SourceCitations">source citation</see>.
+    /// </summary>
     public static IReadOnlyList<BlockRef> Find(string text)
     {
         var refs = new List<BlockRef>();
+        var citations = SourceCitations.Find(text);
         foreach (Match m in RefRegex().Matches(text))
         {
+            if (citations.Any(c => m.Index >= c.Start && m.Index < c.Start + c.Length))
+            {
+                continue;
+            }
+
             refs.Add(new BlockRef(Guid.ParseExact(m.Groups[1].Value, "D"), m.Index, m.Length));
         }
 
