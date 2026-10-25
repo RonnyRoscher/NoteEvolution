@@ -1520,6 +1520,62 @@ html, body {
     outline: 1px solid var(--accent);
 }
 
+/* A person (abbreviation) or a source citation ("[3, S. 12]") in the text (appendix spec 3): small and raised; a click
+   opens the appendix window at the entry, red without an entry. */
+.ne-person-ref,
+.ne-source-cite {
+    padding: 0 0.1em;
+    color: var(--accent);
+    font-family: var(--font-ui);
+    font-size: 0.7em;
+    line-height: 0;
+    cursor: pointer;
+    user-select: none;
+}
+
+.ne-person-ref:hover,
+.ne-source-cite:hover {
+    text-decoration: underline;
+}
+
+.ne-source-cite.missing {
+    color: var(--danger);
+}
+
+.ne-person-ref.ProseMirror-selectednode,
+.ne-source-cite.ProseMirror-selectednode {
+    outline: 1px solid var(--accent);
+}
+
+/* The first occurrence of a glossary term: a dotted underline; Ctrl+click opens the glossary at the entry. */
+.ne-glossary-mark {
+    text-decoration: underline dotted;
+    text-decoration-color: var(--fg-muted);
+    text-underline-offset: 0.2em;
+}
+
+/* The locator field of a double-clicked citation, above the section bar. */
+.ne-citation-edit {
+    position: absolute;
+    left: 0;
+    bottom: calc(100% + 6px);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px;
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    z-index: 3;
+}
+
+.ne-citation-edit label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
 /* Manuscript look: continuous text, blocks only spaced, sources as a margin mark, chips on request. */
 .mode-manuscript .ne-block {
     padding-bottom: 0.8em;

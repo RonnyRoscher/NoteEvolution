@@ -632,14 +632,95 @@ public static class ManuscriptEditor
             throw new ArgumentException("An element cannot refer to itself.", nameof(targetKey));
         }
 
+        Insert(book, element, offset, now, target, () => BlockRefs.Format(target.EnsureId()));
+    }
+
+    /// <summary>
+    /// Inserts <paramref name="markdown"/> (e.g. a reference to a person <c>((id))</c> or a source citation
+    /// <c>{{quelle ((id))}}</c>) into the text of the text block or detail <paramref name="elementKey"/>, at
+    /// <paramref name="offset"/> in its content, as <see cref="InsertReference"/> inserts a cross reference: clamped to
+    /// the content, the line escaped anew at the start of a line, the referring text block stamped <c>updated::</c>.
+    /// </summary>
+    /// <exception cref="ArgumentException">The element is a heading or not in the book.</exception>
+    /// <exception cref="InvalidOperationException">A block has no place for properties (an open code fence); nothing is changed.</exception>
+    public static void InsertText(Book book, Guid elementKey, int offset, string markdown, DateTimeOffset now) =>
+        Insert(book, ReferringElement(book, elementKey), offset, now, null, () => markdown);
+
+    /// <summary>
+    /// The source citation the editor shows at <paramref name="shownOffset"/> of the text block or detail
+    /// <paramref name="elementKey"/> (see <see cref="ContentOffset"/>), if it cites <paramref name="sourceId"/>; its span
+    /// is in the block's content. <c>null</c> if there is none.
+    /// </summary>
+    /// <exception cref="ArgumentException">The element is a heading or not in the book.</exception>
+    public static SourceCitation? CitationAt(Book book, Guid elementKey, int shownOffset, Guid sourceId)
+    {
+        var element = ReferringElement(book, elementKey);
+        var content = BlockOf(book, element).Content;
+        // The first place that shows something at the offset is at or before the citation (before emphasis around it).
+        var from = ContentOffset(book, elementKey, shownOffset) ?? 0;
+        foreach (var citation in SourceCitations.Find(content))
+        {
+            if (citation.Start >= from && citation.Id == sourceId)
+            {
+                return citation;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Gives the source citation at <paramref name="shownOffset"/> (see <see cref="CitationAt"/>) the locator
+    /// <paramref name="locator"/> (none if empty, see <see cref="SourceCitations.Format"/>); the referring text block
+    /// gets <c>updated::</c> if the text changed.
+    /// </summary>
+    /// <exception cref="ArgumentException">The element is a heading or not in the book, or there is no such citation.</exception>
+    /// <exception cref="InvalidOperationException">A block has no place for properties (an open code fence); nothing is changed.</exception>
+    public static void SetCitationLocator(Book book, Guid elementKey, int shownOffset, Guid sourceId, string? locator, DateTimeOffset now)
+    {
+        var citation = CitationAt(book, elementKey, shownOffset, sourceId)
+                       ?? throw new ArgumentException("The element shows no citation of the source there.", nameof(shownOffset));
+        var element = ReferringElement(book, elementKey);
+        var block = BlockOf(book, element);
+        var content = block.Content;
+        var changed = content[..citation.Start] + SourceCitations.Format(sourceId, locator) + content[(citation.Start + citation.Length)..];
+        if (changed == content)
+        {
+            return;
+        }
+
+        var owner = BookElements.TextBlockOf(book, element)!.Block;
+        Changing([block, owner], () =>
+        {
+            block.SetContent(changed);
+            BlockDates.StampChanged(owner, now);
+        });
+    }
+
+    /// <summary>
+    /// Puts <paramref name="markdown"/> (computed once nothing failed before) into the element's content at
+    /// <paramref name="offset"/> and stamps its text block; <paramref name="target"/> is a further block the text may
+    /// change (the target of a cross reference getting an <c>id::</c>).
+    /// </summary>
+    private static void Insert(Book book, BookElement element, int offset, DateTimeOffset now, Block? target, Func<string> markdown)
+    {
         var block = BlockOf(book, element);
         var owner = BookElements.TextBlockOf(book, element)!.Block;
-        var saved = new[] { block, owner, target }.Distinct().Select(b => (Block: b, Lines: b.Lines.ToList(), b.IsDirty)).ToList();
+        Changing(target is null ? [block, owner] : [block, owner, target], () =>
+        {
+            var text = markdown();
+            block.SetContent(WithReference(block.Content, Math.Clamp(offset, 0, block.Content.Length), text));
+            BlockDates.StampChanged(owner, now);
+        });
+    }
+
+    /// <summary>Runs <paramref name="change"/>; if it throws, the blocks get their lines back.</summary>
+    private static void Changing(Block[] blocks, Action change)
+    {
+        var saved = blocks.Distinct().Select(b => (Block: b, Lines: b.Lines.ToList(), b.IsDirty)).ToList();
         try
         {
-            var reference = BlockRefs.Format(target.EnsureId());
-            block.SetContent(WithReference(block.Content, Math.Clamp(offset, 0, block.Content.Length), reference));
-            BlockDates.StampChanged(owner, now);
+            change();
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
         {

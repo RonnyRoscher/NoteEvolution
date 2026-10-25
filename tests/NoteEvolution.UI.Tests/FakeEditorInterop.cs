@@ -126,6 +126,18 @@ public sealed class FakeEditorInterop : IEditorInterop, IDisposable
         return Task.CompletedTask;
     }
 
+    /// <summary>The arguments of each <see cref="SetAppendixLabelsAsync"/>, in order.</summary>
+    public List<(IReadOnlyDictionary<Guid, RefLabel> People, IReadOnlyDictionary<Guid, RefLabel> Sources, IReadOnlyList<GlossaryMark> Marks)> AppendixLabels { get; } = [];
+
+    /// <summary>Records the labels; <see cref="Calls"/> gets <c>appendix</c>.</summary>
+    public Task SetAppendixLabelsAsync(
+        IReadOnlyDictionary<Guid, RefLabel> people, IReadOnlyDictionary<Guid, RefLabel> sources, IReadOnlyList<GlossaryMark> marks)
+    {
+        AppendixLabels.Add((new Dictionary<Guid, RefLabel>(people), new Dictionary<Guid, RefLabel>(sources), [.. marks]));
+        Calls.Add("appendix");
+        return Task.CompletedTask;
+    }
+
     public ValueTask DisposeAsync()
     {
         Disposed = true;

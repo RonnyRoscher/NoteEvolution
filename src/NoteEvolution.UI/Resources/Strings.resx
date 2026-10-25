@@ -1751,4 +1751,52 @@
   <data name="AppendixUrl" xml:space="preserve">
     <value>URL</value>
   </data>
+  <data name="SectionInsertPerson" xml:space="preserve">
+    <value>Mensch einfügen</value>
+  </data>
+  <data name="SectionInsertPersonTitle" xml:space="preserve">
+    <value>Fügt an der Cursorstelle einen Verweis auf einen Menschen aus dem Anhang ein</value>
+  </data>
+  <data name="SectionInsertSource" xml:space="preserve">
+    <value>Quelle einfügen</value>
+  </data>
+  <data name="SectionInsertSourceTitle" xml:space="preserve">
+    <value>Fügt an der Cursorstelle ein Zitat einer Quelle aus dem Anhang ein</value>
+  </data>
+  <data name="PersonPickerTitle" xml:space="preserve">
+    <value>Mensch auswählen</value>
+  </data>
+  <data name="SourcePickerTitle" xml:space="preserve">
+    <value>Quelle auswählen</value>
+  </data>
+  <data name="SourcePickerLocator" xml:space="preserve">
+    <value>Fundstelle (z. B. S. 12)</value>
+  </data>
+  <data name="AppendixPickerNew" xml:space="preserve">
+    <value>Neu anlegen …</value>
+  </data>
+  <data name="CiteLabelMissing" xml:space="preserve">
+    <value>Verweis fehlt</value>
+  </data>
+  <data name="CiteTitleMissing" xml:space="preserve">
+    <value>Diese Quelle gibt es im Anhang nicht mehr.</value>
+  </data>
+  <data name="CitationEditTitle" xml:space="preserve">
+    <value>Fundstelle ändern</value>
+  </data>
+  <data name="CitationEditSave" xml:space="preserve">
+    <value>Übernehmen</value>
+  </data>
+  <data name="CitationEditCancel" xml:space="preserve">
+    <value>Abbrechen</value>
+  </data>
+  <data name="UndoPersonRef" xml:space="preserve">
+    <value>Mensch einfügen</value>
+  </data>
+  <data name="UndoSourceRef" xml:space="preserve">
+    <value>Quelle einfügen</value>
+  </data>
+  <data name="UndoCitationLocator" xml:space="preserve">
+    <value>Fundstelle ändern</value>
+  </data>
 </root>

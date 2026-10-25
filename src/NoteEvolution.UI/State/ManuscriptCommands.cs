@@ -9,6 +9,12 @@ using NoteEvolution.UI.Editor;
 namespace NoteEvolution.UI.State;
 
 /// <summary>
+/// What an insert picker of the section bar chose (<see cref="ManuscriptCommands.InsertAppendixRefAsync"/>): a person or
+/// a source by <c>id::</c>, or <c>null</c> for „Neu anlegen …“, and for a source the locator typed (<c>null</c>: none).
+/// </summary>
+public sealed record AppendixPick(AppendixKind Kind, Guid? EntryId, string? Locator);
+
+/// <summary>
 /// The structure commands of the manuscript (spec 3) on the element at the editor cursor
 /// (<see cref="AppState.CurrentElement"/>), and Merge and Wrap on the marked range (<see cref="AppState.CurrentRange"/>,
 /// package B, spec 4, 5), shared by the editor's shortcuts and the buttons of the marking. Every command is one entry
@@ -153,14 +159,92 @@ public static class ManuscriptCommands
     /// (not expected), a warning is logged and the reference goes at the end of the text.
     /// </summary>
     /// <returns>The message to show, or <c>null</c> if the reference was inserted (or nothing changed) without remark.</returns>
-    public static async Task<AdoptMessage?> InsertReferenceAsync(AppState state, Guid targetKey, string undoDescription, ILogger logger)
+    public static Task<AdoptMessage?> InsertReferenceAsync(AppState state, Guid targetKey, string undoDescription, ILogger logger) =>
+        InsertAtCursorAsync(
+            state, null, (book, key, offset, now) => ManuscriptEditor.InsertReference(book, key, offset, targetKey, now), undoDescription, logger);
+
+    /// <summary>
+    /// Inserts a reference to an appendix entry at the cursor (appendix spec 3), as <see cref="InsertReferenceAsync"/>
+    /// inserts a cross reference: for a person (<see cref="AppendixKind.People"/>) a block reference <c>((id))</c>, for a
+    /// source a citation <c>{{quelle ((id)) Fundstelle}}</c> with <paramref name="locator"/> (none if empty). An id that
+    /// is no person or source of the book shows <c>SectionCommandFailed</c>.
+    /// </summary>
+    /// <param name="at">
+    /// The cursor to insert at instead of the current one, e.g. the one a picker opened at before the appendix window
+    /// took the focus; <c>null</c>: <see cref="AppState.Cursor"/>.
+    /// </param>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="kind"/> is neither people nor sources.</exception>
+    public static Task<AdoptMessage?> InsertAppendixRefAsync(
+        AppState state, AppendixKind kind, Guid entryId, string? locator, string undoDescription, ILogger logger, CursorInfo? at = null)
+    {
+        if (kind is not (AppendixKind.People or AppendixKind.Sources))
+        {
+            throw new ArgumentOutOfRangeException(nameof(kind), kind, "Only people and sources are referred to in the text.");
+        }
+
+        return InsertAtCursorAsync(state, at, (book, key, offset, now) =>
+        {
+            var markdown = kind == AppendixKind.People
+                ? Appendix.PersonById(book, entryId) is not null ? BlockRefs.Format(entryId) : null
+                : Appendix.SourceById(book, entryId) is not null ? SourceCitations.Format(entryId, locator) : null;
+            ManuscriptEditor.InsertText(
+                book, key, offset, markdown ?? throw new ArgumentException("The book has no such entry.", nameof(entryId)), now);
+        }, undoDescription, logger);
+    }
+
+    /// <summary>
+    /// Gives the source citation of <paramref name="sourceId"/> at <paramref name="offset"/> (as the editor shows the text)
+    /// of the text block or detail <paramref name="elementKey"/> the locator <paramref name="locator"/>
+    /// (<see cref="ManuscriptEditor.SetCitationLocator"/>), refused like <see cref="SetStatusAsync"/> and saved with one
+    /// undo action. The cursor goes right after the citation; the book view is taken from the vault again and
+    /// <see cref="AppState.Notify"/> is raised. No such citation shows <c>SectionCommandFailed</c>.
+    /// </summary>
+    /// <returns>The message to show, or <c>null</c> if the locator was set (or nothing changed) without remark.</returns>
+    public static async Task<AdoptMessage?> SetCitationLocatorAsync(
+        AppState state, Guid elementKey, int offset, Guid sourceId, string? locator, string undoDescription, ILogger logger)
+    {
+        Guid? reveal = null;
+        try
+        {
+            var (message, session, book) = await PrepareAsync(state, logger);
+            if (session is null || book is null || BookElements.Find(book, elementKey) is not { Kind: not ElementKind.Heading } element)
+            {
+                return message;
+            }
+
+            (message, reveal) = RunStatus(session, book, () =>
+            {
+                ManuscriptEditor.SetCitationLocator(book, element.Key, offset, sourceId, locator, session.Clock.Now);
+                return element.Key;
+            }, undoDescription, logger);
+            return message;
+        }
+        finally
+        {
+            state.RefreshBook();
+            if (reveal is { } key)
+            {
+                state.RevealElement(key, offset + 1, keepRange: true);
+            }
+
+            state.Notify();
+        }
+    }
+
+    /// <summary>
+    /// What <see cref="InsertReferenceAsync"/> and <see cref="InsertAppendixRefAsync"/> share: <paramref name="insert"/>
+    /// gets the book, the element and the offset in its Markdown; the inserted text shows as one node.
+    /// </summary>
+    private static async Task<AdoptMessage?> InsertAtCursorAsync(
+        AppState state, CursorInfo? at, Action<Book, Guid, int, DateTimeOffset> insert, string undoDescription, ILogger logger)
     {
         Guid? reveal = null;
         var after = 0;
         try
         {
             var (message, session, book) = await PrepareAsync(state, logger);
-            if (session is null || book is null || state.Cursor is not { } cursor || StatusTargetOf(state, book) is not { } element)
+            if (session is null || book is null || (at ?? state.Cursor) is not { } cursor
+                || (at is null ? StatusTargetOf(state, book) : BookElements.Find(book, at.Key)) is not { Kind: not ElementKind.Heading } element)
             {
                 return message;
             }
@@ -177,7 +261,7 @@ public static class ManuscriptCommands
 
                 // The editor shows the reference as one node: one position of its text.
                 after = offset is null ? int.MaxValue : cursor.Offset + 1;
-                ManuscriptEditor.InsertReference(book, element.Key, offset ?? int.MaxValue, targetKey, session.Clock.Now);
+                insert(book, element.Key, offset ?? int.MaxValue, session.Clock.Now);
                 return element.Key;
             }, undoDescription, logger);
             return message;

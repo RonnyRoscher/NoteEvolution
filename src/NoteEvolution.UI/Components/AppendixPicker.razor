@@ -1,0 +1,165 @@
+@using NoteEvolution.Core.Books
+@using Microsoft.JSInterop
+@inject IStringLocalizer<Strings> L
+@inject IJSRuntime JS
+@inject ILogger<AppendixPicker> Logger
+
+@* The choice of a person or source to insert at the cursor (appendix spec 3.1, 3.2), built like ReferencePicker: the
+   entries filtered while typing (people by name and abbreviation, sources by title and authors), case-insensitively,
+   and „Neu anlegen …“ as the last option. Arrow keys and Enter choose, a click chooses too, Escape cancels. For a
+   source an optional locator („Fundstelle“) goes with the citation. *@
+<div class="ne-ref-picker ne-appendix-picker" role="dialog" aria-label="@L[Kind == AppendixKind.People ? "PersonPickerTitle" : "SourcePickerTitle"]">
+    <input type="text" class="ne-ref-query" placeholder="@L["RefPickerPlaceholder"]" aria-label="@L["RefPickerPlaceholder"]"
+           @ref="_input" value="@_query" @oninput="QueryChanged" @onkeydown="KeyDownAsync" />
+    @if (Kind == AppendixKind.Sources)
+    {
+        <input type="text" class="ne-appendix-locator" placeholder="@L["SourcePickerLocator"]" aria-label="@L["SourcePickerLocator"]"
+               value="@_locator" @oninput="args => _locator = args.Value?.ToString() ?? string.Empty" @onkeydown="KeyDownAsync" />
+    }
+    <div class="ne-ref-list" role="listbox" @ref="_list">
+        @if (_matches.Count == 0)
+        {
+            <span class="ne-ref-none">@L["RefPickerNone"]</span>
+        }
+        @for (var i = 0; i < _matches.Count; i++)
+        {
+            var candidate = _matches[i];
+            <button type="button" role="option" aria-selected="@(i == _selected ? "true" : "false")"
+                    class="ne-ref-option ne-appendix-option @(i == _selected ? "ne-ref-selected" : "")"
+                    title="@candidate.Label" @onclick="() => PickAsync(candidate.Id)">@candidate.Label</button>
+        }
+        <button type="button" role="option" aria-selected="@(_selected == _matches.Count ? "true" : "false")"
+                class="ne-ref-option ne-appendix-picker-new @(_selected == _matches.Count ? "ne-ref-selected" : "")"
+                @onclick="() => PickAsync(null)">@L["AppendixPickerNew"]</button>
+    </div>
+</div>
+
+@code {
+    private ElementReference _input;
+    private ElementReference _list;
+
+    /// <summary>The arrow keys moved the selection: it is scrolled into view after the render.</summary>
+    private bool _scrollPending;
+    private List<Candidate> _candidates = [];
+    private List<Candidate> _matches = [];
+    private string _query = "";
+    private string _locator = "";
+
+    /// <summary>The selected option; <c>_matches.Count</c> is „Neu anlegen …“.</summary>
+    private int _selected;
+    private bool _focused;
+
+    /// <summary>The book whose people or sources are offered.</summary>
+    [Parameter, EditorRequired]
+    public Book Book { get; set; } = default!;
+
+    /// <summary><see cref="AppendixKind.People"/> or <see cref="AppendixKind.Sources"/>.</summary>
+    [Parameter, EditorRequired]
+    public AppendixKind Kind { get; set; }
+
+    /// <summary>An entry or „Neu anlegen …“ was chosen.</summary>
+    [Parameter]
+    public EventCallback<AppendixPick> OnPick { get; set; }
+
+    /// <summary>Escape was pressed.</summary>
+    [Parameter]
+    public EventCallback OnCancel { get; set; }
+
+    /// <summary>An entry offered: its <c>id::</c> and the label shown and searched.</summary>
+    private sealed record Candidate(Guid Id, string Label);
+
+    protected override void OnParametersSet()
+    {
+        _candidates = CandidatesOf(Book);
+        Filter();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_focused)
+        {
+            _focused = true;
+            await _input.FocusAsync();
+        }
+
+        if (_scrollPending)
+        {
+            _scrollPending = false;
+            try
+            {
+                await JS.InvokeVoidAsync("neLayout.scrollOptionIntoView", _list, _selected);
+            }
+            catch (Exception ex) when (ex is JSException or JSDisconnectedException or InvalidOperationException or TaskCanceledException)
+            {
+                // Only an aid: the selection works without it.
+                Logger.LogDebug(ex, "Scrolling the selected appendix entry into view failed");
+            }
+        }
+    }
+
+    private void QueryChanged(ChangeEventArgs args)
+    {
+        _query = args.Value?.ToString() ?? "";
+        _selected = 0;
+        Filter();
+    }
+
+    private void Filter()
+    {
+        var query = _query.Trim();
+        _matches = query.Length == 0
+            ? _candidates
+            : [.. _candidates.Where(candidate => candidate.Label.Contains(query, StringComparison.CurrentCultureIgnoreCase))];
+        _selected = Math.Clamp(_selected, 0, _matches.Count);
+    }
+
+    private async Task KeyDownAsync(KeyboardEventArgs args)
+    {
+        switch (args.Key)
+        {
+            case "ArrowDown":
+                _selected = Math.Min(_selected + 1, _matches.Count);
+                _scrollPending = true;
+                break;
+            case "ArrowUp":
+                _selected = Math.Max(_selected - 1, 0);
+                _scrollPending = true;
+                break;
+            case "Enter":
+                await PickAsync(_selected < _matches.Count ? _matches[_selected].Id : null);
+                break;
+            case "Escape":
+                await OnCancel.InvokeAsync();
+                break;
+        }
+    }
+
+    private Task PickAsync(Guid? id)
+    {
+        var locator = Kind == AppendixKind.Sources && _locator.Trim().Length > 0 ? _locator.Trim() : null;
+        return OnPick.InvokeAsync(new AppendixPick(Kind, id, locator));
+    }
+
+    /// <summary>
+    /// The entries with an <c>id::</c> (one without has none to refer to yet; the window gives it one when it saves it):
+    /// people as "Name (Kürzel)" by name, sources as "Titel – Autor; Autor" by title.
+    /// </summary>
+    private List<Candidate> CandidatesOf(Book book)
+    {
+        var comparer = StringComparer.Create(new CultureInfo("de-DE"), ignoreCase: true);
+        if (Kind == AppendixKind.People)
+        {
+            return [.. Appendix.People(book).Where(p => p.Id != Guid.Empty)
+                .OrderBy(p => p.Name, comparer)
+                .Select(p => new Candidate(p.Id, p.Abbreviation.Length > 0 ? $"{p.Name} ({p.Abbreviation})" : p.Name))];
+        }
+
+        return [.. Appendix.Sources(book).Where(s => s.Id != Guid.Empty)
+            .OrderBy(s => s.Title, comparer)
+            .Select(s =>
+            {
+                var authors = string.Join("; ", s.AuthorIds.Select(id => Appendix.PersonById(book, id)?.Name).OfType<string>());
+                return new Candidate(s.Id, authors.Length > 0 ? $"{s.Title} – {authors}" : s.Title);
+            })];
+    }
+}

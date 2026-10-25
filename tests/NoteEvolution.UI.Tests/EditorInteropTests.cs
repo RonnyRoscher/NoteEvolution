@@ -255,5 +255,13 @@ public class EditorInteropTests
         }
 
         public Task OnNoteDropped(Guid noteBlockKey, Guid? afterTextBlockKey) => Task.CompletedTask;
+
+        public Task OnPersonClicked(Guid personId) => Task.CompletedTask;
+
+        public Task OnSourceClicked(Guid sourceId) => Task.CompletedTask;
+
+        public Task OnCitationEdit(Guid sourceId, Guid elementKey, int offset) => Task.CompletedTask;
+
+        public Task OnGlossaryClicked(Guid entryKey) => Task.CompletedTask;
     }
 }

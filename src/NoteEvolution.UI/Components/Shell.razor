@@ -129,7 +129,8 @@
             <DraftWizard OnClose="CloseDialog" InitialPage="_draftPage" OnConverted="OnDraftConverted" />
             break;
         case Dialog.Appendix:
-            <AppendixDialog @key="(_appendixKind, _appendixEntry)" Kind="_appendixKind" InitialEntry="_appendixEntry" OnClose="CloseDialog" />
+            <AppendixDialog @key="_appendixRequest" Kind="_appendixKind" InitialEntry="_appendixEntry"
+                            StartWithNew="_appendixStartWithNew" OnCreated="OnAppendixCreated" OnClose="CloseDialog" />
             break;
     }
 
@@ -183,6 +184,14 @@
 
     private Guid? _appendixEntry;
 
+    /// <summary>What gets the new entry's id (a picker's „Neu anlegen …“); <c>null</c>: the dialog was opened to browse.</summary>
+    private Action<Guid>? _appendixOnCreated;
+
+    private bool _appendixStartWithNew;
+
+    /// <summary>Counts the requests, so each one shows the dialog anew.</summary>
+    private int _appendixRequest;
+
     private enum Dialog
     {
         None,
@@ -202,9 +211,32 @@
     {
         _appendixKind = kind;
         _appendixEntry = entry;
+        _appendixOnCreated = null;
+        _appendixStartWithNew = false;
+        _appendixRequest++;
         _dialog = Dialog.Appendix;
         StateHasChanged();
     });
+
+    /// <summary>An insert picker's „Neu anlegen …“: the window with a new entry, which is inserted once it is saved.</summary>
+    private void OnNewAppendixEntryRequested(AppendixKind kind, Action<Guid> onCreated) => _ = InvokeAsync(() =>
+    {
+        _appendixKind = kind;
+        _appendixEntry = null;
+        _appendixOnCreated = onCreated;
+        _appendixStartWithNew = true;
+        _appendixRequest++;
+        _dialog = Dialog.Appendix;
+        StateHasChanged();
+    });
+
+    /// <summary>Passes the first entry created on to the picker that asked for it, once.</summary>
+    private void OnAppendixCreated(Guid id)
+    {
+        var onCreated = _appendixOnCreated;
+        _appendixOnCreated = null;
+        onCreated?.Invoke(id);
+    }
 
     private void CloseDialog()
     {
@@ -442,6 +474,7 @@
         State.Changed += OnStateChanged;
         State.AiModelDialogRequested += OnAiModelDialogRequested;
         State.AppendixDialogRequested += OnAppendixDialogRequested;
+        State.NewAppendixEntryRequested += OnNewAppendixEntryRequested;
         State.BookSelected += RememberBook;
         // The host page's splash screen (index.html) says what the start waits for and fades out after it (the last
         // vault is open, or there is none). It is only a display, so the start never waits for it.
@@ -477,6 +510,7 @@
         State.Changed -= OnStateChanged;
         State.AiModelDialogRequested -= OnAiModelDialogRequested;
         State.AppendixDialogRequested -= OnAppendixDialogRequested;
+        State.NewAppendixEntryRequested -= OnNewAppendixEntryRequested;
         State.BookSelected -= RememberBook;
         if (_subscribed is not null)
         {
