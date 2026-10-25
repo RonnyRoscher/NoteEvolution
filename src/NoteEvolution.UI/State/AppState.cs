@@ -434,6 +434,12 @@ public sealed class AppState
     public event Action? AiModelDialogRequested;
 
     /// <summary>
+    /// Someone asked for the appendix dialog of a kind (see <see cref="RequestAppendixDialog"/>), optionally with one entry
+    /// selected; the shell shows it.
+    /// </summary>
+    public event Action<AppendixKind, Guid?>? AppendixDialogRequested;
+
+    /// <summary>
     /// The user chose another book (<see cref="SelectBook"/>, or back/forward into another book); the shell remembers it
     /// for the next start.
     /// </summary>
@@ -455,6 +461,12 @@ public sealed class AppState
 
     /// <summary>Asks the shell to show the AI model dialog, which offers the download.</summary>
     public void RequestAiModelDialog() => AiModelDialogRequested?.Invoke();
+
+    /// <summary>
+    /// Asks the shell to show the appendix dialog for <paramref name="kind"/> (glossary, people or sources), with the entry
+    /// <paramref name="entryKey"/> selected if given.
+    /// </summary>
+    public void RequestAppendixDialog(AppendixKind kind, Guid? entryKey = null) => AppendixDialogRequested?.Invoke(kind, entryKey);
 
     /// <summary>
     /// Asks the notes pane to bring the note with the block id <paramref name="noteId"/> (the <c>id::</c> a

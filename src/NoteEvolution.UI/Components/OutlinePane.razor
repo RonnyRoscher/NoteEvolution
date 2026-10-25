@@ -41,7 +41,7 @@ else
             <div class="ne-outline-row ne-outline-book" @onclick="() => Select(book.Root)">
                 <span class="ne-outline-title">@(book.Title.Length > 0 ? book.Title : book.LinkName)</span>
                 <span class="ne-outline-meta">
-                    <span class="ne-outline-words" title="@L["OutlineWordsLong", book.Root.WordCount]">@L["OutlineWords", book.Root.WordCount]</span>
+                    <span class="ne-outline-words" title="@L["OutlineWordsLong", book.ContentWordCount]">@L["OutlineWords", book.ContentWordCount]</span>
                 </span>
             </div>
             <ul class="ne-outline-tree">
@@ -49,7 +49,7 @@ else
                 {
                     <OutlineItem Node="book.Root" Pane="this" />
                 }
-                @foreach (var child in book.Root.Children)
+                @foreach (var child in book.ContentChildren)
                 {
                     <OutlineItem Node="child" Pane="this" />
                 }
@@ -58,6 +58,13 @@ else
                  @ondragenter="() => DragEnter(Guid.Empty, before: true)" @ondragover:preventDefault
                  @ondrop="DropAtEnd" @ondrop:preventDefault></div>
             <button type="button" class="ne-outline-add-root" disabled="@(!Editable)" @onclick="AddRoot">+ @L["OutlineAddRoot"]</button>
+            @* The appendix is not part of the tree: three buttons open its dialogs. *@
+            <div class="ne-outline-appendix">
+                <span class="ne-outline-appendix-label">@L["OutlineAppendix"]</span>
+                <button type="button" class="ne-appendix-glossary" @onclick="() => State.RequestAppendixDialog(AppendixKind.Glossary)">@L["OutlineAppendixGlossary"]</button>
+                <button type="button" class="ne-appendix-people" @onclick="() => State.RequestAppendixDialog(AppendixKind.People)">@L["OutlineAppendixPeople"]</button>
+                <button type="button" class="ne-appendix-sources" @onclick="() => State.RequestAppendixDialog(AppendixKind.Sources)">@L["OutlineAppendixSources"]</button>
+            </div>
         </div>
     </div>
 }

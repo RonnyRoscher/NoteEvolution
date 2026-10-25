@@ -689,6 +689,18 @@ html, body {
     margin-top: 4px;
 }
 
+.ne-outline-appendix {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 6px;
+    margin-top: 8px;
+}
+
+.ne-outline-appendix-label {
+    color: var(--fg-muted);
+}
+
 .ne-outline-error {
     margin: 0 0 6px;
     padding: 4px 8px;

@@ -48,7 +48,7 @@ public static class CoverageCalculator
     {
         // Used-in entries name a block by its id::, which may be a text block's or one of its descendants'.
         var sectionOfId = new Dictionary<Guid, OutlineNode>();
-        foreach (var textBlock in TextBlocks(book.Root))
+        foreach (var textBlock in book.Root.TextBlocks.Concat(book.ContentChildren.SelectMany(TextBlocks)))
         {
             AddIds(sectionOfId, textBlock.Block, textBlock.Section);
         }
@@ -173,7 +173,8 @@ public static class CoverageCalculator
         var (used, assigned, uncertain) = counts.GetValueOrDefault(node.Key);
         var (totalUsed, totalAssigned, totalUncertain) = (used, assigned, uncertain);
         var leaf = true;
-        foreach (var child in node.Children)
+        // Only the root has appendix sections among its children; they are not the book's text.
+        foreach (var child in node.Children.Where(c => c.AppendixKind == AppendixKind.None))
         {
             leaf = false;
             var sub = AddSections(sections, counts, child);

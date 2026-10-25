@@ -147,6 +147,9 @@
         {
             switch (item)
             {
+                case OutlineNode { AppendixKind: not AppendixKind.None }:
+                    // The appendix is no reference target for the text.
+                    break;
                 case OutlineNode child:
                     yield return new Candidate(child.Key, RefLabels.Path(child, L), true);
                     foreach (var candidate in CandidatesOf(child))

@@ -53,14 +53,18 @@ public sealed class OutlineNode : BookItem
         _ => 0,
     });
 
-    /// <summary>Number of distinct sources in the whole subtree.</summary>
+    /// <summary>Number of distinct sources in the whole subtree; for the root without the appendix sections.</summary>
     public int SourceCount => AllTextBlocks().SelectMany(t => t.Sources).Distinct().Count();
 
     internal void Add(BookItem item) => _items.Add(item);
 
-    /// <summary>The text blocks of the whole subtree in file order.</summary>
+    /// <summary>
+    /// The text blocks of the whole subtree in file order; for the root without the appendix sections (an appendix
+    /// section yields its own).
+    /// </summary>
     internal IEnumerable<TextBlock> AllTextBlocks() => _items.SelectMany(item => item switch
     {
+        OutlineNode { AppendixKind: not AppendixKind.None } => [],
         OutlineNode node => node.AllTextBlocks(),
         TextBlock text => [text],
         _ => [],

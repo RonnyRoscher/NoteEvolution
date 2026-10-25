@@ -450,6 +450,18 @@
   <data name="OutlineAddRoot" xml:space="preserve">
     <value>Überschrift hinzufügen</value>
   </data>
+  <data name="OutlineAppendix" xml:space="preserve">
+    <value>Anhang:</value>
+  </data>
+  <data name="OutlineAppendixGlossary" xml:space="preserve">
+    <value>Glossar</value>
+  </data>
+  <data name="OutlineAppendixPeople" xml:space="preserve">
+    <value>Menschen</value>
+  </data>
+  <data name="OutlineAppendixSources" xml:space="preserve">
+    <value>Quellen</value>
+  </data>
   <data name="OutlineNewTitle" xml:space="preserve">
     <value>Neue Überschrift</value>
   </data>

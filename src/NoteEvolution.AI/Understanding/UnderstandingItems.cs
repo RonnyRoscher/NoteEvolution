@@ -31,7 +31,7 @@ public static class UnderstandingItems
     public static IReadOnlyList<UnderstandingItem> ForBook(Book book, string chatModel)
     {
         var items = new List<UnderstandingItem>();
-        AddChildren(book, book.Root, [], chatModel, items);
+        AddChildren(book, book.ContentChildren, [], chatModel, items);
         return items;
     }
 
@@ -96,11 +96,11 @@ public static class UnderstandingItems
         return text.Length > NoteInputLimit ? text[..NoteInputLimit].TrimEnd() : text;
     }
 
-    private static void AddChildren(Book book, OutlineNode parent, List<string> path, string chatModel,
+    private static void AddChildren(Book book, IEnumerable<OutlineNode> children, List<string> path, string chatModel,
         List<UnderstandingItem> items)
     {
         var seen = new Dictionary<string, int>(StringComparer.Ordinal);
-        foreach (var child in parent.Children)
+        foreach (var child in children)
         {
             var index = seen.GetValueOrDefault(child.Title);
             seen[child.Title] = index + 1;
@@ -115,7 +115,7 @@ public static class UnderstandingItems
         string chatModel, List<UnderstandingItem> items)
     {
         var before = items.Count;
-        AddChildren(book, node, path, chatModel, items);
+        AddChildren(book, node.Children, path, chatModel, items);
         var childFingerprints = new List<string>();
         foreach (var child in node.Children)
         {

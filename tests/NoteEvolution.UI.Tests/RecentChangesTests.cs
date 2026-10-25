@@ -312,4 +312,16 @@ public class RecentChangesTests : UiTestContext
         cut.WaitForAssertion(() => Assert.Equal(2, cut.FindAll(".ne-recent-item").Count));
         Assert.True(cut.Instance.Recomputes > computed);
     }
+
+    [Fact]
+    public void RecentChanges_IgnoresAppendixEntries()
+    {
+        var book = BookOf(Vault(
+            "- # Eins\n" + Indented(Block("Buchtext", "2026-09-01T10:00")) +
+            "- # Glossar\n  anhang:: glossar\n" + Indented(Block("Achtsamkeit", "2026-09-20T10:00"))));
+
+        var changes = Of(book);
+
+        Assert.Equal(["Buchtext"], changes.Select(c => c.Excerpt));
+    }
 }
