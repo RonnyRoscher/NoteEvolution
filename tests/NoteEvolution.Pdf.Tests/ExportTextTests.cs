@@ -21,6 +21,12 @@ public class ExportTextTests
     }
 
     [Fact]
+    public void Clean_KeepsSourceCitationWhole() =>
+        Assert.Equal(
+            "Satz {{quelle ((6650a1c2-1b7e-4c1d-9a0f-2b3c4d5e6f70)) S. 12}} hier",
+            ExportText.Clean("Satz {{quelle ((6650a1c2-1b7e-4c1d-9a0f-2b3c4d5e6f70)) S. 12}} ((6650a1c2-1b7e-4c1d-9a0f-2b3c4d5e6f71))hier"));
+
+    [Fact]
     public void Clean_KeepBlockRefs_KeepsWellFormedRefsOnly() =>
         Assert.Equal(
             "Siehe ((6650A1C2-1b7e-4c1d-9a0f-2b3c4d5e6f70)) hier",

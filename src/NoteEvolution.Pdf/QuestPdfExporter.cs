@@ -133,7 +133,7 @@ public sealed class QuestPdfExporter : IPdfExporter
                             }
                             else
                             {
-                                Emphasize(text.Span(run.Text), run);
+                                ComposeRun(text, run);
                             }
                         }
                     });
@@ -177,6 +177,22 @@ public sealed class QuestPdfExporter : IPdfExporter
             Emphasize(page.BeginPageNumberOfSection(sectionId), run);
             Emphasize(page.Span(")"), run);
         });
+    }
+
+    /// <summary>A text run: a link if it names a target in the PDF; raised and small as a superscript, dotted underline as a glossary mark.</summary>
+    private static void ComposeRun(TextDescriptor text, PdfRun run)
+    {
+        var span = run.LinkTarget is { } target ? text.SectionLink(run.Text, target) : text.Span(run.Text);
+        Emphasize(span, run);
+        switch (run.Kind)
+        {
+            case PdfRunKind.Superscript:
+                span.Superscript();
+                break;
+            case PdfRunKind.GlossaryMark:
+                span.Underline().DecorationDotted();
+                break;
+        }
     }
 
     private static void Emphasize(TextSpanDescriptor span, PdfRun run)

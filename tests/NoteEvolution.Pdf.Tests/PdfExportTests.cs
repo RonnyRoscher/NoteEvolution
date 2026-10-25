@@ -10,7 +10,7 @@ namespace NoteEvolution.Pdf.Tests;
 
 public class PdfExportTests
 {
-    private static (byte[] Bytes, PdfExportReport Report) Export(
+    internal static (byte[] Bytes, PdfExportReport Report) Export(
         Book book, Guid? scope = null, PdfPageSize size = PdfPageSize.A4, Func<Guid, bool>? knownElsewhere = null)
     {
         using var stream = new MemoryStream();
@@ -20,7 +20,7 @@ public class PdfExportTests
 
     private static string Normalize(string text) => Regex.Replace(text, @"\s+", " ").Trim();
 
-    private static List<string> PageTexts(byte[] bytes)
+    internal static List<string> PageTexts(byte[] bytes)
     {
         using var pdf = PdfDocument.Open(bytes);
         return [.. pdf.GetPages().Select(p => Normalize(Text(ReadingOrder(p))))];
@@ -63,7 +63,7 @@ public class PdfExportTests
         return [.. lines.SelectMany(line => line.OrderBy(w => w.BoundingBox.Left))];
     }
 
-    private static string AllText(byte[] bytes) => string.Join("\n", PageTexts(bytes));
+    internal static string AllText(byte[] bytes) => string.Join("\n", PageTexts(bytes));
 
     private static string ExportAndRead(string bookText) => AllText(Export(PdfSamples.Load(bookText)).Bytes);
 

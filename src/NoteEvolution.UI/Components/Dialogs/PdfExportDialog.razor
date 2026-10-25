@@ -80,7 +80,9 @@
 
     /// <summary>The current section with its subtree, if one below the book root is selected.</summary>
     private OutlineNode? SectionNode(Book book) =>
-        State.CurrentSectionKey == book.Root.Key || State.CurrentSectionKey == Guid.Empty ? null : book.FindNode(State.CurrentSectionKey);
+        State.CurrentSectionKey == book.Root.Key || State.CurrentSectionKey == Guid.Empty
+            ? null
+            : book.FindNode(State.CurrentSectionKey) is { AppendixKind: AppendixKind.None } node ? node : null;
 
     protected override void OnInitialized() => _section = State.CurrentBook is { } book && SectionNode(book) is not null;
 
