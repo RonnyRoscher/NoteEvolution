@@ -121,8 +121,9 @@ Buchtext, in der Reihenfolge Glossar, Menschen, Quellen. Neue Abschnitte („+ A
 in „Zuletzt geändert“, „Relevant“, „Wohin damit?“ und Abdeckung, nicht in der Auswahl „Verweis einfügen“; der Editor
 zeigt ihn nicht.
 
-- **Fenster:** Unten in der Gliederung steht die Zeile „Anhang: Glossar · Menschen · Quellen“; jedes Wort öffnet das
-  Fenster seiner Liste (auch wenn der Abschnitt noch fehlt). Links stehen die Einträge mit Suchfeld, rechts die Felder
+- **Fenster:** Unten in der Gliederung steht die Zeile „Anhang:“ mit den Knöpfen „Glossar“, „Menschen“ und „Quellen“;
+  jeder öffnet das Fenster seiner Liste (auch wenn der Abschnitt noch fehlt). Links stehen die Einträge mit Suchfeld
+  (Glossar und Menschen alphabetisch, Quellen nach Nummer, Quellen ohne Nummer danach nach Titel), rechts die Felder
   des gewählten Eintrags, dazu „Neu“ und „Löschen“. Gespeichert wird beim Wechsel des Eintrags und beim Schließen; ein
   Prüffehler (leerer Name oder Begriff, ungültiges oder doppeltes Kürzel) hält das Fenster offen. Ein Glossareintrag
   hat Begriff, Formen (`formen::`) und Erklärung; ein Mensch Name, Kürzel (`kuerzel::`, 1–6 Zeichen, im Buch
@@ -143,16 +144,20 @@ zeigt ihn nicht.
   sich nichts. Der Tooltip zeigt Begriff und Erklärung, **Strg+Klick** öffnet das Fenster „Glossar“ beim Eintrag.
 - **PDF:** Menschen erscheinen als hochgestelltes Kürzel, Quellen als hochgestellte Nummer (mit Fundstelle in
   normaler Größe dahinter), das erste Vorkommen eines Glossarbegriffs gepunktet unterstrichen; alle drei verlinken auf
-  ihren Eintrag. Nach dem Buchtext folgen die Teile Glossar (alphabetisch), Menschen und Quellen (nach Nummer, „[3]
-  Autor; Autor: Titel. Herausgeber, Jahr. URL“), je auf neuer Seite und im Inhaltsverzeichnis; aufgeführt ist nur, was
-  im exportierten Text vorkommt. Beim **Teilexport** („Aktueller Abschnitt“) enthält der Anhang nur, was in diesem
+  ihren Eintrag; ein Mensch ohne Kürzel erscheint mit seinem Namen. Nach dem Buchtext folgen die Teile Glossar
+  (alphabetisch), Menschen (alphabetisch, „Name (Kürzel)“) und Quellen (nach Nummer, „[3] Autor; Autor: Titel.
+  Herausgeber, Jahr. URL“), je auf neuer Seite und im Inhaltsverzeichnis; aufgeführt ist nur, was im exportierten Text
+  vorkommt, unter den Menschen auch die Autoren der zitierten Quellen. Eine Fundstelle steht im PDF so, wie sie
+  geschrieben ist. Beim **Teilexport** („Aktueller Abschnitt“) enthält der Anhang nur, was in diesem
   Abschnitt vorkommt; die Quellennummern gelten für das ganze Buch.
 - **Verknüpfungsprüfung:** „Verweise auf fehlende Einträge“ (Quellenangaben ohne Quelle und Autoren ohne Menschen-
   Eintrag; „Verweise entfernen“ nach Rückfrage), „Doppelte Anhang-Abschnitte“ und „Doppelte Kürzel“ (nur Hinweise).
   Ein gelöschter Mensch im Text erscheint, weil er von einem Querverweis nicht zu unterscheiden ist, weiter unter
   „Querverweise ohne Ziel“.
-- **Logseq:** Der Anhang ist gewöhnliches Logseq-Markdown und lässt sich dort bearbeiten. Ein Eintrag ohne `id::` bekommt
-  beim ersten Speichern durch die App eine; unbekannte Eigenschaften bleiben; doppelte Kürzel werden gemeldet, nicht
+- **Logseq:** Der Anhang ist gewöhnliches Logseq-Markdown und lässt sich dort bearbeiten. Ein Eintrag ohne `id::` ist voll
+  nutzbar (ein Glossarbegriff wird markiert und steht im PDF, Menschen und Quellen stehen in den Auswahlen und unter
+  den Autoren) und bekommt seine `id::`, sobald er zum ersten Mal eingefügt oder als Autor eingetragen wird, oder beim
+  ersten Speichern im Fenster; unbekannte Eigenschaften bleiben; doppelte Kürzel werden gemeldet, nicht
   gelöscht. Tippen und Speichern im Editor lässt den Anhang unverändert.
 
 **Vor und zurück:** ◀ und ▶ links neben „Rückgängig“ (oder Alt+Pfeil links/rechts) springen zu früher ausgewählten
