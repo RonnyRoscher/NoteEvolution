@@ -38,7 +38,7 @@
     @if (State.CurrentBook is not null && IsActive)
     {
         <SectionBar Top="_barTop" Visible="_barVisible" Element="MyView.ElementIn(State.CurrentBook)" Locked="ReadOnlyReason is not null"
-                    OnCommand="OnSectionCommand" OnStatus="OnStatusChosen"
+                    OnCommand="OnSectionCommand" OnIndent="() => OnShiftAsync(1)" OnOutdent="() => OnShiftAsync(-1)" OnStatus="OnStatusChosen"
                     OnReference="OnReferenceChosen" OnLevel="OnLevelChosen" OnSource="OnSourceChosen"
                     OnAppendixPick="OnAppendixPicked" CitationLocator="@(_citationEdit?.Locator)"
                     OnCitationSave="SaveCitationAsync" OnCitationCancel="CancelCitationEdit" />
@@ -440,6 +440,13 @@
             return;
         }
 
+        // Tab in a text block's own text and Shift+Tab on a sub-point of level 1 do what the indent buttons do.
+        if (command is SectionCommand.IndentText or SectionCommand.OutdentDetail)
+        {
+            await ShiftAsync(command == SectionCommand.IndentText ? 1 : -1);
+            return;
+        }
+
         // The editor splits the block itself and saves the result like typed text (its own Ctrl+Z takes it back).
         if (command == SectionCommand.Split)
         {
@@ -460,6 +467,28 @@
             _ => L["UndoStructure"],
         };
         _saver.Message = await ManuscriptCommands.RunAsync(State, command, undo, Logger);
+        StateHasChanged();
+    }
+
+    /// <summary>
+    /// „Einrücken ⇥“ (+1) or „⇤ Ausrücken“ (−1) of the section bar on the element at the cursor
+    /// (<see cref="ManuscriptCommands.IndentAsync"/>, <see cref="ManuscriptCommands.OutdentAsync"/>) and shows its message;
+    /// a sub-point the editor moves itself (<see cref="IEditorInterop.ShiftDepthAsync"/>). A button of an editor that is
+    /// not the active one makes its view active first.
+    /// </summary>
+    public async Task OnShiftAsync(int delta)
+    {
+        if (await ActivateAsync())
+        {
+            await ShiftAsync(delta);
+        }
+    }
+
+    private async Task ShiftAsync(int delta)
+    {
+        _saver.Message = delta > 0
+            ? await ManuscriptCommands.IndentAsync(State, Editor.ShiftDepthAsync, L["UndoStructure"], Logger)
+            : await ManuscriptCommands.OutdentAsync(State, Editor.ShiftDepthAsync, L["UndoStructure"], Logger);
         StateHasChanged();
     }
 

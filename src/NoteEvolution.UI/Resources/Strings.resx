@@ -195,10 +195,10 @@
     <value>Neuer Unterabschnitt</value>
   </data>
   <data name="SectionIndent" xml:space="preserve">
-    <value>Einrücken</value>
+    <value>Einrücken ⇥</value>
   </data>
   <data name="SectionOutdent" xml:space="preserve">
-    <value>Ausrücken</value>
+    <value>⇤ Ausrücken</value>
   </data>
   <data name="SectionRemoveHeading" xml:space="preserve">
     <value>Überschrift entfernen</value>
@@ -1551,7 +1551,7 @@
     <value>Tab / Umschalt+Tab</value>
   </data>
   <data name="KeysText4" xml:space="preserve">
-    <value>Unterpunkt ein- / ausrücken</value>
+    <value>Unterpunkt ein- / ausrücken; im ersten Absatz eines Textblocks: als Unterpunkt in den Textblock davor; ein Unterpunkt der ersten Stufe wird ein eigener Textblock (wie „Einrücken ⇥“ / „⇤ Ausrücken“)</value>
   </data>
   <data name="KeysText5Keys" xml:space="preserve">
     <value>Strg+B / Strg+I</value>
@@ -1596,7 +1596,7 @@
     <value>Tab / Umschalt+Tab</value>
   </data>
   <data name="KeysOutline3" xml:space="preserve">
-    <value>In einer Überschrift: Überschrift ein- / ausrücken</value>
+    <value>In einer Überschrift: Überschrift ein- / ausrücken; beim Ausrücken kommt mit, was danach im Abschnitt stand (wie „Einrücken ⇥“ / „⇤ Ausrücken“)</value>
   </data>
   <data name="KeysOutline4Keys" xml:space="preserve">
     <value>Rücktaste</value>
@@ -1837,5 +1837,62 @@
   </data>
   <data name="UndoCitationLocator" xml:space="preserve">
     <value>Fundstelle ändern</value>
+  </data>
+  <data name="SectionIndentTitle" xml:space="preserve">
+    <value>Eine Stufe tiefer (Tab): eine Überschrift unter die Überschrift ihrer Ebene davor, ein Textblock als Unterpunkt in den Textblock davor, ein Unterpunkt unter den Unterpunkt davor</value>
+  </data>
+  <data name="SectionOutdentTitle" xml:space="preserve">
+    <value>Eine Stufe höher (Umschalt+Tab): eine Überschrift eine Ebene höher, mit dem, was danach im Abschnitt stand; ein Unterpunkt der ersten Stufe wird ein eigener Textblock</value>
+  </data>
+  <data name="IndentBlockedNoPreviousText" xml:space="preserve">
+    <value>Davor steht kein Textblock in diesem Abschnitt.</value>
+  </data>
+  <data name="IndentBlockedNoPreviousDetail" xml:space="preserve">
+    <value>Davor steht kein Unterpunkt auf dieser Stufe.</value>
+  </data>
+  <data name="IndentBlockedNoPreviousHeading" xml:space="preserve">
+    <value>Davor steht keine Überschrift dieser Ebene.</value>
+  </data>
+  <data name="OutdentBlockedTextBlock" xml:space="preserve">
+    <value>Ein Textblock steht schon auf der Ebene seines Abschnitts.</value>
+  </data>
+  <data name="SectionLevelPlace" xml:space="preserve">
+    <value>Nach Ebene neu einordnen</value>
+  </data>
+  <data name="AssistantNormalize" xml:space="preserve">
+    <value>Gliederung nach Ebenen ordnen …</value>
+  </data>
+  <data name="NormalizeTitle" xml:space="preserve">
+    <value>Gliederung nach Ebenen ordnen</value>
+  </data>
+  <data name="NormalizeIntro" xml:space="preserve">
+    <value>Jede Überschrift, die in der Datei nicht nach ihrer Ebene eingerückt ist, wird nach ihrer Ebene eingeordnet. Die Reihenfolge des Textes bleibt gleich; „Rückgängig“ nimmt alles in einem Schritt zurück.</value>
+  </data>
+  <data name="NormalizeCount" xml:space="preserve">
+    <value>{0} Überschriften werden neu eingeordnet</value>
+  </data>
+  <data name="NormalizeCountOne" xml:space="preserve">
+    <value>1 Überschrift wird neu eingeordnet</value>
+  </data>
+  <data name="NormalizeNone" xml:space="preserve">
+    <value>Die Gliederung ist schon nach Ebenen geordnet.</value>
+  </data>
+  <data name="NormalizeUnplaceable" xml:space="preserve">
+    <value>Diese Überschriften bleiben, wie sie sind, weil ihr Titel einen Verweis enthält:</value>
+  </data>
+  <data name="NormalizeRun" xml:space="preserve">
+    <value>Einordnen</value>
+  </data>
+  <data name="NormalizeDone" xml:space="preserve">
+    <value>{0} Überschriften wurden neu eingeordnet.</value>
+  </data>
+  <data name="NormalizeDoneOne" xml:space="preserve">
+    <value>1 Überschrift wurde neu eingeordnet.</value>
+  </data>
+  <data name="NormalizeNoBook" xml:space="preserve">
+    <value>Es ist kein Buch geöffnet.</value>
+  </data>
+  <data name="UndoNormalize" xml:space="preserve">
+    <value>Gliederung ordnen</value>
   </data>
 </root>

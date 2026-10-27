@@ -72,6 +72,18 @@ public enum SectionCommand
     /// (<see cref="IEditorInterop.SplitAtCursorAsync"/>); the editor saves the result like typed text.
     /// </summary>
     Split,
+
+    /// <summary>
+    /// Tab in the first paragraph of a text block: the text block becomes a sub-point of the text block before it, as
+    /// „Einrücken ⇥“ does (<see cref="State.ManuscriptCommands.IndentAsync"/>).
+    /// </summary>
+    IndentText,
+
+    /// <summary>
+    /// Shift+Tab in a sub-point of level 1: it becomes a text block of its own after its text block, as „⇤ Ausrücken“
+    /// does (<see cref="State.ManuscriptCommands.OutdentAsync"/>).
+    /// </summary>
+    OutdentDetail,
 }
 
 /// <summary>What the editor reports; implemented by the component that shows it (<c>EditorPane</c>).</summary>
@@ -156,6 +168,12 @@ public interface IEditorInterop : IAsyncDisposable
 
     /// <summary>Splits the text block at the cursor in two, as Ctrl+Enter does, and gives the editor the focus back.</summary>
     Task SplitAtCursorAsync();
+
+    /// <summary>
+    /// Moves the sub-points at the cursor (or in the selection) <paramref name="delta"/> steps deeper (+1) or higher (−1),
+    /// as Tab and Shift+Tab do there, and gives the editor the focus back; the editor saves the result like typed text.
+    /// </summary>
+    Task ShiftDepthAsync(int delta);
 
     /// <summary>
     /// Marks the nodes of the range (<see cref="RangeInfo.Nodes"/>); the editor draws a box per contiguous piece and

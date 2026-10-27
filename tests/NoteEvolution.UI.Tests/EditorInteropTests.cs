@@ -104,6 +104,19 @@ public class EditorInteropTests
     }
 
     [Fact]
+    public async Task SectionCommand_ParsesTabOutOfTheEditor()
+    {
+        var interop = await InitAsync();
+
+        foreach (var name in new[] { "IndentText", "OutdentDetail", "indenttext" })
+        {
+            await interop.SectionCommand(name);
+        }
+
+        Assert.Equal([SectionCommand.IndentText, SectionCommand.OutdentDetail], _callbacks.Commands);
+    }
+
+    [Fact]
     public async Task SetMarked_Serializes_KeysAndOwnTextOnly()
     {
         var interop = await InitAsync();

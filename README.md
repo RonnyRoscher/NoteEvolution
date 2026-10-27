@@ -77,7 +77,7 @@ Am unteren Rand der Markierung stehen die Abschnittsknöpfe und die Quellen:
 | --- | --- |
 | Neuer Abschnitt danach (gleiche Ebene) | Alt+Enter |
 | Neuer Unterabschnitt (als erstes Element) | Alt+Umschalt+Enter |
-| Überschrift ein-/ausrücken | Tab / Umschalt+Tab in der Überschrift |
+| Element ein-/ausrücken („Einrücken ⇥“ / „⇤ Ausrücken“) | Tab / Umschalt+Tab |
 | Überschrift entfernen (der Titel wird ein Textblock, der Inhalt bleibt) | Rücktaste am Anfang des Titels |
 | Abschnitt löschen | nur Knopf |
 
@@ -98,10 +98,34 @@ Ist „Verwendete ausblenden“ eingeschaltet, erscheint die Notiz stattdessen a
 **Ebene:** Die Knöpfe **Text · H1 … H6** in der Leiste zeigen die Ebene des Elements am Cursor hervorgehoben; ein
 Klick auf eine andere Ebene wandelt es um. Ein Textblock wird so zur Überschrift (erste Zeile als Titel, der Rest als
 Textblock darunter, seine Unterpunkte behalten ihre Hierarchie und stehen unter der neuen Überschrift), eine
-Überschrift wechselt die Ebene oder wird mit „Text“ wieder ein Textblock. Nicht möglich (ausgegraut, mit Grund im
-Tooltip) sind Ebenen, die die Gliederung zerreißen würden, etwa eine Ebene unter der übergeordneten Überschrift oder
-eine Überschrift aus einem Block, der in der ersten Zeile einen Verweis trägt. „Überschrift entfernen“ behält den
-Titel jetzt als Textblock (mit derselben `id::`, damit Verweise darauf gültig bleiben).
+Überschrift wechselt die Ebene oder wird mit „Text“ wieder ein Textblock. Die Ebene bestimmt dabei den Platz in der
+Datei: Eine Überschrift, die nicht tiefer ist als die übergeordnete, wandert hinter sie in deren Abschnitt, und was in
+diesem Abschnitt nach ihr kam, kommt mit; steht direkt vor ihr eine höhere Überschrift, wird sie deren letzter
+Unterabschnitt. Die Reihenfolge des Textes bleibt immer gleich. Steht eine Überschrift in der Datei falsch eingerückt
+(Warnung in der Gliederung), ist der Knopf ihrer eigenen Ebene gestrichelt umrandet („Nach Ebene neu einordnen“), und
+ein Klick ordnet sie ein. Nicht möglich (ausgegraut, mit Grund im Tooltip) sind Ebenen, die eine Unterüberschrift unter
+H6 oder über H1 brächten, eine Ebene über dem Abschnitt eines Textblocks und eine Überschrift aus einem Block, der in
+der ersten Zeile einen Verweis trägt. „Überschrift entfernen“ behält den Titel jetzt als Textblock (mit derselben
+`id::`, damit Verweise darauf gültig bleiben).
+
+**Einrücken:** „⇤ Ausrücken“ und „Einrücken ⇥“ in der Leiste (wie Umschalt+Tab und Tab) wirken auf das Element am
+Cursor:
+
+| Element | Einrücken ⇥ (Tab) | ⇤ Ausrücken (Umschalt+Tab) |
+| --- | --- | --- |
+| Textblock | wird letzter Unterpunkt des Textblocks direkt davor im selben Abschnitt, mit seinen Unterpunkten | nicht möglich |
+| Unterpunkt der ersten Stufe | eine Stufe tiefer, unter den Unterpunkt davor | wird eigener Textblock direkt hinter seinem Textblock; die folgenden Unterpunkte werden seine |
+| tieferer Unterpunkt | eine Stufe tiefer | eine Stufe höher |
+| Überschrift | eine Ebene tiefer, unter die Überschrift ihrer Ebene davor | eine Ebene höher; was danach im Abschnitt stand, kommt mit |
+
+Ein neuer Textblock bekommt neue Daten und keine Quellen (`source::` bleibt am alten Block, der `updated::` bekommt).
+Verweise auf einen eingerückten Textblock zeigen danach auf den Textblock, der ihn aufnimmt. Was nicht geht, ist
+ausgegraut, und der Tooltip nennt den Grund.
+
+**Gliederung nach Ebenen ordnen** (Menü „Assistenten“): zeigt, wie viele und welche Überschriften des Buchs nicht nach
+ihrer Ebene eingerückt sind, und ordnet sie mit „Einordnen“ alle nach ihrer Ebene ein, Überschriften in einem Textblock
+werden Überschriften ihrer Ebene. Ein „Rückgängig“ nimmt alles zurück. Überschriften, deren Titel einen Verweis enthält,
+bleiben, wie sie sind, und werden eigens genannt.
 
 **Querverweise:** „Verweis einfügen“ in der Leiste öffnet eine Auswahl aller Überschriften und Textblöcke des Buchs
 (mit Suchfeld, Pfeiltasten und Enter); der Verweis steht als Logseq-Blockverweis `((id))` im Text und erscheint im
@@ -492,6 +516,18 @@ Querverweise und Navigation
       „Querverweise ohne Ziel“ und entfernt ihn erst nach der Rückfrage.
 - [ ] Ebenen-Knöpfe: Textblock mit Unterpunkten zu H2 machen (Unterpunkte bleiben geschachtelt darunter), wieder auf
       „Text“ zurück; „Rückgängig“ nimmt beides zurück. Ausgegraute Ebenen nennen im Tooltip den Grund.
+- [ ] Einordnen nach Ebene: eine H3 unter H1 › H2 auf H1 stellen; sie steht danach hinter dem H1-Abschnitt, was nach
+      ihr kam, gehört ihr, die Lesereihenfolge im Editor ist dieselbe. Eine in der Datei unter eine gleichrangige
+      eingerückte Überschrift (Warnung in der Gliederung): der Knopf ihrer Ebene ist gestrichelt umrandet, ein Klick
+      ordnet sie ein, die Warnung ist weg. „Rückgängig“ nimmt jeden Schritt zurück.
+- [ ] „⇤ Ausrücken“ / „Einrücken ⇥“ und Umschalt+Tab / Tab: Tab im Text eines Textblocks macht ihn zum Unterpunkt des
+      Textblocks davor; Umschalt+Tab auf einem Unterpunkt der ersten Stufe macht ihn zum eigenen Textblock (die
+      folgenden Unterpunkte kommen mit, `source::` bleibt am alten Block); tiefere Unterpunkte rücken im Editor. Erster
+      Textblock eines Abschnitts, erster Unterpunkt und eine Überschrift mit H6 tief darunter: Knopf ausgegraut, der
+      Tooltip nennt den Grund. Ein Verweis auf einen eingerückten Textblock zeigt danach auf den aufnehmenden.
+- [ ] Assistenten › „Gliederung nach Ebenen ordnen“ auf einem Buch mit Einrückungs-Warnungen: Vorschau mit Zahl und
+      Titeln, „Einordnen“, danach keine Warnung mehr und gleiche Lesereihenfolge; ein „Rückgängig“ stellt die Datei
+      wieder her. Auf einem geordneten Buch: „Die Gliederung ist schon nach Ebenen geordnet.“
 - [ ] ◀ ▶ und Alt+Pfeil links/rechts: nach einigen Sprüngen und Klicks (je ≥ 2 s) zurück und vor, auch über einen
       Buchwechsel; bei offenem Dialog tut Alt+Pfeil nichts.
 - [ ] Geteilte Ansicht: „⇅“ (und Strg+Alt+S, auch im Editor) zeigt zwei Hälften mit je Gliederung und Editor; bei

@@ -45,7 +45,7 @@ public class SectionBarTests : UiTestContext
         "\t- Ohne Quelle\n";
 
     private static readonly string[] AllButtons =
-        [".ne-sec-after", ".ne-sec-child", ".ne-sec-indent", ".ne-sec-outdent", ".ne-sec-remove-heading", ".ne-sec-delete"];
+        [".ne-sec-after", ".ne-sec-child", ".ne-sec-outdent-any", ".ne-sec-indent-any", ".ne-sec-remove-heading", ".ne-sec-delete"];
 
     private readonly TestVault _vault = TestVault.Create(
         (BookPath, BookText),
@@ -104,14 +104,14 @@ public class SectionBarTests : UiTestContext
         Assert.False(cut.Find(".ne-section-bar").HasAttribute("hidden"));
         Assert.Equal(AllButtons, ShownButtons(cut));
         Assert.Equal(
-            ["SectionInsertAfter", "SectionInsertChild", "SectionIndent", "SectionOutdent", "SectionRemoveHeading", "SectionDelete"],
+            ["SectionInsertAfter", "SectionInsertChild", "SectionOutdent", "SectionIndent", "SectionRemoveHeading", "SectionDelete"],
             AllButtons.Select(selector => cut.Find(selector).TextContent.Trim()).Select(text => Keys[text]));
 
         await MoveToAsync(cut, "Erster Text");
-        cut.WaitForAssertion(() => Assert.Equal([".ne-sec-after", ".ne-sec-child", ".ne-sec-delete"], ShownButtons(cut)));
+        cut.WaitForAssertion(() => Assert.Equal([".ne-sec-after", ".ne-sec-child", ".ne-sec-outdent-any", ".ne-sec-indent-any", ".ne-sec-delete"], ShownButtons(cut)));
 
         await MoveToAsync(cut, "Ein Detail");
-        cut.WaitForAssertion(() => Assert.Equal([".ne-sec-after", ".ne-sec-child", ".ne-sec-delete"], ShownButtons(cut)));
+        cut.WaitForAssertion(() => Assert.Equal([".ne-sec-after", ".ne-sec-child", ".ne-sec-outdent-any", ".ne-sec-indent-any", ".ne-sec-delete"], ShownButtons(cut)));
         Assert.False(cut.Find(".ne-sec-delete").HasAttribute("disabled"));
 
         await cut.InvokeAsync(() => Editor.Callbacks!.OnSectionBoxMoved(0, false));
@@ -127,8 +127,8 @@ public class SectionBarTests : UiTestContext
         cut.WaitForAssertion(() => Assert.False(cut.Find(".ne-sec-after").HasAttribute("disabled")));
 
         // Ausrücken is not possible on level 1; everything else is.
-        Assert.True(cut.Find(".ne-sec-outdent").HasAttribute("disabled"));
-        Assert.All(AllButtons.Where(s => s != ".ne-sec-outdent"), s => Assert.False(cut.Find(s).HasAttribute("disabled")));
+        Assert.True(cut.Find(".ne-sec-outdent-any").HasAttribute("disabled"));
+        Assert.All(AllButtons.Where(s => s != ".ne-sec-outdent-any"), s => Assert.False(cut.Find(s).HasAttribute("disabled")));
 
         // A local change of the heading collides with an external change of the same line.
         var path = Path.Combine(_vault.Root, BookPath);

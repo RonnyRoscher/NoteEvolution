@@ -789,9 +789,26 @@ const shiftDepth = delta => ({ tr, dispatch }) => {
 
 const inHeading = state => state.selection.$from.parent.type.name === 'heading';
 
+/** The paragraph of a text block the whole selection is in, as [index in the block, paragraph]; null otherwise. */
+function selectedParagraph(state) {
+    const { $from, $to } = state.selection;
+    return $from.parent.type.name === 'para' && $from.depth === 2 && $from.sameParent($to) ? [$from.index(1), $from.parent] : null;
+}
+
+/** Tab in a text block's own text (its first paragraph): the block goes into the one before it (Einordnen spec 4). */
+const inBlockText = state => selectedParagraph(state)?.[0] === 0;
+
+/** Shift+Tab in a sub-point of level 1: it becomes a text block of its own (Einordnen spec 4). */
+const inFirstLevel = state => {
+    const at = selectedParagraph(state);
+    return at !== null && at[0] > 0 && at[1].attrs.depth === 1;
+};
+
 /**
  * The editing shortcuts. The structure commands (spec 3), the range steps (Alt+Up / Alt+Down) and toggling a remark
- * (Ctrl+Shift+N) run in C#: their shortcuts call options.onSectionCommand with the SectionCommand member name.
+ * (Ctrl+Shift+N) run in C#: their shortcuts call options.onSectionCommand with the SectionCommand member name. Tab
+ * and Shift+Tab move sub-points here, but a heading, a text block's own text (IndentText) and a sub-point of level 1
+ * leaving its block (OutdentDetail) in C#.
  */
 const Keys = Extension.create({
     name: 'noteEvolutionKeys',
@@ -806,13 +823,14 @@ const Keys = Extension.create({
             return true;
         };
         const inHeadingOr = (name, otherwise) => () => (inHeading(this.editor.state) ? section(name)() : otherwise());
+        const when = (applies, name, otherwise) => () => (applies(this.editor.state) ? section(name)() : otherwise());
         return {
             Enter: run(newParagraph),
             'Mod-Enter': run(splitTextBlock),
             'Alt-Enter': section('InsertAfter'),
             'Alt-Shift-Enter': section('InsertChild'),
-            Tab: inHeadingOr('Indent', run(shiftDepth(1))),
-            'Shift-Tab': inHeadingOr('Outdent', run(shiftDepth(-1))),
+            Tab: inHeadingOr('Indent', when(inBlockText, 'IndentText', run(shiftDepth(1)))),
+            'Shift-Tab': inHeadingOr('Outdent', when(inFirstLevel, 'OutdentDetail', run(shiftDepth(-1)))),
             Backspace: () => {
                 const { state, view } = this.editor;
                 const { selection } = state;
@@ -1309,6 +1327,10 @@ export function createEditor(host, dotnet, options = {}) {
         /** The split button of the section bar: Ctrl+Enter at the cursor, with the focus back in the editor. */
         splitAtCursor() {
             editor.chain().focus().command(splitTextBlock).run();
+        },
+        /** The indent buttons of the section bar on a sub-point: Tab (+1) or Shift+Tab (−1) there, with the focus back in the editor. */
+        shiftDepth(delta) {
+            editor.chain().focus().command(shiftDepth(delta)).run();
         },
         reveal(key, textOffset = 0, focus = true) {
             const doc = editor.state.doc;

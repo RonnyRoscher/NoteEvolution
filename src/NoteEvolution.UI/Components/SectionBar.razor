@@ -6,7 +6,8 @@
 @inject IStringLocalizer<Strings> L
 
 @* The bar at the bottom of the marking (spec 2, 3): the range buttons with the range head, the structure commands of
-   the cursor element, the commands on the marked range, „Bemerkung anfügen“, the level buttons „Text · H1 … H6“ and
+   the cursor element with „⇤ Ausrücken“ / „Einrücken ⇥“ (Einordnen spec 4), the commands on the marked range,
+   „Bemerkung anfügen“, the level buttons „Text · H1 … H6“ and
    „Verweis einfügen“ (cross references spec 4, 2.2) and the status selection of the cursor element (status spec 2) and the notes the range is based on (package B, spec 2, 4, 5).
    EditorPane places it where the editor reports the marking's bottom; the bar renders with every render of EditorPane
    (its element is an object parameter), which follows the state and the conflicts. *@
@@ -50,21 +51,35 @@
 
                 <button type="button" class="@css" disabled="@(Locked || !ManuscriptCommands.CanRun(State, command))"
                         @onclick="() => OnCommand.InvokeAsync(command)">@L[key]</button>
+                @if (command == SectionCommand.InsertChild)
+                {
+                    @* One step out or in for every kind of element, as Shift+Tab and Tab (Einordnen spec 4); a step it
+                       cannot take is greyed out and names the reason. *@
+                    var outdentBlocked = ManuscriptCommands.OutdentBlocked(State);
+                    var indentBlocked = ManuscriptCommands.IndentBlocked(State);
+                    <button type="button" class="ne-sec-outdent-any" title="@L[outdentBlocked ?? "SectionOutdentTitle"]"
+                            disabled="@(Locked || !ManuscriptCommands.CanOutdent(State))" @onclick="() => OnOutdent.InvokeAsync()">@L["SectionOutdent"]</button>
+                    <button type="button" class="ne-sec-indent-any" title="@L[indentBlocked ?? "SectionIndentTitle"]"
+                            disabled="@(Locked || !ManuscriptCommands.CanIndent(State))" @onclick="() => OnIndent.InvokeAsync()">@L["SectionIndent"]</button>
+                }
             }
             @* The level of the element at the cursor (cross references spec 4): the current one is pressed, a level it
                cannot take is greyed out and names the reason. *@
             @{
                 var current = ManuscriptCommands.LevelAt(State);
+                // The current level places a heading whose place does not match it (Einordnen spec 2).
+                var canPlace = !Locked && ManuscriptCommands.CanPlace(State);
             }
             <span class="ne-sec-levels" role="group" aria-label="@L["SectionLevels"]">
                 @for (var level = 0; level <= OutlineEditor.MaxLevel; level++)
                 {
                     var target = level;
                     var reason = ManuscriptCommands.LevelBlocked(State, target);
-                    <button type="button" class="ne-sec-level" aria-pressed="@(current == target ? "true" : "false")"
-                            title="@(reason is null ? LevelTitle(target, current) : L[reason])"
+                    var places = canPlace && current == target;
+                    <button type="button" class="@(places ? "ne-sec-level ne-sec-level-place" : "ne-sec-level")" aria-pressed="@(current == target ? "true" : "false")"
+                            title="@(reason is null ? LevelTitle(target, current, places) : L[reason])"
                             disabled="@(Locked || (current != target && !ManuscriptCommands.CanSetLevel(State, target)))"
-                            @onclick="() => LevelChosenAsync(target, current)">@LevelLabel(target)</button>
+                            @onclick="() => LevelChosenAsync(target, current, places)">@LevelLabel(target)</button>
                 }
             </span>
             @* A cross reference goes in at the cursor of a text block or detail; the search opens above the bar. *@
@@ -176,8 +191,6 @@
     [
         ("ne-sec-after", SectionCommand.InsertAfter, "SectionInsertAfter", false),
         ("ne-sec-child", SectionCommand.InsertChild, "SectionInsertChild", false),
-        ("ne-sec-indent", SectionCommand.Indent, "SectionIndent", true),
-        ("ne-sec-outdent", SectionCommand.Outdent, "SectionOutdent", true),
         ("ne-sec-remove-heading", SectionCommand.RemoveHeading, "SectionRemoveHeading", true),
         ("ne-sec-delete", SectionCommand.Delete, "SectionDelete", false),
         ("ne-sec-merge", SectionCommand.Merge, "SectionMerge", false),
@@ -247,9 +260,20 @@
     [Parameter]
     public EventCallback<Guid> OnReference { get; set; }
 
-    /// <summary>Converts the element at the cursor to the chosen level (0 = Text, 1–6 = H1–H6).</summary>
+    /// <summary>
+    /// Converts the element at the cursor to the chosen level (0 = Text, 1–6 = H1–H6); the heading's own level places
+    /// a heading whose place does not match it.
+    /// </summary>
     [Parameter]
     public EventCallback<int> OnLevel { get; set; }
+
+    /// <summary>„Einrücken ⇥“: the element at the cursor one step in, as Tab (<see cref="ManuscriptCommands.IndentAsync"/>).</summary>
+    [Parameter]
+    public EventCallback OnIndent { get; set; }
+
+    /// <summary>„⇤ Ausrücken“: the element at the cursor one step out, as Shift+Tab (<see cref="ManuscriptCommands.OutdentAsync"/>).</summary>
+    [Parameter]
+    public EventCallback OnOutdent { get; set; }
 
     /// <summary>A note was chosen in „Quellen suchen“: link it as a source of the text block at the cursor.</summary>
     [Parameter]
@@ -385,15 +409,16 @@
         await OnReference.InvokeAsync(targetKey);
     }
 
-    /// <summary>Passes a chosen level on; the current level does nothing.</summary>
-    private Task LevelChosenAsync(int level, int? current) =>
-        level == current ? Task.CompletedTask : OnLevel.InvokeAsync(level);
+    /// <summary>Passes a chosen level on; the current level does nothing, unless it places the heading (<paramref name="places"/>).</summary>
+    private Task LevelChosenAsync(int level, int? current, bool places) =>
+        level == current && !places ? Task.CompletedTask : OnLevel.InvokeAsync(level);
 
     private string LevelLabel(int level) => level == 0 ? L["SectionLevelText"] : L["SectionLevelHeading", level];
 
-    /// <summary>The tooltip of a level button the element can take, or of its current level.</summary>
-    private string LevelTitle(int level, int? current) => (level == current, level) switch
+    /// <summary>The tooltip of a level button the element can take, or of its current level (which may place it).</summary>
+    private string LevelTitle(int level, int? current, bool places) => (level == current, level) switch
     {
+        (true, _) when places => L["SectionLevelPlace"],
         (true, _) => L["SectionLevelCurrent"],
         (false, 0) => L["SectionLevelTextTitle"],
         _ => L["SectionLevelHeadingTitle", level],

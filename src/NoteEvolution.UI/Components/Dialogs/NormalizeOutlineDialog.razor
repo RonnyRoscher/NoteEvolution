@@ -1,0 +1,124 @@
+@using NoteEvolution.Core.Books
+@inject AppState State
+@inject IStringLocalizer<Strings> L
+@inject ILogger<NormalizeOutlineDialog> Logger
+
+@* „Gliederung nach Ebenen ordnen“ (Einordnen spec 3), opened from the assistants menu: the preview names the headings of
+   the current book whose place does not match their level; „Einordnen“ places them all as one undo step. *@
+<Modal Title="@L["NormalizeTitle"]" CssClass="ne-normalize" OnClose="OnClose">
+<ChildContent>
+    @if (_done is { } done)
+    {
+        <p class="ne-normalize-done" role="status">@(done == 1 ? L["NormalizeDoneOne"] : L["NormalizeDone", done])</p>
+    }
+    @if (_error is not null)
+    {
+        <p class="ne-dialog-error" role="alert">@_error</p>
+    }
+    @if (_book is null)
+    {
+        <p class="ne-normalize-no-book">@L["NormalizeNoBook"]</p>
+    }
+    else if (_misplaced.Count == 0)
+    {
+        <p class="ne-normalize-none">@L["NormalizeNone"]</p>
+    }
+    else
+    {
+        <p class="ne-dialog-hint">@L["NormalizeIntro"]</p>
+        <p class="ne-normalize-count">@(_misplaced.Count == 1 ? L["NormalizeCountOne"] : L["NormalizeCount", _misplaced.Count])</p>
+        <ul class="ne-normalize-list">
+            @foreach (var key in _misplaced)
+            {
+                <li class="ne-normalize-item">@TitleOf(_book, key)</li>
+            }
+        </ul>
+    }
+    @if (_book is not null && _unplaceable.Count > 0)
+    {
+        <p class="ne-normalize-unplaceable">@L["NormalizeUnplaceable"]</p>
+        <ul class="ne-normalize-list ne-normalize-unplaceable-list">
+            @foreach (var key in _unplaceable)
+            {
+                <li class="ne-normalize-item">@TitleOf(_book, key)</li>
+            }
+        </ul>
+    }
+</ChildContent>
+<Footer>
+    @if (_book is not null && _misplaced.Count > 0)
+    {
+        <button type="button" class="ne-normalize-run" disabled="@_busy" @onclick="RunAsync">@L["NormalizeRun"]</button>
+    }
+    <button type="button" class="ne-normalize-close" disabled="@_busy" @onclick="OnClose">@L["Close"]</button>
+</Footer>
+</Modal>
+
+@code {
+    /// <summary>The book the preview was made for (the current one when it was made); <c>null</c> without one.</summary>
+    private Book? _book;
+
+    /// <summary>The headings „Einordnen“ places, in reading order (<see cref="ManuscriptEditor.MisplacedHeadings"/>).</summary>
+    private IReadOnlyList<Guid> _misplaced = [];
+
+    /// <summary>The warned headings it leaves as they are (<see cref="ManuscriptEditor.UnplaceableHeadings"/>).</summary>
+    private IReadOnlyList<Guid> _unplaceable = [];
+
+    /// <summary>How many headings the last run placed; <c>null</c> before a run.</summary>
+    private int? _done;
+
+    private string? _error;
+
+    private bool _busy;
+
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    protected override void OnInitialized() => Preview();
+
+    /// <summary>
+    /// Makes the preview for the current book. Each list tries the command on a copy of the page, so this runs once per
+    /// preview (on opening and after a run or a refused run), not per render.
+    /// </summary>
+    private void Preview()
+    {
+        _book = State.CurrentBook;
+        _misplaced = _book is null ? [] : ManuscriptEditor.MisplacedHeadings(_book);
+        _unplaceable = _book is null ? [] : ManuscriptEditor.UnplaceableHeadings(_book);
+    }
+
+    /// <summary>
+    /// Places the previewed headings (<see cref="ManuscriptCommands.NormalizeOutlineAsync"/>), then shows the preview
+    /// of the changed book (no heading left to place) or, when the command was refused, the reason and a new preview.
+    /// </summary>
+    private async Task RunAsync()
+    {
+        _busy = true;
+        _error = null;
+        try
+        {
+            var (message, placed) = await ManuscriptCommands.NormalizeOutlineAsync(State, _misplaced, L["UndoNormalize"], Logger);
+            if (message is { IsError: true })
+            {
+                _error = L[message.Key];
+                _done = null;
+            }
+            else
+            {
+                _done = placed;
+            }
+
+            Preview();
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    /// <summary>The heading's first line as the file has it ("## Titel"), or its marks and „ohne Titel“.</summary>
+    private string TitleOf(Book book, Guid key)
+    {
+        var line = book.Page.AllBlocks().FirstOrDefault(block => block.Key == key)?.Content.Split('\n', 2)[0].Trim() ?? "";
+        return line.TrimStart('#').Trim().Length > 0 ? line : $"{line} {L["OutlineUntitled"].Value}".Trim();
+    }
+}
