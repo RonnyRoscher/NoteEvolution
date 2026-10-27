@@ -253,6 +253,141 @@ public static class ManuscriptEditor
     }
 
     /// <summary>
+    /// Why the button "Einrücken" (indent) cannot move <paramref name="element"/> (Einordnen spec 4), for its tooltip: the
+    /// resource key of the German reason, <c>null</c> if it can. A text block needs a text block directly before it in
+    /// its section (<c>IndentBlockedNoPreviousText</c>; a heading between them would change the reading order), a
+    /// detail a sibling detail before it (<c>IndentBlockedNoPreviousDetail</c>). A heading goes under the previous
+    /// heading of its level (<see cref="CanIndent"/>; <c>IndentBlockedNoPreviousHeading</c>), but not so deep that its
+    /// subtree falls below H6 (<c>LevelBlockedBelowH6</c>).
+    /// </summary>
+    /// <exception cref="ArgumentException">The element is not in the book.</exception>
+    public static string? IndentBlocked(Book book, BookElement element)
+    {
+        if (BookElements.Find(book, element.Key) != element)
+        {
+            throw new ArgumentException($"There is no such {element.Kind} in the book.", nameof(element));
+        }
+
+        switch (element.Kind)
+        {
+            case ElementKind.TextBlock:
+                return PreviousTextBlock(book.FindTextBlock(element.Key)!) is null ? "IndentBlockedNoPreviousText" : null;
+            case ElementKind.Detail:
+                var detail = BlockOf(book, element);
+                return detail.Parent!.Children[0] == detail ? "IndentBlockedNoPreviousDetail" : null;
+            default:
+                var node = book.FindNode(element.Key)!;
+                return CanIndent(book, element.Key) ? null
+                    : PreviousSameLevel(node) is null ? "IndentBlockedNoPreviousHeading"
+                    : "LevelBlockedBelowH6";
+        }
+    }
+
+    /// <summary>
+    /// Why the button "Ausrücken" (outdent) cannot move <paramref name="element"/> (Einordnen spec 4), for its tooltip:
+    /// the resource key of the German reason, <c>null</c> if it can. A text block cannot (<c>OutdentBlockedTextBlock</c>),
+    /// a detail always can, a heading by the reasons of <see cref="LevelBlocked"/> for its level - 1 (a level-1 heading:
+    /// <c>LevelBlockedAboveH1</c>).
+    /// </summary>
+    /// <exception cref="ArgumentException">The element is not in the book.</exception>
+    public static string? OutdentBlocked(Book book, BookElement element)
+    {
+        if (BookElements.Find(book, element.Key) != element)
+        {
+            throw new ArgumentException($"There is no such {element.Kind} in the book.", nameof(element));
+        }
+
+        if (element.Kind != ElementKind.Heading)
+        {
+            return element.Kind == ElementKind.TextBlock ? "OutdentBlockedTextBlock" : null;
+        }
+
+        var level = book.FindNode(element.Key)!.Level;
+        return level == 1 ? "LevelBlockedAboveH1" : LevelBlocked(book, element, level - 1);
+    }
+
+    /// <summary>The text block directly before <paramref name="textBlock"/> in its section; <c>null</c> if an outline node or nothing is.</summary>
+    private static TextBlock? PreviousTextBlock(TextBlock textBlock)
+    {
+        var items = textBlock.Section.Items;
+        var index = 0;
+        while (items[index] != textBlock)
+        {
+            index++;
+        }
+
+        return index > 0 ? items[index - 1] as TextBlock : null;
+    }
+
+    /// <summary>
+    /// Makes the text block <paramref name="textBlockKey"/> the last sub-point (detail, level 1) of the text block
+    /// directly before it in its section (Einordnen spec 4); its own details stay its details, so the reading order
+    /// stays. The block keeps everything it has (<c>id::</c>, <c>source::</c>, status, dates); the receiving text block
+    /// gets <c>updated::</c>.
+    /// </summary>
+    /// <returns>The key of the new detail, which is that of the text block.</returns>
+    /// <exception cref="ArgumentException">
+    /// Not a text block of the book, or <see cref="IndentBlocked"/> refuses it (no text block before it).
+    /// </exception>
+    public static Guid IndentTextBlock(Book book, Guid textBlockKey, DateTimeOffset now)
+    {
+        var element = BookElements.Find(book, textBlockKey) is { Kind: ElementKind.TextBlock } found
+            ? found
+            : throw new ArgumentException("Only a text block of the book is indented into another.", nameof(textBlockKey));
+        if (IndentBlocked(book, element) is { } reason)
+        {
+            throw new ArgumentException(reason, nameof(textBlockKey));
+        }
+
+        var textBlock = book.FindTextBlock(textBlockKey)!;
+        var previous = PreviousTextBlock(textBlock)!;
+        book.Page.MoveBlock(textBlock.Block, previous.Block, previous.Block.Children.Count);
+        BlockDates.StampChanged(previous.Block, now);
+        return textBlockKey;
+    }
+
+    /// <summary>
+    /// Makes the level-1 detail <paramref name="detailKey"/> a text block of its own right after its text block (Einordnen
+    /// spec 4). Its later sibling details (level 1) go along as the last children of the new text block, so the reading
+    /// order stays. The new text block gets both dates (<c>updated::</c> only if it has <c>created::</c>), the old one
+    /// <c>updated::</c>. <c>source::</c> stays with the old text block; the detail keeps its own <c>id::</c> and
+    /// <c>source::</c>. A first line that would read as a heading is escaped, so it stays text.
+    /// </summary>
+    /// <returns>The key of the new text block, which is that of the detail.</returns>
+    /// <exception cref="ArgumentException">Not a detail of the book, or one deeper than level 1 (the editor moves those).</exception>
+    public static Guid OutdentDetail(Book book, Guid detailKey, DateTimeOffset now)
+    {
+        var element = BookElements.Find(book, detailKey) is { Kind: ElementKind.Detail } found
+            ? found
+            : throw new ArgumentException("Only a detail of the book becomes a text block.", nameof(detailKey));
+        var detail = BlockOf(book, element);
+        var textBlock = BookElements.TextBlockOf(book, element)!.Block;
+        if (detail.Parent != textBlock)
+        {
+            throw new ArgumentException("Only a detail of level 1 becomes a text block.", nameof(detailKey));
+        }
+
+        var page = book.Page;
+        var following = textBlock.Children.SkipWhile(child => child != detail).Skip(1).ToList();
+
+        // As a text block a first line "# …" would read as a heading: escaped, it shows as it did.
+        if (HeadingText.AsTextBlockContent(detail.Content, shownUnescaped: true) is var escaped && escaped != detail.Content)
+        {
+            detail.SetContent(escaped);
+        }
+
+        page.MoveBlock(detail, textBlock.Parent, IndexOf(page, textBlock) + 1);
+        foreach (var sibling in following)
+        {
+            page.MoveBlock(sibling, detail, detail.Children.Count);
+        }
+
+        StampAsTextBlock(detail, now);
+        BlockDates.StampChanged(textBlock, now);
+        return detailKey;
+    }
+
+    /// <summary>
     /// Makes the text block or detail <paramref name="elementKey"/> a heading of <paramref name="level"/> (spec 4.2). The
     /// block's first line (as the editor shows it, without heading marks and a <c>#notiz</c> tag) is the title; the
     /// further text becomes the first text block under it, and each direct sub-point a text block with its deeper
