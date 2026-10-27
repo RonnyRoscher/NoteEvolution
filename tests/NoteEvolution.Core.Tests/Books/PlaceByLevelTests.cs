@@ -366,6 +366,55 @@ public partial class PlaceByLevelTests
         Assert.Empty(book.Warnings);
     }
 
+    /// <summary>A text block with two heading sub-points and a text sub-point after them.</summary>
+    private const string TwoHeadingsInText =
+        Head + "- # Eins\n\t- Text\n\t\t- ## A\n\t\t\t- a\n\t\t- ## B\n\t\t\t- b\n\t\t- c\n- # Zwei\n";
+
+    private static void AssertBothHeadings(Book book)
+    {
+        var eins = book.Root.Children.First();
+        Assert.Equal(["Text", "A", "B"], ItemTitles(eins));
+        var (a, b) = (eins.Children.First(), eins.Children.Last());
+        Assert.Equal((2, 2), (a.Level, b.Level));
+        Assert.Equal(["a"], ItemTitles(a));
+        Assert.Equal(["b", "c"], ItemTitles(b));
+        Assert.Empty(book.Warnings);
+    }
+
+    [Fact]
+    public void ToHeading_LaterHeadingSubPoint_StaysAHeading_PlacedByLevel()
+    {
+        // One click on A: B, a later sub-point that is a heading, stays one (not "\## B") and is placed beside A.
+        var book = Changed(TwoHeadingsInText, b => ManuscriptEditor.ToHeading(b, KeyOf(b, "## A"), 2, Now));
+        AssertBothHeadings(book);
+        Assert.Contains("\t- ## B\n", Serialize(book));
+
+        // A deeper later heading stays under the new one where it stands (the text block after it in the file stays one
+        // of A's, as the book reads a text block after a sub-section).
+        book = Changed(
+            TwoHeadingsInText.Replace("## B", "### B"),
+            b => ManuscriptEditor.ToHeading(b, KeyOf(b, "## A"), 2, Now));
+        var a = book.Root.Children.First().Children.Single();
+        Assert.Equal(["a", "B", "c"], ItemTitles(a));
+        Assert.Equal(["b"], ItemTitles(a.Children.Single()));
+        Assert.Empty(book.Warnings);
+    }
+
+    [Fact]
+    public void Normalize_TwoHeadingsInOneTextBlock_BothHeadings_PreviewCountsBoth()
+    {
+        var book = Load(TwoHeadingsInText);
+        var misplaced = ManuscriptEditor.MisplacedHeadings(book);
+        Assert.Equal([KeyOf(book, "## A"), KeyOf(book, "## B")], misplaced);
+        Assert.Empty(ManuscriptEditor.UnplaceableHeadings(book));
+
+        var before = ReadingOrder(book);
+        Assert.Equal(2, ManuscriptEditor.NormalizeOutline(book, Now));
+        var after = Book.Load(book.Page);
+        Assert.Equal(before, ReadingOrder(after));
+        AssertBothHeadings(after);
+    }
+
     [Fact]
     public void MisplacedHeadings_ExactlyThosePlaced_UnplaceableListedApart()
     {

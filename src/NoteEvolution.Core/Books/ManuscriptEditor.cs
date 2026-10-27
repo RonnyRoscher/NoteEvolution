@@ -258,7 +258,9 @@ public static class ManuscriptEditor
     /// further text becomes the first text block under it, and each direct sub-point a text block with its deeper
     /// sub-points as details (a sub-point "# …" escaped, so it stays text). For a detail, so that the reading order stays,
     /// what follows it in its text block (its later sibling sub-points, then the later siblings of each sub-point above
-    /// it) becomes text blocks under the heading in the same way, after its own. The heading stands in the block's place,
+    /// it) goes under the heading after its own, as text blocks in the same way; but one that reads as a heading (a
+    /// heading inside the text block) stays a heading, unescaped with its sub-points, and is placed by its level
+    /// (<see cref="Place"/>). The heading stands in the block's place,
     /// a detail's heading right after its text block; above the section's level inside the section, at its level after
     /// the section. The section's items after the text block go along as <see cref="TakeAlong"/> puts them: up to the
     /// next heading that is not deeper they become the heading's last children, that one and the rest follow the heading
@@ -278,7 +280,14 @@ public static class ManuscriptEditor
     /// A block has no place for properties (an open code fence, which makes the page read-only); the page is then left
     /// partly converted and must be read again.
     /// </exception>
-    public static Guid ToHeading(Book book, Guid elementKey, int level, DateTimeOffset now)
+    public static Guid ToHeading(Book book, Guid elementKey, int level, DateTimeOffset now) =>
+        ToHeadingPlacing(book, elementKey, level, now, []);
+
+    /// <summary>
+    /// <see cref="ToHeading"/>; the keys of the later sub-points that were headings
+    /// inside the text block and are placed as headings now are added to <paramref name="placedHeadings"/>.
+    /// </summary>
+    private static Guid ToHeadingPlacing(Book book, Guid elementKey, int level, DateTimeOffset now, List<Guid> placedHeadings)
     {
         var element = BookElements.Find(book, elementKey) is { Kind: not ElementKind.Heading } found
             ? found
@@ -360,8 +369,18 @@ public static class ManuscriptEditor
             }
         }
 
+        var laterHeadings = new List<Block>();
         foreach (var subPoint in subPoints.Concat(laterSubPoints))
         {
+            if (laterSubPoints.Contains(subPoint) && HeadingText.StartsAsHeading(subPoint.Content))
+            {
+                // A later sub-point that reads as a heading is one (it was warned inside the text block): it goes as it
+                // is, with its sub-points, and is placed by its level below.
+                laterHeadings.Add(subPoint);
+                page.MoveBlock(subPoint, heading, position++);
+                continue;
+            }
+
             // As a text block a sub-point "# …" would read as a heading: escaped, it shows as it did.
             if (HeadingText.AsTextBlockContent(subPoint.Content, shownUnescaped: true) is var escaped && escaped != subPoint.Content)
             {
@@ -382,6 +401,13 @@ public static class ManuscriptEditor
         if (element.Kind == ElementKind.Detail)
         {
             BlockDates.StampChanged(textBlock.Block, now);
+        }
+
+        foreach (var later in laterHeadings)
+        {
+            var view = Book.Load(page);
+            Place(view, view.FindNode(later.Key)!);
+            placedHeadings.Add(later.Key);
         }
 
         return heading.Key;
@@ -503,8 +529,8 @@ public static class ManuscriptEditor
     /// heading inside a text block becomes a heading of the level of its marks (<see cref="ToHeading"/>), or of its
     /// section's level + 1 (at most H6) where that level is above its section; every other heading keeps its level and
     /// is placed by it (<see cref="SetHeadingLevel"/>). A heading that is no longer warned when its turn comes (a
-    /// sub-point of a converted one, which became a text block) is skipped, as are those of
-    /// <see cref="UnplaceableHeadings"/>. Afterwards the book's text has no indentation warnings but those. All or
+    /// sub-point of a converted one, which became a text block, or a later heading in the same text block, which that
+    /// conversion placed and which counts with it) is skipped, as are those of <see cref="UnplaceableHeadings"/>. Afterwards the book's text has no indentation warnings but those. All or
     /// nothing: if a step throws, the page gets its state before the command back.
     /// </summary>
     /// <param name="now">The dates for the text blocks <see cref="ToHeading"/> makes.</param>
@@ -539,7 +565,7 @@ public static class ManuscriptEditor
         {
             // Blocks moved in the steps before: the view is read anew for each.
             var current = Book.Load(book.Page);
-            if (!Warned(current).Contains(key))
+            if (placed.Contains(key) || !Warned(current).Contains(key))
             {
                 continue;
             }
@@ -563,8 +589,10 @@ public static class ManuscriptEditor
                     continue;
             }
 
-            ToHeading(current, key, level, now);
+            var alongWith = new List<Guid>();
+            ToHeadingPlacing(current, key, level, now, alongWith);
             placed.Add(key);
+            placed.AddRange(alongWith);
         }
     }
 
