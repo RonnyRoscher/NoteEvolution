@@ -256,13 +256,16 @@ public static class ManuscriptEditor
     /// Makes the text block or detail <paramref name="elementKey"/> a heading of <paramref name="level"/> (spec 4.2). The
     /// block's first line (as the editor shows it, without heading marks and a <c>#notiz</c> tag) is the title; the
     /// further text becomes the first text block under it, and each direct sub-point a text block with its deeper
-    /// sub-points as details (a sub-point "# …" escaped, so it stays text). The heading stands in the block's place, a
-    /// detail's heading right after its text block; it takes over the section's items that follow there up to the next heading that is not deeper (above the
-    /// section's level these are the section's own following text blocks, at its level also its following sub-sections,
-    /// and the heading then follows the section). The block's properties (<c>id::</c>, <c>source::</c>, the status, also
-    /// from a <c>#notiz</c> tag, and any other, <c>created::</c> included) go to the first text block: the block itself
-    /// keeps them with the further text, else the first sub-point takes them if it has none of the same keys, else the
-    /// block stays as an empty text block with them. A block with no further text and no properties but its dates goes
+    /// sub-points as details (a sub-point "# …" escaped, so it stays text). For a detail, so that the reading order stays,
+    /// what follows it in its text block (its later sibling sub-points, then the later siblings of each sub-point above
+    /// it) becomes text blocks under the heading in the same way, after its own. The heading stands in the block's place,
+    /// a detail's heading right after its text block; above the section's level inside the section, at its level after
+    /// the section. The section's items after the text block go along as <see cref="TakeAlong"/> puts them: up to the
+    /// next heading that is not deeper they become the heading's last children, that one and the rest follow the heading
+    /// (at the section's level they leave the section with it). The block's properties (<c>id::</c>, <c>source::</c>,
+    /// the status, also from a <c>#notiz</c> tag, and any other, <c>created::</c> included) go to the first text block:
+    /// the block itself keeps them with the further text, else the first sub-point takes them if it has none of the same
+    /// keys, else the block stays as an empty text block with them. A block with no further text and no properties but its dates goes
     /// (a heading has no dates). Each text block made gets both dates (<c>updated::</c> only if it has
     /// <c>created::</c>), a detail's text block <c>updated::</c>; the heading gets none.
     /// </summary>
@@ -319,9 +322,15 @@ public static class ManuscriptEditor
         var following = section.Items
             .SkipWhile(item => item != textBlock)
             .Skip(1)
-            .TakeWhile(item => item is TextBlock || item is OutlineNode { Level: var l } && l > level)
             .Select(item => item is TextBlock followingText ? followingText.Block : ((OutlineNode)item).Block!)
             .ToList();
+
+        // What follows a detail in its text block, its own siblings first, then those of each sub-point above it.
+        var laterSubPoints = new List<Block>();
+        for (var below = block; below != textBlock.Block; below = below.Parent!)
+        {
+            laterSubPoints.AddRange(below.Parent!.Children.SkipWhile(child => child != below).Skip(1));
+        }
 
         // Above the section's level the heading goes into the section after the text block, at its level after the section.
         var (parent, index) = level > section.Level
@@ -351,7 +360,7 @@ public static class ManuscriptEditor
             }
         }
 
-        foreach (var subPoint in subPoints)
+        foreach (var subPoint in subPoints.Concat(laterSubPoints))
         {
             // As a text block a sub-point "# …" would read as a heading: escaped, it shows as it did.
             if (HeadingText.AsTextBlockContent(subPoint.Content, shownUnescaped: true) is var escaped && escaped != subPoint.Content)
@@ -368,10 +377,7 @@ public static class ManuscriptEditor
             page.RemoveBlock(block);
         }
 
-        foreach (var item in following)
-        {
-            page.MoveBlock(item, heading, position++);
-        }
+        TakeAlong(book, heading, level, following);
 
         if (element.Kind == ElementKind.Detail)
         {
@@ -409,9 +415,10 @@ public static class ManuscriptEditor
     /// <summary>
     /// Places the heading <paramref name="node"/> where its level (as its <c>#</c> marks stand now) puts it (Einordnen
     /// spec 2), keeping the reading order of every block. Out: while its level is not deeper than its parent heading's,
-    /// it goes directly after that parent, into the parent's section, and the blocks that followed it in the parent
-    /// become its last children. In: while the block directly before it in its section is a heading of a higher level
-    /// (smaller number), not an appendix section, it becomes that heading's last child. The levels do not change; the
+    /// it goes directly after that parent, into the parent's section, and the blocks that followed it in the parent go
+    /// along as their Markdown meaning puts them (<see cref="TakeAlong"/>). In: while the block directly before it in its
+    /// section is a heading of a higher level (smaller number), not an appendix section, it becomes that heading's last
+    /// child. The levels do not change; the
     /// appendix is never a parent.
     /// </summary>
     /// <param name="book">The book; its view may be stale (e.g. after the marks changed), the page is read anew.</param>
@@ -419,16 +426,14 @@ public static class ManuscriptEditor
     {
         var page = book.Page;
         var key = node.Key;
-        while (Book.Load(page).FindNode(key) is { Parent: { Block: { } parent } parentNode } current
+        while (Book.Load(page) is var view
+               && view.FindNode(key) is { Parent: { Block: { } parent } parentNode } current
                && current.Level <= parentNode.Level)
         {
             var block = current.Block!;
             var following = parent.Children.SkipWhile(child => child != block).Skip(1).ToList();
             page.MoveBlock(block, parent.Parent, IndexOf(page, parent) + 1);
-            foreach (var item in following)
-            {
-                page.MoveBlock(item, block, block.Children.Count);
-            }
+            TakeAlong(view, block, current.Level, following);
         }
 
         while (true)
@@ -451,34 +456,90 @@ public static class ManuscriptEditor
     }
 
     /// <summary>
-    /// The headings with an indentation warning (<see cref="Book.Warnings"/>), in reading order: those not deeper than
-    /// their parent heading and those inside a text block. The appendix is left out (it is not changed).
+    /// Moves <paramref name="following"/>, the blocks that came directly after the heading <paramref name="heading"/> of
+    /// <paramref name="level"/> in reading order, where their Markdown meaning puts them: the text blocks and headings
+    /// deeper than <paramref name="level"/> up to the first heading that is not deeper (or an appendix section, which
+    /// never goes into the text) become the heading's last children; that heading and every block after it follow the
+    /// heading as its siblings, in order.
     /// </summary>
-    public static IReadOnlyList<Guid> MisplacedHeadings(Book book) =>
-        [.. book.Warnings.Select(warning => warning.BlockKey).Where(key => !book.IsInAppendix(key)).Distinct()];
+    /// <param name="view">A view that knows the following blocks (it may be stale: their levels have not changed).</param>
+    private static void TakeAlong(Book view, Block heading, int level, IReadOnlyList<Block> following)
+    {
+        var page = view.Page;
+        var taken = following
+            .TakeWhile(block => view.FindNode(block.Key) is not { } node
+                                || (node.Level > level && node.AppendixKind == AppendixKind.None))
+            .Count();
+        foreach (var item in following.Take(taken))
+        {
+            page.MoveBlock(item, heading, heading.Children.Count);
+        }
+
+        var index = IndexOf(page, heading) + 1;
+        foreach (var item in following.Skip(taken))
+        {
+            page.MoveBlock(item, heading.Parent, index++);
+        }
+    }
 
     /// <summary>
-    /// Places every heading of <see cref="MisplacedHeadings"/>, in reading order (Einordnen spec 3): a heading inside a
-    /// text block becomes a heading of the level of its marks (<see cref="ToHeading"/>), or of its section's level + 1
-    /// (at most H6) where that level is above its section; every other heading keeps its level and is placed by it
-    /// (<see cref="SetHeadingLevel"/>). A heading that is no longer misplaced when its turn comes (a sub-point of a
-    /// converted one, which became a text block) is skipped, as is one inside a text block whose title holds a
-    /// reference (<see cref="LevelBlocked"/>: a heading holds none). Afterwards the book's text has no indentation
-    /// warnings but those.
+    /// The headings <see cref="NormalizeOutline"/> places, in reading order: of the headings with an indentation warning
+    /// (<see cref="Book.Warnings"/>: not deeper than their parent heading, or inside a text block) those it moves or
+    /// makes a heading. Left out are the appendix (it is not changed), the headings of <see cref="UnplaceableHeadings"/>
+    /// and those that a conversion before them turns into text (a sub-point of a converted heading). The command is
+    /// tried on a copy of the page; the book is not changed.
+    /// </summary>
+    public static IReadOnlyList<Guid> MisplacedHeadings(Book book) => TryNormalize(book).Placed;
+
+    /// <summary>
+    /// The headings with an indentation warning that <see cref="NormalizeOutline"/> leaves as they are, in reading order:
+    /// one inside a text block whose title holds a reference cannot become a heading (<see cref="LevelBlocked"/>). The
+    /// appendix is left out. The book is not changed.
+    /// </summary>
+    public static IReadOnlyList<Guid> UnplaceableHeadings(Book book) => TryNormalize(book).Unplaceable;
+
+    /// <summary>
+    /// Places every heading with an indentation warning outside the appendix, in reading order (Einordnen spec 3): a
+    /// heading inside a text block becomes a heading of the level of its marks (<see cref="ToHeading"/>), or of its
+    /// section's level + 1 (at most H6) where that level is above its section; every other heading keeps its level and
+    /// is placed by it (<see cref="SetHeadingLevel"/>). A heading that is no longer warned when its turn comes (a
+    /// sub-point of a converted one, which became a text block) is skipped, as are those of
+    /// <see cref="UnplaceableHeadings"/>. Afterwards the book's text has no indentation warnings but those. All or
+    /// nothing: if a step throws, the page gets its state before the command back.
     /// </summary>
     /// <param name="now">The dates for the text blocks <see cref="ToHeading"/> makes.</param>
-    /// <returns>The number of headings placed.</returns>
+    /// <returns>The number of headings placed: as many as <see cref="MisplacedHeadings"/> lists.</returns>
+    /// <exception cref="ArgumentException">A conversion is refused (not expected: every step validates first).</exception>
     /// <exception cref="InvalidOperationException">
-    /// As for <see cref="ToHeading"/>: a block has no place for properties; the page must be read again.
+    /// The page is read-only (an open code fence): it is refused before anything changes. A step that throws it later
+    /// (as for <see cref="ToHeading"/>) is not expected.
     /// </exception>
     public static int NormalizeOutline(Book book, DateTimeOffset now)
     {
-        var placed = 0;
-        foreach (var key in MisplacedHeadings(book))
+        var page = book.Page;
+        var before = PageStructureSnapshot.Capture(page);
+        var placed = new List<Guid>();
+        try
+        {
+            PlaceWarned(book, now, placed);
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            before.RestoreInto(page);
+            throw;
+        }
+
+        return placed.Count;
+    }
+
+    /// <summary>The steps of <see cref="NormalizeOutline"/>; the key of each heading placed is added to <paramref name="placed"/>.</summary>
+    private static void PlaceWarned(Book book, DateTimeOffset now, List<Guid> placed)
+    {
+        foreach (var key in Warned(book))
         {
             // Blocks moved in the steps before: the view is read anew for each.
             var current = Book.Load(book.Page);
-            if (!MisplacedHeadings(current).Contains(key))
+            if (!Warned(current).Contains(key))
             {
                 continue;
             }
@@ -486,7 +547,7 @@ public static class ManuscriptEditor
             if (current.FindNode(key) is { } node)
             {
                 SetHeadingLevel(current, key, node.Level);
-                placed++;
+                placed.Add(key);
                 continue;
             }
 
@@ -503,10 +564,41 @@ public static class ManuscriptEditor
             }
 
             ToHeading(current, key, level, now);
-            placed++;
+            placed.Add(key);
+        }
+    }
+
+    /// <summary>The headings with an indentation warning outside the appendix, in reading order.</summary>
+    private static List<Guid> Warned(Book book) =>
+        [.. book.Warnings.Select(warning => warning.BlockKey).Where(key => !book.IsInAppendix(key)).Distinct()];
+
+    /// <summary>
+    /// Runs the steps of <see cref="NormalizeOutline"/> on a copy of the page (read anew from its bytes, so every block
+    /// stands at the same place) and maps the result back to the book's keys: the headings placed, and the warned ones
+    /// left. If a step fails, the steps before it count (the command itself would then change nothing). A read-only page
+    /// gets neither: the command refuses it.
+    /// </summary>
+    private static (List<Guid> Placed, List<Guid> Unplaceable) TryNormalize(Book book)
+    {
+        if (book.Page.IsReadOnly)
+        {
+            return ([], []);
         }
 
-        return placed;
+        var copy = Book.Load(LogseqParser.Parse(book.Page.FilePath, PageSerializer.Serialize(book.Page)));
+        var keys = copy.Page.AllBlocks().Zip(book.Page.AllBlocks()).ToDictionary(pair => pair.First.Key, pair => pair.Second.Key);
+        var placed = new List<Guid>();
+        try
+        {
+            PlaceWarned(copy, DateTimeOffset.UnixEpoch, placed);
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            // NormalizeOutline throws there and changes nothing; the preview shows what came before.
+        }
+
+        var left = Warned(Book.Load(copy.Page)).Where(keys.ContainsKey);
+        return ([.. placed.Select(key => keys[key])], [.. left.Select(key => keys[key])]);
     }
 
     /// <summary>

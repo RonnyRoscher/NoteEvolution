@@ -124,13 +124,14 @@ public class LevelConversionTests
 
         var key = ManuscriptEditor.ToHeading(book, KeyOf(book, "Punkt 1"), 2, Now);
 
-        // Only the sub-point with its sub-points goes; its text block is changed and keeps "Punkt 2".
+        // The sub-point goes with its sub-points and, so that the reading order stays, with "Punkt 2" after it (a text
+        // block under the heading too); its text block is changed.
         Assert.Equal(
             Text
                 .Replace($"\t  updated:: {Old}\n", $"\t  updated:: {Stamp}\n")
                 .Replace(
                     "\t\t- Punkt 1\n\t\t\t- Punkt 1a\n\t\t- Punkt 2\n\t- Text danach\n",
-                    "\t\t- Punkt 2\n\t- ## Punkt 1\n\t\t- Punkt 1a\n" + Dates("\t\t  ") + "\t\t- Text danach\n"),
+                    "\t- ## Punkt 1\n\t\t- Punkt 1a\n" + Dates("\t\t  ") + "\t\t- Punkt 2\n" + Dates("\t\t  ") + "\t\t- Text danach\n"),
             Serialize(book));
         Assert.Equal(KeyOf(book, "# Eins"), Book.Load(book.Page).FindNode(key)!.Parent!.Key);
     }

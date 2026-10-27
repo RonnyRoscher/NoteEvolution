@@ -287,6 +287,136 @@ public partial class PlaceByLevelTests
         Assert.Equal(text, Serialize(book));
     }
 
+    [Fact]
+    public void Out_FollowingHeadingNotDeeper_StaysASiblingAfterIt()
+    {
+        // Ruling 1: only what belongs to B by Markdown meaning goes into it; C (not deeper) follows B.
+        const string text = Head + "- ## A\n\t- a\n\t- ## B\n\t- b\n\t- ## C\n";
+        var book = Changed(text, b => ManuscriptEditor.SetHeadingLevel(b, KeyOf(b, "## B"), 2));
+        Assert.Equal(Head + "- ## A\n\t- a\n- ## B\n\t- b\n- ## C\n", Serialize(book));
+        Assert.Equal(["A", "B", "C"], book.Root.Children.Select(n => n.Title));
+        Assert.Empty(book.Warnings);
+
+        // Two steps: out of "Zwei" the warned "# X" follows "Drei" into "Eins"; out of "Eins" it and "## Y" follow it
+        // to the top level.
+        const string twoSteps =
+            Head +
+            "- # Eins\n" +
+            "\t- ## Zwei\n" +
+            "\t\t- Text z\n" +
+            "\t\t- ### Drei\n" +
+            "\t\t- Text d\n" +
+            "\t\t- # X\n" +
+            "\t\t\t- Text x\n" +
+            "\t- ## Y\n";
+        book = Changed(twoSteps, b => ManuscriptEditor.SetHeadingLevel(b, KeyOf(b, "### Drei"), 1));
+        Assert.Equal(
+            Head + "- # Eins\n\t- ## Zwei\n\t\t- Text z\n- # Drei\n\t- Text d\n- # X\n\t- Text x\n- ## Y\n",
+            Serialize(book));
+        Assert.Empty(book.Warnings);
+    }
+
+    /// <summary>A detail heading with sub-points after it, after its parent sub-point and an irregular section after.</summary>
+    private const string DetailHeading =
+        Head +
+        "- # Eins\n" +
+        "\t- Text eins\n" +
+        "\t\t- Punkt 1\n" +
+        "\t\t\t- # Neu\n" +
+        "\t\t\t\t- Unter\n" +
+        "\t\t\t- Punkt 1b\n" +
+        "\t\t- Punkt 2\n" +
+        "\t\t\t- Punkt 2a\n" +
+        "\t- Text danach\n" +
+        "\t- ## Eins-A\n" +
+        "\t- # Fremd\n" +
+        "- # Zwei\n";
+
+    private static List<string> ItemTitles(OutlineNode node) =>
+        [.. node.Items.Select(item => item is TextBlock t ? t.Text : ((OutlineNode)item).Title)];
+
+    [Fact]
+    public void ToHeading_Detail_LaterSubPointsGoUnderIt_ReadingOrderKept()
+    {
+        // Ruling 2, inside the section: Punkt 1b (after it) and Punkt 2 (after its parent) become text blocks under it,
+        // after its own; "Text danach" follows into it, "## Eins-A" (not deeper) and the rest stay after it in "Eins".
+        var key = Guid.Empty;
+        var book = Changed(DetailHeading, b => key = ManuscriptEditor.ToHeading(b, KeyOf(b, "# Neu"), 2, Now));
+
+        var neu = book.FindNode(key)!;
+        Assert.Equal((2, "Eins"), (neu.Level, neu.Parent!.Title));
+        Assert.Equal(["Unter", "Punkt 1b", "Punkt 2", "Text danach"], ItemTitles(neu));
+        Assert.Equal(["Punkt 2a"], neu.TextBlocks.Single(t => t.Text == "Punkt 2").Paragraphs.Select(p => p.Text));
+        Assert.Equal(["Text eins", "Neu", "Eins-A", "Fremd"], ItemTitles(neu.Parent));
+        Assert.Equal(["Punkt 1"], book.FindTextBlock(KeyOf(book, "Text eins"))!.Paragraphs.Select(p => p.Text));
+    }
+
+    [Fact]
+    public void ToHeading_Detail_AtSectionLevel_TakesWhatBelongsToIt_RestFollows()
+    {
+        // At the section's level the heading follows "Eins": "Text danach" and "## Eins-A" are its own, "# Fremd" (not
+        // deeper) follows it at the top level, before "# Zwei".
+        var key = Guid.Empty;
+        var book = Changed(DetailHeading, b => key = ManuscriptEditor.ToHeading(b, KeyOf(b, "# Neu"), 1, Now));
+
+        var neu = book.FindNode(key)!;
+        Assert.Equal(["Eins", "Neu", "Fremd", "Zwei"], book.Root.Children.Select(n => n.Title));
+        Assert.Equal(["Unter", "Punkt 1b", "Punkt 2", "Text danach", "Eins-A"], ItemTitles(neu));
+        Assert.Equal(["Text eins"], ItemTitles(book.Root.Children.First()));
+        Assert.Empty(book.Warnings);
+    }
+
+    [Fact]
+    public void MisplacedHeadings_ExactlyThosePlaced_UnplaceableListedApart()
+    {
+        // Ruling 3: "Mit" (a reference in its title) cannot become a heading; "### Innen", a sub-point of the converted
+        // "## Aussen", becomes text; its own sub-point "#### Tiefer" stays one inside a text block and is placed after.
+        const string text =
+            Head +
+            "- # Eins\n" +
+            "\t- Text eins\n" +
+            "\t\t- # Mit ((11111111-1111-1111-1111-111111111111))\n" +
+            "\t- Text zwei\n" +
+            "\t\t- ## Aussen\n" +
+            "\t\t\t- ### Innen\n" +
+            "\t\t\t\t- #### Tiefer\n";
+        var book = Load(text);
+        Assert.Equal(4, book.Warnings.Count);
+
+        var misplaced = ManuscriptEditor.MisplacedHeadings(book);
+        var mit = KeyOf(book, "# Mit ((11111111-1111-1111-1111-111111111111))");
+        Assert.Equal([KeyOf(book, "## Aussen"), KeyOf(book, "#### Tiefer")], misplaced);
+        Assert.Equal([mit], ManuscriptEditor.UnplaceableHeadings(book));
+        Assert.Equal(text, Serialize(book));
+
+        var before = ReadingOrder(book);
+        Assert.Equal(misplaced.Count, ManuscriptEditor.NormalizeOutline(book, Now));
+        var after = Book.Load(book.Page);
+        Assert.Equal(before, ReadingOrder(after));
+        Assert.Equal([mit], after.Warnings.Select(w => w.BlockKey));
+        Assert.Empty(ManuscriptEditor.MisplacedHeadings(after));
+    }
+
+    [Fact]
+    public void Normalize_ReadOnlyPage_RefusedUnchanged()
+    {
+        // A step cannot fail half-way on a page read from a file (every conversion validates first, and further text is
+        // escaped anew), so the all-or-nothing undo cannot be forced here. The one failure there is, a block that has no
+        // place for properties (an open code fence), makes the page read-only: the command refuses it before any step,
+        // though "## B" would be placed first, and the preview lists nothing.
+        const string text = Head + "- ## A\n\t- a\n\t- ## B\n- Text\n\t- # H\n\t  ```\n";
+        var book = Load(text);
+        Assert.True(book.Page.IsReadOnly);
+        Assert.Equal(2, book.Warnings.Count);
+        var lines = book.Page.AllBlocks().Select(b => (b.Parent?.Key, b.Lines.ToList())).ToList();
+
+        Assert.Empty(ManuscriptEditor.MisplacedHeadings(book));
+        Assert.Empty(ManuscriptEditor.UnplaceableHeadings(book));
+        Assert.Throws<InvalidOperationException>(() => ManuscriptEditor.NormalizeOutline(book, Now));
+        Assert.Equal(lines, book.Page.AllBlocks().Select(b => (b.Parent?.Key, b.Lines.ToList())));
+        Assert.False(book.Page.IsDirty);
+    }
+
     public static TheoryData<string, int> EveryHeadingAndLevel()
     {
         var data = new TheoryData<string, int>();
