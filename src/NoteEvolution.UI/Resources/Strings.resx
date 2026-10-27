@@ -322,10 +322,6 @@
     <value>Auf dieser Ebene stünde die Überschrift über ihrem Abschnitt und würde Abschnitte übernehmen, die nicht zu ihr gehören</value>
     <comment>Titel eines ausgegrauten Ebenen-Knopfs an einem Textblock oder Unterpunkt (Ebene höher als sein Abschnitt)</comment>
   </data>
-  <data name="LevelBlockedOutOfParent" xml:space="preserve">
-    <value>Auf dieser Ebene fiele die Überschrift aus dem Abschnitt ihrer übergeordneten Überschrift; dafür gibt es Ausrücken</value>
-    <comment>Titel eines ausgegrauten Ebenen-Knopfs an einer Überschrift (höher als ihre übergeordnete Überschrift + 1)</comment>
-  </data>
   <data name="LevelBlockedBelowH6" xml:space="preserve">
     <value>Auf dieser Ebene käme eine Unterüberschrift unter H6</value>
     <comment>Titel eines ausgegrauten Ebenen-Knopfs an einer Überschrift, deren Unterüberschriften tiefer als H6 rutschten</comment>

@@ -88,22 +88,23 @@ public static class ManuscriptEditor
     }
 
     /// <summary>
-    /// Moves the heading one level higher, with its sub-sections: it is placed directly after the section of its
-    /// former parent heading, and every heading of its subtree gets one <c>#</c> less.
+    /// Moves the heading one level higher: <see cref="SetHeadingLevel"/> with its level - 1. Every heading of its
+    /// subtree gets one <c>#</c> less, and it is placed by its level (<see cref="Place"/>): out of a parent section of
+    /// its new level, directly after it, with what followed it there.
     /// </summary>
-    /// <exception cref="ArgumentException">Unknown heading, one in the appendix, or a level-1 heading.</exception>
+    /// <exception cref="ArgumentException">
+    /// Unknown heading, one in the appendix, a level-1 heading, or a sub-heading of an irregular outline would rise
+    /// above H1.
+    /// </exception>
     public static void Outdent(Book book, Guid headingKey)
     {
         var node = OutlineEditor.FindHeading(book, headingKey, nameof(headingKey));
-        if (!CanOutdent(node))
+        if (!CanOutdent(book, headingKey))
         {
-            throw new ArgumentException("A level-1 heading cannot be outdented.", nameof(headingKey));
+            throw new ArgumentException("The heading cannot go one level higher.", nameof(headingKey));
         }
 
-        var parent = node.Parent!;
-        var grandparent = parent.Parent!;
-        book.Page.MoveBlock(node.Block!, grandparent.Block, IndexOf(book.Page, parent.Block!) + 1);
-        OutlineEditor.Relevel(node, grandparent.Level + 1);
+        SetHeadingLevel(book, headingKey, node.Level - 1);
     }
 
     /// <summary>Whether <see cref="Indent"/> is possible; <c>false</c> for an unknown key.</summary>
@@ -115,7 +116,9 @@ public static class ManuscriptEditor
 
     /// <summary>Whether <see cref="Outdent"/> is possible; <c>false</c> for an unknown key.</summary>
     public static bool CanOutdent(Book book, Guid headingKey) =>
-        book.FindNode(headingKey) is { Block: not null } node && !book.IsInAppendix(headingKey) && CanOutdent(node);
+        book.FindNode(headingKey) is { Block: not null, Level: > 1 } node
+        && !book.IsInAppendix(headingKey)
+        && LevelBlocked(book, new BookElement(ElementKind.Heading, headingKey), node.Level - 1) is null;
 
     /// <summary>
     /// Removes the heading but keeps its content: its title (with any further lines of the heading's text) becomes a
@@ -209,10 +212,11 @@ public static class ManuscriptEditor
     /// (spec 4.2), for its tooltip: the resource key of the German reason (<c>LevelBlocked…</c> in the UI's strings,
     /// where all UI text lives); <c>null</c> if it can (or the element already has that level). There is no level
     /// outside 0–6. A text block or detail cannot become a heading above the level of its section (it would take over
-    /// sections not its own), except in the prologue. A heading cannot go above the level of its parent heading + 1 (that
-    /// is outdenting), nor so deep that a sub-heading would fall below H6, nor so high that a sub-heading of an irregular
-    /// outline (one that is not deeper) would rise above H1. A text block or detail whose first line (the title) holds a
-    /// reference cannot become a heading either (a heading holds no reference). Text is always possible.
+    /// sections not its own), except in the prologue. A heading may take any level, also above its parent heading's
+    /// (<see cref="SetHeadingLevel"/> places it out of that section), but not so deep that a sub-heading would fall below
+    /// H6, nor so high that a sub-heading of an irregular outline (one that is not deeper) would rise above H1. A text
+    /// block or detail whose first line (the title) holds a reference cannot become a heading either (a heading holds no
+    /// reference). Text is always possible.
     /// </summary>
     /// <exception cref="ArgumentException">The element is not in the book.</exception>
     public static string? LevelBlocked(Book book, BookElement element, int level)
@@ -240,11 +244,6 @@ public static class ManuscriptEditor
         if (level == 0 || level == node.Level)
         {
             return null;
-        }
-
-        if (level < node.Parent!.Level + 1)
-        {
-            return "LevelBlockedOutOfParent";
         }
 
         var difference = level - node.Level;
@@ -384,8 +383,8 @@ public static class ManuscriptEditor
 
     /// <summary>
     /// Gives the heading <paramref name="headingKey"/> the level <paramref name="level"/> (1–6, spec 4.2); every heading
-    /// of its subtree shifts by the same difference, so the outline below it stays as it is. Only the <c>#</c> marks
-    /// change.
+    /// of its subtree shifts by the same difference, so the outline below it stays as it is. Then the heading is placed
+    /// by its level (<see cref="Place"/>), also when the level stays the same; the reading order stays as it is.
     /// </summary>
     /// <exception cref="ArgumentException">
     /// Unknown heading or one in the appendix, or <see cref="LevelBlocked"/> refuses the level (also Text).
@@ -404,6 +403,110 @@ public static class ManuscriptEditor
         }
 
         Shift(node, level - node.Level);
+        Place(book, node);
+    }
+
+    /// <summary>
+    /// Places the heading <paramref name="node"/> where its level (as its <c>#</c> marks stand now) puts it (Einordnen
+    /// spec 2), keeping the reading order of every block. Out: while its level is not deeper than its parent heading's,
+    /// it goes directly after that parent, into the parent's section, and the blocks that followed it in the parent
+    /// become its last children. In: while the block directly before it in its section is a heading of a higher level
+    /// (smaller number), not an appendix section, it becomes that heading's last child. The levels do not change; the
+    /// appendix is never a parent.
+    /// </summary>
+    /// <param name="book">The book; its view may be stale (e.g. after the marks changed), the page is read anew.</param>
+    internal static void Place(Book book, OutlineNode node)
+    {
+        var page = book.Page;
+        var key = node.Key;
+        while (Book.Load(page).FindNode(key) is { Parent: { Block: { } parent } parentNode } current
+               && current.Level <= parentNode.Level)
+        {
+            var block = current.Block!;
+            var following = parent.Children.SkipWhile(child => child != block).Skip(1).ToList();
+            page.MoveBlock(block, parent.Parent, IndexOf(page, parent) + 1);
+            foreach (var item in following)
+            {
+                page.MoveBlock(item, block, block.Children.Count);
+            }
+        }
+
+        while (true)
+        {
+            var current = Book.Load(page);
+            var heading = current.FindNode(key)!;
+            var block = heading.Block!;
+            var index = IndexOf(page, block);
+            var siblings = block.Parent?.Children ?? page.Roots;
+            if (index == 0
+                || current.FindNode(siblings[index - 1].Key) is not { Block: { } previous } previousNode
+                || previousNode.Level >= heading.Level
+                || current.IsInAppendix(previous.Key))
+            {
+                return;
+            }
+
+            page.MoveBlock(block, previous, previous.Children.Count);
+        }
+    }
+
+    /// <summary>
+    /// The headings with an indentation warning (<see cref="Book.Warnings"/>), in reading order: those not deeper than
+    /// their parent heading and those inside a text block. The appendix is left out (it is not changed).
+    /// </summary>
+    public static IReadOnlyList<Guid> MisplacedHeadings(Book book) =>
+        [.. book.Warnings.Select(warning => warning.BlockKey).Where(key => !book.IsInAppendix(key)).Distinct()];
+
+    /// <summary>
+    /// Places every heading of <see cref="MisplacedHeadings"/>, in reading order (Einordnen spec 3): a heading inside a
+    /// text block becomes a heading of the level of its marks (<see cref="ToHeading"/>), or of its section's level + 1
+    /// (at most H6) where that level is above its section; every other heading keeps its level and is placed by it
+    /// (<see cref="SetHeadingLevel"/>). A heading that is no longer misplaced when its turn comes (a sub-point of a
+    /// converted one, which became a text block) is skipped, as is one inside a text block whose title holds a
+    /// reference (<see cref="LevelBlocked"/>: a heading holds none). Afterwards the book's text has no indentation
+    /// warnings but those.
+    /// </summary>
+    /// <param name="now">The dates for the text blocks <see cref="ToHeading"/> makes.</param>
+    /// <returns>The number of headings placed.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// As for <see cref="ToHeading"/>: a block has no place for properties; the page must be read again.
+    /// </exception>
+    public static int NormalizeOutline(Book book, DateTimeOffset now)
+    {
+        var placed = 0;
+        foreach (var key in MisplacedHeadings(book))
+        {
+            // Blocks moved in the steps before: the view is read anew for each.
+            var current = Book.Load(book.Page);
+            if (!MisplacedHeadings(current).Contains(key))
+            {
+                continue;
+            }
+
+            if (current.FindNode(key) is { } node)
+            {
+                SetHeadingLevel(current, key, node.Level);
+                placed++;
+                continue;
+            }
+
+            var element = BookElements.Find(current, key)!;
+            // A warned block inside a text block starts with 1–6 marks and a space (Book reads it so).
+            var level = BlockOf(current, element).Content.TakeWhile(c => c == '#').Count();
+            switch (LevelBlocked(current, element, level))
+            {
+                case "LevelBlockedAboveSection":
+                    level = Math.Min(BookElements.TextBlockOf(current, element)!.Section.Level + 1, OutlineEditor.MaxLevel);
+                    break;
+                case not null:
+                    continue;
+            }
+
+            ToHeading(current, key, level, now);
+            placed++;
+        }
+
+        return placed;
     }
 
     /// <summary>
@@ -900,8 +1003,6 @@ public static class ManuscriptEditor
     private static OutlineNode? PreviousSameLevel(OutlineNode node) =>
         node.Parent!.Children.TakeWhile(sibling => sibling != node)
             .LastOrDefault(sibling => sibling.Level == node.Level && sibling.AppendixKind == AppendixKind.None);
-
-    private static bool CanOutdent(OutlineNode node) => node.Level > 1 && node.Parent is { Block: not null };
 
     /// <summary>The block and all blocks below it, depth-first in file order.</summary>
     private static IEnumerable<Block> Subtree(Block block) => block.Children.SelectMany(Subtree).Prepend(block);

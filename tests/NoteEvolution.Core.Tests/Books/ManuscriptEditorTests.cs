@@ -220,12 +220,13 @@ public class ManuscriptEditorTests
         Assert.Equal(["## Eins-A", "## Eins-A-i", "## Eins-B"], reloaded.FindNode(KeyOf(book, "# Eins"))!.Children.Select(c => c.Block!.Content));
         Assert.Empty(reloaded.Warnings);
 
-        // To the root: the subtree is releveled.
+        // To the root: the subtree is releveled, and what followed it in "Eins" comes along, so the reading order stays.
         var top = Load(Text);
         ManuscriptEditor.Outdent(top, KeyOf(top, "## Eins-A"));
         Assert.Equal(
-            Text.Replace("\t- ## Eins-A\n\t  collapsed:: true\n\t\t- Text A\n\t\t- ### Eins-A-i\n\t\t\t- tief\n", "")
-                .Replace("- # Zwei\n", "- # Eins-A\n  collapsed:: true\n\t- Text A\n\t- ## Eins-A-i\n\t\t- tief\n- # Zwei\n"),
+            Text.Replace(
+                "\t- ## Eins-A\n\t  collapsed:: true\n\t\t- Text A\n\t\t- ### Eins-A-i\n\t\t\t- tief\n\t- Text nach A\n\t- ## Eins-B\n\t\t- Text B\n",
+                "- # Eins-A\n  collapsed:: true\n\t- Text A\n\t- ## Eins-A-i\n\t\t- tief\n\t- Text nach A\n\t- ## Eins-B\n\t\t- Text B\n"),
             Serialize(top));
     }
 

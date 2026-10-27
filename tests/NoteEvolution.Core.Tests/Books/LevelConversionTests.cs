@@ -323,7 +323,7 @@ public class LevelConversionTests
         var book = Load(LevelSix);
 
         Assert.Throws<ArgumentException>(() => ManuscriptEditor.SetHeadingLevel(book, KeyOf(book, "##### 5"), 6));
-        Assert.Throws<ArgumentException>(() => ManuscriptEditor.SetHeadingLevel(book, KeyOf(book, "##### 5"), 3));
+        Assert.Throws<ArgumentException>(() => ManuscriptEditor.SetHeadingLevel(book, KeyOf(book, "##### 5"), 7));
 
         Assert.Equal(LevelSix, Serialize(book));
     }
@@ -373,16 +373,14 @@ public class LevelConversionTests
         var book = Load(Text);
         var einsA = ElementOf(book, "## Eins-A");
 
-        // Not above the parent heading's level + 1 (that is outdenting); Text is always possible.
-        Assert.Equal("LevelBlockedOutOfParent", ManuscriptEditor.LevelBlocked(book, einsA, 1));
-        Assert.All([0, 2, 3, 4, 5], level => Assert.Null(ManuscriptEditor.LevelBlocked(book, einsA, level)));
+        // Above the parent heading's level is possible (the heading is placed out of its section); Text always is.
+        Assert.All([0, 1, 2, 3, 4, 5], level => Assert.Null(ManuscriptEditor.LevelBlocked(book, einsA, level)));
 
         // Review focus 4: a sub-heading at H6 blocks every deeper level, never producing H7.
         Assert.Equal("LevelBlockedBelowH6", ManuscriptEditor.LevelBlocked(book, einsA, 6));
         var six = Load(LevelSix);
         Assert.Equal("LevelBlockedBelowH6", ManuscriptEditor.LevelBlocked(six, ElementOf(six, "##### 5"), 6));
-        Assert.All([1, 2, 3, 4], level =>
-            Assert.Equal("LevelBlockedOutOfParent", ManuscriptEditor.LevelBlocked(six, ElementOf(six, "##### 5"), level)));
+        Assert.All([1, 2, 3, 4], level => Assert.Null(ManuscriptEditor.LevelBlocked(six, ElementOf(six, "##### 5"), level)));
         Assert.Null(ManuscriptEditor.LevelBlocked(six, ElementOf(six, "###### 6"), 6));
         Assert.Equal("LevelBlockedNoSuchLevel", ManuscriptEditor.LevelBlocked(six, ElementOf(six, "###### 6"), 7));
         Assert.Null(ManuscriptEditor.LevelBlocked(six, ElementOf(six, "# 1"), 1));
