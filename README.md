@@ -124,8 +124,11 @@ ausgegraut, und der Tooltip nennt den Grund.
 
 **Gliederung nach Ebenen ordnen** (Menü „Assistenten“): zeigt, wie viele und welche Überschriften des Buchs nicht nach
 ihrer Ebene eingerückt sind, und ordnet sie mit „Einordnen“ alle nach ihrer Ebene ein, Überschriften in einem Textblock
-werden Überschriften ihrer Ebene. Ein „Rückgängig“ nimmt alles zurück. Überschriften, deren Titel einen Verweis enthält,
-bleiben, wie sie sind, und werden eigens genannt.
+werden Überschriften ihrer Ebene: Eine „# Hoch“ im Textblock eines H2-Abschnitts bleibt eine H1 und steht danach hinter
+dem H1-Abschnitt (nicht als H3 darin); was nach ihr kam, gehört nach der Gliederung zu ihr. Die Lesereihenfolge bleibt
+dabei gleich. Ein „Rückgängig“ nimmt alles zurück. Überschriften, deren Titel einen Verweis enthält, bleiben, wie sie
+sind, und werden eigens genannt (stehen nur noch solche da, nennt der Dialog nur sie); bei einer nicht sicher lesbaren
+(schreibgeschützten) Buchdatei zeigt er stattdessen den Hinweis auf den Schreibschutz.
 
 **Querverweise:** „Verweis einfügen“ in der Leiste öffnet eine Auswahl aller Überschriften und Textblöcke des Buchs
 (mit Suchfeld, Pfeiltasten und Enter); der Verweis steht als Logseq-Blockverweis `((id))` im Text und erscheint im

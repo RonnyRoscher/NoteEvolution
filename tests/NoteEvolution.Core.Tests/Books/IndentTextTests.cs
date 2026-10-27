@@ -132,6 +132,30 @@ public class IndentTextTests
     }
 
     [Fact]
+    public void OutdentDetail_ReadOnlyPage_RefusedUnchanged()
+    {
+        var loaded = Load(Head + "- # K\n\t- Text\n\t\t- Eins\n\t\t- Zwei\n\t  ```\n");
+        Assert.True(loaded.Page.IsReadOnly);
+        var key = loaded.Page.AllBlocks().Single(b => b.Content == "Eins").Key;
+        var before = loaded.Page.AllBlocks().Select(b => (b.Key, b.Parent?.Key, b.Content)).ToList();
+
+        Assert.Throws<InvalidOperationException>(() => ManuscriptEditor.OutdentDetail(loaded, key, Now));
+        Assert.Equal(before, loaded.Page.AllBlocks().Select(b => (b.Key, b.Parent?.Key, b.Content)).ToList());
+    }
+
+    [Fact]
+    public void IndentBlocked_H6_OwnReason_OutdentBlocked_H1_OwnReason()
+    {
+        var loaded = Load(Head + "- # 1\n\t- ## 2\n\t\t- ### 3\n\t\t\t- #### 4\n\t\t\t\t- ##### 5\n\t\t\t\t\t- ###### 6\n\t\t\t\t\t- ###### 6b\n");
+
+        // The H6 itself cannot go deeper (also with an H6 before it); its sub-heading case keeps its key.
+        Assert.Equal("IndentBlockedH6", ManuscriptEditor.IndentBlocked(loaded, Element(loaded, "###### 6b")));
+        Assert.Equal("IndentBlockedH6", ManuscriptEditor.IndentBlocked(loaded, Element(loaded, "###### 6")));
+        Assert.Null(ManuscriptEditor.OutdentBlocked(loaded, Element(loaded, "###### 6b")));
+        Assert.Equal("OutdentBlockedH1", ManuscriptEditor.OutdentBlocked(loaded, Element(loaded, "# 1")));
+    }
+
+    [Fact]
     public void IndentBlocked_DetailWithoutDetailBefore_AndHeadings()
     {
         var loaded = Load(Head + "- # A\n\t- Text\n\t\t- Eins\n\t\t- Zwei\n\t\t\t- Tief\n\t- ## B\n- # C\n");
@@ -141,7 +165,7 @@ public class IndentTextTests
         Assert.Equal("IndentBlockedNoPreviousDetail", ManuscriptEditor.IndentBlocked(loaded, Element(loaded, "Tief")));
         Assert.Null(ManuscriptEditor.OutdentBlocked(loaded, Element(loaded, "Tief")));
         Assert.Null(ManuscriptEditor.IndentBlocked(loaded, Element(loaded, "# C")));
-        Assert.Equal("LevelBlockedAboveH1", ManuscriptEditor.OutdentBlocked(loaded, Element(loaded, "# C")));
+        Assert.Equal("OutdentBlockedH1", ManuscriptEditor.OutdentBlocked(loaded, Element(loaded, "# C")));
         Assert.Equal("IndentBlockedNoPreviousHeading", ManuscriptEditor.IndentBlocked(loaded, Element(loaded, "# A")));
         Assert.Null(ManuscriptEditor.OutdentBlocked(loaded, Element(loaded, "## B")));
     }

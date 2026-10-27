@@ -513,7 +513,7 @@ public static class ManuscriptCommands
     /// <see cref="RunAsync"/>: the editor saves its text first, and text it could not save refuses the command; a
     /// read-only book or an open conflict refuses it too. When the headings to place are no longer
     /// <paramref name="expected"/> (the preview's <see cref="ManuscriptEditor.MisplacedHeadings"/>; the save or another
-    /// change came in between), nothing changes and <c>AssistantStale</c> is shown. The page is saved with one
+    /// change came in between), nothing changes and <c>NormalizeOutlineStale</c> is shown. The page is saved with one
     /// <see cref="StructureUndo"/> (<paramref name="undoDescription"/>) for the whole command; the cursor stays; the book
     /// view is taken from the vault again and <see cref="AppState.Notify"/> is raised.
     /// </summary>
@@ -531,7 +531,7 @@ public static class ManuscriptCommands
 
             if (!ManuscriptEditor.MisplacedHeadings(book).SequenceEqual(expected))
             {
-                return (new AdoptMessage("AssistantStale", true), 0);
+                return (new AdoptMessage("NormalizeOutlineStale", true), 0);
             }
 
             if (expected.Count == 0)

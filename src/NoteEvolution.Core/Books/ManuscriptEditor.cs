@@ -258,7 +258,7 @@ public static class ManuscriptEditor
     /// its section (<c>IndentBlockedNoPreviousText</c>; a heading between them would change the reading order), a
     /// detail a sibling detail before it (<c>IndentBlockedNoPreviousDetail</c>). A heading goes under the previous
     /// heading of its level (<see cref="CanIndent"/>; <c>IndentBlockedNoPreviousHeading</c>), but not so deep that its
-    /// subtree falls below H6 (<c>LevelBlockedBelowH6</c>).
+    /// subtree falls below H6 (<c>LevelBlockedBelowH6</c>); an H6 itself cannot go deeper (<c>IndentBlockedH6</c>).
     /// </summary>
     /// <exception cref="ArgumentException">The element is not in the book.</exception>
     public static string? IndentBlocked(Book book, BookElement element)
@@ -278,6 +278,7 @@ public static class ManuscriptEditor
             default:
                 var node = book.FindNode(element.Key)!;
                 return CanIndent(book, element.Key) ? null
+                    : node.Level == OutlineEditor.MaxLevel ? "IndentBlockedH6"
                     : PreviousSameLevel(node) is null ? "IndentBlockedNoPreviousHeading"
                     : "LevelBlockedBelowH6";
         }
@@ -286,8 +287,8 @@ public static class ManuscriptEditor
     /// <summary>
     /// Why the button "Ausrücken" (outdent) cannot move <paramref name="element"/> (Einordnen spec 4), for its tooltip:
     /// the resource key of the German reason, <c>null</c> if it can. A text block cannot (<c>OutdentBlockedTextBlock</c>),
-    /// a detail always can, a heading by the reasons of <see cref="LevelBlocked"/> for its level - 1 (a level-1 heading:
-    /// <c>LevelBlockedAboveH1</c>).
+    /// a detail always can, a heading by the reasons of <see cref="LevelBlocked"/> for its level - 1 (a level-1 heading
+    /// itself cannot: <c>OutdentBlockedH1</c>).
     /// </summary>
     /// <exception cref="ArgumentException">The element is not in the book.</exception>
     public static string? OutdentBlocked(Book book, BookElement element)
@@ -303,7 +304,7 @@ public static class ManuscriptEditor
         }
 
         var level = book.FindNode(element.Key)!.Level;
-        return level == 1 ? "LevelBlockedAboveH1" : LevelBlocked(book, element, level - 1);
+        return level == 1 ? "OutdentBlockedH1" : LevelBlocked(book, element, level - 1);
     }
 
     /// <summary>The text block directly before <paramref name="textBlock"/> in its section; <c>null</c> if an outline node or nothing is.</summary>
@@ -378,6 +379,7 @@ public static class ManuscriptEditor
     /// </summary>
     /// <returns>The key of the new text block, which is that of the detail.</returns>
     /// <exception cref="ArgumentException">Not a detail of the book, or one deeper than level 1 (the editor moves those).</exception>
+    /// <exception cref="InvalidOperationException">The page is read-only; nothing is changed.</exception>
     public static Guid OutdentDetail(Book book, Guid detailKey, DateTimeOffset now)
     {
         var element = BookElements.Find(book, detailKey) is { Kind: ElementKind.Detail } found
@@ -391,6 +393,11 @@ public static class ManuscriptEditor
         }
 
         var page = book.Page;
+        if (page.IsReadOnly)
+        {
+            throw new InvalidOperationException("The page is read-only.");
+        }
+
         var following = textBlock.Children.SkipWhile(child => child != detail).Skip(1).ToList();
 
         // As a text block a first line "# …" would read as a heading: escaped, it shows as it did.
@@ -685,7 +692,7 @@ public static class ManuscriptEditor
     /// <summary>
     /// Places every heading with an indentation warning outside the appendix, in reading order (Einordnen spec 3): a
     /// heading inside a text block becomes a heading of the level of its marks (<see cref="ToHeading"/>), or of its
-    /// section's level + 1 (at most H6) where that level is above its section; every other heading keeps its level and
+    /// section's level where that level is above its section, and then placed by its own level (<see cref="SetHeadingLevel"/>); every other heading keeps its level and
     /// is placed by it (<see cref="SetHeadingLevel"/>). A heading that is no longer warned when its turn comes (a
     /// sub-point of a converted one, which became a text block, or a later heading in the same text block, which that
     /// conversion placed and which counts with it) is skipped, as are those of <see cref="UnplaceableHeadings"/>. Afterwards the book's text has no indentation warnings but those. All or
@@ -738,17 +745,25 @@ public static class ManuscriptEditor
             var element = BookElements.Find(current, key)!;
             // A warned block inside a text block starts with 1–6 marks and a space (Book reads it so).
             var level = BlockOf(current, element).Content.TakeWhile(c => c == '#').Count();
+            // Above its section's level the heading is made at that level (its section's, which it may take) and then
+            // set to its own, which places it out of the section where its marks put it (the reading order stays).
+            var ownLevel = level;
             switch (LevelBlocked(current, element, level))
             {
                 case "LevelBlockedAboveSection":
-                    level = Math.Min(BookElements.TextBlockOf(current, element)!.Section.Level + 1, OutlineEditor.MaxLevel);
+                    level = BookElements.TextBlockOf(current, element)!.Section.Level;
                     break;
                 case not null:
                     continue;
             }
 
             var alongWith = new List<Guid>();
-            ToHeadingPlacing(current, key, level, now, alongWith);
+            var made = ToHeadingPlacing(current, key, level, now, alongWith);
+            if (ownLevel != level)
+            {
+                SetHeadingLevel(Book.Load(book.Page), made, ownLevel);
+            }
+
             placed.Add(key);
             placed.AddRange(alongWith);
         }

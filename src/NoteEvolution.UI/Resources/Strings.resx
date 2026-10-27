@@ -1853,6 +1853,12 @@
   <data name="IndentBlockedNoPreviousHeading" xml:space="preserve">
     <value>Davor steht keine Überschrift dieser Ebene.</value>
   </data>
+  <data name="OutdentBlockedH1" xml:space="preserve">
+    <value>Eine H1 kann nicht weiter ausgerückt werden.</value>
+  </data>
+  <data name="IndentBlockedH6" xml:space="preserve">
+    <value>Eine H6 kann nicht weiter eingerückt werden.</value>
+  </data>
   <data name="OutdentBlockedTextBlock" xml:space="preserve">
     <value>Ein Textblock steht schon auf der Ebene seines Abschnitts.</value>
   </data>
@@ -1879,6 +1885,12 @@
   </data>
   <data name="NormalizeUnplaceable" xml:space="preserve">
     <value>Diese Überschriften bleiben, wie sie sind, weil ihr Titel einen Verweis enthält:</value>
+  </data>
+  <data name="NormalizeOnlyUnplaceable" xml:space="preserve">
+    <value>Diese Überschriften können nicht eingeordnet werden (Verweis im Titel):</value>
+  </data>
+  <data name="NormalizeOutlineStale" xml:space="preserve">
+    <value>Die Gliederung hat sich geändert; es wurde nichts eingeordnet. Bitte erneut öffnen.</value>
   </data>
   <data name="NormalizeRun" xml:space="preserve">
     <value>Einordnen</value>

@@ -1,6 +1,8 @@
 using Bunit;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Localization;
+using NoteEvolution.Core.Books;
+using NoteEvolution.Core.Format;
 using NoteEvolution.TestSupport;
 using NoteEvolution.UI.Components.Dialogs;
 using NoteEvolution.UI.Resources;
@@ -113,4 +115,67 @@ public class NormalizeOutlineTests : UiTestContext
         Assert.Equal(text.Replace("\t- # Zwei\n", "- # Zwei\n"), vault.Read(BookPath));
         Assert.Equal(Text("NormalizeDoneOne"), cut.Find(".ne-normalize-done").TextContent);
     }
+
+    [Fact]
+    public async Task Normalize_OnlyUnplaceableLeft_NamedInsteadOfAlreadyOrdered()
+    {
+        // Final review: a book with nothing but a heading that cannot be placed is not "schon geordnet".
+        const string id = "11111111-1111-4111-8111-111111111111";
+        const string text =
+            "title:: Alpha\ntype:: book\n\n" +
+            "- # Eins\n" +
+            "\t- Ziel\n" +
+            $"\t  id:: {id}\n" +
+            "\t\t- ## Mit ((" + id + "))\n";
+        using var vault = TestVault.Create((BookPath, text));
+        await OpenSessionAsync(vault);
+
+        var cut = Render<NormalizeOutlineDialog>();
+
+        Assert.Equal(Text("NormalizeOnlyUnplaceable"), cut.Find(".ne-normalize-unplaceable-only").TextContent);
+        Assert.Equal([$"## Mit (({id}))"], cut.FindAll(".ne-normalize-item").Select(item => item.TextContent));
+        Assert.Empty(cut.FindAll(".ne-normalize-none"));
+        Assert.Empty(cut.FindAll(".ne-normalize-run"));
+        Assert.Empty(cut.FindAll(".ne-normalize-count"));
+    }
+
+    [Fact]
+    public async Task Normalize_ReadOnlyBook_ShowsReadOnlyNoticeNotAlreadyOrdered()
+    {
+        // An unclosed code fence makes the book read-only; the preview lists nothing there, which is no "geordnet".
+        using var vault = TestVault.Create((BookPath, BookText + "- ```\n  offen\n"));
+        await OpenSessionAsync(vault);
+
+        var cut = Render<NormalizeOutlineDialog>();
+
+        Assert.Equal(Text("EditorReadOnly"), cut.Find(".ne-normalize-readonly").TextContent);
+        Assert.Empty(cut.FindAll(".ne-normalize-none"));
+        Assert.Empty(cut.FindAll(".ne-normalize-run"));
+        Assert.Empty(cut.FindAll(".ne-normalize-list"));
+    }
+
+    [Fact]
+    public async Task Normalize_ListChangedBeforeRun_RefusedWithOwnMessage_NothingChanged()
+    {
+        using var vault = TestVault.Create((BookPath, BookText));
+        var session = await OpenSessionAsync(vault);
+        var cut = Render<NormalizeOutlineDialog>();
+        Assert.Equal(2, cut.FindAll(".ne-normalize-item").Count);
+
+        // Something else places one of the two headings after the preview was made.
+        var changed = session.Vault.FindBook(State.CurrentBook!.LinkName)!;
+        var zwei = changed.Page.AllBlocks().Single(b => b.Content == "# Zwei").Key;
+        ManuscriptEditor.SetHeadingLevel(changed, zwei, 1);
+        var before = Serialize(changed);
+
+        await cut.InvokeAsync(() => cut.Find(".ne-normalize-run").Click());
+
+        Assert.Equal(Text("NormalizeOutlineStale"), cut.Find(".ne-dialog-error").TextContent);
+        Assert.NotEqual(Text("AssistantStale"), cut.Find(".ne-dialog-error").TextContent);
+        Assert.Equal(before, Serialize(session.Vault.FindBook(State.CurrentBook!.LinkName)!));
+        Assert.Null(session.Undo.NextDescription);
+        Assert.Empty(cut.FindAll(".ne-normalize-done"));
+    }
+
+    private static string Serialize(Book book) => System.Text.Encoding.UTF8.GetString(PageSerializer.Serialize(book.Page));
 }

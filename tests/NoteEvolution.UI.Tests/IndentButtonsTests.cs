@@ -177,9 +177,11 @@ public class IndentButtonsTests : UiTestContext
             ("Punkt B", null, null),
 
             // Headings: no previous heading of the level, H1 at the top, an H6 sub-heading at the bottom of the subtree.
-            ("# Eins", "LevelBlockedAboveH1", "IndentBlockedNoPreviousHeading"),
-            ("# Zwei", "LevelBlockedAboveH1", null),
-            ("# Drei", "LevelBlockedAboveH1", "LevelBlockedBelowH6"),
+            ("# Eins", "OutdentBlockedH1", "IndentBlockedNoPreviousHeading"),
+            ("# Zwei", "OutdentBlockedH1", null),
+            ("# Drei", "OutdentBlockedH1", "LevelBlockedBelowH6"),
+            // The H6 itself and the H1 itself get their own reasons; the sub-heading keys stay for the other cases.
+            ("###### D6", null, "IndentBlockedH6"),
             ("## Eins-A", null, "IndentBlockedNoPreviousHeading"),
         ];
 
@@ -299,5 +301,73 @@ public class IndentButtonsTests : UiTestContext
         Assert.Equal(Text("UndoLevel"), State.Session.Undo.NextDescription);
 
         UndoAndCheck(before);
+    }
+
+    // Final review, finding 6. A sub-point typed but not yet saved (the debounce has not run): the command first flushes
+    // the editor, reads the cursor's block from the book as saved, then acts. The cursor keeps the block's key through the
+    // save, so the command acts on the element the user is in, with the typed text in the file.
+
+    [Fact]
+    public async Task ShiftTab_DetailWithPendingText_FlushesThenOutdentsThatDetail()
+    {
+        var cut = await RenderAsync();
+        await MoveToAsync(cut, "Punkt A");
+        await cut.InvokeAsync(() => Editor.Callbacks!.OnDocumentChanged(Editor.Json.Replace("Punkt A", "Punkt A, neu")));
+        Assert.Equal(BookText, _vault.Read(BookPath));
+
+        await cut.InvokeAsync(() => Editor.Callbacks!.OnSectionCommand(SectionCommand.OutdentDetail));
+
+        // The typed text is saved and the detail it was typed in became a text block of its own, taking its later siblings.
+        Assert.Equal(DetailOutdented.Replace("Punkt A", "Punkt A, neu"), _vault.Read(BookPath));
+        Assert.Empty(Editor.DepthShifts);
+        Assert.Empty(cut.FindAll(".ne-editor-error"));
+    }
+
+    [Fact]
+    public async Task Tab_DetailWithPendingText_FlushesThenShiftsThatDetailInTheEditor()
+    {
+        var cut = await RenderAsync();
+        await MoveToAsync(cut, "Punkt B");
+        await cut.InvokeAsync(() => Editor.Callbacks!.OnDocumentChanged(System.Text.RegularExpressions.Regex.Replace(Editor.Json, "Punkt B(?!1)", "Punkt B, neu")));
+
+        await cut.InvokeAsync(() => Editor.Callbacks!.OnSectionCommand(SectionCommand.IndentText));
+
+        // Deeper is the editor's business (it saves the result like typed text); the pending text was saved before.
+        // The save stamps the edited block (updated::), so the text is looked up, not compared as a whole.
+        Assert.Contains("\t\t- Punkt B, neu\n", _vault.Read(BookPath));
+        Assert.Equal([1], Editor.DepthShifts);
+    }
+
+    [Fact]
+    public async Task Tab_TextBlockWithPendingText_FlushesThenIndentsThatTextBlock()
+    {
+        var cut = await RenderAsync();
+        await MoveToAsync(cut, "Zweiter Text");
+        await cut.InvokeAsync(() => Editor.Callbacks!.OnDocumentChanged(Editor.Json.Replace("Zweiter Text", "Zweiter Text, neu")));
+
+        await cut.InvokeAsync(() => Editor.Callbacks!.OnSectionCommand(SectionCommand.IndentText));
+
+        var file = _vault.Read(BookPath);
+        Assert.Contains("\t\t- Zweiter Text, neu\n", file);
+        Assert.DoesNotContain("\n\t- Zweiter Text", file);
+        Assert.Empty(Editor.DepthShifts);
+    }
+
+    [Fact]
+    public async Task TabAndShiftTab_CursorOnBlockTheBookDoesNotKnow_HarmlessNoOp()
+    {
+        // A sub-point that is typed and whose cursor was reported, but which the saved book does not hold (the save did not
+        // bring it in): both commands change nothing and do not move the editor either.
+        var cut = await RenderAsync();
+        var before = File.ReadAllBytes(FilePath);
+        await cut.InvokeAsync(() => Editor.Callbacks!.OnCursorChanged(new CursorInfo(ElementKind.Detail, Guid.NewGuid(), KeyOf("Erster Text"), 0)));
+
+        await cut.InvokeAsync(() => Editor.Callbacks!.OnSectionCommand(SectionCommand.IndentText));
+        await cut.InvokeAsync(() => Editor.Callbacks!.OnSectionCommand(SectionCommand.OutdentDetail));
+
+        Assert.Equal(before, File.ReadAllBytes(FilePath));
+        Assert.Empty(Editor.DepthShifts);
+        Assert.Null(State.Session!.Undo.NextDescription);
+        Assert.Empty(cut.FindAll(".ne-editor-error"));
     }
 }

@@ -266,25 +266,56 @@ public partial class PlaceByLevelTests
         Assert.Empty(ManuscriptEditor.MisplacedHeadings(after));
         Assert.EndsWith(Glossary, Serialize(after));
 
-        // "Zwei" beside "Eins" with what followed it; "Hoch" (H1 is above its H2 section) an H3 in "Zwei-A";
-        // review focus 2: "Drinnen" under a sub-point is an H2 after its text block, its sub-points text blocks under it.
+        // "Zwei" beside "Eins" with what followed it; "Hoch" (an H1 inside the H2 section "Zwei-A") stays an H1, as its
+        // marks say, after "Zwei" (final review: no more H3); what followed it ("Text nach", "Drinnen") reads under it by
+        // Markdown meaning; review focus 2: "Drinnen" under a sub-point is an H2 after its text block, its sub-points
+        // text blocks under it.
         var zwei = after.Root.Children.Single(n => n.Title == "Zwei");
         Assert.Equal(1, zwei.Level);
-        Assert.Equal(["Eins", "Zwei", "Glossar"], after.Root.Children.Select(n => n.Title));
-        var hoch = after.Root.Children.SelectMany(Descendants).Single(n => n.Title == "Hoch");
-        Assert.Equal((3, "Zwei-A"), (hoch.Level, hoch.Parent!.Title));
+        Assert.Equal(["Eins", "Zwei", "Hoch", "Glossar"], after.Root.Children.Select(n => n.Title));
+        var hoch = after.Root.Children.Single(n => n.Title == "Hoch");
+        Assert.Equal(1, hoch.Level);
         var drinnen = after.Root.Children.SelectMany(Descendants).Single(n => n.Title == "Drinnen");
-        Assert.Equal((2, "Zwei"), (drinnen.Level, drinnen.Parent!.Title));
+        Assert.Equal((2, "Hoch"), (drinnen.Level, drinnen.Parent!.Title));
         var punkt = drinnen.TextBlocks.Single();
         Assert.Equal("Punkt x", punkt.Text);
         Assert.Equal(["Punkt y"], punkt.Paragraphs.Select(p => p.Text));
         Assert.Equal(
-            ["Text zwei", "Zwei-A", "Text nach", "Drinnen"],
+            ["Text zwei", "Zwei-A"],
             zwei.Items.Select(item => item is TextBlock t ? t.Text : ((OutlineNode)item).Title));
+        Assert.Equal(
+            ["Text nach", "Drinnen"],
+            hoch.Items.Select(item => item is TextBlock t ? t.Text : ((OutlineNode)item).Title));
 
         // One step undoes the whole command.
         snapshot.RestoreInto(book.Page);
         Assert.Equal(text, Serialize(book));
+    }
+
+    [Fact]
+    public void Normalize_HeadingAboveItsSection_KeepsItsOwnLevel_ReadingOrderStays()
+    {
+        // Final review: "# Hoch" inside the H2 section "B" stays an H1 (its marks), after the H1 "Eins"; it is not
+        // turned into an H3. "Nach" (after it in reading order) follows it by Markdown meaning.
+        const string text =
+            Head +
+            "- # Eins\n" +
+            "\t- ## B\n" +
+            "\t\t- Text b\n" +
+            "\t\t\t- # Hoch\n" +
+            "\t\t- Nach\n";
+        var book = Load(text);
+        var before = ReadingOrder(book);
+        Assert.Equal([KeyOf(book, "# Hoch")], ManuscriptEditor.MisplacedHeadings(book));
+        Assert.Equal(1, ManuscriptEditor.NormalizeOutline(book, Now));
+
+        var after = Book.Load(book.Page);
+        Assert.Equal(before, ReadingOrder(after));
+        Assert.Equal(["Eins", "Hoch"], after.Root.Children.Select(n => n.Title));
+        Assert.Equal(1, after.Root.Children.Last().Level);
+        Assert.Equal(["B"], after.Root.Children.First().Children.Select(n => n.Title));
+        Assert.Equal(["Nach"], after.Root.Children.Last().TextBlocks.Select(t => t.Text));
+        Assert.Empty(after.Warnings);
     }
 
     [Fact]

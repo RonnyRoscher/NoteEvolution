@@ -19,9 +19,17 @@
     {
         <p class="ne-normalize-no-book">@L["NormalizeNoBook"]</p>
     }
-    else if (_misplaced.Count == 0)
+    else if (_book.Page.IsReadOnly)
+    {
+        <p class="ne-normalize-readonly" role="status">@L["EditorReadOnly"]</p>
+    }
+    else if (_misplaced.Count == 0 && _unplaceable.Count == 0)
     {
         <p class="ne-normalize-none">@L["NormalizeNone"]</p>
+    }
+    else if (_misplaced.Count == 0)
+    {
+        <p class="ne-normalize-unplaceable-only">@L["NormalizeOnlyUnplaceable"]</p>
     }
     else
     {
@@ -36,7 +44,10 @@
     }
     @if (_book is not null && _unplaceable.Count > 0)
     {
-        <p class="ne-normalize-unplaceable">@L["NormalizeUnplaceable"]</p>
+        @if (_misplaced.Count > 0)
+        {
+            <p class="ne-normalize-unplaceable">@L["NormalizeUnplaceable"]</p>
+        }
         <ul class="ne-normalize-list ne-normalize-unplaceable-list">
             @foreach (var key in _unplaceable)
             {
