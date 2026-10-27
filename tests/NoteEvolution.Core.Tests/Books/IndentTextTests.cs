@@ -27,6 +27,8 @@ public class IndentTextTests
     private static BookElement Element(Book book, string content) =>
         BookElements.Find(book, KeyOf(book, content))!;
 
+    private static string NoRefs(string content) => System.Text.RegularExpressions.Regex.Replace(content, @"\(\([0-9a-f-]{36}\)\)", "(())");
+
     private static List<string> Order(Book book) => [.. book.Page.AllBlocks().Select(b => b.Content)];
 
     [Fact]
@@ -50,7 +52,9 @@ public class IndentTextTests
 
         var after = Book.Load(loaded.Page);
         Assert.Equal(KeyOf(loaded, "Zwei"), key);
-        Assert.Equal(order, Order(after));
+
+        // The reference to the moved block now names the receiving one; the texts are otherwise as they were.
+        Assert.Equal(order.Select(NoRefs), Order(after).Select(NoRefs));
         Assert.Equal(new BookElement(ElementKind.Detail, key), BookElements.Find(after, key));
         var eins = Assert.Single(after.Root.AllTextBlocks(), t => t.Text == "Eins");
         Assert.Equal(["Eins-a", "Zwei", "Zwei-a"], eins.Paragraphs.Select(p => p.Text));
@@ -67,18 +71,50 @@ public class IndentTextTests
     }
 
     [Fact]
-    public void IndentTextBlock_LinkedBlock_CrossReferenceToItLosesItsTarget()
+    public void IndentTextBlock_LinkedBlock_CrossReferenceRetargetedToReceivingBlock()
     {
-        // Pins how the book treats an id on a detail: CrossRefIndex knows headings and text blocks as targets only, so a
-        // cross reference ((id)) to an indented linked text block is reported missing (Review Focus 4, see the report).
         var loaded = Load(Head + "- # Kapitel\n\t- Eins\n\t- Zwei\n" + $"\t  id:: {Block1}\n" + $"\t- Drei (({Block1}))\n");
         Assert.Empty(CrossRefIndex.Of(loaded).Missing);
 
         ManuscriptEditor.IndentTextBlock(loaded, KeyOf(loaded, "Zwei"), Now);
 
-        var index = CrossRefIndex.Of(Book.Load(loaded.Page));
-        Assert.Null(index.Target(Guid.Parse(Block1)));
-        Assert.Single(index.Missing);
+        var after = Book.Load(loaded.Page);
+        var eins = Assert.Single(after.Root.AllTextBlocks(), t => t.Text == "Eins");
+        var newId = Assert.IsType<Guid>(eins.Block.Id);
+        Assert.NotEqual(Guid.Parse(Block1), newId);
+        var index = CrossRefIndex.Of(after);
+        Assert.Empty(index.Missing);
+        Assert.Equal(eins.Key, index.Target(newId)!.TextBlock!.Key);
+        Assert.Contains($"(({newId}))", loaded.Page.AllBlocks().Single(b => b.Content.StartsWith("Drei")).Content);
+
+        // The detail keeps its own id (the notes' used-in entries name it).
+        Assert.Equal(Guid.Parse(Block1), loaded.Page.AllBlocks().Single(b => b.Content == "Zwei").Id);
+    }
+
+    [Fact]
+    public void IndentTextBlock_ReceivingBlockWithId_KeepsIt_UnreferencedBlockGetsNoId()
+    {
+        var loaded = Load(
+            Head + "- # K\n\t- Eins\n" + $"\t  id:: {Block2}\n" + "\t- Zwei\n" + $"\t  id:: {Block1}\n" + $"\t- Drei (({Block1}))\n");
+        ManuscriptEditor.IndentTextBlock(loaded, KeyOf(loaded, "Zwei"), Now);
+        Assert.Equal(Guid.Parse(Block2), loaded.Page.AllBlocks().Single(b => b.Content == "Eins").Id);
+        Assert.Contains($"(({Block2}))", loaded.Page.AllBlocks().Single(b => b.Content.StartsWith("Drei")).Content);
+
+        var plain = Load(Head + "- # K\n\t- Eins\n\t- Zwei\n" + $"\t  id:: {Block1}\n");
+        ManuscriptEditor.IndentTextBlock(plain, KeyOf(plain, "Zwei"), Now);
+        Assert.Null(plain.Page.AllBlocks().Single(b => b.Content == "Eins").Id);
+    }
+
+    [Fact]
+    public void IndentTextBlock_ReadOnlyPage_RefusedBeforeAnythingChanges()
+    {
+        var loaded = Load(Head + "- # K\n\t- Eins\n\t- Zwei\n\t  ```\n");
+        Assert.True(loaded.Page.IsReadOnly);
+        var key = loaded.Page.AllBlocks().Single(b => b.Content.StartsWith("Zwei")).Key;
+        var before = loaded.Page.AllBlocks().Select(b => (b.Key, b.Parent?.Key, b.Content)).ToList();
+
+        Assert.Throws<InvalidOperationException>(() => ManuscriptEditor.IndentTextBlock(loaded, key, Now));
+        Assert.Equal(before, loaded.Page.AllBlocks().Select(b => (b.Key, b.Parent?.Key, b.Content)).ToList());
     }
 
     [Fact]

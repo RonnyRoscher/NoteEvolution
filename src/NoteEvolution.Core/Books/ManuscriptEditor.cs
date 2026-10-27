@@ -323,12 +323,14 @@ public static class ManuscriptEditor
     /// Makes the text block <paramref name="textBlockKey"/> the last sub-point (detail, level 1) of the text block
     /// directly before it in its section (Einordnen spec 4); its own details stay its details, so the reading order
     /// stays. The block keeps everything it has (<c>id::</c>, <c>source::</c>, status, dates); the receiving text block
-    /// gets <c>updated::</c>.
+    /// gets <c>updated::</c>. References <c>((id))</c> to the block in the page's texts are retargeted to the receiving
+    /// text block, which gets an <c>id::</c> if it has none (a detail is no cross-reference target).
     /// </summary>
     /// <returns>The key of the new detail, which is that of the text block.</returns>
     /// <exception cref="ArgumentException">
     /// Not a text block of the book, or <see cref="IndentBlocked"/> refuses it (no text block before it).
     /// </exception>
+    /// <exception cref="InvalidOperationException">The page is read-only; nothing is changed.</exception>
     public static Guid IndentTextBlock(Book book, Guid textBlockKey, DateTimeOffset now)
     {
         var element = BookElements.Find(book, textBlockKey) is { Kind: ElementKind.TextBlock } found
@@ -339,10 +341,31 @@ public static class ManuscriptEditor
             throw new ArgumentException(reason, nameof(textBlockKey));
         }
 
+        var page = book.Page;
+        if (page.IsReadOnly)
+        {
+            throw new InvalidOperationException("The page is read-only.");
+        }
+
         var textBlock = book.FindTextBlock(textBlockKey)!;
         var previous = PreviousTextBlock(textBlock)!;
-        book.Page.MoveBlock(textBlock.Block, previous.Block, previous.Block.Children.Count);
+        page.MoveBlock(textBlock.Block, previous.Block, previous.Block.Children.Count);
         BlockDates.StampChanged(previous.Block, now);
+
+        // A detail is no reference target: cross references to the block now point to the text block it went into
+        // (which gets an id for that), as after "Zusammenfügen". Its used-in entries keep naming its own id.
+        if (textBlock.Block.Id is { } id && page.AllBlocks().Any(b => BlockRefs.Find(b.Content).Any(r => r.Id == id)))
+        {
+            var map = new Dictionary<Guid, Guid> { [id] = previous.Block.EnsureId() };
+            foreach (var block in page.AllBlocks().ToList())
+            {
+                if (BlockRefs.Find(block.Content).Any(r => map.ContainsKey(r.Id)))
+                {
+                    block.SetContent(BlockRefs.Retarget(block.Content, map));
+                }
+            }
+        }
+
         return textBlockKey;
     }
 
