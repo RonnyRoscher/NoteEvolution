@@ -612,9 +612,6 @@
   <data name="AdoptAsSubheadingTitle" xml:space="preserve">
     <value>Als neue Überschrift eine Ebene tiefer im aktuellen Abschnitt einfügen, vor dessen Unterabschnitten; die Unterpunkte werden Textblöcke</value>
   </data>
-  <data name="NoteAdoptMore" xml:space="preserve">
-    <value>Weitere Arten zu übernehmen</value>
-  </data>
   <data name="NoteWhereTo" xml:space="preserve">
     <value>Wohin damit?</value>
   </data>
@@ -1944,5 +1941,8 @@
   </data>
   <data name="KeysNotes2" xml:space="preserve">
     <value>Bereich um den aktiven Block erweitern / verkleinern</value>
+  </data>
+  <data name="NoteDragTitle" xml:space="preserve">
+    <value>Ins Buch ziehen</value>
   </data>
 </root>

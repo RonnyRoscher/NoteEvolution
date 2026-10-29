@@ -406,7 +406,7 @@ public class WhereToTests : UiTestContext
                 gate.Wait(TimeSpan.FromSeconds(10));
             };
             cut.Find(".ne-note-text").Click();
-        cut.Find(".ne-note-whereto").Click();
+            cut.Find(".ne-note-whereto").Click();
             Assert.True(entered.Wait(TimeSpan.FromSeconds(10)));
             cut.Render(p => p.Add(c => c.Note, Note(session, OtherText)));
             Assert.Empty(cut.FindAll(".ne-note-whereto-busy"));

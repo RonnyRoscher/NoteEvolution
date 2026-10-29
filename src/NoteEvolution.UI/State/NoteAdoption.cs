@@ -250,6 +250,8 @@ public static class NoteAdoption
             }
         }
 
+        // The note is used now: the notes pane reads its notes again (with "Verwendete ausblenden" it leaves them).
+        state.NotifyNotesChanged();
         return (noteUpdatePending ? new AdoptMessage("NoteUpdatePending", false) : null, reveal);
     }
 }

@@ -851,7 +851,6 @@ html, body {
     background: var(--bg-raised);
     border: 1px solid var(--border);
     border-radius: 6px;
-    cursor: grab;
 }
 
 /* A card a source just jumped to; the journal tab removes the class after two seconds. */
@@ -1113,6 +1112,14 @@ html, body {
 
 .ne-note-bar-buttons button {
     white-space: nowrap;
+}
+
+/* The handle that drags the range head into the book. */
+.ne-note-drag {
+    padding: 0 4px;
+    color: var(--fg-muted);
+    cursor: grab;
+    user-select: none;
 }
 
 .ne-note-bar-label {

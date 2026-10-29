@@ -25,6 +25,10 @@
 }
 <div class="ne-note-bar" role="toolbar" aria-label="@L["NoteBarLabel"]">
     <div class="ne-note-bar-buttons">
+        @* The handle drags the range head into the book (the card itself is not draggable, so its text can be marked). *@
+        <span class="ne-note-drag" draggable="true" role="img" title="@L["NoteDragTitle"]" aria-label="@L["NoteDragTitle"]"
+              data-note-key="@head.Key" @ondragstart="() => State.DraggedNoteKey = head.Key"
+              @ondragend="() => State.DraggedNoteKey = null">⠿</span>
         @* Moving the range changes no file, so it stays possible while adopting is not. *@
         <button type="button" class="ne-note-range-up" title="@(level < max ? L["NoteRangeUpTitle"] : L["NoteRangeUpLimit"])"
                 disabled="@(level >= max)" @onclick="() => State.ChangeNoteRange(1)">@L["RangeUp"]</button>
@@ -222,27 +226,36 @@
             CloseWhereTo(notifyLater: true);
         }
 
-        _shownFor = State.ActiveNote;
+        // The bar counts as showing the selection it was rendered for (see Dispose).
+        var selection = State.ActiveNote;
+        if (selection != _shownFor)
+        {
+            ReleaseSelection();
+            if (selection is not null)
+            {
+                State.ShowNoteBar(selection);
+            }
+
+            _shownFor = selection;
+        }
     }
 
     public void Dispose()
     {
         _disposed = true;
 
-        // The bar goes while its selection is still the active one: its block is no longer shown (a used block with
-        // "Verwendete ausblenden", a day hidden by its marks, a card closed), so the selection goes too (Review Focus 3).
-        // A new range or another active block shows a bar of its own and changed the selection before.
-        if (_shownFor is { } shown && State.ActiveNote == shown)
-        {
-            ClearAfterRendering(shown);
-        }
+        ReleaseSelection();
 
-        // The bar is gone with its list; the tab that showed its card no longer keeps a place for it.
+        // The bar is gone with its list; the tab that showed its card no longer keeps a place for it (told after this
+        // rendering, as when the list closes, so a frozen Relevant list is computed again now and not at a later moment).
         if (_whereTo is not null)
         {
             CancelCheck(_whereTo);
             _whereTo = null;
-            State.CloseWhereTo(_whereNoteKey);
+            if (State.CloseWhereTo(_whereNoteKey))
+            {
+                NotifyLater();
+            }
         }
 
         _tick?.Dispose();
@@ -255,20 +268,47 @@
     }
 
     /// <summary>
-    /// Clears <paramref name="shown"/> once the rendering that removed the bar is over (the change renders the pane again),
-    /// unless another selection was made meanwhile.
+    /// The bar no longer shows the selection it was rendered for. If no other bar shows it, its block is no longer shown
+    /// (a used block with "Verwendete ausblenden", a day hidden by its marks, a card closed): once the rendering that
+    /// removed the bar is over, the selection goes too, unless a bar shows it again by then (a card shown at another
+    /// place, e.g. in the other group of "Relevant") or another selection was made (Review Focus 3).
     /// </summary>
-    private void ClearAfterRendering(NoteSelection shown)
+    private void ReleaseSelection()
+    {
+        if (_shownFor is not { } shown)
+        {
+            return;
+        }
+
+        _shownFor = null;
+        if (!State.HideNoteBar(shown))
+        {
+            return;
+        }
+
+        try
+        {
+            _ = InvokeAsync(async () =>
+            {
+                await Task.Yield();
+                State.ClearNoteSelectionIfNotShown(shown);
+            });
+        }
+        catch (ObjectDisposedException)
+        {
+            // The window is closing.
+        }
+    }
+
+    /// <summary>Raises <see cref="AppState.Notify"/> once the current rendering is over.</summary>
+    private void NotifyLater()
     {
         try
         {
             _ = InvokeAsync(async () =>
             {
                 await Task.Yield();
-                if (State.ActiveNote == shown)
-                {
-                    State.ClearNoteSelection();
-                }
+                State.Notify();
             });
         }
         catch (ObjectDisposedException)
@@ -361,6 +401,12 @@
         if (!result.Saved)
         {
             _markRefresh++;
+        }
+
+        // The page was read from its file again: the tabs read their notes again, as the day card's journal does.
+        if (result.Reloaded)
+        {
+            State.NotifyNotesChanged();
         }
 
         State.Notify();

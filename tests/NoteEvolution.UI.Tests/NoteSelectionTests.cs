@@ -160,6 +160,41 @@ public class NoteSelectionTests : UiTestContext
     }
 
     [Fact]
+    public async Task NoteBars_SelectionGoesOnlyWhenNoBarShowsIt()
+    {
+        await OpenSessionAsync(_vault);
+        State.SelectNoteBlock(NoteKey("Haupt"), NoteKey("Unter A"));
+        var selection = State.ActiveNote!;
+
+        // A card shown at another place (e.g. the other group of "Relevant"): the new bar comes, the old one goes.
+        State.ShowNoteBar(selection);
+        State.ShowNoteBar(selection);
+        Assert.False(State.HideNoteBar(selection));
+        State.ClearNoteSelectionIfNotShown(selection);
+        Assert.Equal(selection, State.ActiveNote);
+
+        // The last bar goes: the block is no longer shown.
+        Assert.True(State.HideNoteBar(selection));
+        State.ClearNoteSelectionIfNotShown(selection);
+        Assert.Null(State.ActiveNote);
+    }
+
+    [Fact]
+    public async Task NoteBars_AnotherSelectionMeanwhile_IsKept()
+    {
+        await OpenSessionAsync(_vault);
+        State.SelectNoteBlock(NoteKey("Haupt"), NoteKey("Unter A"));
+        var old = State.ActiveNote!;
+        State.ShowNoteBar(old);
+        State.ChangeNoteRange(1);
+
+        Assert.True(State.HideNoteBar(old));
+        State.ClearNoteSelectionIfNotShown(old);
+
+        Assert.Equal(1, State.ActiveNote!.Level);
+    }
+
+    [Fact]
     public async Task Adopt_WithoutChildren_BookGetsOnlyTheBlockText_NoteStaysUnusedBelow()
     {
         await OpenSessionAsync(_vault);

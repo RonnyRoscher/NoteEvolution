@@ -59,7 +59,7 @@ else
                         <button type="button" class="ne-note-focused-close" title="@L["NoteFocusedClose"]"
                                 aria-label="@L["NoteFocusedClose"]" @onclick="CloseFocused">×</button>
                     </div>
-                    <NoteCard @key="focused.Key" Note="focused" />
+                    <NoteCard @key="focused.Key" Note="focused" Focused="true" />
                 </div>
             }
             @if (_tab == Tab.Relevant)
@@ -113,6 +113,7 @@ else
         State.Changed += OnStateChanged;
         State.NoteRevealRequested += OnNoteRevealRequested;
         State.NotesTabRequested += OnNotesTabRequested;
+        State.NotesChanged += OnNotesChanged;
         TrackSession();
     }
 
@@ -121,6 +122,7 @@ else
         State.Changed -= OnStateChanged;
         State.NoteRevealRequested -= OnNoteRevealRequested;
         State.NotesTabRequested -= OnNotesTabRequested;
+        State.NotesChanged -= OnNotesChanged;
         Unsubscribe();
     }
 
@@ -212,6 +214,9 @@ else
             State.ChangeNoteRange(-1);
         }
     }
+
+    /// <summary>The usages of notes changed (an adoption): the tabs read their notes again, as after a page change.</summary>
+    private void OnNotesChanged() => OnPagesChanged("");
 
     private void OnPagesChanged(string path) => _ = InvokeAsync(() =>
     {

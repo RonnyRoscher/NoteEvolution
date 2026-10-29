@@ -316,12 +316,62 @@ public sealed class AppState
     public Guid? FocusedNoteKey { get; set; }
 
     /// <summary>
-    /// The note card being dragged from the notes pane; <c>null</c> when no drag is running. Blazor cannot fill a
-    /// drag's <c>dataTransfer</c> from C#, and the editor (the only JavaScript component) must not be told by
-    /// script, so the card records its note here on <c>dragstart</c> and clears it on <c>dragend</c>; the editor's
-    /// drop handler reads it (the card also carries the key in its <c>data-note-key</c> attribute).
+    /// The note block being dragged from the notes pane (the head of the active block's range, by the handle in its
+    /// bar); <c>null</c> when no drag is running. Blazor cannot fill a drag's <c>dataTransfer</c> from C#, and the
+    /// editor (the only JavaScript component) must not be told by script, so the handle records the block here on
+    /// <c>dragstart</c> and clears it on <c>dragend</c>; the editor's drop handler reads it (the handle also carries
+    /// the key in its <c>data-note-key</c> attribute).
     /// </summary>
     public Guid? DraggedNoteKey { get; set; }
+
+    /// <summary>
+    /// Raised when the usages of notes changed outside the session's page events (an adoption, a note page read again
+    /// after a failed write): the notes pane reads its notes again, so a used note leaves a list that hides used ones.
+    /// </summary>
+    public event Action? NotesChanged;
+
+    /// <summary>Raises <see cref="NotesChanged"/>.</summary>
+    public void NotifyNotesChanged() => NotesChanged?.Invoke();
+
+    /// <summary>How many note bars show each selection (see <see cref="ShowNoteBar"/>).</summary>
+    private readonly Dictionary<NoteSelection, int> _noteBars = [];
+
+    /// <summary>A note bar shows <paramref name="selection"/> (it was rendered for it).</summary>
+    public void ShowNoteBar(NoteSelection selection) =>
+        _noteBars[selection] = _noteBars.GetValueOrDefault(selection) + 1;
+
+    /// <summary>
+    /// A note bar no longer shows <paramref name="selection"/>; <c>true</c> if no bar shows it any more. The bar then
+    /// lets the selection go after the rendering (<see cref="ClearNoteSelectionIfNotShown"/>): its block is not shown.
+    /// </summary>
+    public bool HideNoteBar(NoteSelection selection)
+    {
+        if (!_noteBars.TryGetValue(selection, out var count))
+        {
+            return true;
+        }
+
+        if (count > 1)
+        {
+            _noteBars[selection] = count - 1;
+            return false;
+        }
+
+        _noteBars.Remove(selection);
+        return true;
+    }
+
+    /// <summary>
+    /// Clears the selection if it is still <paramref name="selection"/> and no note bar shows it (the block left the
+    /// list, its card was closed); another card that shows it, rendered meanwhile, keeps it.
+    /// </summary>
+    public void ClearNoteSelectionIfNotShown(NoteSelection selection)
+    {
+        if (ActiveNote == selection && !_noteBars.ContainsKey(selection))
+        {
+            ClearNoteSelection();
+        }
+    }
 
     /// <summary>
     /// The note keys of the cards with an open "Wohin damit?" list (package B, spec 3: the list stays open). The tabs
@@ -497,10 +547,12 @@ public sealed class AppState
     /// <summary>
     /// Makes <paramref name="blockKey"/> (the note <paramref name="noteKey"/> shows, or one of its sub-points) the active
     /// note block at level 0 and raises <see cref="Notify"/>; a block that is not in the note clears the selection.
+    /// <paramref name="inFocusedCard"/> says the click was in the card on top of the notes pane, so only that card is
+    /// framed when a list shows the same note too.
     /// </summary>
-    public void SelectNoteBlock(Guid noteKey, Guid blockKey)
+    public void SelectNoteBlock(Guid noteKey, Guid blockKey, bool inFocusedCard = false)
     {
-        var selection = new NoteSelection(noteKey, blockKey, 0);
+        var selection = new NoteSelection(noteKey, blockKey, 0, inFocusedCard);
         if (FindNote(selection) is null)
         {
             ClearNoteSelection();

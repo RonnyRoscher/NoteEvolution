@@ -46,7 +46,7 @@ public sealed class NoteRepository : INoteRepository
 
     public bool Matches(NoteBlock note, NoteFilter filter)
     {
-        if (filter.HideUsed && note.IsUsed) return false;
+        if (filter.HideUsed && note.HiddenWhenUsedHidden) return false;
         if (filter.From is null && filter.To is null) return true;
         return note.Date is { } date
                && (filter.From is not { } from || date >= from)

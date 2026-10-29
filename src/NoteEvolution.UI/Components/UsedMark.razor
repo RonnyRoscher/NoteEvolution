@@ -1,6 +1,7 @@
 @using NoteEvolution.Core.Books
 @using NoteEvolution.Core.Links
 @using NoteEvolution.Core.Model
+@using NoteEvolution.Core.Vaults
 @inject AppState State
 @inject IStringLocalizer<Strings> L
 
@@ -26,19 +27,8 @@
     private static IReadOnlyList<UsedInEntry> UsagesOf(Block block) =>
         block.GetProperty("used-in") is { } value ? UsedInValue.Parse(value) : [];
 
-    /// <summary>The block or one of its ancestors has a <c>used-in::</c> (as <see cref="NoteBlock.IsUsed"/> for a note).</summary>
-    public static bool IsUsed(Block block)
-    {
-        for (var current = block; current is not null; current = current.Parent)
-        {
-            if (!string.IsNullOrWhiteSpace(current.GetProperty("used-in")))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
+    /// <summary>Whether the block is used, by its own usage or one an ancestor passes on (<see cref="NoteBlock.IsUsedBlock"/>).</summary>
+    public static bool IsUsed(Block block) => NoteBlock.IsUsedBlock(block);
 
     /// <summary>
     /// Goes to the place where the block is used: the book of its first <c>used-in::</c> entry with a block reference

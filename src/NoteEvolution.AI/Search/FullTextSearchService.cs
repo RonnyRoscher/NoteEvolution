@@ -124,7 +124,8 @@ public sealed class FullTextSearchService : ISearchService, IDisposable
             metaKey.Value = key;
             metaPage.Value = page;
             metaDate.Value = block.Date is { } date ? DateText(date) : DBNull.Value;
-            metaUsed.Value = block.IsUsed ? 1 : 0;
+            // As the notes pane hides it (a block adopted without its sub-points stays while one of them is shown).
+            metaUsed.Value = block.HiddenWhenUsedHidden ? 1 : 0;
             if (meta.ExecuteNonQuery() == 0) continue;
 
             noteContent.Value = block.Block.Content;

@@ -41,17 +41,45 @@ public sealed class NoteBlock
     public IReadOnlyList<UsedInEntry> Usages =>
         Block.GetProperty("used-in") is { } value ? UsedInValue.Parse(value) : [];
 
-    /// <summary>The block itself or one of its ancestors has a <c>used-in::</c> property.</summary>
-    public bool IsUsed
+    /// <summary>The block is used (see <see cref="IsUsedBlock"/>).</summary>
+    public bool IsUsed => IsUsedBlock(Block);
+
+    /// <summary>"Verwendete ausblenden" leaves the block out (see <see cref="IsHiddenWhenUsedHidden"/>).</summary>
+    public bool HiddenWhenUsedHidden => IsHiddenWhenUsedHidden(Block);
+
+    /// <summary>
+    /// Whether "Verwendete ausblenden" leaves <paramref name="block"/> out (with everything below it): it is used, unless
+    /// it was adopted only without its sub-points (<see cref="UsedInValue.WithoutChildrenKey"/>) and one of them is still
+    /// shown; then it stays, as the head of its unused sub-points.
+    /// </summary>
+    public static bool IsHiddenWhenUsedHidden(Block block) =>
+        IsUsedBlock(block)
+        && !(block.GetProperty(UsedInValue.WithoutChildrenKey) is not null
+             && !string.IsNullOrWhiteSpace(block.GetProperty(UsedInValue.Key))
+             && block.Children.Any(child => !IsHiddenWhenUsedHidden(child)));
+
+    /// <summary>
+    /// Whether <paramref name="block"/> is used: it has a <c>used-in::</c> property itself, or an ancestor has one that
+    /// passes its usage on to its sub-points, which an ancestor adopted only without its sub-points
+    /// (<see cref="UsedInValue.WithoutChildrenKey"/>) does not.
+    /// </summary>
+    public static bool IsUsedBlock(Block block)
     {
-        get
+        if (!string.IsNullOrWhiteSpace(block.GetProperty(UsedInValue.Key)))
         {
-            for (var block = Block; block is not null; block = block.Parent)
-            {
-                if (!string.IsNullOrWhiteSpace(block.GetProperty("used-in"))) return true;
-            }
-            return false;
+            return true;
         }
+
+        for (var ancestor = block.Parent; ancestor is not null; ancestor = ancestor.Parent)
+        {
+            if (!string.IsNullOrWhiteSpace(ancestor.GetProperty(UsedInValue.Key))
+                && ancestor.GetProperty(UsedInValue.WithoutChildrenKey) is null)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static string FirstLine(string content)

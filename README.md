@@ -215,11 +215,13 @@ allein, ohne seine Unterpunkte. Unten am Rahmen steht die Leiste: Bereich ▲/�
 damit?** (nur mit lokaler KI), ✓ und Fortschrittspunkt des Bereichskopfs, bei Journal-Blöcken die Tagesmarken
 „nicht relevant“ und „später“ (dieselben wie an der Tageskarte) und „In Logseq öffnen“. Was nicht geht, ist ausgegraut
 und nennt den Grund im Tooltip (kein Buch gewählt, Buch schreibgeschützt, Notizdatei nicht sicher lesbar, offener
-Konflikt). Eine Karte lässt sich weiter ins Buch ziehen.
+Konflikt). Ins Buch gezogen wird mit dem Griff „⠿“ vorn in der Leiste (der Bereichskopf); die Karte selbst lässt sich
+nicht ziehen, damit ihr Text markiert werden kann.
 
 Übernommen wird genau der Bereich, auf eine von drei Arten: **Am Cursor** (in den aktuellen Block an der
 Cursorstelle), **Danach** (neues Element nach dem aktuellen) und **Darunter** (als erstes Unterelement). Bei „ohne
-Unterpunkte“ kommt nur der Block selbst ins Buch; `used-in::` steht dann nur an ihm. Die Quelle hängt immer am
+Unterpunkte“ kommt nur der Block selbst ins Buch; `used-in::` steht dann nur an ihm, dazu `used-without-children:: true`
+(es geht mit seiner letzten Verwendung): seine Unterpunkte bleiben unverwendet, sichtbar und nicht grau. Die Quelle hängt immer am
 umgebenden Textblock. Neue Blöcke und Details aus „Danach“ und „Darunter“ bekommen den Status Relevant; am Cursor
 behält der Block seinen Status, nur die dabei entstehenden Details werden Relevant.
 Hat der Bereichskopf Unterpunkte (und nimmt der Bereich sie mit), bietet die Leiste zusätzlich **Als Überschrift** (neue Überschrift auf der Ebene des aktuellen
@@ -446,7 +448,7 @@ Editor
       Fenster bleibt offen und zeigt einen Hinweis; erneutes Schließen beendet das Programm.
 
 Notizen und Übernehmen
-- [ ] Eine Notiz übernehmen (anklicken und Knopf in der Leiste, oder Ziehen an die gewünschte Stelle): die Karte zeigt ✓, der
+- [ ] Eine Notiz übernehmen (anklicken und Knopf in der Leiste, oder am Griff „⠿“ an die gewünschte Stelle ziehen): die Karte zeigt ✓, der
       Buchblock einen Quellen-Chip, der Hinweis bietet 8 s lang „Rückgängig“; in der Notizdatei kam nur eine
       `id::`/`used-in::`-Zeile hinzu.
 - [ ] „Verwendete ausblenden“ blendet verwendete Notizen aus.

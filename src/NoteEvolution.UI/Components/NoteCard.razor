@@ -11,10 +11,12 @@
 @* One note of the notes pane: origin, score, usage mark, the block text with its sub-bullets. A click on a block makes
    it the active block: its range gets a frame and the bar with the actions (NoteBar) below. *@
 @{
-    var range = State.ActiveNote is { } selection && selection.NoteKey == Note.Key ? State.ActiveNoteRange : null;
+    // Only the card that was clicked is framed when the card on top shows the same note as a list.
+    var range = State.ActiveNote is { } selection && selection.NoteKey == Note.Key && selection.InFocusedCard == Focused
+        ? State.ActiveNoteRange
+        : null;
 }
-<article @ref="_root" class="ne-note-card @(InDay ? "ne-note-in-day" : null) @(Highlighted ? "ne-note-highlight" : null)" tabindex="-1"
-         draggable="true" data-note-key="@Note.Key" @ondragstart="OnDragStart" @ondragend="OnDragEnd">
+<article @ref="_root" class="ne-note-card @(InDay ? "ne-note-in-day" : null) @(Highlighted ? "ne-note-highlight" : null)" tabindex="-1" data-note-key="@Note.Key">
     @if (!InDay)
     {
         <header class="ne-note-head">
@@ -82,6 +84,9 @@
     /// </summary>
     [Parameter] public int FocusRequest { get; set; }
 
+    /// <summary>The card stands on top of the notes pane (<see cref="AppState.FocusedNoteKey"/>), apart from the lists.</summary>
+    [Parameter] public bool Focused { get; set; }
+
     private string Origin => Note.Date is { } date
         ? date.ToString("dd.MM.yyyy", CultureInfo.InvariantCulture)
         : Note.Page.Name;
@@ -145,10 +150,6 @@
         }
     });
 
-    private void OnDragStart() => State.DraggedNoteKey = Note.Key;
-
-    private void OnDragEnd() => State.DraggedNoteKey = null;
-
     /// <summary>
     /// Makes <paramref name="block"/> the active note block (Review Focus 4): not when the click marked text in the notes
     /// pane, so marking and copying stay possible. If the page cannot tell, the click counts as one without a marking.
@@ -169,7 +170,7 @@
 
         if (!_disposed)
         {
-            State.SelectNoteBlock(Note.Key, block.Key);
+            State.SelectNoteBlock(Note.Key, block.Key, Focused);
         }
     }
 
@@ -218,11 +219,12 @@
 
     /// <summary>
     /// The sub-bullets of <paramref name="parent"/>, each as a box with the line on its left: its own row (text and usage
-    /// mark) and the boxes of all its sub-blocks; with "Verwendete ausblenden" a used one is left out with all below it.
+    /// mark) and the boxes of all its sub-blocks; with "Verwendete ausblenden" a used one is left out with all below it
+    /// (<see cref="NoteBlock.IsHiddenWhenUsedHidden"/>: not one adopted without its sub-points while one of them is shown).
     /// </summary>
     private RenderFragment SubBullets(NoteRange? range, Block parent) =>
         @<text>
-            @foreach (var child in parent.Children.Where(child => !(Settings.HideUsed && UsedMark.IsUsed(child))))
+            @foreach (var child in parent.Children.Where(child => !(Settings.HideUsed && NoteBlock.IsHiddenWhenUsedHidden(child))))
             {
                 <div @key="child.Key" class="@BoxClass(range, child, "ne-note-child")">
                     <div class="@BlockClass(range, child, "ne-note-child-row")" @onclick="() => SelectAsync(child)">

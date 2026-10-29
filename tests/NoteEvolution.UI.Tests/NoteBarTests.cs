@@ -202,7 +202,7 @@ public class NoteBarTests : UiTestContext
     [Fact]
     public async Task Adopt_HideUsed_SelectionClearedCleanly()
     {
-        var session = await OpenAsync();
+        await OpenAsync();
         var cut = Render<NotesPane>();
         cut.Find(".ne-hide-used").Change(true);
 
@@ -218,14 +218,10 @@ public class NoteBarTests : UiTestContext
         Assert.Empty(cut.FindAll(".ne-note-in-range, .ne-note-range-frame, .ne-note-bar, .ne-note-error"));
         Assert.Equal(["Haupt", "Unter A", "Tiefer", "Andere"], Blocks(cut));
 
-        // A main point stays (greyed) until the journal reads its notes again, then it goes with its card and so does
-        // the selection; no other card becomes active.
+        // A main point goes at once with its card (the journal reads its notes again after adopting), and so does the
+        // selection; no other card becomes active.
         cut.ClickBlock("Andere");
         cut.Find(".ne-note-adopt-cursor").Click();
-        Assert.Equal(Key("Andere"), State.ActiveNote?.BlockKey);
-        var other = Path.Combine(_vault.Root, PagePath);
-        File.WriteAllText(other, $"- Seitennotiz geändert\n  id:: {PageNoteId}\n");
-        await cut.InvokeAsync(() => session.HandleExternalChange(other));
 
         cut.WaitForAssertion(() =>
         {
@@ -234,6 +230,100 @@ public class NoteBarTests : UiTestContext
         });
         Assert.Empty(cut.FindAll(".ne-note-in-range, .ne-note-range-frame, .ne-note-bar, .ne-note-error"));
         Assert.Contains("Andere", string.Join("|", SectionTexts()));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Adopt_OwnOnly_SubPointsStayVisibleAndNotGrey(bool hideUsed)
+    {
+        var session = await OpenAsync();
+        var cut = Render<NotesPane>();
+        if (hideUsed)
+        {
+            cut.Find(".ne-hide-used").Change(true);
+        }
+
+        List<string> Grey() => [.. cut.FindAll(".ne-note-used-text").Select(e => e.TextContent.Trim())];
+
+        // A sub-point alone: it is used (grey), its own sub-point stays unused and shown; with "Verwendete ausblenden"
+        // the used block stays as the head of its shown sub-point.
+        cut.ClickBlock("Unter A");
+        cut.Find(".ne-note-range-down").Click();
+        cut.Find(".ne-note-adopt-after").Click();
+
+        cut.WaitForAssertion(() => Assert.Equal(["Unter A"], Grey()));
+        Assert.Equal(["Haupt", "Unter A", "Tiefer", "Unter B", "Andere"], Blocks(cut));
+
+        // The main point alone: its card stays with its sub-points; only the main point is used.
+        cut.ClickBlock("Haupt");
+        cut.Find(".ne-note-range-down").Click();
+        cut.Find(".ne-note-adopt-after").Click();
+
+        cut.WaitForAssertion(() => Assert.Equal(["Haupt", "Unter A"], Grey()));
+        Assert.Equal(["Haupt", "Unter A", "Tiefer", "Unter B", "Andere"], Blocks(cut));
+        Assert.False(Note(session, "Unter B").IsUsed);
+        Assert.True(Note(session, "Haupt").IsUsed);
+
+        // The search's index knows it too: the sub-point is found with "Verwendete ausblenden".
+        var hits = session.Search.Search(new NoteEvolution.AI.Search.SearchQuery("Unter", new NoteFilter(HideUsed: true, null, null)));
+        Assert.Contains(hits, hit => hit.NoteBlockKey == Key("Unter B"));
+    }
+
+    [Fact]
+    public async Task Adopt_WithSubPoints_UsesThemAsBefore()
+    {
+        var session = await OpenAsync();
+        var cut = Render<NotesPane>();
+        cut.Find(".ne-hide-used").Change(true);
+
+        cut.ClickBlock("Unter A");
+        cut.Find(".ne-note-adopt-after").Click();
+
+        cut.WaitForAssertion(() => Assert.Equal(["Haupt", "Unter B", "Andere"], Blocks(cut)));
+        Assert.True(Note(session, "Tiefer").IsUsed);
+        Assert.DoesNotContain("used-without-children", _vault.Read(JournalPath));
+    }
+
+    [Fact]
+    public async Task SameNoteTwice_OnlyTheClickedCardIsFramed()
+    {
+        await OpenAsync();
+        State.FocusedNoteKey = Key("Haupt");
+        var cut = Render<NotesPane>();
+        IElement Focused() => cut.Find(".ne-note-focused");
+        IElement InJournal() => cut.Find(".ne-journal-day");
+
+        // Clicked in the journal: only the journal's card has the frame and the bar.
+        BlockRow(InJournal(), "Unter A").Click();
+
+        Assert.Empty(Focused().QuerySelectorAll(".ne-note-in-range, .ne-note-bar"));
+        Assert.Single(InJournal().QuerySelectorAll(".ne-note-bar"));
+        Assert.Equal(2, InJournal().QuerySelectorAll(".ne-note-in-range").Length);
+
+        // Closing the card on top keeps it.
+        cut.Find(".ne-note-focused-close").Click();
+        await Task.Delay(50);
+        cut.WaitForAssertion(() => Assert.Empty(cut.FindAll(".ne-note-focused")));
+        Assert.Equal(Key("Unter A"), State.ActiveNote?.BlockKey);
+        Assert.Single(cut.FindAll(".ne-note-bar"));
+
+        // Clicked on top: only that card; closing it lets the selection go.
+        await cut.InvokeAsync(() =>
+        {
+            State.FocusedNoteKey = Key("Haupt");
+            State.Notify();
+        });
+        BlockRow(Focused(), "Unter A").Click();
+
+        Assert.True(State.ActiveNote!.InFocusedCard);
+        Assert.Single(Focused().QuerySelectorAll(".ne-note-bar"));
+        Assert.Empty(InJournal().QuerySelectorAll(".ne-note-in-range, .ne-note-bar"));
+
+        cut.Find(".ne-note-focused-close").Click();
+
+        cut.WaitForAssertion(() => Assert.Null(State.ActiveNote));
+        Assert.Empty(cut.FindAll(".ne-note-in-range, .ne-note-bar"));
     }
 
     [Fact]

@@ -360,14 +360,26 @@ public class NoteCardTests : UiTestContext
         var session = await OpenAlphaAsync(tv);
         var note = Note(session, "Gedächtnis braucht");
         var cut = RenderCard(note);
-        var card = cut.Find(".ne-note-card");
 
-        Assert.Equal("true", card.GetAttribute("draggable"));
-        Assert.Equal(note.Key.ToString(), card.GetAttribute("data-note-key"));
-        card.DragStart();
-        Assert.Equal(note.Key, State.DraggedNoteKey);
-        card.DragEnd();
+        // The card itself is not draggable (its text can be marked); the handle in the bar drags the range head.
+        Assert.False(cut.Find(".ne-note-card").HasAttribute("draggable"));
+        cut.ClickBlock("Unterpunkt Träume");
+        var handle = cut.Find(".ne-note-bar .ne-note-drag");
+        var child = Note(session, "Unterpunkt Träume").Block.Key;
+
+        Assert.Equal("true", handle.GetAttribute("draggable"));
+        Assert.Equal("⠿", handle.TextContent);
+        Assert.Equal("Ins Buch ziehen", handle.GetAttribute("title"));
+        Assert.Equal(child.ToString(), handle.GetAttribute("data-note-key"));
+        handle.DragStart();
+        Assert.Equal(child, State.DraggedNoteKey);
+        cut.Find(".ne-note-drag").DragEnd();
         Assert.Null(State.DraggedNoteKey);
+
+        // At the note's own block it drags the note.
+        cut.ClickBlock("Gedächtnis braucht");
+        cut.Find(".ne-note-drag").DragStart();
+        Assert.Equal(note.Key, State.DraggedNoteKey);
     }
 
     [Fact]
