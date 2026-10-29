@@ -17,10 +17,6 @@
 @inject IServiceProvider Services
 
 @* One note of the notes pane: origin, score, usage mark, the block text with its sub-bullets, and the actions. *@
-@{
-    var usageCount = Note.Usages.Count;
-}
-
 <article @ref="_root" class="ne-note-card @(InDay ? "ne-note-in-day" : null) @(Highlighted ? "ne-note-highlight" : null)" tabindex="-1"
          draggable="true" data-note-key="@Note.Key" @ondragstart="OnDragStart" @ondragend="OnDragEnd">
     @if (!InDay)
@@ -32,7 +28,7 @@
                 <span class="ne-note-score" title="@L["NoteScoreTitle"]">@percent %</span>
             }
             @StatusDot()
-            @UsedMark(usageCount)
+            @UsedMark(Note.Block)
         </header>
     }
     @if (Note.ContextPath.Count > 0)
@@ -40,14 +36,14 @@
         <div class="ne-note-context">@string.Join(" › ", Note.ContextPath)</div>
     }
     <div class="ne-note-body">
-        <div class="ne-note-text">@Note.Block.Content</div>
+        <div class="@UsedTextClass(Note.Block, "ne-note-text")">@Note.Block.Content</div>
         @* The main element's buttons stand stacked at the right of the text, as for sub-bullets (a grid, see app.css);
            in a day they carry the status marks too, elsewhere those stay in the head. *@
         <div class="ne-adopt-column">
             @if (InDay)
             {
                 @StatusDot()
-                @UsedMark(usageCount)
+                @UsedMark(Note.Block)
             }
             @AdoptSplit(Note.Block, "ne-note-adopt")
             @WhereToButton()
@@ -400,21 +396,45 @@
             }
         </text>;
 
-    /// <summary>The mark of a used note (how often, a click goes to the usage); nothing for an unused one.</summary>
-    private RenderFragment UsedMark(int usageCount) =>
+    /// <summary>
+    /// The mark of a block with a <c>used-in::</c> of its own (how often, a click goes to the usage); nothing for a block
+    /// that is only used through an ancestor.
+    /// </summary>
+    private RenderFragment UsedMark(Block block) =>
         @<text>
-            @if (Note.IsUsed)
+            @if (UsagesOf(block) is { Count: > 0 } usages)
             {
-                <button type="button" class="ne-note-used" title="@L["NoteUsedTitle", usageCount]"
-                        aria-label="@L["NoteUsedTitle", usageCount]" @onclick="GoToUsage">
+                <button type="button" class="ne-note-used" title="@L["NoteUsedTitle", usages.Count]"
+                        aria-label="@L["NoteUsedTitle", usages.Count]" @onclick="() => GoToUsage(block)">
                     <span class="ne-note-used-mark">✓</span>
-                    @if (usageCount > 1)
+                    @if (usages.Count > 1)
                     {
-                        <span class="ne-note-used-count">@usageCount</span>
+                        <span class="ne-note-used-count">@usages.Count</span>
                     }
                 </button>
             }
         </text>;
+
+    /// <summary>The block's own <c>used-in::</c> entries.</summary>
+    private static IReadOnlyList<UsedInEntry> UsagesOf(Block block) =>
+        block.GetProperty("used-in") is { } value ? UsedInValue.Parse(value) : [];
+
+    /// <summary>The block or one of its ancestors has a <c>used-in::</c> (as <see cref="NoteBlock.IsUsed"/> for a note).</summary>
+    private static bool IsUsedBlock(Block block)
+    {
+        for (var current = block; current is not null; current = current.Parent)
+        {
+            if (!string.IsNullOrWhiteSpace(current.GetProperty("used-in")))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>The class of a block's text: <paramref name="textClass"/>, and greyed if the block is used (own or inherited usage).</summary>
+    private static string UsedTextClass(Block block, string textClass) => IsUsedBlock(block) ? $"{textClass} ne-note-used-text" : textClass;
 
     /// <summary>"Wohin damit?" for the note, while the AI is ready.</summary>
     private RenderFragment WhereToButton() =>
@@ -445,19 +465,19 @@
         </text>;
 
     /// <summary>
-    /// Goes to the place where the note is used: the book of its first <c>used-in::</c> entry with a block
+    /// Goes to the place where <paramref name="block"/> (the note or one of its sub-points) is used: the book of its first <c>used-in::</c> entry with a block
     /// reference (else its first entry), where the editor reveals that block. An entry without a block reveals the
     /// heading the note was adopted as (<see cref="HeadingOfSubPoints"/>); without one, like a block that is not found,
     /// it only switches the book.
     /// </summary>
-    private void GoToUsage()
+    private void GoToUsage(Block block)
     {
         if (State.Session is not { } session)
         {
             return;
         }
 
-        var usages = Note.Usages;
+        var usages = UsagesOf(block);
         var entry = usages.FirstOrDefault(u => u.BookBlockId is not null) ?? usages.FirstOrDefault();
         if (entry is null || session.Vault.FindBook(entry.PageName) is not { } book)
         {
@@ -465,7 +485,7 @@
         }
 
         var sameBook = string.Equals(State.CurrentBook?.LinkName, book.LinkName, StringComparison.OrdinalIgnoreCase);
-        var target = entry.BookBlockId is { } blockId ? TargetOf(book.Root, blockId) : HeadingOfSubPoints(book);
+        var target = entry.BookBlockId is { } blockId ? TargetOf(book.Root, blockId) : HeadingOfSubPoints(block, book);
 
         // A jump in the back/forward history; without a target it goes to the start of the other book.
         if (target is { } key)
@@ -888,12 +908,13 @@
     /// </summary>
     private RenderFragment SubBullets(Block parent) =>
         @<text>
-            @foreach (var child in parent.Children)
+            @foreach (var child in parent.Children.Where(child => !(Settings.HideUsed && IsUsedBlock(child))))
             {
                 var offer = SubBulletButtons.Offer(child);
                 <div @key="child.Key" class="ne-note-child">
                     <div class="ne-note-child-row">
-                        <span class="ne-note-child-text">@child.Content</span>
+                        <span class="@UsedTextClass(child, "ne-note-child-text")">@child.Content</span>
+                        @UsedMark(child)
                         @if (offer)
                         {
                             <div class="ne-adopt-column">
@@ -919,8 +940,8 @@
     /// The heading the note went to when it was adopted as a heading (its own entry has no block): the heading of the
     /// first text block in <paramref name="book"/> one of its sub-points is used in; <c>null</c> if there is none.
     /// </summary>
-    private Guid? HeadingOfSubPoints(Book book) =>
-        Note.Block.Children
+    private Guid? HeadingOfSubPoints(Block block, Book book) =>
+        block.Children
             .SelectMany(child => UsedInValue.Parse(child.GetProperty("used-in") ?? ""))
             .Where(entry => string.Equals(entry.PageName, book.LinkName, StringComparison.OrdinalIgnoreCase))
             .Select(entry => entry.BookBlockId is { } id ? book.FindTextBlockById(id)?.Section : null)

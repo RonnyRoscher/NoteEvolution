@@ -1002,6 +1002,15 @@ html, body {
     border-color: var(--accent);
 }
 
+/* A used block (own or inherited usage) in grey; its check mark keeps the accent colour. */
+.ne-note-used-text {
+    color: var(--fg-muted);
+}
+
+.ne-note-child-row > .ne-note-used {
+    flex-shrink: 0;
+}
+
 .ne-note-used-count {
     margin-left: 3px;
     font-size: 11px;

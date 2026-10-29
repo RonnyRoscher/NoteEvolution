@@ -426,7 +426,9 @@ Editor
 - [ ] Quellen der Markierung aufklappen, eine Quelle anklicken: der Reiter Journal springt zur Notiz und hebt sie hervor.
 - [ ] Reiter Journal (beim Start ausgewählt): eine Karte je Tag (Datum und „In Logseq öffnen“ oben), darin jeder
       Hauptpunkt als Kasten mit Linie und Knöpfen untereinander rechts; „Verwendete ausblenden“ blendet verwendete
-      Hauptpunkte in ihrer Tageskarte aus.
+      Blöcke auf jeder Ebene samt ihren Unterpunkten aus (ein Tag ohne sichtbaren Block verschwindet). Ohne den Haken
+      stehen verwendete Blöcke und ihre Unterpunkte in grauer Schrift; jeder Block mit eigenem `used-in::`, auch ein
+      Unterpunkt, trägt das ✓ (mit Zahl bei mehreren Verwendungen), ein Klick springt zum Ziel im Buch.
 - [ ] Großes Buch (mehrere hundert Blöcke): Tippen und Scrollen bleiben flüssig.
 - [ ] Bereich mit ▲/▼ und Alt+Pfeil erweitern und verkleinern; Kasten, Bereichsanzeige und Quellenanzahl folgen; ein
       Bereich mit Text nach Unterabschnitten zeigt zwei Kästen.
