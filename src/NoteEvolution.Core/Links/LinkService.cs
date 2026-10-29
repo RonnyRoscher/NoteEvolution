@@ -25,7 +25,7 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
     /// <summary>The status of every block an adopt creates (<c>status:: relevant</c>).</summary>
     private static readonly string Relevant = BlockStatuses.FileValue(BlockStatus.Relevant)!;
 
-    public AdoptResult Adopt(Book book, Guid noteBlockKey, InsertPosition position)
+    public AdoptResult Adopt(Book book, Guid noteBlockKey, InsertPosition position, bool includeChildren = true)
     {
         var bookPage = book.Page;
         EnsureWritable(bookPage);
@@ -33,7 +33,7 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
 
         var (parent, index) = Resolve(book, position);
 
-        var copy = CopyOf(note);
+        var copy = CopyOf(note, includeChildren);
         var noteLines = note.Lines.ToList();
         var noteWasDirty = note.IsDirty;
         var noteId = note.EnsureId();
@@ -70,7 +70,7 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
         return new AdoptResult(copy.Key, textBlockId, noteUpdatePending);
     }
 
-    public AdoptResult AdoptInto(Book book, Guid noteBlockKey, IntoPosition position)
+    public AdoptResult AdoptInto(Book book, Guid noteBlockKey, IntoPosition position, bool includeChildren = true)
     {
         var bookPage = book.Page;
         EnsureWritable(bookPage);
@@ -84,7 +84,7 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
             IntoPosition.FirstChild first => FindElement(book, first.ElementKey, detailOnly: false),
             _ => throw new ArgumentException("Unknown position.", nameof(position)),
         };
-        var copy = CopyOf(note);
+        var copy = CopyOf(note, includeChildren);
 
         // The new top-level details are relevant: at the cursor the note's sub-bullets, else the copy. Set while they
         // are detached, so that one without a place for it (an unclosed code fence) throws before anything changed.
@@ -161,12 +161,13 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
         return new AdoptResult(textBlock.Key, textBlockId, noteUpdatePending);
     }
 
-    public HeadingAdoptResult AdoptAsHeading(Book book, Guid noteBlockKey, Guid sectionKey, bool asSubheading, string untitledTitle)
+    public HeadingAdoptResult AdoptAsHeading(
+        Book book, Guid noteBlockKey, Guid sectionKey, bool asSubheading, string untitledTitle, bool includeChildren = true)
     {
         var bookPage = book.Page;
         EnsureWritable(bookPage);
         var (notePage, note) = FindWritableNote(noteBlockKey);
-        if (note.Children.Count == 0)
+        if (includeChildren && note.Children.Count == 0)
         {
             throw new ArgumentException("The note block has no sub-points.", nameof(noteBlockKey));
         }
@@ -212,10 +213,10 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
             adopted.Add((note, Block.CreateDetached(further)));
         }
 
-        adopted.AddRange(note.Children.Select(child => (child, CopyOf(child))));
+        adopted.AddRange((includeChildren ? note.Children : []).Select(child => (child, CopyOf(child, true))));
 
         List<(Block Block, List<RawLine> Lines, bool WasDirty)> notesBefore =
-            [.. note.Children.Prepend(note).Select(block => (block, block.Lines.ToList(), block.IsDirty))];
+            [.. (includeChildren ? note.Children : []).Prepend(note).Select(block => (block, block.Lines.ToList(), block.IsDirty))];
         var noteId = note.EnsureId();
         bookPage.InsertBlock(parent, index, heading);
         var links = new List<(Block Note, Guid NoteId, Guid TextBlockId)>();
@@ -260,6 +261,11 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
             bookUsageAdded = !UsedInValue.Parse(note.GetProperty(UsedInKey) ?? "")
                 .Any(e => e.BookBlockId is null && string.Equals(e.PageName, linkName, StringComparison.OrdinalIgnoreCase));
             ApplyEntry(note, linkName, null, remove: false);
+            if (links.Count == 0)
+            {
+                // No sub-point's entry follows to write the page (a heading without sub-points).
+                SaveNote(notePage, note, noteId, linkName, null, remove: false);
+            }
         }
 
         var noteUpdatePending = false;
@@ -1358,11 +1364,17 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
 
     /// <summary>
     /// The note's copy for the book: the note block with its subtree, without property lines, and without a
-    /// <c>#notiz</c> tag in the note block's own text (<see cref="NoteTag.Remove"/>).
+    /// <c>#notiz</c> tag in the note block's own text (<see cref="NoteTag.Remove"/>). Without
+    /// <paramref name="includeChildren"/> the copy has no sub-points.
     /// </summary>
-    private static Block CopyOf(Block note)
+    private static Block CopyOf(Block note, bool includeChildren)
     {
         var copy = note.CloneDetached(withoutProperties: true);
+        if (!includeChildren)
+        {
+            copy.TakeChildren();
+        }
+
         if (NoteTag.Has(copy.Content))
         {
             copy.SetContent(NoteTag.Remove(copy.Content));

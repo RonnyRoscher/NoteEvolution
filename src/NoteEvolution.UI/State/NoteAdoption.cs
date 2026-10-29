@@ -41,11 +41,12 @@ public static class NoteAdoption
     /// (R26; <see cref="ILinkService"/> writes through the page writer directly and would overwrite it). A change of the
     /// book file by another program is handed to the session (merge or conflict) and the user adopts again. Whatever
     /// happens, the book view is taken from the vault again and <see cref="AppState.Notify"/> is raised.
+    /// Without <paramref name="includeChildren"/> only the block's own text is adopted, not its sub-points.
     /// </summary>
     /// <returns>The message to show, or <c>null</c> if the note was adopted without remark.</returns>
     public static Task<AdoptMessage?> AdoptAsync(
-        AppState state, Guid noteBlockKey, Func<Book, InsertPosition> position, ILogger logger) =>
-        RunAsync(state, noteBlockKey, (links, book) => NewTextBlock(links.Adopt(book, noteBlockKey, position(book))), logger);
+        AppState state, Guid noteBlockKey, Func<Book, InsertPosition> position, ILogger logger, bool includeChildren = true) =>
+        RunAsync(state, noteBlockKey, (links, book) => NewTextBlock(links.Adopt(book, noteBlockKey, position(book), includeChildren)), logger);
 
     /// <summary>
     /// Whether <paramref name="variant"/> is offered for <paramref name="noteBlock"/>: the heading variants only for a
@@ -92,31 +93,32 @@ public static class NoteAdoption
     /// revealed, so the user sees where the text went (the cursor goes to its start). The heading variants place the
     /// heading relative to <see cref="ReferenceSection"/>; <paramref name="untitledTitle"/> is the title of a heading
     /// from a note block whose first line is blank.
+    /// Without <paramref name="includeChildren"/> only the block's own text is adopted, not its sub-points.
     /// </summary>
     /// <returns>The message to show, or <c>null</c> if the note was adopted without remark.</returns>
     public static Task<AdoptMessage?> AdoptAsync(
-        AppState state, Guid noteBlockKey, AdoptVariant variant, string untitledTitle, ILogger logger) =>
-        RunAsync(state, noteBlockKey, (links, book) => Adopt(links, state, book, noteBlockKey, variant, untitledTitle), logger);
+        AppState state, Guid noteBlockKey, AdoptVariant variant, string untitledTitle, ILogger logger, bool includeChildren = true) =>
+        RunAsync(state, noteBlockKey, (links, book) => Adopt(links, state, book, noteBlockKey, variant, untitledTitle, includeChildren), logger);
 
     /// <summary>
     /// Adopts the note into the element the variant and the cursor name (see the mapping in spec 4), or as a heading;
     /// also returns the element to reveal: the new text block or heading, or the existing element the note went into.
     /// </summary>
     private static (bool NoteUpdatePending, Guid? Reveal) Adopt(
-        ILinkService links, AppState state, Book book, Guid noteBlockKey, AdoptVariant variant, string untitledTitle)
+        ILinkService links, AppState state, Book book, Guid noteBlockKey, AdoptVariant variant, string untitledTitle, bool includeChildren)
     {
         // The current element is checked against the book just read from the vault, not the state's (older) one.
         if (variant is AdoptVariant.AsHeading or AdoptVariant.AsSubheading)
         {
             var section = ReferenceSection(state, book)!;
-            var heading = links.AdoptAsHeading(book, noteBlockKey, section.Key, variant == AdoptVariant.AsSubheading, untitledTitle);
+            var heading = links.AdoptAsHeading(book, noteBlockKey, section.Key, variant == AdoptVariant.AsSubheading, untitledTitle, includeChildren);
             return (heading.NoteUpdatePending, heading.HeadingKey);
         }
 
         var cursor = state.Cursor is { } c ? BookElements.Find(book, c.Key) : null;
         if (CurrentElement(state, book) is not { } element)
         {
-            return NewTextBlock(links.Adopt(book, noteBlockKey, new InsertPosition.SectionEnd(FallbackSection(state, book))));
+            return NewTextBlock(links.Adopt(book, noteBlockKey, new InsertPosition.SectionEnd(FallbackSection(state, book)), includeChildren));
         }
 
         // The cursor's offset belongs to its own element; it is never applied to a fallback element.
@@ -128,11 +130,11 @@ public static class NoteAdoption
         var offset = state.Cursor?.Offset ?? 0;
         return (element.Kind, variant) switch
         {
-            (ElementKind.Heading, _) => NewTextBlock(links.Adopt(book, noteBlockKey, new InsertPosition.SectionStart(element.Key))),
-            (ElementKind.TextBlock, AdoptVariant.After) => NewTextBlock(links.Adopt(book, noteBlockKey, new InsertPosition.After(element.Key))),
-            (_, AdoptVariant.AtCursor) => Into(links.AdoptInto(book, noteBlockKey, new IntoPosition.AtCursor(element.Key, offset)), element.Key),
-            (_, AdoptVariant.After) => Into(links.AdoptInto(book, noteBlockKey, new IntoPosition.AfterDetail(element.Key)), element.Key),
-            _ => Into(links.AdoptInto(book, noteBlockKey, new IntoPosition.FirstChild(element.Key)), element.Key),
+            (ElementKind.Heading, _) => NewTextBlock(links.Adopt(book, noteBlockKey, new InsertPosition.SectionStart(element.Key), includeChildren)),
+            (ElementKind.TextBlock, AdoptVariant.After) => NewTextBlock(links.Adopt(book, noteBlockKey, new InsertPosition.After(element.Key), includeChildren)),
+            (_, AdoptVariant.AtCursor) => Into(links.AdoptInto(book, noteBlockKey, new IntoPosition.AtCursor(element.Key, offset), includeChildren), element.Key),
+            (_, AdoptVariant.After) => Into(links.AdoptInto(book, noteBlockKey, new IntoPosition.AfterDetail(element.Key), includeChildren), element.Key),
+            _ => Into(links.AdoptInto(book, noteBlockKey, new IntoPosition.FirstChild(element.Key), includeChildren), element.Key),
         };
     }
 

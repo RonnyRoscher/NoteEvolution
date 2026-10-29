@@ -1,6 +1,7 @@
 using System.Runtime.ExceptionServices;
 using Microsoft.Extensions.Logging;
 using NoteEvolution.Core.Books;
+using NoteEvolution.Core.Vaults;
 using NoteEvolution.UI.Editor;
 
 namespace NoteEvolution.UI.State;
@@ -36,6 +37,8 @@ public sealed class AppState
     private BookView? _second;
     private BookView _active;
     private VaultSession? _session;
+
+    private NoteSelection? _noteSelection;
     private Book? _currentBook;
     private readonly HashSet<Guid> _whereToOpenNotes = [];
 
@@ -189,6 +192,8 @@ public sealed class AppState
                 {
                     view.RangeLevel = 0;
                 }
+
+                _noteSelection = null;
 
                 lock (_history)
                 {
@@ -464,6 +469,81 @@ public sealed class AppState
             Notify();
         }
     }
+
+    /// <summary>
+    /// The active note block, kept apart from the book views (it is not per split half). Checked against the vault
+    /// whenever it is read: when the note or the block is gone (after a reload, or an adoption that hid the note), the
+    /// selection is cleared and <c>null</c> is returned. Another <see cref="Session"/> clears it too.
+    /// </summary>
+    public NoteSelection? ActiveNote
+    {
+        get
+        {
+            if (_noteSelection is { } selection && FindNote(selection) is null)
+            {
+                _noteSelection = null;
+            }
+
+            return _noteSelection;
+        }
+    }
+
+    /// <summary>The marked range of the active note block (see <see cref="NoteRanges"/>); <c>null</c> without one.</summary>
+    public NoteRange? ActiveNoteRange =>
+        ActiveNote is { } selection && FindNote(selection) is { } note
+            ? NoteRanges.Of(note, selection.BlockKey, selection.Level)
+            : null;
+
+    /// <summary>
+    /// Makes <paramref name="blockKey"/> (the note <paramref name="noteKey"/> shows, or one of its sub-points) the active
+    /// note block at level 0 and raises <see cref="Notify"/>; a block that is not in the note clears the selection.
+    /// </summary>
+    public void SelectNoteBlock(Guid noteKey, Guid blockKey)
+    {
+        var selection = new NoteSelection(noteKey, blockKey, 0);
+        if (FindNote(selection) is null)
+        {
+            ClearNoteSelection();
+            return;
+        }
+
+        if (_noteSelection != selection)
+        {
+            _noteSelection = selection;
+            Notify();
+        }
+    }
+
+    /// <summary>Moves the active note block's range <paramref name="delta"/> levels up (positive) or down, within <see cref="NoteRanges.LevelBounds"/>.</summary>
+    public void ChangeNoteRange(int delta)
+    {
+        if (ActiveNote is not { } selection || FindNote(selection) is not { } note)
+        {
+            return;
+        }
+
+        var (min, max) = NoteRanges.LevelBounds(note, selection.BlockKey);
+        var level = Math.Clamp(selection.Level + delta, min, max);
+        if (level != selection.Level)
+        {
+            _noteSelection = selection with { Level = level };
+            Notify();
+        }
+    }
+
+    /// <summary>Clears the active note block and raises <see cref="Notify"/> if there was one.</summary>
+    public void ClearNoteSelection()
+    {
+        if (_noteSelection is not null)
+        {
+            _noteSelection = null;
+            Notify();
+        }
+    }
+
+    /// <summary>The note the selection points at, if it and its block are still in the vault.</summary>
+    private NoteBlock? FindNote(NoteSelection selection) =>
+        _session?.Notes.Get(selection.NoteKey) is { } note && NoteRanges.Contains(note, selection.BlockKey) ? note : null;
 
     /// <summary>Asks the shell to show the AI model dialog, which offers the download.</summary>
     public void RequestAiModelDialog() => AiModelDialogRequested?.Invoke();

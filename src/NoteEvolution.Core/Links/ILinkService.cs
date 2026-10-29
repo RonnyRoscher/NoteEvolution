@@ -31,7 +31,7 @@ public interface ILinkService
     /// <exception cref="ArgumentException">Unknown note block or position.</exception>
     /// <exception cref="ReadOnlyPageException">The book page is read-only.</exception>
     /// <exception cref="InvalidOperationException">The note's page is read-only; nothing was changed.</exception>
-    AdoptResult Adopt(Book book, Guid noteBlockKey, InsertPosition position);
+    AdoptResult Adopt(Book book, Guid noteBlockKey, InsertPosition position, bool includeChildren = true);
 
     /// <summary>
     /// Copies the note block's text and sub-bullets (without property lines, and without a <c>#notiz</c> tag in the
@@ -46,7 +46,7 @@ public interface ILinkService
     /// <exception cref="ArgumentOutOfRangeException">The offset of <see cref="IntoPosition.AtCursor"/> is outside the element's text.</exception>
     /// <exception cref="ReadOnlyPageException">The book page is read-only.</exception>
     /// <exception cref="InvalidOperationException">The note's page is read-only; nothing was changed.</exception>
-    AdoptResult AdoptInto(Book book, Guid noteBlockKey, IntoPosition position);
+    AdoptResult AdoptInto(Book book, Guid noteBlockKey, IntoPosition position, bool includeChildren = true);
 
     /// <summary>
     /// Adopts a note block with sub-points as a new heading relative to the section <paramref name="sectionKey"/>
@@ -68,7 +68,8 @@ public interface ILinkService
     /// </exception>
     /// <exception cref="ReadOnlyPageException">The book page is read-only.</exception>
     /// <exception cref="InvalidOperationException">The note's page is read-only; nothing was changed.</exception>
-    HeadingAdoptResult AdoptAsHeading(Book book, Guid noteBlockKey, Guid sectionKey, bool asSubheading, string untitledTitle);
+    HeadingAdoptResult AdoptAsHeading(
+        Book book, Guid noteBlockKey, Guid sectionKey, bool asSubheading, string untitledTitle, bool includeChildren = true);
 
     /// <summary>
     /// Fully links an existing text block and a note block (a confirmed placement): gives both an <c>id::</c>, adds
