@@ -326,10 +326,6 @@
     <value>Auf dieser Ebene käme eine Unterüberschrift unter H6</value>
     <comment>Titel eines ausgegrauten Ebenen-Knopfs an einer Überschrift, deren Unterüberschriften tiefer als H6 rutschten</comment>
   </data>
-  <data name="LevelBlockedReference" xml:space="preserve">
-    <value>Überschriften enthalten keine Verweise</value>
-    <comment>Titel eines ausgegrauten Ebenen-Knopfs H1 bis H6 an einem Textblock oder Unterpunkt, dessen erste Zeile (der Titel) einen Verweis enthält</comment>
-  </data>
   <data name="LevelBlockedAboveH1" xml:space="preserve">
     <value>Auf dieser Ebene käme eine Unterüberschrift über H1</value>
     <comment>Titel eines ausgegrauten Ebenen-Knopfs an einer Überschrift, deren (nicht tiefere) Unterüberschrift über H1 rutschte</comment>
@@ -1882,12 +1878,6 @@
   </data>
   <data name="NormalizeNone" xml:space="preserve">
     <value>Die Gliederung ist schon nach Ebenen geordnet.</value>
-  </data>
-  <data name="NormalizeUnplaceable" xml:space="preserve">
-    <value>Diese Überschriften bleiben, wie sie sind, weil ihr Titel einen Verweis enthält:</value>
-  </data>
-  <data name="NormalizeOnlyUnplaceable" xml:space="preserve">
-    <value>Diese Überschriften können nicht eingeordnet werden (Verweis im Titel):</value>
   </data>
   <data name="NormalizeOutlineStale" xml:space="preserve">
     <value>Die Gliederung hat sich geändert; es wurde nichts eingeordnet. Bitte erneut öffnen.</value>
