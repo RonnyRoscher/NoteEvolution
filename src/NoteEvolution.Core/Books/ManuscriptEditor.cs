@@ -13,7 +13,7 @@ namespace NoteEvolution.Core.Books;
 /// New headings are empty (<c>"#" * level + " "</c>), new text blocks and details are empty blocks. The appendix is
 /// no element of the manuscript (<see cref="BookElements.Find"/>): every command refuses it.
 /// </summary>
-public static class ManuscriptEditor
+public static partial class ManuscriptEditor
 {
     /// <summary>
     /// Adds a new empty element after <paramref name="current"/>: for a heading of level n a level-n heading after its
@@ -805,9 +805,13 @@ public static class ManuscriptEditor
     private static (string Title, string? Further) HeadingSplit(Block block) =>
         HeadingText.Split(BlockTextEscape.Unescape(NoteTag.Has(block.Content) ? NoteTag.Remove(block.Content) : block.Content));
 
+    [System.Text.RegularExpressions.GeneratedRegex(@" ([,.;:!?)\]])")]
+    private static partial System.Text.RegularExpressions.Regex SpaceBeforePunctuation();
+
     /// <summary>
     /// The title without its block references and source citations, and those (as written, in their order, joined by a
-    /// space); <c>(null, null)</c> if the title has none. Spaces left around a removed one are collapsed.
+    /// space); <c>(null, null)</c> if the title has none. Spaces left around a removed one are collapsed, a space left
+    /// before a punctuation mark is dropped, and so is a comma, semicolon or colon left at the start.
     /// </summary>
     private static (string? Plain, string? References) TakeReferences(string title)
     {
@@ -830,6 +834,8 @@ public static class ManuscriptEditor
 
         plain.Append(title, position, title.Length - position);
         var collapsed = string.Join(' ', plain.ToString().Split(' ', StringSplitOptions.RemoveEmptyEntries));
+        // A removed reference leaves no space before a punctuation mark that followed it, nor one at the start.
+        collapsed = SpaceBeforePunctuation().Replace(collapsed, "$1").TrimStart(',', ';', ':', ' ');
         return (collapsed, string.Join(' ', spans.Select(span => title.Substring(span.Start, span.Length))));
     }
 
