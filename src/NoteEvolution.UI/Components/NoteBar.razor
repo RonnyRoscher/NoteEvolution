@@ -1,0 +1,941 @@
+@using Microsoft.Extensions.DependencyInjection
+@using NoteEvolution.AI.Embeddings
+@using NoteEvolution.AI.Relevance
+@using NoteEvolution.AI.Understanding
+@using NoteEvolution.Core.Books
+@using NoteEvolution.Core.Model
+@using NoteEvolution.Core.Vaults
+@implements IDisposable
+@inject AppState State
+@inject IPlatformServices Platform
+@inject IStringLocalizer<Strings> L
+@inject ILogger<NoteBar> Logger
+@inject TimeProvider Time
+@inject IServiceProvider Services
+
+@* The bar at the bottom of the active note block's frame (NoteCard): the range buttons, the ways to adopt the range,
+   "Wohin damit?", the usage mark and progress dot of the range head, a journal day's marks and "In Logseq öffnen";
+   the "Wohin damit?" list opens below it. *@
+@{
+    var head = FindBlock(Note.Block, Range.HeadKey) ?? Note.Block;
+    var blocked = AdoptBlocked();
+    var selection = State.ActiveNote;
+    var (min, max) = selection is not null && NoteRanges.Contains(Note, selection.BlockKey) ? NoteRanges.LevelBounds(Note, selection.BlockKey, State.HideUsedNotes) : (0, 0);
+    var level = selection?.Level ?? 0;
+}
+<div class="ne-note-bar" role="toolbar" aria-label="@L["NoteBarLabel"]">
+    <div class="ne-note-bar-buttons">
+        @* The handle drags the range head into the book (the card itself is not draggable, so its text can be marked). *@
+        <span class="ne-note-drag" draggable="true" role="img" title="@L["NoteDragTitle"]" aria-label="@L["NoteDragTitle"]"
+              data-note-key="@head.Key" @ondragstart="() => StartDrag(head)" @ondragend="EndDrag">⠿</span>
+        @* Moving the range changes no file, so it stays possible while adopting is not. *@
+        <button type="button" class="ne-note-range-up" title="@(level < max ? L["NoteRangeUpTitle"] : L["NoteRangeUpLimit"])"
+                disabled="@(level >= max)" @onclick="() => ChangeRangeAsync(1)">@L["RangeUp"]</button>
+        <button type="button" class="ne-note-range-down" title="@(level > min ? L["NoteRangeDownTitle"] : L["NoteRangeDownLimit"])"
+                disabled="@(level <= min)" @onclick="() => ChangeRangeAsync(-1)">@L["RangeDown"]</button>
+        <span class="ne-note-bar-label">@L["NoteBarAdopt"]</span>
+        @foreach (var (variant, cssClass) in Variants.Where(v => Offered(head, v.Variant)))
+        {
+            var (label, title) = Texts(variant);
+            <button type="button" class="@cssClass" title="@(blocked ?? title)" disabled="@(blocked is not null)"
+                    @onclick="() => AdoptAsync(variant)">@label</button>
+        }
+        @if (WhereToAvailable)
+        {
+            <button type="button" class="ne-note-whereto" title="@L["NoteWhereToTitle"]"
+                    aria-expanded="@(_whereTo is not null)" @onclick="() => ToggleWhereToAsync(head)">@L["NoteWhereTo"]</button>
+        }
+        <UsedMark Block="head" />
+        <ProgressDot Status="@State.Session?.NoteStatus(head.Key)" Used="@UsedMark.IsUsed(head)" />
+        @if (Note.Date is not null)
+        {
+            var book = State.CurrentBook?.LinkName;
+            var page = Note.Page;
+            @* The marks of the block's journal day, the same as at the day card (JournalTab). *@
+            <label class="ne-day-mark" title="@(book is null ? L["JournalDayNotRelevantNoBook"] : L["JournalDayNotRelevantTitle"])">
+                <input @key="(page.FilePath, _markRefresh)" type="checkbox" class="ne-note-bar-not-relevant"
+                       checked="@(book is not null && DayMarks.IsNotRelevant(page, book))" disabled="@(book is null)"
+                       @onchange="e => Mark(p => DayMarks.SetNotRelevant(p, book!, e.Value is true))" />
+                @L["JournalDayNotRelevant"]
+            </label>
+            <label class="ne-day-mark" title="@L["JournalDayLaterTitle"]">
+                <input @key="(page.FilePath, _markRefresh)" type="checkbox" class="ne-note-bar-later" checked="@DayMarks.IsLater(page)"
+                       @onchange="e => Mark(p => DayMarks.SetLater(p, e.Value is true))" />
+                @L["JournalDayLater"]
+            </label>
+        }
+        <button type="button" class="ne-note-logseq" title="@L["NoteOpenLogseqTitle"]" @onclick="() => OpenInLogseq(head)">@L["NoteOpenLogseq"]</button>
+    </div>
+    @if (_message is { } message)
+    {
+        <div class="ne-note-message @(message.IsError ? "ne-note-error" : "ne-note-info")" role="@(message.IsError ? "alert" : "status")">@L[message.Key]</div>
+    }
+    @if (_whereTo is { } list)
+    {
+        @WhereToResults(list, head)
+    }
+</div>
+
+@code {
+    /// <summary>The card's note: the active block is this note's own block or one of its sub-points.</summary>
+    [Parameter, EditorRequired] public NoteBlock Note { get; set; } = default!;
+
+    /// <summary>The active block's range (<see cref="AppState.ActiveNoteRange"/>); the bar acts on its head.</summary>
+    [Parameter, EditorRequired] public NoteRange Range { get; set; } = default!;
+
+    /// <summary>Raised after an action that changes what the card shows (adopting, a day mark), so the card renders again.</summary>
+    [Parameter] public EventCallback Changed { get; set; }
+
+    private AdoptMessage? _message;
+
+    /// <summary>The selection the bar was last rendered for (see <see cref="Dispose"/>).</summary>
+    private NoteSelection? _shownFor;
+
+    /// <summary>
+    /// Counts the day mark toggles that were not saved as clicked. The mark inputs are keyed by it, so they are created
+    /// again: a <c>checked</c> value that did not change in the model would otherwise leave the clicked state in the DOM.
+    /// </summary>
+    private int _markRefresh;
+
+    /// <summary>How many text blocks "Wohin damit?" lists.</summary>
+    private const int WhereToLimit = 5;
+
+    /// <summary>How many characters of a hit's first line the list shows.</summary>
+    private const int WhereToExcerptLength = 60;
+
+    private VaultSession? _session;
+    private bool _disposed;
+
+    /// <summary>The note the open list was opened for (its pin in <see cref="AppState.WhereToOpenNotes"/>).</summary>
+    private Guid _whereNoteKey;
+
+    /// <summary>The app's language model, if it has one; "Genauer prüfen" is offered while it is ready.</summary>
+    private LanguageModelRuntime? _language;
+
+    /// <summary>Renders the bar every second while a check runs (the elapsed time); null while none runs.</summary>
+    private ITimer? _tick;
+
+    /// <summary>The open "Wohin damit?" list of the range head; <c>null</c> while none is open.</summary>
+    private WhereToList? _whereTo;
+
+    /// <summary>Counts the requests; a result is only applied while the list of its request is still open.</summary>
+    private int _whereGeneration;
+
+    /// <summary>
+    /// An open "Wohin damit?" list: the request that opened it, the block it is for, the link name of the book it
+    /// searched, the searched key and text (for "Genauer prüfen") and, once found, the hits (<c>null</c> while the search
+    /// runs); then the check running for it, its recommendation or the hint that it failed (kept while the list is open,
+    /// spec 5.2).
+    /// </summary>
+    private sealed class WhereToList(int generation, Guid blockKey, string bookName, Guid noteKey, string noteText)
+    {
+        public int Generation { get; } = generation;
+
+        public Guid BlockKey { get; } = blockKey;
+
+        public string BookName { get; } = bookName;
+
+        public Guid NoteKey { get; } = noteKey;
+
+        public string NoteText { get; } = noteText;
+
+        public IReadOnlyList<WhereToHit>? Hits { get; set; }
+
+        public CheckRun? Check { get; set; }
+
+        public WhereToRecommendation? Recommendation { get; set; }
+
+        /// <summary>The recommendation is a stored placement that is out of date (note or book changed since).</summary>
+        public bool RecommendationStale { get; set; }
+
+        /// <summary>The note has a current stored placement: "Genauer prüfen" is not offered.</summary>
+        public bool PlacementCurrent { get; set; }
+
+        public bool CheckFailed { get; set; }
+    }
+
+    /// <summary>
+    /// A text block of the list: its heading path (empty in the prologue), the excerpt of its first line and the score
+    /// in percent of the best hit's. With the language model's understanding also its <paramref name="Topic"/> (the
+    /// chosen heading's path, empty for the prologue; <c>null</c> without topics), the topic's key and summary. Whether it
+    /// already uses the searched block is read when the list renders (<see cref="IsUsed"/>).
+    /// </summary>
+    private sealed record WhereToHit(Guid Key, string Path, string Excerpt, int Percent, string? Topic, Guid TopicKey, string? Summary);
+
+    /// <summary>The model's choice: where a click goes, the topic's path and summary, the place and the model's reason.</summary>
+    private sealed record WhereToRecommendation(Guid TargetKey, string Topic, string? Summary, string Place, string Reason, PlacementFit Fit);
+
+    /// <summary>
+    /// A running "Genauer prüfen": its cancellation, since when it runs (reset when its own request goes to the server),
+    /// whether it waits behind a background request, and the duration expected when it started.
+    /// </summary>
+    private sealed class CheckRun(CancellationTokenSource cancel, long started, TimeSpan expected)
+    {
+        public CancellationTokenSource Cancel { get; } = cancel;
+
+        public long Started { get; set; } = started;
+
+        public TimeSpan Expected { get; } = expected;
+
+        public bool Waiting { get; set; }
+
+        public bool RequestStarted { get; set; }
+    }
+
+    /// <summary>The ways to adopt, in the bar's order, with their classes.</summary>
+    private static readonly (AdoptVariant Variant, string CssClass)[] Variants =
+    [
+        (AdoptVariant.AtCursor, "ne-note-adopt-cursor"),
+        (AdoptVariant.After, "ne-note-adopt-after"),
+        (AdoptVariant.Below, "ne-note-adopt-under"),
+        (AdoptVariant.AsHeading, "ne-note-adopt-heading"),
+        (AdoptVariant.AsSubheading, "ne-note-adopt-subheading"),
+    ];
+
+    /// <summary>
+    /// "Genauer prüfen" is offered while the language model is ready (spec 5.2) and the open vault's background work has not
+    /// found its server unreachable or the model missing (the session raises <see cref="VaultSession.AiStatusChanged"/> then).
+    /// </summary>
+    private bool CheckAvailable => _language?.State == LanguageModelState.Ready && State.Session is not { LanguageModelAway: true };
+
+    /// <summary>The button is offered while the AI is ready and there is a book to place the note in.</summary>
+    private bool WhereToAvailable => State is { Session: { } session, CurrentBook: not null } && session.Relevance.IsAvailable;
+
+    protected override void OnInitialized()
+    {
+        _language = Services.GetService<LanguageModelRuntime>();
+        if (_language is not null)
+        {
+            _language.Changed += OnAiStatusChanged;
+        }
+    }
+
+    /// <summary>
+    /// The list belongs to one block, note, session and book: when any of them changes (another note, another book is
+    /// selected; compared by link name, so a new view of the same book keeps it) it is closed and a request still running
+    /// is dropped.
+    /// </summary>
+    protected override void OnParametersSet()
+    {
+        var sessionChanged = TrackSession();
+        if (_whereTo is { } list
+            && (sessionChanged || Note.Key != _whereNoteKey || list.BlockKey != Range.HeadKey
+                || !string.Equals(State.CurrentBook?.LinkName, list.BookName, StringComparison.OrdinalIgnoreCase)))
+        {
+            CloseWhereTo(notifyLater: true);
+        }
+
+        // The bar counts as showing the selection it was rendered for (see Dispose).
+        var selection = State.ActiveNote;
+        if (selection != _shownFor)
+        {
+            ReleaseSelection();
+            if (selection is not null)
+            {
+                State.ShowNoteBar(selection);
+            }
+
+            _shownFor = selection;
+        }
+    }
+
+    public void Dispose()
+    {
+        _disposed = true;
+
+        ReleaseSelection();
+
+        // The bar is gone with its list; the tab that showed its card no longer keeps a place for it (told after this
+        // rendering, as when the list closes, so a frozen Relevant list is computed again now and not at a later moment).
+        if (_whereTo is not null)
+        {
+            CancelCheck(_whereTo);
+            _whereTo = null;
+            if (State.CloseWhereTo(_whereNoteKey))
+            {
+                NotifyLater();
+            }
+        }
+
+        _tick?.Dispose();
+        _tick = null;
+        Unsubscribe();
+        if (_language is not null)
+        {
+            _language.Changed -= OnAiStatusChanged;
+        }
+    }
+
+    /// <summary>
+    /// The bar no longer shows the selection it was rendered for. If no other bar shows it, its block is no longer shown
+    /// (a used block with "Verwendete ausblenden", a day hidden by its marks, a card closed): once the rendering that
+    /// removed the bar is over, the selection goes too, unless a bar shows it again by then (a card shown at another
+    /// place, e.g. in the other group of "Relevant") or another selection was made (Review Focus 3).
+    /// </summary>
+    private void ReleaseSelection()
+    {
+        if (_shownFor is not { } shown)
+        {
+            return;
+        }
+
+        _shownFor = null;
+        if (!State.HideNoteBar(shown))
+        {
+            return;
+        }
+
+        try
+        {
+            _ = InvokeAsync(async () =>
+            {
+                await Task.Yield();
+                State.ClearNoteSelectionIfNotShown(shown);
+            });
+        }
+        catch (ObjectDisposedException)
+        {
+            // The window is closing.
+        }
+    }
+
+    /// <summary>Raises <see cref="AppState.Notify"/> once the current rendering is over.</summary>
+    private void NotifyLater()
+    {
+        try
+        {
+            _ = InvokeAsync(async () =>
+            {
+                await Task.Yield();
+                State.Notify();
+            });
+        }
+        catch (ObjectDisposedException)
+        {
+            // The window is closing.
+        }
+    }
+
+    /// <summary>Moves the range by <paramref name="delta"/> levels; the card renders the new frame (and this bar at its new place).</summary>
+    private async Task ChangeRangeAsync(int delta)
+    {
+        State.ChangeNoteRange(delta);
+        await Changed.InvokeAsync();
+    }
+
+    /// <summary>The handle drags the range: its head, without its sub-points at level −1 (the drop adopts exactly the range).</summary>
+    private void StartDrag(Block head)
+    {
+        State.DraggedNoteKey = head.Key;
+        State.DraggedNoteOwnOnly = Range.OwnOnly;
+    }
+
+    private void EndDrag()
+    {
+        State.DraggedNoteKey = null;
+        State.DraggedNoteOwnOnly = false;
+    }
+
+    /// <summary>The block with <paramref name="key"/> in the tree below <paramref name="block"/>; <c>null</c> if it is not there.</summary>
+    private static Block? FindBlock(Block block, Guid key) =>
+        block.Key == key ? block : block.Children.Select(child => FindBlock(child, key)).FirstOrDefault(found => found is not null);
+
+    /// <summary>
+    /// Whether <paramref name="variant"/> is offered for the range: the heading variants only for a head with sub-points
+    /// that the range takes along (not for the block alone), see <see cref="NoteAdoption.Offers"/>.
+    /// </summary>
+    private bool Offered(Block head, AdoptVariant variant) =>
+        NoteAdoption.Offers(State, head, variant) && !(Range.OwnOnly && variant is AdoptVariant.AsHeading or AdoptVariant.AsSubheading);
+
+    /// <summary>
+    /// Why the range cannot be adopted now, as the tooltip of the greyed out buttons; <c>null</c> if it can. Adopting
+    /// refuses the same cases again (<see cref="NoteAdoption"/>), with a message.
+    /// </summary>
+    private string? AdoptBlocked()
+    {
+        if (State is not { Session: { } session, CurrentBook: { } book })
+        {
+            return L["NoteBarNoBook"].Value;
+        }
+
+        if (book.Page.IsReadOnly)
+        {
+            return L["NoteBarBookReadOnly"].Value;
+        }
+
+        if (Note.Page.IsReadOnly)
+        {
+            return L["NoteBarNoteReadOnly"].Value;
+        }
+
+        return session.HasOpenConflict(book.Page.FilePath) || session.HasOpenConflict(Note.Page.FilePath)
+            ? L["NoteBarConflict"].Value
+            : null;
+    }
+
+    /// <summary>The label and tooltip of an adopt variant.</summary>
+    private (string Label, string Title) Texts(AdoptVariant variant) => variant switch
+    {
+        AdoptVariant.After => (L["AdoptAfter"].Value, L["AdoptAfterTitle"].Value),
+        AdoptVariant.Below => (L["AdoptBelow"].Value, L["AdoptBelowTitle"].Value),
+        AdoptVariant.AsHeading => (L["AdoptAsHeading"].Value, L["AdoptAsHeadingTitle"].Value),
+        AdoptVariant.AsSubheading => (L["AdoptAsSubheading"].Value, L["AdoptAsSubheadingTitle"].Value),
+        _ => (L["AdoptAtCursor"].Value, L["AdoptAtCursorTitle"].Value),
+    };
+
+    /// <summary>
+    /// Adopts the range into the current book the way <paramref name="variant"/> says, relative to the element at the
+    /// cursor (see <see cref="NoteAdoption"/>): its head with everything below it, or at level −1 the head alone without
+    /// its sub-points. A block that the list no longer shows afterwards is no longer active (see <see cref="Dispose"/>).
+    /// </summary>
+    private async Task AdoptAsync(AdoptVariant variant)
+    {
+        _message = null;
+        var range = Range;
+        _message = await NoteAdoption.AdoptAsync(State, range.HeadKey, variant, L["OutlineUntitled"].Value, Logger, includeChildren: !range.OwnOnly);
+        if (!_disposed)
+        {
+            await Changed.InvokeAsync();
+        }
+    }
+
+    /// <summary>
+    /// Sets or clears a mark of the block's journal day the same way as the day card (<see cref="DayMarkSaving.Apply"/>);
+    /// a refusal or failure is shown in the bar. The pane renders again, so the day card shows the mark as well.
+    /// </summary>
+    private async Task Mark(Func<Page, bool> change)
+    {
+        _message = null;
+        if (State.Session is not { } session)
+        {
+            return;
+        }
+
+        var result = DayMarkSaving.Apply(session, Note.Page, change);
+        if (result.MessageKey is { } key)
+        {
+            _message = new AdoptMessage(key, IsError: true);
+        }
+
+        if (!result.Saved)
+        {
+            _markRefresh++;
+        }
+
+        // The page was read from its file again: the tabs read their notes again, as the day card's journal does.
+        if (result.Reloaded)
+        {
+            State.NotifyNotesChanged();
+        }
+
+        State.Notify();
+        await Changed.InvokeAsync();
+    }
+
+    /// <summary>
+    /// Opens the block in Logseq: through its id (else the note's), for a journal day else through its first root block
+    /// with an id (Logseq names journal pages by its own title format, not by the file), else by the page's name.
+    /// </summary>
+    private void OpenInLogseq(Block head)
+    {
+        if (State.Session is { } session)
+        {
+            var id = head.Id ?? Note.Block.Id
+                     ?? (Note.Date is not null ? Note.Page.Roots.Select(root => root.Id).FirstOrDefault(id => id is not null) : null);
+            Platform.OpenExternal(LogseqLink.For(session.Vault.Root, id, Note.Page.Name));
+        }
+    }
+
+    /// <summary>Follows the AI status of the current session: the button appears when the AI becomes ready.</summary>
+    private bool TrackSession()
+    {
+        if (ReferenceEquals(State.Session, _session))
+        {
+            return false;
+        }
+
+        Unsubscribe();
+        _session = State.Session;
+        if (_session is not null)
+        {
+            _session.AiStatusChanged += OnAiStatusChanged;
+            _session.NoteStatusChanged += OnAiStatusChanged;
+            _session.PlacementsChanged += OnPlacementsChanged;
+        }
+
+        return true;
+    }
+
+    private void Unsubscribe()
+    {
+        if (_session is not null)
+        {
+            _session.AiStatusChanged -= OnAiStatusChanged;
+            _session.NoteStatusChanged -= OnAiStatusChanged;
+            _session.PlacementsChanged -= OnPlacementsChanged;
+        }
+    }
+
+    /// <summary>A placement arrived: the open list takes it over in place (its hits are not searched again).</summary>
+    private void OnPlacementsChanged() => _ = InvokeAsync(() =>
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        if (State is { CurrentBook: { } book } && _whereTo is { } list && ApplyStoredPlacement(list, book))
+        {
+            StateHasChanged();
+        }
+    });
+
+    /// <summary>
+    /// Shows the note's stored placement as the list's recommendation (spec 4); false if nothing changed: a sub-bullet
+    /// has none, the hits are not there yet (they apply it when they arrive) and a running check brings its own.
+    /// </summary>
+    private bool ApplyStoredPlacement(WhereToList list, Book book)
+    {
+        if (list.NoteKey == Guid.Empty || list.Hits is null || list.Check is not null || State.Session?.Placement(list.NoteKey) is not { } placement
+            || !string.Equals(book.LinkName, list.BookName, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        list.PlacementCurrent = !placement.Stale;
+        if (Recommend(list, book, placement.Verdict) is { } recommendation)
+        {
+            list.Recommendation = recommendation;
+            list.RecommendationStale = placement.Stale;
+        }
+
+        return true;
+    }
+
+    private void OnAiStatusChanged() => _ = InvokeAsync(() =>
+    {
+        if (!_disposed)
+        {
+            StateHasChanged();
+        }
+    });
+
+    /// <summary>
+    /// Closes the open list. The tabs keep the card for an open list (<see cref="AppState.WhereToOpenNotes"/>); they are
+    /// told, so a card kept only for its list can go: at once after a click, after this rendering while parameters are set.
+    /// </summary>
+    private void CloseWhereTo(bool notifyLater)
+    {
+        if (_whereTo is not { } list)
+        {
+            return;
+        }
+
+        CancelCheck(list);
+        _whereTo = null;
+        if (State.CloseWhereTo(_whereNoteKey))
+        {
+            if (notifyLater)
+            {
+                _ = InvokeAsync(State.Notify);
+            }
+            else
+            {
+                State.Notify();
+            }
+        }
+    }
+
+    /// <summary>
+    /// Lists the text blocks of the current book that fit <paramref name="block"/> (the range head) best, or closes its
+    /// list: for the note its text as indexed (<see cref="EmbeddingText.ForNote"/>), for a sub-bullet its own text with
+    /// its descendants (<see cref="EmbeddingText.ForNoteBlock"/>). The text and the book snapshot are taken here on the UI
+    /// thread; only the embedding and comparing run in the background (the vault model is not thread-safe), and the
+    /// paths and excerpts are read from that same snapshot. While the list is open, the tabs keep the card at its place
+    /// (<see cref="AppState.WhereToOpenNotes"/>); after it is closed they are told, so it can go.
+    /// </summary>
+    private async Task ToggleWhereToAsync(Block block)
+    {
+        if (_whereTo is not null)
+        {
+            CloseWhereTo(notifyLater: false);
+            return;
+        }
+
+        if (State is not { Session: { } session, CurrentBook: { } book })
+        {
+            return;
+        }
+
+        var isNote = block.Key == Note.Block.Key;
+
+        // A sub-bullet is indexed as a note of its own, with its parent's first line; an unknown key makes the
+        // service embed exactly the sub-bullet's text instead.
+        var noteKey = isNote ? Note.Key : Guid.Empty;
+        var noteText = isNote ? EmbeddingText.ForNote(Note) : EmbeddingText.ForNoteBlock(block);
+        var relevance = session.Relevance;
+        var generation = ++_whereGeneration;
+        var opened = _whereTo = new WhereToList(generation, block.Key, book.LinkName, noteKey, noteText);
+        _whereNoteKey = Note.Key;
+        State.OpenWhereTo(Note.Key);
+        IReadOnlyList<PlacementHit> hits;
+        Dictionary<Guid, string?> summaries;
+        try
+        {
+            // The topics' summaries (the tooltips) are read from the store in the background as well.
+            (hits, summaries) = await Task.Run(() =>
+            {
+                var found = relevance.Placements(noteKey, noteText, book, WhereToLimit);
+                var topics = found.Select(hit => hit.SectionKey).Where(key => key != Guid.Empty).Distinct()
+                    .ToDictionary(key => key, key => session.TopicSummary(book, key));
+                return (found, topics);
+            });
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Finding the text blocks for a note failed");
+            hits = [];
+            summaries = [];
+        }
+
+        if (_disposed || !ReferenceEquals(_whereTo, opened) || opened.Generation != generation)
+        {
+            return;
+        }
+
+        // Without the language model's understanding no hit has a topic: the entries look as before (spec 5.1).
+        var best = hits.Count > 0 ? hits.Max(hit => hit.Score) : 0;
+        opened.Hits =
+        [
+            .. hits
+                .Select(hit => (Hit: hit, TextBlock: book.FindTextBlock(hit.TextBlockKey)))
+                .Where(found => found.TextBlock is not null)
+                .Select(found => new WhereToHit(
+                    found.Hit.TextBlockKey,
+                    HeadingPath(found.TextBlock!.Section),
+                    Excerpt.FirstLine(found.TextBlock.Text, WhereToExcerptLength),
+                    SearchTab.Percent(found.Hit.Score, best),
+                    found.Hit.SectionKey != Guid.Empty && book.FindNode(found.Hit.SectionKey) is { } topic ? TopicPath(topic) : null,
+                    found.Hit.SectionKey,
+                    summaries.GetValueOrDefault(found.Hit.SectionKey))),
+        ];
+        ApplyStoredPlacement(opened, book);
+    }
+
+    /// <summary>The titles from the book's top level down to <paramref name="topic"/>, joined with " › "; empty for the root (prologue).</summary>
+    private static string TopicPath(OutlineNode topic)
+    {
+        var titles = new List<string>();
+        for (var node = topic; node is { Level: > 0 }; node = node.Parent)
+        {
+            titles.Add(node.Title);
+        }
+
+        titles.Reverse();
+        return string.Join(" › ", titles);
+    }
+
+    /// <summary>
+    /// "Genauer prüfen" for <paramref name="list"/> (spec 5.2, 11.1): asks the language model through the session and
+    /// shows the elapsed of the expected time (or that it waits behind a background request), then puts the model's
+    /// choice first in the list or shows that the answer was unusable; the list stays either way. The duration of a check
+    /// the model answered goes into the runtime's expectation.
+    /// </summary>
+    private async Task CheckAsync(WhereToList list)
+    {
+        if (list.Check is not null || State is not { Session: { } session, CurrentBook: { } book }
+            || !string.Equals(book.LinkName, list.BookName, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        var run = new CheckRun(new CancellationTokenSource(), Time.GetTimestamp(),
+            _language?.ExpectedCheckDuration ?? LanguageModelRuntime.FirstCheckDuration);
+        list.Check = run;
+        list.CheckFailed = false;
+        _tick ??= Time.CreateTimer(_ => OnAiStatusChanged(), null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
+
+        var (verdict, failure) = await session.CheckPlacementAsync(
+            list.NoteKey, list.NoteText, book, run.Cancel.Token,
+            waiting: () => _ = InvokeAsync(() =>
+            {
+                if (!run.RequestStarted)
+                {
+                    run.Waiting = true;
+                    StateHasChanged();
+                }
+            }),
+            started: () =>
+            {
+                var at = Time.GetTimestamp();
+                _ = InvokeAsync(() =>
+                {
+                    run.RequestStarted = true;
+                    run.Waiting = false;
+                    run.Started = at;
+                    StateHasChanged();
+                });
+            });
+        var answered = run.RequestStarted && failure is null or PlacementCheckFailure.Unusable;
+        var duration = Time.GetElapsedTime(run.Started);
+        run.Cancel.Dispose();
+
+        // Cancelled, or the list was closed meanwhile: the result is dropped.
+        if (_disposed || !ReferenceEquals(list.Check, run) || !ReferenceEquals(_whereTo, list))
+        {
+            return;
+        }
+
+        list.Check = null;
+        StopTicking();
+        if (answered)
+        {
+            _language?.RecordCheck(duration);
+        }
+
+        if (verdict is not null && Recommend(list, book, verdict) is { } recommendation)
+        {
+            list.Recommendation = recommendation;
+            list.RecommendationStale = false;
+            list.PlacementCurrent = true;
+        }
+        else if (failure != PlacementCheckFailure.Cancelled)
+        {
+            list.CheckFailed = true;
+        }
+    }
+
+    /// <summary>
+    /// The list entry for the model's choice: the chosen place, or for a new place at the end of the topic the topic's
+    /// last own text block (else its heading); null if the topic is not in the book.
+    /// </summary>
+    private WhereToRecommendation? Recommend(WhereToList list, Book book, PlacementVerdict verdict)
+    {
+        if (book.FindNode(verdict.SectionKey) is not { } topic)
+        {
+            return null;
+        }
+
+        var summary = verdict.Summary ?? list.Hits?.FirstOrDefault(hit => hit.TopicKey == verdict.SectionKey)?.Summary;
+        if (verdict.AfterTextBlockKey is { } after && book.FindTextBlock(after) is { } textBlock)
+        {
+            return new WhereToRecommendation(after, TopicPath(topic), summary,
+                L["NoteWhereToAfter", Excerpt.FirstLine(textBlock.Text, WhereToExcerptLength)], verdict.Reason, verdict.Fit);
+        }
+
+        return new WhereToRecommendation(topic.TextBlocks.LastOrDefault()?.Key ?? topic.Key, TopicPath(topic), summary,
+            L["NoteWhereToNewPlace"], verdict.Reason, verdict.Fit);
+    }
+
+    /// <summary>Stops a running check (its result is dropped); the list stays as it was.</summary>
+    private void CancelCheck(WhereToList list)
+    {
+        if (list.Check is { } run)
+        {
+            list.Check = null;
+            run.Cancel.Cancel();
+        }
+
+        StopTicking();
+    }
+
+    /// <summary>Stops the ticking of the elapsed time (only a running check ticks).</summary>
+    private void StopTicking()
+    {
+        _tick?.Dispose();
+        _tick = null;
+    }
+
+    /// <summary>The titles from the book's top level down to <paramref name="section"/>, joined; empty for the root (prologue).</summary>
+    private static string HeadingPath(OutlineNode section)
+    {
+        var titles = new List<string>();
+        for (var node = section; node is { Level: > 0 }; node = node.Parent)
+        {
+            titles.Add(node.Title);
+        }
+
+        titles.Reverse();
+        return string.Join(" / ", titles);
+    }
+
+    /// <summary>
+    /// Goes to a text block (for a recommended new place without text blocks: the topic's heading) of a list: the editor
+    /// saves first, then, while the list's book is still the current one, the editor reveals it (the cursor goes to its
+    /// start). The list stays open.
+    /// </summary>
+    private async Task GoToHitAsync(WhereToList list, Guid textBlockKey)
+    {
+        if (State.Session is not { } session)
+        {
+            return;
+        }
+
+        try
+        {
+            if (State.FlushEditor is { } flush)
+            {
+                await flush();
+            }
+        }
+        catch (Exception ex)
+        {
+            // The text may not be saved, so the view stays where it is.
+            Logger.LogError(ex, "Saving the editor before going to a text block failed");
+            return;
+        }
+
+        if (_disposed || !ReferenceEquals(session, State.Session)
+            || State.CurrentBook is not { } book
+            || !string.Equals(book.LinkName, list.BookName, StringComparison.OrdinalIgnoreCase)
+            || (book.FindTextBlock(textBlockKey) is null && book.FindNode(textBlockKey) is null))
+        {
+            return;
+        }
+
+        State.JumpTo(textBlockKey);
+        State.Notify();
+    }
+
+    /// <summary>
+    /// Whether the text block <paramref name="textBlockKey"/> of <paramref name="list"/> already names
+    /// <paramref name="block"/> in its <c>source::</c>: read from the block's current id (it gets one on its first
+    /// adoption) and the current book, while that is the list's book.
+    /// </summary>
+    private bool IsUsed(WhereToList list, Block block, Guid textBlockKey) =>
+        block.Id is { } id
+        && State.CurrentBook is { } book
+        && string.Equals(book.LinkName, list.BookName, StringComparison.OrdinalIgnoreCase)
+        && book.FindTextBlock(textBlockKey)?.Sources.Contains(id) == true;
+
+    /// <summary>
+    /// The "Wohin damit?" list of <paramref name="block"/>: the busy hint while it searches, then its hits (with topics:
+    /// topic › place with the topic's summary as tooltip, the model's recommendation first) or the hint that there are
+    /// none; below the hits "Genauer prüfen", its progress or the hint that it failed.
+    /// </summary>
+    private RenderFragment WhereToResults(WhereToList list, Block block) =>
+        @<div class="ne-note-whereto-results">
+            @if (list.Hits is not { } hits)
+            {
+                <div class="ne-note-hint ne-note-whereto-busy" role="status">@L["NoteWhereToBusy"]</div>
+            }
+            else if (hits.Count == 0)
+            {
+                <div class="ne-note-hint ne-note-whereto-none" role="status">@L["NoteWhereToNone"]</div>
+            }
+            else
+            {
+                <ul class="ne-note-whereto-list">
+                    @if (list.Recommendation is { } recommended)
+                    {
+                        <li @key="@("recommended")">
+                            <button type="button" class="ne-note-whereto-item ne-note-whereto-recommended"
+                                    title="@(recommended.Summary ?? L["NoteWhereToItemTitle"])"
+                                    @onclick="() => GoToHitAsync(list, recommended.TargetKey)">
+                                <span class="ne-note-whereto-recommended-label">@L["CheckRecommended"]</span>
+                                <span class="@("ne-note-whereto-fit ne-note-whereto-fit-" + recommended.Fit.ToString().ToLowerInvariant())"
+                                      title="@L["NoteWhereToFit" + recommended.Fit]">●</span>
+                                @if (list.RecommendationStale)
+                                {
+                                    <span class="ne-note-whereto-stale">@L["NoteWhereToStale"]</span>
+                                }
+                                @if (recommended.Topic.Length > 0)
+                                {
+                                    <span class="ne-note-whereto-topic">@recommended.Topic</span>
+                                }
+                                <span class="ne-note-whereto-place">@recommended.Place</span>
+                                @if (IsUsed(list, block, recommended.TargetKey))
+                                {
+                                    <span class="ne-note-whereto-used">✓</span>
+                                }
+                                <span class="ne-note-whereto-reason">@recommended.Reason</span>
+                            </button>
+                        </li>
+                    }
+                    @foreach (var hit in hits)
+                    {
+                        <li @key="hit.Key">
+                            @if (hit.Topic is { } topic)
+                            {
+                                <button type="button" class="ne-note-whereto-item" title="@(hit.Summary ?? L["NoteWhereToItemTitle"])"
+                                        @onclick="() => GoToHitAsync(list, hit.Key)">
+                                    @if (topic.Length > 0)
+                                    {
+                                        <span class="ne-note-whereto-topic">@topic</span>
+                                    }
+                                    <span class="ne-note-whereto-place">@L["NoteWhereToAfter", hit.Excerpt]</span>
+                                    @if (IsUsed(list, block, hit.Key))
+                                    {
+                                        <span class="ne-note-whereto-used">✓</span>
+                                    }
+                                    <span class="ne-note-whereto-percent">@hit.Percent %</span>
+                                </button>
+                            }
+                            else
+                            {
+                                <button type="button" class="ne-note-whereto-item" title="@L["NoteWhereToItemTitle"]"
+                                        @onclick="() => GoToHitAsync(list, hit.Key)">
+                                    @if (hit.Path.Length > 0)
+                                    {
+                                        <span class="ne-note-whereto-path">@hit.Path</span>
+                                    }
+                                    <span class="ne-note-whereto-excerpt">@hit.Excerpt</span>
+                                    @if (IsUsed(list, block, hit.Key))
+                                    {
+                                        <span class="ne-note-whereto-used">✓</span>
+                                    }
+                                    <span class="ne-note-whereto-percent">@hit.Percent %</span>
+                                </button>
+                            }
+                        </li>
+                    }
+                </ul>
+                @if (list.Check is { } run)
+                {
+                    @Checking(list, run)
+                }
+                else if (CheckAvailable && !list.PlacementCurrent)
+                {
+                    <button type="button" class="ne-note-whereto-check" title="@L["CheckButtonTitle"]"
+                            @onclick="() => CheckAsync(list)">@L["CheckButton"]</button>
+                }
+                @if (list.CheckFailed)
+                {
+                    <div class="ne-note-hint ne-note-whereto-check-failed" role="status">@L["CheckUnusable"]</div>
+                }
+            }
+        </div>;
+
+    /// <summary>
+    /// The progress of a running check: "Prüfe … 0:42 von ca. 1:20" with a bar; past the expected time the bar becomes
+    /// indeterminate (pulsing) with "dauert länger als erwartet". While it waits behind a background request only that
+    /// is said, with an indeterminate bar.
+    /// </summary>
+    private RenderFragment Checking(WhereToList list, CheckRun run)
+    {
+        var elapsed = Time.GetElapsedTime(run.Started);
+        var longer = !run.Waiting && elapsed > run.Expected;
+        var text = run.Waiting
+            ? L["CheckWaiting"].Value
+            : L["CheckRunning", Durations.Format(elapsed, L), Durations.Format(run.Expected, L)].Value;
+        return @<div class="ne-note-whereto-checking" role="status">
+            <span class="ne-note-whereto-checking-text">@text</span>
+            @if (longer)
+            {
+                <span class="ne-note-whereto-check-longer">@L["CheckLonger"]</span>
+            }
+            @if (run.Waiting || longer)
+            {
+                <progress class="ne-note-whereto-check-bar"></progress>
+            }
+            else
+            {
+                <progress class="ne-note-whereto-check-bar" max="@WholeSeconds(run.Expected)" value="@WholeSeconds(elapsed)"></progress>
+            }
+            <button type="button" class="ne-note-whereto-check-cancel" @onclick="() => CancelCheck(list)">@L["CheckCancel"]</button>
+        </div>;
+    }
+
+    /// <summary>A duration in whole seconds (rounded), for the bar.</summary>
+    private static long WholeSeconds(TimeSpan span) => (long)Math.Round(span.TotalSeconds, MidpointRounding.AwayFromZero);
+}

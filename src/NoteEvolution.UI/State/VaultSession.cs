@@ -530,7 +530,9 @@ public sealed class VaultSession : IDisposable
 
     /// <summary>
     /// Reverses the latest operation (<see cref="UndoManager.Undo"/>), unless a conflict is open: undoing writes pages
-    /// directly and could recreate a deleted file or overwrite an unresolved conflict. Failures are logged.
+    /// directly and could recreate a deleted file or overwrite an unresolved conflict. Failures are logged. The note pages
+    /// the undo wrote are indexed again (<see cref="Search"/>); views re-read the notes after
+    /// <see cref="AppState.NotifyNotesChanged"/>, which the caller raises.
     /// </summary>
     /// <returns><c>true</c> if the undo ran without error (or there was nothing to undo); otherwise <paramref name="error"/> says why.</returns>
     /// <exception cref="ObjectDisposedException">The session is disposed.</exception>
@@ -543,6 +545,17 @@ public sealed class VaultSession : IDisposable
             return false;
         }
 
+        // The note pages the undo writes (an adoption taken back) are indexed again: the search knows which notes are used.
+        var written = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        void OnWritten(Page page)
+        {
+            if (!Book.IsBook(page))
+            {
+                written.Add(page.FilePath);
+            }
+        }
+
+        Vault.PageReplaced += OnWritten;
         try
         {
             Undo.Undo();
@@ -554,6 +567,22 @@ public sealed class VaultSession : IDisposable
             _logger.LogError(ex, "Undo failed");
             error = ex;
             return false;
+        }
+        finally
+        {
+            Vault.PageReplaced -= OnWritten;
+            foreach (var path in written)
+            {
+                try
+                {
+                    Search.UpdatePage(Notes, path);
+                }
+                catch (Exception ex)
+                {
+                    // A stale index (an aid, rebuilt on opening) must not hide that the undo ran.
+                    _logger.LogWarning(ex, "Updating the search index for {Path} after undoing failed", path);
+                }
+            }
         }
     }
 

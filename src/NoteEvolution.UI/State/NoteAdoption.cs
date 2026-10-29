@@ -3,6 +3,7 @@ using NoteEvolution.Core.Books;
 using NoteEvolution.Core.Links;
 using NoteEvolution.Core.Model;
 using NoteEvolution.Core.Storage;
+using NoteEvolution.Core.Vaults;
 
 namespace NoteEvolution.UI.State;
 
@@ -41,21 +42,25 @@ public static class NoteAdoption
     /// (R26; <see cref="ILinkService"/> writes through the page writer directly and would overwrite it). A change of the
     /// book file by another program is handed to the session (merge or conflict) and the user adopts again. Whatever
     /// happens, the book view is taken from the vault again and <see cref="AppState.Notify"/> is raised.
+    /// Without <paramref name="includeChildren"/> only the block's own text is adopted, not its sub-points; with
+    /// "Verwendete ausblenden" (<see cref="AppState.HideUsedNotes"/>) the sub-points it hides are left out.
     /// </summary>
     /// <returns>The message to show, or <c>null</c> if the note was adopted without remark.</returns>
     public static Task<AdoptMessage?> AdoptAsync(
-        AppState state, Guid noteBlockKey, Func<Book, InsertPosition> position, ILogger logger) =>
-        RunAsync(state, noteBlockKey, (links, book) => NewTextBlock(links.Adopt(book, noteBlockKey, position(book))), logger);
+        AppState state, Guid noteBlockKey, Func<Book, InsertPosition> position, ILogger logger, bool includeChildren = true) =>
+        RunAsync(state, noteBlockKey,
+            (links, book) => NewTextBlock(links.Adopt(book, noteBlockKey, position(book), includeChildren, state.HideUsedNotes)), logger);
 
     /// <summary>
     /// Whether <paramref name="variant"/> is offered for <paramref name="noteBlock"/>: the heading variants only for a
-    /// note block with sub-points, a sub-heading not below a level-6 heading (<see cref="ReferenceSection"/> in the
-    /// current book); the other variants always.
+    /// note block with shown sub-points (with "Verwendete ausblenden" the hidden ones do not count, see
+    /// <see cref="AppState.HideUsedNotes"/>), a sub-heading not below a level-6 heading (<see cref="ReferenceSection"/>
+    /// in the current book); the other variants always.
     /// </summary>
     public static bool Offers(AppState state, Block noteBlock, AdoptVariant variant) => variant switch
     {
-        AdoptVariant.AsHeading => noteBlock.Children.Count > 0,
-        AdoptVariant.AsSubheading => noteBlock.Children.Count > 0
+        AdoptVariant.AsHeading => NoteBlock.ShownChildren(noteBlock, state.HideUsedNotes).Any(),
+        AdoptVariant.AsSubheading => NoteBlock.ShownChildren(noteBlock, state.HideUsedNotes).Any()
                                      && !(state.CurrentBook is { } book && ReferenceSection(state, book)?.Level >= MaxHeadingLevel),
         _ => true,
     };
@@ -92,31 +97,36 @@ public static class NoteAdoption
     /// revealed, so the user sees where the text went (the cursor goes to its start). The heading variants place the
     /// heading relative to <see cref="ReferenceSection"/>; <paramref name="untitledTitle"/> is the title of a heading
     /// from a note block whose first line is blank.
+    /// Without <paramref name="includeChildren"/> only the block's own text is adopted, not its sub-points.
     /// </summary>
     /// <returns>The message to show, or <c>null</c> if the note was adopted without remark.</returns>
     public static Task<AdoptMessage?> AdoptAsync(
-        AppState state, Guid noteBlockKey, AdoptVariant variant, string untitledTitle, ILogger logger) =>
-        RunAsync(state, noteBlockKey, (links, book) => Adopt(links, state, book, noteBlockKey, variant, untitledTitle), logger);
+        AppState state, Guid noteBlockKey, AdoptVariant variant, string untitledTitle, ILogger logger, bool includeChildren = true) =>
+        RunAsync(state, noteBlockKey, (links, book) => Adopt(links, state, book, noteBlockKey, variant, untitledTitle, includeChildren), logger);
 
     /// <summary>
     /// Adopts the note into the element the variant and the cursor name (see the mapping in spec 4), or as a heading;
     /// also returns the element to reveal: the new text block or heading, or the existing element the note went into.
     /// </summary>
     private static (bool NoteUpdatePending, Guid? Reveal) Adopt(
-        ILinkService links, AppState state, Book book, Guid noteBlockKey, AdoptVariant variant, string untitledTitle)
+        ILinkService links, AppState state, Book book, Guid noteBlockKey, AdoptVariant variant, string untitledTitle, bool includeChildren)
     {
+        // With "Verwendete ausblenden" the sub-points the card hides are left out, so they do not go into the book again.
+        var hideUsed = state.HideUsedNotes;
+
         // The current element is checked against the book just read from the vault, not the state's (older) one.
         if (variant is AdoptVariant.AsHeading or AdoptVariant.AsSubheading)
         {
             var section = ReferenceSection(state, book)!;
-            var heading = links.AdoptAsHeading(book, noteBlockKey, section.Key, variant == AdoptVariant.AsSubheading, untitledTitle);
+            var heading = links.AdoptAsHeading(
+                book, noteBlockKey, section.Key, variant == AdoptVariant.AsSubheading, untitledTitle, includeChildren, hideUsed);
             return (heading.NoteUpdatePending, heading.HeadingKey);
         }
 
         var cursor = state.Cursor is { } c ? BookElements.Find(book, c.Key) : null;
         if (CurrentElement(state, book) is not { } element)
         {
-            return NewTextBlock(links.Adopt(book, noteBlockKey, new InsertPosition.SectionEnd(FallbackSection(state, book))));
+            return NewTextBlock(links.Adopt(book, noteBlockKey, new InsertPosition.SectionEnd(FallbackSection(state, book)), includeChildren, hideUsed));
         }
 
         // The cursor's offset belongs to its own element; it is never applied to a fallback element.
@@ -128,11 +138,11 @@ public static class NoteAdoption
         var offset = state.Cursor?.Offset ?? 0;
         return (element.Kind, variant) switch
         {
-            (ElementKind.Heading, _) => NewTextBlock(links.Adopt(book, noteBlockKey, new InsertPosition.SectionStart(element.Key))),
-            (ElementKind.TextBlock, AdoptVariant.After) => NewTextBlock(links.Adopt(book, noteBlockKey, new InsertPosition.After(element.Key))),
-            (_, AdoptVariant.AtCursor) => Into(links.AdoptInto(book, noteBlockKey, new IntoPosition.AtCursor(element.Key, offset)), element.Key),
-            (_, AdoptVariant.After) => Into(links.AdoptInto(book, noteBlockKey, new IntoPosition.AfterDetail(element.Key)), element.Key),
-            _ => Into(links.AdoptInto(book, noteBlockKey, new IntoPosition.FirstChild(element.Key)), element.Key),
+            (ElementKind.Heading, _) => NewTextBlock(links.Adopt(book, noteBlockKey, new InsertPosition.SectionStart(element.Key), includeChildren, hideUsed)),
+            (ElementKind.TextBlock, AdoptVariant.After) => NewTextBlock(links.Adopt(book, noteBlockKey, new InsertPosition.After(element.Key), includeChildren, hideUsed)),
+            (_, AdoptVariant.AtCursor) => Into(links.AdoptInto(book, noteBlockKey, new IntoPosition.AtCursor(element.Key, offset), includeChildren, hideUsed), element.Key),
+            (_, AdoptVariant.After) => Into(links.AdoptInto(book, noteBlockKey, new IntoPosition.AfterDetail(element.Key), includeChildren, hideUsed), element.Key),
+            _ => Into(links.AdoptInto(book, noteBlockKey, new IntoPosition.FirstChild(element.Key), includeChildren, hideUsed), element.Key),
         };
     }
 
@@ -248,6 +258,8 @@ public static class NoteAdoption
             }
         }
 
+        // The note is used now: the notes pane reads its notes again (with "Verwendete ausblenden" it leaves them).
+        state.NotifyNotesChanged();
         return (noteUpdatePending ? new AdoptMessage("NoteUpdatePending", false) : null, reveal);
     }
 }

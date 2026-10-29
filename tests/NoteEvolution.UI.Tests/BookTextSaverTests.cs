@@ -215,6 +215,29 @@ public class BookTextSaverTests : UiTestContext
     }
 
     [Fact]
+    public async Task ApplyUnsavedEffects_ADeletedAdoptedBlock_TheNoteComesBackIntoTheNotesTabsAndTheSearch()
+    {
+        using var tv = TestVault.Create(
+            (BookPath, "title:: Alpha\ntype:: book\n\n- # Eins\n\t- Erster Text\n"),
+            (NotesPath, "- Gedächtnis\n  id:: " + NoteId + "\n  used-in:: [[Buch - Alpha]] ((" + OtherNoteBlockId + "))\n"));
+        var (session, saver) = await OpenAsync(tv);
+        var key = session.Notes.All().Single(n => n.Block.Content == "Gedächtnis").Key;
+        List<Guid> Found() =>
+            [.. session.Search.Search(new NoteEvolution.AI.Search.SearchQuery("Gedächtnis", new NoteEvolution.Core.Vaults.NoteFilter(HideUsed: true, null, null)))
+                .Select(hit => hit.NoteBlockKey)];
+        Assert.DoesNotContain(key, Found());
+        var notesChanged = 0;
+        State.NotesChanged += () => notesChanged++;
+
+        saver.QueueEffects(session, "Buch - Alpha", [new BlockDeleted(Guid.Parse(OtherNoteBlockId), [Guid.Parse(NoteId)])]);
+        saver.ApplyUnsavedEffects();
+
+        Assert.DoesNotContain("used-in::", tv.Read(NotesPath));
+        Assert.Equal(1, notesChanged);
+        Assert.Contains(key, Found());
+    }
+
+    [Fact]
     public async Task Save_PastedCopyFromAnotherSection_IsASplitCopy_TheOriginalStays()
     {
         using var tv = Alpha();

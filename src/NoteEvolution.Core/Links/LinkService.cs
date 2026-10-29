@@ -25,7 +25,7 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
     /// <summary>The status of every block an adopt creates (<c>status:: relevant</c>).</summary>
     private static readonly string Relevant = BlockStatuses.FileValue(BlockStatus.Relevant)!;
 
-    public AdoptResult Adopt(Book book, Guid noteBlockKey, InsertPosition position)
+    public AdoptResult Adopt(Book book, Guid noteBlockKey, InsertPosition position, bool includeChildren = true, bool hideUsed = false)
     {
         var bookPage = book.Page;
         EnsureWritable(bookPage);
@@ -33,7 +33,8 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
 
         var (parent, index) = Resolve(book, position);
 
-        var copy = CopyOf(note);
+        var copy = CopyOf(note, includeChildren, hideUsed);
+        var ownOnly = LeavesOutSubPoints(note, includeChildren, hideUsed);
         var noteLines = note.Lines.ToList();
         var noteWasDirty = note.IsDirty;
         var noteId = note.EnsureId();
@@ -57,11 +58,12 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
             throw;
         }
 
-        var noteUpdatePending = UpdateNote(notePage, note, book.LinkName, textBlockId, remove: false).Pending;
+        var change = UpdateNote(notePage, note, book.LinkName, textBlockId, remove: false, withoutChildren: ownOnly);
+        var noteUpdatePending = change.Pending;
 
         var bookPath = bookPage.FilePath;
         var linkName = book.LinkName;
-        undo.Push(new UndoAction("Übernehmen", () => UndoAdopt(bookPath, linkName, textBlockId, noteId)));
+        undo.Push(new UndoAction("Übernehmen", () => UndoAdopt(bookPath, linkName, textBlockId, change)));
         if (!noteUpdatePending)
         {
             RetryPending();
@@ -70,7 +72,7 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
         return new AdoptResult(copy.Key, textBlockId, noteUpdatePending);
     }
 
-    public AdoptResult AdoptInto(Book book, Guid noteBlockKey, IntoPosition position)
+    public AdoptResult AdoptInto(Book book, Guid noteBlockKey, IntoPosition position, bool includeChildren = true, bool hideUsed = false)
     {
         var bookPage = book.Page;
         EnsureWritable(bookPage);
@@ -84,7 +86,8 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
             IntoPosition.FirstChild first => FindElement(book, first.ElementKey, detailOnly: false),
             _ => throw new ArgumentException("Unknown position.", nameof(position)),
         };
-        var copy = CopyOf(note);
+        var copy = CopyOf(note, includeChildren, hideUsed);
+        var ownOnly = LeavesOutSubPoints(note, includeChildren, hideUsed);
 
         // The new top-level details are relevant: at the cursor the note's sub-bullets, else the copy. Set while they
         // are detached, so that one without a place for it (an unclosed code fence) throws before anything changed.
@@ -147,12 +150,13 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
         }
 
         var adopted = new AdoptedInto(inserted, linesBefore, CaptureSubtree(textBlock));
-        var noteUpdatePending = UpdateNote(notePage, note, book.LinkName, textBlockId, remove: false).Pending;
+        var change = UpdateNote(notePage, note, book.LinkName, textBlockId, remove: false, withoutChildren: ownOnly);
+        var noteUpdatePending = change.Pending;
 
         var bookPath = bookPage.FilePath;
         var linkName = book.LinkName;
         undo.Push(new UndoAction(
-            "Übernehmen", () => UndoAdoptInto(bookPath, linkName, textBlockId, sourceAdded ? noteId : null, adopted)));
+            "Übernehmen", () => UndoAdoptInto(bookPath, linkName, textBlockId, change, sourceAdded, adopted)));
         if (!noteUpdatePending)
         {
             RetryPending();
@@ -161,12 +165,16 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
         return new AdoptResult(textBlock.Key, textBlockId, noteUpdatePending);
     }
 
-    public HeadingAdoptResult AdoptAsHeading(Book book, Guid noteBlockKey, Guid sectionKey, bool asSubheading, string untitledTitle)
+    public HeadingAdoptResult AdoptAsHeading(
+        Book book, Guid noteBlockKey, Guid sectionKey, bool asSubheading, string untitledTitle, bool includeChildren = true,
+        bool hideUsed = false)
     {
         var bookPage = book.Page;
         EnsureWritable(bookPage);
         var (notePage, note) = FindWritableNote(noteBlockKey);
-        if (note.Children.Count == 0)
+        List<Block> subPoints = includeChildren ? [.. NoteBlock.ShownChildren(note, hideUsed)] : [];
+        var ownOnly = LeavesOutSubPoints(note, includeChildren, hideUsed);
+        if (includeChildren && subPoints.Count == 0)
         {
             throw new ArgumentException("The note block has no sub-points.", nameof(noteBlockKey));
         }
@@ -212,10 +220,10 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
             adopted.Add((note, Block.CreateDetached(further)));
         }
 
-        adopted.AddRange(note.Children.Select(child => (child, CopyOf(child))));
+        adopted.AddRange(subPoints.Select(child => (child, CopyOf(child, true, hideUsed))));
 
         List<(Block Block, List<RawLine> Lines, bool WasDirty)> notesBefore =
-            [.. note.Children.Prepend(note).Select(block => (block, block.Lines.ToList(), block.IsDirty))];
+            [.. subPoints.Prepend(note).Select(block => (block, block.Lines.ToList(), block.IsDirty))];
         var noteId = note.EnsureId();
         bookPage.InsertBlock(parent, index, heading);
         var links = new List<(Block Note, Guid NoteId, Guid TextBlockId)>();
@@ -255,24 +263,37 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
         // sub-points' entries (they are on the same page); without a block reference it cannot wait in pending.json.
         var linkName = book.LinkName;
         var bookUsageAdded = false;
+        NoteChange? bookUsage = null;
         if (links.All(link => link.Note != note))
         {
             bookUsageAdded = !UsedInValue.Parse(note.GetProperty(UsedInKey) ?? "")
                 .Any(e => e.BookBlockId is null && string.Equals(e.PageName, linkName, StringComparison.OrdinalIgnoreCase));
-            ApplyEntry(note, linkName, null, remove: false);
+            var before = note.Lines.ToList();
+            var aloneBefore = UsedAloneOnly(note);
+            AddEntry(note, linkName, null, ownOnly);
+            bookUsage = new NoteChange(noteId, null, before, note.Lines.ToList(), Pending: false, aloneBefore);
+            if (links.Count == 0)
+            {
+                // No sub-point's entry follows to write the page (a heading without sub-points).
+                SaveNote(notePage, note, noteId, linkName, null, remove: false);
+            }
         }
 
         var noteUpdatePending = false;
+        var changes = new List<NoteChange>();
         foreach (var (source, _, textBlockId) in links)
         {
-            noteUpdatePending |= UpdateNote(notePage, source, linkName, textBlockId, remove: false).Pending;
+            // The note's own further text carries its usage; the sub-points stay unused when they were left out. A
+            // sub-point goes with its (shown) sub-points.
+            var change = UpdateNote(notePage, source, linkName, textBlockId, remove: false, withoutChildren: source == note && ownOnly);
+            noteUpdatePending |= change.Pending;
+            changes.Add(change);
         }
 
         var bookPath = bookPage.FilePath;
         var headingKey = heading.Key;
-        List<(Guid NoteId, Guid TextBlockId)> usages = [.. links.Select(link => (link.NoteId, link.TextBlockId))];
         undo.Push(new UndoAction(
-            "Übernehmen", () => UndoAdoptAsHeading(bookPath, linkName, headingKey, headingAfter, usages, bookUsageAdded ? noteId : null)));
+            "Übernehmen", () => UndoAdoptAsHeading(bookPath, linkName, headingKey, headingAfter, changes, bookUsage, bookUsageAdded)));
         if (!noteUpdatePending)
         {
             RetryPending();
@@ -931,8 +952,11 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
         }
     }
 
-    /// <summary>Removes the adopted book block (found by its id) and the note's usage; the note keeps its <c>id::</c>.</summary>
-    private void UndoAdopt(string bookPath, string linkName, Guid textBlockId, Guid noteId)
+    /// <summary>
+    /// Removes the adopted book block (found by its id) and takes the note's usage back (<see cref="UndoUsage"/>); the
+    /// note keeps its <c>id::</c>.
+    /// </summary>
+    private void UndoAdopt(string bookPath, string linkName, Guid textBlockId, NoteChange change)
     {
         var page = CurrentPage(bookPath);
         if (page.AllBlocks().FirstOrDefault(b => b.Id == textBlockId) is { } block)
@@ -943,23 +967,58 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
             SaveBook(page, () => page.RestoreBlock(parent, index, block));
         }
 
-        var noteUpdatePending = RemoveUsageOfFound(noteId, linkName, textBlockId) is { Pending: true };
-        if (!noteUpdatePending)
+        if (!UndoUsage(linkName, change, removeOtherwise: true))
         {
             RetryPending();
         }
     }
 
     /// <summary>
-    /// Removes the heading <see cref="AdoptAsHeading"/> added (found by its key) with everything below it, then the
-    /// usages of its text blocks from the notes and, if <see cref="AdoptAsHeading"/> added it, the entry without block
-    /// reference from <paramref name="bookUsageNoteId"/>; the notes keep their <c>id::</c>. Refused before anything
-    /// changes if the heading with its subtree is no longer exactly as <see cref="AdoptAsHeading"/> left it
-    /// (<paramref name="after"/>): text written below it would go, and the usages of a block split off would stay.
+    /// Takes back the usage an adoption added to a note (<paramref name="change"/>): a note still exactly as the
+    /// adoption left it gets its lines from before back, with its <c>used-without-children::</c> state; any other note
+    /// loses the usage if <paramref name="removeOtherwise"/>, and while others remain their mark is set as it was before
+    /// the adoption (<see cref="NoteChange.AloneBefore"/>): the adoption that is taken back may have removed it, or a
+    /// later one adopting the block alone may not have written it. An open add for the usage of a note that is not found
+    /// is dropped. Returns whether the note update waits in <c>pending.json</c>.
+    /// </summary>
+    private bool UndoUsage(string linkName, NoteChange change, bool removeOtherwise)
+    {
+        if (FindNote(change.NoteId) is not { } note)
+        {
+            if (change.BookBlockId is { } id)
+            {
+                ClearPending(change.NoteId, linkName, id);
+            }
+
+            return false;
+        }
+
+        if (!note.Page.IsReadOnly && note.Block.Lines.SequenceEqual(change.After))
+        {
+            note.Block.RestoreLines(change.Before, isDirty: true);
+            return SaveNote(note.Page, note.Block, change.NoteId, linkName, change.BookBlockId, remove: true, change.AloneBefore);
+        }
+
+        // An entry without block reference cannot wait in pending.json for a read-only page.
+        if (!removeOtherwise || (note.Page.IsReadOnly && change.BookBlockId is null))
+        {
+            return false;
+        }
+
+        return UpdateNote(note.Page, note.Block, linkName, change.BookBlockId, remove: true, withoutChildren: change.AloneBefore).Pending;
+    }
+
+    /// <summary>
+    /// Removes the heading <see cref="AdoptAsHeading"/> added (found by its key) with everything below it, then takes
+    /// back the usages of its text blocks (<paramref name="changes"/>) and the entry without block reference
+    /// (<paramref name="bookUsage"/>, removed from a changed note only if <paramref name="bookUsageAdded"/>), see
+    /// <see cref="UndoUsage"/>; the notes keep their <c>id::</c>. Refused before anything changes if the heading with its
+    /// subtree is no longer exactly as <see cref="AdoptAsHeading"/> left it (<paramref name="after"/>): text written
+    /// below it would go, and the usages of a block split off would stay.
     /// </summary>
     private void UndoAdoptAsHeading(
         string bookPath, string linkName, Guid headingKey, IReadOnlyList<SubtreeBlock> after,
-        IReadOnlyList<(Guid NoteId, Guid TextBlockId)> usages, Guid? bookUsageNoteId)
+        IReadOnlyList<NoteChange> changes, NoteChange? bookUsage, bool bookUsageAdded)
     {
         var page = CurrentPage(bookPath);
         if (page.AllBlocks().FirstOrDefault(b => b.Key == headingKey) is not { } heading || !SubtreeIs(heading, after))
@@ -973,14 +1032,14 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
         SaveBook(page, () => page.RestoreBlock(parent, index, heading));
 
         var noteUpdatePending = false;
-        foreach (var (noteId, textBlockId) in usages)
+        foreach (var change in changes)
         {
-            noteUpdatePending |= RemoveUsageOfFound(noteId, linkName, textBlockId) is { Pending: true };
+            noteUpdatePending |= UndoUsage(linkName, change, removeOtherwise: true);
         }
 
-        if (bookUsageNoteId is { } id && FindNote(id) is { Page.IsReadOnly: false } note)
+        if (bookUsage is not null)
         {
-            noteUpdatePending |= UpdateNote(note.Page, note.Block, linkName, null, remove: true).Pending;
+            noteUpdatePending |= UndoUsage(linkName, bookUsage, removeOtherwise: bookUsageAdded);
         }
 
         if (!noteUpdatePending)
@@ -991,11 +1050,12 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
 
     /// <summary>
     /// Puts the text block with its details back as it was before <see cref="AdoptInto"/> (lines, without the inserted
-    /// blocks), then removes the note's usage if <see cref="AdoptInto"/> added the note as a source
-    /// (<paramref name="addedNoteId"/>). Refused before anything changes if the text block's subtree is no longer
-    /// exactly as <see cref="AdoptInto"/> left it.
+    /// blocks), then takes the note's usage back (<see cref="UndoUsage"/>; from a changed note it is removed only if
+    /// <see cref="AdoptInto"/> added the note as a source, <paramref name="sourceAdded"/>). Refused before anything
+    /// changes if the text block's subtree is no longer exactly as <see cref="AdoptInto"/> left it.
     /// </summary>
-    private void UndoAdoptInto(string bookPath, string linkName, Guid textBlockId, Guid? addedNoteId, AdoptedInto adopted)
+    private void UndoAdoptInto(
+        string bookPath, string linkName, Guid textBlockId, NoteChange change, bool sourceAdded, AdoptedInto adopted)
     {
         var page = CurrentPage(bookPath);
         if (page.AllBlocks().FirstOrDefault(b => b.Id == textBlockId) is not { } textBlock || !SubtreeIs(textBlock, adopted.After))
@@ -1016,7 +1076,7 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
             RestoreSubtree(adopted.After, markDirty: true);
         });
 
-        var noteUpdatePending = addedNoteId is { } noteId && RemoveUsageOfFound(noteId, linkName, textBlockId) is { Pending: true };
+        var noteUpdatePending = UndoUsage(linkName, change, removeOtherwise: sourceAdded);
         if (!noteUpdatePending)
         {
             RetryPending();
@@ -1104,11 +1164,12 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
             if (!note.Page.IsReadOnly && note.Block.Lines.SequenceEqual(change.After))
             {
                 note.Block.RestoreLines(change.Before, isDirty: true);
-                allWritten &= !SaveNote(note.Page, note.Block, change.NoteId, linkName, change.BookBlockId, remove: false);
+                allWritten &= !SaveNote(note.Page, note.Block, change.NoteId, linkName, change.BookBlockId, remove: false, change.AloneBefore);
             }
             else
             {
-                allWritten &= !UpdateNote(note.Page, note.Block, linkName, change.BookBlockId, remove: false).Pending;
+                // The usage comes back as it was: one the note had only without its sub-points keeps (or gets) the mark.
+                allWritten &= !UpdateNote(note.Page, note.Block, linkName, change.BookBlockId, remove: false, withoutChildren: change.AloneBefore).Pending;
             }
         }
 
@@ -1122,10 +1183,12 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
     /// write fails, the change goes to <c>pending.json</c>, a rewrite as an add and a remove (the in-memory note keeps a
     /// change that failed to write). Without a book block id there is no pending entry: the exception is passed on.
     /// </summary>
-    private NoteChange UpdateNote(Page page, Block note, string linkName, Guid? bookBlockId, bool remove, Guid? replacing = null)
+    private NoteChange UpdateNote(
+        Page page, Block note, string linkName, Guid? bookBlockId, bool remove, Guid? replacing = null, bool? withoutChildren = null)
     {
         var noteId = note.Id ?? throw new InvalidOperationException("The note block has no id.");
         var before = note.Lines.ToList();
+        var aloneBefore = UsedAloneOnly(note);
         bool pendingNow;
         if (page.IsReadOnly)
         {
@@ -1134,13 +1197,25 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
                 throw new ReadOnlyPageException($"Die Datei '{page.FilePath}' ist schreibgeschützt: {page.ParseError}");
             }
 
-            Queue(new PendingNoteUpdate(noteId, Locate(page, note), linkName, id, remove));
+            Queue(new PendingNoteUpdate(noteId, Locate(page, note), linkName, id, remove, withoutChildren));
             pendingNow = true;
         }
         else
         {
-            ApplyEntry(note, linkName, bookBlockId, remove, replacing);
-            pendingNow = SaveNote(page, note, noteId, linkName, bookBlockId, remove);
+            if (withoutChildren is { } ownOnly && !remove)
+            {
+                AddEntry(note, linkName, bookBlockId, ownOnly);
+            }
+            else if (remove)
+            {
+                RemoveEntry(note, linkName, bookBlockId, withoutChildren);
+            }
+            else
+            {
+                ApplyEntry(note, linkName, bookBlockId, remove, replacing);
+            }
+
+            pendingNow = SaveNote(page, note, noteId, linkName, bookBlockId, remove, withoutChildren);
         }
 
         if (replacing is { } replaced)
@@ -1155,11 +1230,11 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
             }
         }
 
-        return new NoteChange(noteId, bookBlockId, before, note.Lines.ToList(), pendingNow);
+        return new NoteChange(noteId, bookBlockId, before, note.Lines.ToList(), pendingNow, aloneBefore);
     }
 
     /// <summary>Writes the note page if it has changes; returns <c>true</c> if the write failed and was queued.</summary>
-    private bool SaveNote(Page page, Block note, Guid noteId, string linkName, Guid? bookBlockId, bool remove)
+    private bool SaveNote(Page page, Block note, Guid noteId, string linkName, Guid? bookBlockId, bool remove, bool? withoutChildren = null)
     {
         try
         {
@@ -1170,7 +1245,7 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
         }
         catch (Exception ex) when (ex is IOException or InvalidOperationException && bookBlockId is not null)
         {
-            Queue(new PendingNoteUpdate(noteId, Locate(page, note), linkName, bookBlockId.Value, remove));
+            Queue(new PendingNoteUpdate(noteId, Locate(page, note), linkName, bookBlockId.Value, remove, withoutChildren));
             return true;
         }
 
@@ -1211,7 +1286,19 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
             note.Block.SetProperty("id", update.NoteBlockId.ToString("D"));
         }
 
-        ApplyEntry(note.Block, update.BookLinkName, update.BookBlockId, update.Remove);
+        if (update.Remove)
+        {
+            RemoveEntry(note.Block, update.BookLinkName, update.BookBlockId, update.WithoutChildren);
+        }
+        else if (update.WithoutChildren is { } ownOnly)
+        {
+            AddEntry(note.Block, update.BookLinkName, update.BookBlockId, ownOnly);
+        }
+        else
+        {
+            ApplyEntry(note.Block, update.BookLinkName, update.BookBlockId, remove: false);
+        }
+
         try
         {
             if (note.Page.IsDirty)
@@ -1232,7 +1319,8 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
     /// entry in place of the first entry for that book block and drops the others, or only drops them if the entry is
     /// there already; without such an entry it is a plain add.
     /// </summary>
-    private static void ApplyEntry(Block note, string linkName, Guid? bookBlockId, bool remove, Guid? replacing = null)
+    /// <returns>Whether the entries changed.</returns>
+    private static bool ApplyEntry(Block note, string linkName, Guid? bookBlockId, bool remove, Guid? replacing = null)
     {
         var entries = UsedInValue.Parse(note.GetProperty(UsedInKey) ?? "").ToList();
         bool Matches(UsedInEntry e) => IsEntry(e, bookBlockId);
@@ -1251,7 +1339,7 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
         }
         else if (remove ? entries.RemoveAll(Matches) == 0 : entries.Any(Matches))
         {
-            return;
+            return false;
         }
         else if (!remove)
         {
@@ -1261,11 +1349,68 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
         if (entries.Count == 0)
         {
             note.RemoveProperty(UsedInKey);
+            note.RemoveProperty(UsedInValue.WithoutChildrenKey);
         }
         else
         {
             note.SetProperty(UsedInKey, UsedInValue.Format(entries));
         }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Removes the <c>used-in::</c> entry (see <see cref="ApplyEntry"/>); with <paramref name="aloneAfter"/>, while other
+    /// usages remain, <c>used-without-children:: true</c> is set or removed as it says (taking back an adoption, see
+    /// <see cref="UndoUsage"/>). Without it, or when the entry was not there, the mark stays as it is.
+    /// </summary>
+    private static void RemoveEntry(Block note, string linkName, Guid? bookBlockId, bool? aloneAfter)
+    {
+        if (ApplyEntry(note, linkName, bookBlockId, remove: true) && aloneAfter is { } alone
+            && !string.IsNullOrWhiteSpace(note.GetProperty(UsedInKey)))
+        {
+            SetWithoutChildren(note, alone);
+        }
+    }
+
+    /// <summary>Sets or removes <c>used-without-children:: true</c>.</summary>
+    private static void SetWithoutChildren(Block note, bool alone)
+    {
+        if (alone)
+        {
+            note.SetProperty(UsedInValue.WithoutChildrenKey, "true");
+        }
+        else
+        {
+            note.RemoveProperty(UsedInValue.WithoutChildrenKey);
+        }
+    }
+
+    /// <summary>
+    /// Every usage of <paramref name="note"/> takes it alone, without its sub-points: it has none, or
+    /// <c>used-without-children:: true</c>.
+    /// </summary>
+    private static bool UsedAloneOnly(Block note) =>
+        string.IsNullOrWhiteSpace(note.GetProperty(UsedInKey)) || note.GetProperty(UsedInValue.WithoutChildrenKey) is not null;
+
+    /// <summary>
+    /// Whether an adoption of <paramref name="note"/> leaves sub-points out: it is without <paramref name="includeChildren"/>
+    /// and the note has a (shown, see <see cref="NoteBlock.ShownChildren"/>) sub-point. A block without one adopted alone is
+    /// the same as with its subtree and gets no mark.
+    /// </summary>
+    private static bool LeavesOutSubPoints(Block note, bool includeChildren, bool hideUsed) =>
+        !includeChildren && NoteBlock.ShownChildren(note, hideUsed).Any();
+
+    /// <summary>
+    /// Adds the <c>used-in::</c> entry of an adoption (see <see cref="ApplyEntry"/>) with <c>used-without-children::
+    /// true</c> right after it while every usage takes the block alone (<paramref name="ownOnly"/>, and no earlier usage
+    /// took its sub-points along); an adoption with sub-points removes it.
+    /// </summary>
+    private static void AddEntry(Block note, string linkName, Guid? bookBlockId, bool ownOnly)
+    {
+        var withoutChildren = ownOnly && UsedAloneOnly(note);
+        ApplyEntry(note, linkName, bookBlockId, remove: false);
+        SetWithoutChildren(note, withoutChildren);
     }
 
     /// <summary>
@@ -1358,17 +1503,48 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
 
     /// <summary>
     /// The note's copy for the book: the note block with its subtree, without property lines, and without a
-    /// <c>#notiz</c> tag in the note block's own text (<see cref="NoteTag.Remove"/>).
+    /// <c>#notiz</c> tag in the note block's own text (<see cref="NoteTag.Remove"/>). Without
+    /// <paramref name="includeChildren"/> the copy has no sub-points; with <paramref name="hideUsed"/> it leaves out the
+    /// sub-points "Verwendete ausblenden" hides (<see cref="NoteBlock.ShownChildren"/>) with everything below them.
     /// </summary>
-    private static Block CopyOf(Block note)
+    private static Block CopyOf(Block note, bool includeChildren, bool hideUsed)
     {
         var copy = note.CloneDetached(withoutProperties: true);
+        if (!includeChildren)
+        {
+            copy.TakeChildren();
+        }
+        else if (hideUsed)
+        {
+            LeaveOutHidden(note, copy);
+        }
+
         if (NoteTag.Has(copy.Content))
         {
             copy.SetContent(NoteTag.Remove(copy.Content));
         }
 
         return copy;
+    }
+
+    /// <summary>
+    /// Removes from <paramref name="copy"/> (a clone of <paramref name="note"/>, its sub-points in the same order) the
+    /// sub-points that are not among <see cref="NoteBlock.ShownChildren"/> with "Verwendete ausblenden", at every depth.
+    /// </summary>
+    private static void LeaveOutHidden(Block note, Block copy)
+    {
+        var shown = NoteBlock.ShownChildren(note, hideUsed: true).ToHashSet();
+        for (var i = note.Children.Count - 1; i >= 0; i--)
+        {
+            if (shown.Contains(note.Children[i]))
+            {
+                LeaveOutHidden(note.Children[i], copy.Children[i]);
+            }
+            else
+            {
+                copy.RemoveChild(copy.Children[i]);
+            }
+        }
     }
 
     /// <summary>
@@ -1533,9 +1709,13 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
 
     private static string Hash(string content) => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(content)));
 
-    /// <summary>What a note looked like before and after one usage change.</summary>
+    /// <summary>
+    /// What a note looked like before and after one usage change; <paramref name="AloneBefore"/>: before it, every usage
+    /// took the note without its sub-points (it had none, or <c>used-without-children:: true</c>, see
+    /// <see cref="UsedAloneOnly"/>).
+    /// </summary>
     private sealed record NoteChange(
-        Guid NoteId, Guid? BookBlockId, IReadOnlyList<RawLine> Before, IReadOnlyList<RawLine> After, bool Pending);
+        Guid NoteId, Guid? BookBlockId, IReadOnlyList<RawLine> Before, IReadOnlyList<RawLine> After, bool Pending, bool AloneBefore);
 
     /// <summary>A removed book block and where it was (parent key, <c>null</c> = root level; index among the siblings).</summary>
     private sealed record DeletedBlock(Block Block, Guid? ParentKey, int Index);

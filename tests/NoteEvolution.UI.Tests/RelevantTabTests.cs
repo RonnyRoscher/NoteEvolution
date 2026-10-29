@@ -263,8 +263,9 @@ public class RelevantTabTests : UiTestContext
     }
 
     [Fact]
-    public async Task Relevant_FrozenWhileWhereToOpen_AfterJumpAndAdopt_RecomputesAfterClose()
+    public async Task WhereTo_FromBar_InRelevant_DoesNotReloadTheList()
     {
+        // Review Focus 5: the list is frozen while a card's "Wohin damit?" is open, opened from the bar of its block.
         var tv = Vault();
         var session = await OpenReadyAsync(tv, new FakeEmbedder());
         var cut = Render<NotesPane>();
@@ -277,6 +278,11 @@ public class RelevantTabTests : UiTestContext
         Assert.Contains(Sleep, shown[0]);
         const int index = 2;
         var note = session.Notes.All().Single(n => n.Block.Content == shown[index]);
+        cut.FindAll(".ne-relevant-list .ne-note-card")[index].QuerySelector(".ne-note-text")!.Click();
+
+        // Making a block active does not compute the list again.
+        await LetTimePass();
+        Assert.Equal(shown, Texts(cut));
         cut.FindAll(".ne-relevant-list .ne-note-card")[index].QuerySelector(".ne-note-whereto")!.Click();
         cut.WaitForAssertion(() => Assert.Equal(3, WhereToItems(cut, index).Count));
         var music = State.CurrentBook!.Root.Children.ElementAt(1).TextBlocks.Single();
@@ -284,8 +290,7 @@ public class RelevantTabTests : UiTestContext
         // The jump to the music text block moves the cursor, adopting the note changes the notes: the list stays as it is.
         WhereToItems(cut, index).Single(item => item.TextContent.Contains("Musik", StringComparison.Ordinal)).Click();
         cut.WaitForAssertion(() => Assert.Equal(music.Key, State.PendingReveal));
-        cut.FindAll(".ne-relevant-list .ne-note-card")[index].QuerySelector(".ne-note-adopt-more")!.Click();
-        cut.Find(".ne-adopt-menu .ne-adopt-after").Click();
+        cut.FindAll(".ne-relevant-list .ne-note-card")[index].QuerySelector(".ne-note-adopt-after")!.Click();
         cut.WaitForAssertion(() => Assert.True(note.IsUsed));
         await LetTimePass();
 

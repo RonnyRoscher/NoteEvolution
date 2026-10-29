@@ -1,6 +1,7 @@
 using System.Runtime.ExceptionServices;
 using Microsoft.Extensions.Logging;
 using NoteEvolution.Core.Books;
+using NoteEvolution.Core.Vaults;
 using NoteEvolution.UI.Editor;
 
 namespace NoteEvolution.UI.State;
@@ -22,6 +23,13 @@ public enum NotesTab
 public sealed class AppState
 {
     private readonly TimeProvider _time;
+    private readonly UiSettings? _settings;
+
+    /// <summary>
+    /// "Verwendete ausblenden" is on: the note ranges and adoptions take only the shown sub-points
+    /// (<see cref="NoteBlock.ShownChildren"/>), so a used sub-point the card hides does not go into the book again.
+    /// </summary>
+    public bool HideUsedNotes => _settings?.HideUsed == true;
 
     /// <summary>The back/forward history; locked, since the dwell timer records from another thread.</summary>
     private readonly NavigationHistory _history = new();
@@ -36,6 +44,8 @@ public sealed class AppState
     private BookView? _second;
     private BookView _active;
     private VaultSession? _session;
+
+    private NoteSelection? _noteSelection;
     private Book? _currentBook;
     private readonly HashSet<Guid> _whereToOpenNotes = [];
 
@@ -43,9 +53,11 @@ public sealed class AppState
     private bool _sessionChanged;
 
     /// <param name="time">The clock of the cursor dwell (<see cref="NavigationHistory.DwellTime"/>); <see cref="TimeProvider.System"/> if <c>null</c>.</param>
-    public AppState(TimeProvider? time = null)
+    /// <param name="settings">The user's settings, for <see cref="HideUsedNotes"/>; without them used notes count as shown.</param>
+    public AppState(TimeProvider? time = null, UiSettings? settings = null)
     {
         _time = time ?? TimeProvider.System;
+        _settings = settings;
         _active = _first;
         Views = [_first];
     }
@@ -190,6 +202,8 @@ public sealed class AppState
                     view.RangeLevel = 0;
                 }
 
+                _noteSelection = null;
+
                 lock (_history)
                 {
                     StopDwell();
@@ -311,12 +325,68 @@ public sealed class AppState
     public Guid? FocusedNoteKey { get; set; }
 
     /// <summary>
-    /// The note card being dragged from the notes pane; <c>null</c> when no drag is running. Blazor cannot fill a
-    /// drag's <c>dataTransfer</c> from C#, and the editor (the only JavaScript component) must not be told by
-    /// script, so the card records its note here on <c>dragstart</c> and clears it on <c>dragend</c>; the editor's
-    /// drop handler reads it (the card also carries the key in its <c>data-note-key</c> attribute).
+    /// The note block being dragged from the notes pane (the head of the active block's range, by the handle in its
+    /// bar); <c>null</c> when no drag is running. Blazor cannot fill a drag's <c>dataTransfer</c> from C#, and the
+    /// editor (the only JavaScript component) must not be told by script, so the handle records the block here on
+    /// <c>dragstart</c> and clears it on <c>dragend</c>; the editor's drop handler reads it (the handle also carries
+    /// the key in its <c>data-note-key</c> attribute).
     /// </summary>
     public Guid? DraggedNoteKey { get; set; }
+
+    /// <summary>
+    /// The dragged range is its head alone (level −1, see <see cref="NoteRange.OwnOnly"/>): the drop adopts it without
+    /// its sub-points. Set and cleared with <see cref="DraggedNoteKey"/>.
+    /// </summary>
+    public bool DraggedNoteOwnOnly { get; set; }
+
+    /// <summary>
+    /// Raised when the usages of notes changed outside the session's page events (an adoption, a note page read again
+    /// after a failed write): the notes pane reads its notes again, so a used note leaves a list that hides used ones.
+    /// </summary>
+    public event Action? NotesChanged;
+
+    /// <summary>Raises <see cref="NotesChanged"/>.</summary>
+    public void NotifyNotesChanged() => NotesChanged?.Invoke();
+
+    /// <summary>How many note bars show each selection (see <see cref="ShowNoteBar"/>).</summary>
+    private readonly Dictionary<NoteSelection, int> _noteBars = [];
+
+    /// <summary>A note bar shows <paramref name="selection"/> (it was rendered for it).</summary>
+    public void ShowNoteBar(NoteSelection selection) =>
+        _noteBars[selection] = _noteBars.GetValueOrDefault(selection) + 1;
+
+    /// <summary>
+    /// A note bar no longer shows <paramref name="selection"/>; <c>true</c> if no bar shows it any more. The bar then
+    /// lets the selection go after the rendering (<see cref="ClearNoteSelectionIfNotShown"/>): its block is not shown.
+    /// </summary>
+    public bool HideNoteBar(NoteSelection selection)
+    {
+        if (!_noteBars.TryGetValue(selection, out var count))
+        {
+            return true;
+        }
+
+        if (count > 1)
+        {
+            _noteBars[selection] = count - 1;
+            return false;
+        }
+
+        _noteBars.Remove(selection);
+        return true;
+    }
+
+    /// <summary>
+    /// Clears the selection if it is still <paramref name="selection"/> and no note bar shows it (the block left the
+    /// list, its card was closed); another card that shows it, rendered meanwhile, keeps it.
+    /// </summary>
+    public void ClearNoteSelectionIfNotShown(NoteSelection selection)
+    {
+        if (ActiveNote == selection && !_noteBars.ContainsKey(selection))
+        {
+            ClearNoteSelection();
+        }
+    }
 
     /// <summary>
     /// The note keys of the cards with an open "Wohin damit?" list (package B, spec 3: the list stays open). The tabs
@@ -464,6 +534,83 @@ public sealed class AppState
             Notify();
         }
     }
+
+    /// <summary>
+    /// The active note block, kept apart from the book views (it is not per split half). Checked against the vault
+    /// whenever it is read: when the note or the block is gone (after a reload, or an adoption that hid the note), the
+    /// selection is cleared and <c>null</c> is returned. Another <see cref="Session"/> clears it too.
+    /// </summary>
+    public NoteSelection? ActiveNote
+    {
+        get
+        {
+            if (_noteSelection is { } selection && FindNote(selection) is null)
+            {
+                _noteSelection = null;
+            }
+
+            return _noteSelection;
+        }
+    }
+
+    /// <summary>The marked range of the active note block (see <see cref="NoteRanges"/>); <c>null</c> without one.</summary>
+    public NoteRange? ActiveNoteRange =>
+        ActiveNote is { } selection && FindNote(selection) is { } note
+            ? NoteRanges.Of(note, selection.BlockKey, selection.Level, HideUsedNotes)
+            : null;
+
+    /// <summary>
+    /// Makes <paramref name="blockKey"/> (the note <paramref name="noteKey"/> shows, or one of its sub-points) the active
+    /// note block at level 0 and raises <see cref="Notify"/>; a block that is not in the note clears the selection.
+    /// <paramref name="inFocusedCard"/> says the click was in the card on top of the notes pane, so only that card is
+    /// framed when a list shows the same note too.
+    /// </summary>
+    public void SelectNoteBlock(Guid noteKey, Guid blockKey, bool inFocusedCard = false)
+    {
+        var selection = new NoteSelection(noteKey, blockKey, 0, inFocusedCard);
+        if (FindNote(selection) is null)
+        {
+            ClearNoteSelection();
+            return;
+        }
+
+        if (_noteSelection != selection)
+        {
+            _noteSelection = selection;
+            Notify();
+        }
+    }
+
+    /// <summary>Moves the active note block's range <paramref name="delta"/> levels up (positive) or down, within <see cref="NoteRanges.LevelBounds"/>.</summary>
+    public void ChangeNoteRange(int delta)
+    {
+        if (ActiveNote is not { } selection || FindNote(selection) is not { } note)
+        {
+            return;
+        }
+
+        var (min, max) = NoteRanges.LevelBounds(note, selection.BlockKey, HideUsedNotes);
+        var level = Math.Clamp(selection.Level + delta, min, max);
+        if (level != selection.Level)
+        {
+            _noteSelection = selection with { Level = level };
+            Notify();
+        }
+    }
+
+    /// <summary>Clears the active note block and raises <see cref="Notify"/> if there was one.</summary>
+    public void ClearNoteSelection()
+    {
+        if (_noteSelection is not null)
+        {
+            _noteSelection = null;
+            Notify();
+        }
+    }
+
+    /// <summary>The note the selection points at, if it and its block are still in the vault.</summary>
+    private NoteBlock? FindNote(NoteSelection selection) =>
+        _session?.Notes.Get(selection.NoteKey) is { } note && NoteRanges.Contains(note, selection.BlockKey) ? note : null;
 
     /// <summary>Asks the shell to show the AI model dialog, which offers the download.</summary>
     public void RequestAiModelDialog() => AiModelDialogRequested?.Invoke();

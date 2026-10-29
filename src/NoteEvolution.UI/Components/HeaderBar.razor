@@ -548,8 +548,9 @@
         _undoError = session.TryUndo(out _) ? null : L[session.HasAnyOpenConflict ? "UndoConflict" : "UndoFailed"].Value;
 
         // The undone operation changed (and saved) the book page, or a failed one left the vault with the page as it
-        // is on disk; views take it from the vault again.
+        // is on disk; views take it from the vault again. A note whose usage went comes back into the notes tabs.
         State.RefreshBook();
+        State.NotifyNotesChanged();
         State.Notify();
     }
 }

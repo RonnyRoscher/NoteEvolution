@@ -98,6 +98,7 @@ public class WhereToTests : UiTestContext
         var session = await OpenWithAiAsync(tv);
         var cut = RenderCard(session);
 
+        cut.Find(".ne-note-text").Click();
         cut.Find(".ne-note-whereto").Click();
 
         cut.WaitForAssertion(() => Assert.Equal(5, cut.FindAll(".ne-note-whereto-item").Count));
@@ -129,28 +130,26 @@ public class WhereToTests : UiTestContext
         var child = note.Block.Children.Single();
         var cut = Render<NoteCard>(p => p.Add(c => c.Note, note));
 
-        cut.Find(".ne-note-child-whereto").Click();
+        cut.ClickBlock(ChildText);
+        cut.Find(".ne-note-whereto").Click();
 
-        cut.WaitForAssertion(() => Assert.Equal(5, cut.FindAll(".ne-note-body .ne-note-whereto-item").Count), TimeSpan.FromSeconds(10));
+        cut.WaitForAssertion(() => Assert.Equal(5, cut.FindAll(".ne-note-child .ne-note-bar .ne-note-whereto-item").Count), TimeSpan.FromSeconds(10));
         // The sub-bullet's text (with its descendants, as a passage) was searched, not the note's.
         Assert.Contains(EmbeddingText.ForNoteBlock(child), embedder.Texts);
-        var first = cut.FindAll(".ne-note-body .ne-note-whereto-item")[0];
+        var first = cut.FindAll(".ne-note-whereto-item")[0];
         Assert.Equal(ChildText, Excerpt(first));
         Assert.Equal("Garten", PathText(first));
-        Assert.Empty(cut.FindAll(".ne-note-card > .ne-note-whereto-results"));
 
-        // The note's own list opens beside it.
+        // Making the note active closes the sub-bullet's list; the note's own list opens in its bar.
+        cut.Find(".ne-note-text").Click();
+        Assert.Empty(cut.FindAll(".ne-note-whereto-item"));
         cut.Find(".ne-note-whereto").Click();
-        cut.WaitForAssertion(() => Assert.Equal(5, cut.FindAll(".ne-note-card > .ne-note-whereto-results .ne-note-whereto-item").Count), TimeSpan.FromSeconds(10));
-        Assert.Equal(10, cut.FindAll(".ne-note-whereto-item").Count);
+        cut.WaitForAssertion(() => Assert.Equal(5, cut.FindAll(".ne-note-body > .ne-note-bar .ne-note-whereto-item").Count), TimeSpan.FromSeconds(10));
+        Assert.Equal(5, cut.FindAll(".ne-note-whereto-item").Count);
 
-        // The sub-bullet's toggle closes only its own list (waited for: another rendering may still be under way).
-        cut.Find(".ne-note-child-whereto").Click();
-        cut.WaitForAssertion(() =>
-        {
-            Assert.Empty(cut.FindAll(".ne-note-body .ne-note-whereto-item"));
-            Assert.Equal(5, cut.FindAll(".ne-note-whereto-item").Count);
-        });
+        // Its toggle closes it again (waited for: another rendering may still be under way).
+        cut.Find(".ne-note-whereto").Click();
+        cut.WaitForAssertion(() => Assert.Empty(cut.FindAll(".ne-note-whereto-item")));
     }
 
     [Fact]
@@ -166,6 +165,7 @@ public class WhereToTests : UiTestContext
             return Task.CompletedTask;
         };
         var cut = RenderCard(session);
+        cut.Find(".ne-note-text").Click();
         cut.Find(".ne-note-whereto").Click();
         cut.WaitForAssertion(() => Assert.Equal(5, cut.FindAll(".ne-note-whereto-item").Count));
         var target = TextBlock(Excerpt(cut.FindAll(".ne-note-whereto-item")[1]));
@@ -196,6 +196,7 @@ public class WhereToTests : UiTestContext
         var session = await OpenWithAiAsync(tv);
         var cut = RenderCard(session);
 
+        cut.Find(".ne-note-text").Click();
         cut.Find(".ne-note-whereto").Click();
 
         cut.WaitForAssertion(() => Assert.Equal(5, cut.FindAll(".ne-note-whereto-item").Count));
@@ -210,6 +211,7 @@ public class WhereToTests : UiTestContext
         var tv = Vault();
         var session = await OpenWithAiAsync(tv);
         var cut = RenderCard(session);
+        cut.Find(".ne-note-text").Click();
         cut.Find(".ne-note-whereto").Click();
         cut.WaitForAssertion(() => Assert.Equal(5, cut.FindAll(".ne-note-whereto-item").Count));
         var hitText = Excerpt(cut.FindAll(".ne-note-whereto-item")[1]);
@@ -219,9 +221,8 @@ public class WhereToTests : UiTestContext
         cut.FindAll(".ne-note-whereto-item")[1].Click();
         cut.WaitForAssertion(() => Assert.NotNull(State.PendingReveal));
 
-        // The menu is opened after the jump rendered, as a person would.
-        cut.Find(".ne-note-adopt-more").Click();
-        cut.Find(".ne-adopt-after").Click();
+        // "Danach" is clicked after the jump rendered, as a person would.
+        cut.Find(".ne-note-adopt-after").Click();
 
         // The note became a new text block right after the hit.
         cut.WaitForAssertion(() =>
@@ -246,6 +247,7 @@ public class WhereToTests : UiTestContext
         var note = Note(session, NoteText);
         Assert.Null(note.Block.Id);
         var cut = RenderCard(session);
+        cut.Find(".ne-note-text").Click();
         cut.Find(".ne-note-whereto").Click();
         cut.WaitForAssertion(() => Assert.Equal(5, cut.FindAll(".ne-note-whereto-item").Count));
         var hitExcerpt = Excerpt(cut.FindAll(".ne-note-whereto-item")[1]);
@@ -253,12 +255,11 @@ public class WhereToTests : UiTestContext
         cut.FindAll(".ne-note-whereto-item")[1].Click();
         cut.WaitForAssertion(() => Assert.Equal(hit.Key, State.PendingReveal));
 
-        cut.Find(".ne-note-adopt-more").Click();
         cut.Find(variant switch
         {
-            AdoptVariant.AtCursor => ".ne-adopt-at-cursor",
-            AdoptVariant.After => ".ne-adopt-after",
-            _ => ".ne-adopt-below",
+            AdoptVariant.AtCursor => ".ne-note-adopt-cursor",
+            AdoptVariant.After => ".ne-note-adopt-after",
+            _ => ".ne-note-adopt-under",
         }).Click();
 
         cut.WaitForAssertion(() => Assert.NotNull(note.Block.Id));
@@ -300,14 +301,15 @@ public class WhereToTests : UiTestContext
         var child = note.Block.Children.Single();
         Assert.Null(child.Id);
         var cut = Render<NoteCard>(p => p.Add(c => c.Note, note));
-        cut.Find(".ne-note-child-whereto").Click();
+        cut.ClickBlock(ChildText);
+        cut.Find(".ne-note-whereto").Click();
         cut.WaitForAssertion(() => Assert.Equal(5, cut.FindAll(".ne-note-body .ne-note-whereto-item").Count), TimeSpan.FromSeconds(10));
         var hit = TextBlock(ChildText);
         Assert.Equal(ChildText, Excerpt(cut.FindAll(".ne-note-body .ne-note-whereto-item")[0]));
         cut.FindAll(".ne-note-body .ne-note-whereto-item")[0].Click();
         cut.WaitForAssertion(() => Assert.Equal(hit.Key, State.PendingReveal));
 
-        cut.Find(".ne-note-child-adopt").Click();
+        cut.Find(".ne-note-adopt-cursor").Click();
 
         cut.WaitForAssertion(() => Assert.Single(cut.FindAll(".ne-note-body .ne-note-whereto-used")));
         Assert.NotNull(child.Id);
@@ -354,12 +356,12 @@ public class WhereToTests : UiTestContext
             TimeSpan.FromSeconds(10));
         var index = Texts().IndexOf(NoteText);
         Assert.True(index >= 0);
-        var card = cut.FindAll(".ne-note-card")[index];
-        card.QuerySelector(".ne-note-whereto")!.Click();
+        cut.FindAll(".ne-note-card")[index].QuerySelector(".ne-note-text")!.Click();
+        cut.FindAll(".ne-note-card")[index].QuerySelector(".ne-note-whereto")!.Click();
         cut.WaitForAssertion(() => Assert.NotEmpty(cut.FindAll(".ne-note-whereto-item")));
         cut.FindAll(".ne-note-whereto-item")[0].Click();
         cut.WaitForAssertion(() => Assert.NotNull(State.PendingReveal));
-        cut.FindAll(".ne-note-card")[index].QuerySelector(".ne-note-adopt")!.Click();
+        cut.FindAll(".ne-note-card")[index].QuerySelector(".ne-note-adopt-cursor")!.Click();
         cut.WaitForAssertion(() => Assert.True(Note(session, NoteText).IsUsed));
 
         // Another page changes: the tab reads its notes again, which leaves out the used note, but not while its list is open.
@@ -372,12 +374,18 @@ public class WhereToTests : UiTestContext
         Assert.NotNull(cut.FindAll(".ne-note-card")[index].QuerySelector(".ne-note-used"));
         Assert.Equal([Note(session, NoteText).Key], State.WhereToOpenNotes);
 
-        // Closing the list lets it go.
+        // The note stays active while its card stays. Closing the list lets the card go, and with it the selection.
+        Assert.Equal(Note(session, NoteText).Key, State.ActiveNote?.NoteKey);
         cut.FindAll(".ne-note-card")[index].QuerySelector(".ne-note-whereto")!.Click();
 
-        cut.WaitForAssertion(() => Assert.DoesNotContain(NoteText, Texts()));
+        cut.WaitForAssertion(() =>
+        {
+            Assert.DoesNotContain(NoteText, Texts());
+            Assert.Null(State.ActiveNote);
+        });
         Assert.Equal(2, Texts().Count(text => text.Contains("Schlaf", StringComparison.Ordinal)));
         Assert.Empty(State.WhereToOpenNotes);
+        Assert.Empty(cut.FindAll(".ne-note-bar"));
     }
 
     [Fact]
@@ -397,6 +405,7 @@ public class WhereToTests : UiTestContext
                 entered.Set();
                 gate.Wait(TimeSpan.FromSeconds(10));
             };
+            cut.Find(".ne-note-text").Click();
             cut.Find(".ne-note-whereto").Click();
             Assert.True(entered.Wait(TimeSpan.FromSeconds(10)));
             cut.Render(p => p.Add(c => c.Note, Note(session, OtherText)));
@@ -422,6 +431,7 @@ public class WhereToTests : UiTestContext
         var session = await OpenWithAiAsync(tv);
         State.FocusedNoteKey = Note(session, NoteText).Key;
         var cut = Render<NotesPane>();
+        cut.Find(".ne-note-focused .ne-note-text").Click();
         cut.Find(".ne-note-focused .ne-note-whereto").Click();
         cut.WaitForAssertion(() => Assert.Equal(5, cut.FindAll(".ne-note-focused .ne-note-whereto-item").Count));
 
@@ -432,7 +442,7 @@ public class WhereToTests : UiTestContext
     }
 
     [Fact]
-    public async Task SubBullet_BoxContainsItsSubBlocks_ItsListAboveThem()
+    public async Task SubBullet_BoxContainsItsSubBlocks_ItsBarAndListBelowThem()
     {
         var tv = TestVault.Create(
             (AlphaPath, "title:: Alpha\ntype:: book\n\n- # Eins\n\t- Rosen und Tomaten im Garten\n"),
@@ -453,14 +463,15 @@ public class WhereToTests : UiTestContext
         Assert.Equal(["Rosen", "Tomaten"], garden.QuerySelectorAll(":scope > .ne-note-child > .ne-note-child-row > .ne-note-child-text").Select(e => e.TextContent));
         Assert.Equal("Ende", tops[1].QuerySelector(".ne-note-child-text")!.TextContent);
 
-        // Its buttons stand in its own row (it has sub-blocks, so it counts as more than one line); its list opens in its
-        // box, below the row and above the sub-blocks.
-        Assert.NotNull(garden.QuerySelector(":scope > .ne-note-child-row > .ne-adopt-column .ne-note-child-whereto"));
-        garden.QuerySelector(":scope > .ne-note-child-row .ne-note-child-whereto")!.Click();
-        cut.WaitForAssertion(() => Assert.NotNull(cut.FindAll(".ne-note-body > .ne-note-child")[0].QuerySelector(":scope > .ne-note-whereto-results")));
+        // Made active, the box is the frame of its range; the bar stands at its bottom, below the sub-blocks, and the list
+        // opens in the bar.
+        garden.QuerySelector(":scope > .ne-note-child-row")!.Click();
+        cut.Find(".ne-note-whereto").Click();
+        cut.WaitForAssertion(() => Assert.NotNull(cut.FindAll(".ne-note-body > .ne-note-child")[0].QuerySelector(":scope > .ne-note-bar > .ne-note-whereto-results")));
         var box = cut.FindAll(".ne-note-body > .ne-note-child")[0];
-        var order = box.Children.Select(e => e.ClassName).ToList();
-        Assert.Equal(["ne-note-child-row", "ne-note-whereto-results", "ne-note-child", "ne-note-child"], order);
+        Assert.Contains("ne-note-range-frame", box.ClassList);
+        var order = box.Children.Select(e => e.ClassList[0]).ToList();
+        Assert.Equal(["ne-note-child-row", "ne-note-child", "ne-note-child", "ne-note-bar"], order);
     }
 
     [Fact]
@@ -473,10 +484,9 @@ public class WhereToTests : UiTestContext
         _vaults.Add(tv);
         var session = await OpenWithAiAsync(tv);
         var cut = RenderCard(session);
+        cut.ClickBlock(ChildText);
         cut.Find(".ne-note-whereto").Click();
         cut.WaitForAssertion(() => Assert.Single(cut.FindAll(".ne-note-whereto-item")));
-        cut.Find(".ne-note-child-whereto").Click();
-        cut.WaitForAssertion(() => Assert.Equal(2, cut.FindAll(".ne-note-whereto-item").Count));
 
         State.CurrentBook = session.Vault.FindBook("Buch - Beta");
         cut.Render();
@@ -494,6 +504,7 @@ public class WhereToTests : UiTestContext
         embedder.Throws = true;
         var cut = RenderCard(session);
 
+        cut.Find(".ne-note-text").Click();
         cut.Find(".ne-note-whereto").Click();
 
         cut.WaitForAssertion(() => Assert.Equal(Text("NoteWhereToNone"), cut.Find(".ne-note-whereto-none").TextContent.Trim()));
@@ -508,76 +519,56 @@ public class WhereToTests : UiTestContext
 
         var off = Render<NoteCard>(p => p.Add(c => c.Note, Note(session, OtherText)));
 
-        Assert.Empty(off.FindAll(".ne-note-whereto"));
-        Assert.Empty(off.FindAll(".ne-note-child-whereto"));
-        Assert.Single(off.FindAll(".ne-note-child-adopt"));
+        // Neither for the note nor for its sub-bullet; adopting is there.
+        foreach (var block in new[] { OtherText, ChildText })
+        {
+            off.ClickBlock(block);
+            Assert.Empty(off.FindAll(".ne-note-whereto"));
+            Assert.Single(off.FindAll(".ne-note-bar .ne-note-adopt-cursor"));
+        }
     }
 
-    /// <summary>The classes, labels and tooltips of the buttons in <paramref name="group"/>, in order.</summary>
-    private static List<(string Class, string Label, string? Title)> Buttons(IElement group) =>
-        [.. group.Children.Select(b => (b.ClassName!, b.TextContent.Trim(), b.GetAttribute("title")))];
+    /// <summary>The classes, labels and tooltips of the buttons of the bar's first row, in order.</summary>
+    private static List<(string Class, string Label, string? Title)> Buttons(IRenderedComponent<NoteCard> cut) =>
+        [.. cut.FindAll(".ne-note-bar-buttons > button").Select(b => (b.ClassName!, b.TextContent.Trim(), b.GetAttribute("title")))];
 
-    [Fact]
-    public async Task NoteCard_SplitButton_ThenWhereTo()
-    {
-        var tv = Vault();
-        var session = await OpenWithAiAsync(tv);
-
-        var cut = RenderCard(session);
-
-        // One adopt button (labelled with the way it adopts, first "Am Cursor"), its arrow, then "Wohin damit?".
-        var split = cut.Find(".ne-adopt-column > .ne-adopt-split");
-        Assert.Equal(
-            [
-                ("ne-note-adopt", Text("AdoptAtCursor"), Text("AdoptAtCursorTitle")),
-                ("ne-note-adopt-more", "▾", Text("NoteAdoptMore")),
-            ],
-            Buttons(split));
-        Assert.Equal("ne-note-whereto", split.NextElementSibling!.ClassName);
-        Assert.Equal("Weitere Arten zu übernehmen", Text("NoteAdoptMore"));
-        Assert.Equal("In den aktuellen Block an der Cursorstelle einfügen", Text("AdoptAtCursorTitle"));
-        Assert.Equal("Als neues Element nach dem aktuellen einfügen", Text("AdoptAfterTitle"));
-        Assert.Equal("Als erstes Unterelement des aktuellen einfügen", Text("AdoptBelowTitle"));
-
-        // The arrow opens the menu of all three ways, each with its tooltip.
-        cut.Find(".ne-note-adopt-more").Click();
-
-        Assert.Equal(
-            [
-                ("ne-adopt-at-cursor", Text("AdoptAtCursor"), Text("AdoptAtCursorTitle")),
-                ("ne-adopt-after", Text("AdoptAfter"), Text("AdoptAfterTitle")),
-                ("ne-adopt-below", Text("AdoptBelow"), Text("AdoptBelowTitle")),
-            ],
-            Buttons(cut.Find(".ne-adopt-split > .ne-adopt-menu")));
-        Assert.Empty(cut.FindAll(".ne-adopt-row"));
-        Assert.Empty(cut.FindAll(".ne-note-actions .ne-adopt-column"));
-    }
-
-    [Fact]
-    public async Task SubBullet_SplitButton_ThenWhereTo()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Bar_AdoptButtons_ThenWhereTo(bool subBullet)
     {
         var tv = Vault();
         var session = await OpenWithAiAsync(tv);
 
         var cut = Render<NoteCard>(p => p.Add(c => c.Note, Note(session, OtherText)));
+        cut.ClickBlock(subBullet ? ChildText : OtherText);
 
-        // The sub-bullet has the same split button and below it its own "Wohin damit?", stacked to the right of its text.
-        var column = cut.Find(".ne-note-child > .ne-note-child-row > .ne-adopt-column");
-        Assert.Equal("ne-note-child-text", column.PreviousElementSibling!.ClassName);
-        Assert.Equal(2, column.Children.Length);
-        var split = column.Children[0];
-        Assert.Equal("ne-adopt-split", split.ClassName);
+        // The note and the sub-bullet have the same bar: the range, the three ways to adopt (the note has a sub-point,
+        // so also as a heading), each with its tooltip, then "Wohin damit?" and Logseq.
+        List<(string, string, string?)> headings = subBullet
+            ? []
+            :
+            [
+                ("ne-note-adopt-heading", Text("AdoptAsHeading"), Text("AdoptAsHeadingTitle")),
+                ("ne-note-adopt-subheading", Text("AdoptAsSubheading"), Text("AdoptAsSubheadingTitle")),
+            ];
         Assert.Equal(
             [
-                ("ne-note-child-adopt", Text("AdoptAtCursor"), Text("AdoptAtCursorTitle")),
-                ("ne-note-child-adopt-more", "▾", Text("NoteAdoptMore")),
+                ("ne-note-range-up", Text("RangeUp"), Text(subBullet ? "NoteRangeUpTitle" : "NoteRangeUpLimit")),
+                // The sub-bullet has no sub-points of its own: no level −1 below it.
+                ("ne-note-range-down", Text("RangeDown"), Text(subBullet ? "NoteRangeDownLimit" : "NoteRangeDownTitle")),
+                ("ne-note-adopt-cursor", Text("AdoptAtCursor"), Text("AdoptAtCursorTitle")),
+                ("ne-note-adopt-after", Text("AdoptAfter"), Text("AdoptAfterTitle")),
+                ("ne-note-adopt-under", Text("AdoptBelow"), Text("AdoptBelowTitle")),
+                .. headings,
+                ("ne-note-whereto", Text("NoteWhereTo"), Text("NoteWhereToTitle")),
+                ("ne-note-logseq", Text("NoteOpenLogseq"), Text("NoteOpenLogseqTitle")),
             ],
-            Buttons(split));
-        Assert.Equal("ne-note-child-whereto", split.NextElementSibling!.ClassName);
-
-        cut.Find(".ne-note-child-adopt-more").Click();
-
-        Assert.Equal(3, cut.Find(".ne-note-child .ne-adopt-menu").Children.Length);
+            Buttons(cut));
+        Assert.Equal("In den aktuellen Block an der Cursorstelle einfügen", Text("AdoptAtCursorTitle"));
+        Assert.Equal("Als neues Element nach dem aktuellen einfügen", Text("AdoptAfterTitle"));
+        Assert.Equal("Als erstes Unterelement des aktuellen einfügen", Text("AdoptBelowTitle"));
+        Assert.Empty(cut.FindAll(".ne-adopt-split, .ne-adopt-menu, .ne-adopt-column, .ne-note-actions"));
     }
 
     [Fact]

@@ -12,6 +12,15 @@ public sealed record UsedInEntry(string PageName, Guid? BookBlockId);
 /// </summary>
 public static partial class UsedInValue
 {
+    /// <summary>The property that holds the usages.</summary>
+    public const string Key = "used-in";
+
+    /// <summary>
+    /// <c>used-without-children:: true</c> next to <c>used-in::</c>: every usage took the block without its sub-points,
+    /// so they stay unused (see <c>NoteBlock.IsUsedBlock</c>). It goes with the block's last usage.
+    /// </summary>
+    public const string WithoutChildrenKey = "used-without-children";
+
     [GeneratedRegex(@"\[\[(?<name>.+?)\]\](?:[ \t]*\(\([ \t]*(?<id>[^()]*?)[ \t]*\)\))?")]
     private static partial Regex EntryRegex();
 

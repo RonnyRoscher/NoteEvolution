@@ -851,7 +851,6 @@ html, body {
     background: var(--bg-raised);
     border: 1px solid var(--border);
     border-radius: 6px;
-    cursor: grab;
 }
 
 /* A card a source just jumped to; the journal tab removes the class after two seconds. */
@@ -908,7 +907,7 @@ html, body {
     border-radius: 0 4px 4px 0;
 }
 
-/* A root block's text and its stacked buttons (with the used mark on top) side by side; the rest below. */
+/* A root block's text and, in a day, its status marks side by side; the rest below. */
 .ne-note-card > .ne-note-body {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
@@ -916,19 +915,16 @@ html, body {
     align-items: start;
 }
 
-.ne-note-card > .ne-note-body > :not(.ne-note-text):not(.ne-adopt-column) {
+.ne-note-card > .ne-note-body > :not(.ne-note-text):not(.ne-note-marks) {
     grid-column: 1 / -1;
 }
 
-.ne-note-in-day > .ne-note-body > .ne-adopt-column > .ne-note-used {
-    align-self: flex-end;
-}
-
-/* Pointing at a root block's buttons tints what they take: its whole box, as for sub-bullets. */
-.ne-note-card:has(> .ne-note-body > .ne-adopt-column:hover),
-.ne-note-card:has(> .ne-note-body > .ne-adopt-column:focus-within) {
-    background: color-mix(in srgb, var(--accent) 9%, transparent);
-    border-left-color: var(--accent);
+/* A day's root block: the progress dot and the used mark stacked at the right of its text. */
+.ne-note-marks {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 2px;
 }
 
 .ne-note-card.ne-note-in-day.ne-note-highlight {
@@ -971,8 +967,7 @@ html, body {
     background: var(--warning);
 }
 
-.ne-note-in-day > .ne-note-body > .ne-adopt-column > .ne-note-dot {
-    align-self: flex-end;
+.ne-note-marks > .ne-note-dot {
     margin: 2px 4px;
 }
 
@@ -1000,6 +995,15 @@ html, body {
     padding: 0 6px;
     color: var(--accent);
     border-color: var(--accent);
+}
+
+/* A used block (own or inherited usage) in grey; its check mark keeps the accent colour. */
+.ne-note-used-text {
+    color: var(--fg-muted);
+}
+
+.ne-note-child-row > .ne-note-used {
+    flex-shrink: 0;
 }
 
 .ne-note-used-count {
@@ -1050,81 +1054,82 @@ html, body {
     gap: 6px;
 }
 
-/* Pointing at a sub-bullet's buttons tints what they take: its whole box. */
-.ne-note-child:has(> .ne-note-child-row > .ne-adopt-column:hover),
-.ne-note-child:has(> .ne-note-child-row > .ne-adopt-column:focus-within) {
-    background: color-mix(in srgb, var(--accent) 9%, transparent);
-    border-left-color: var(--accent);
-}
-
 .ne-note-child-text {
     flex: 1;
     min-width: 0;
 }
 
-/* A sub-bullet's buttons ("Übernehmen" and "Wohin damit?") stacked to the right of its text, equally wide. */
-.ne-adopt-column {
-    display: flex;
-    flex-direction: column;
-    align-items: stretch;
-    flex-shrink: 0;
-    gap: 2px;
+/* A click on a block's own row makes it the active block (its text stays selectable). */
+.ne-note-block {
+    cursor: pointer;
 }
 
-.ne-adopt-column > .ne-adopt-split > button:first-child {
-    flex: 1;
+/*
+ * The active block's range (spec B): a frame like the marked range in the book, with the accent bar on its left; at
+ * level −1 the block's own row, else its box with all its sub-points. The bar stands at its bottom.
+ */
+.ne-note-range-frame {
+    border-radius: 4px;
+    outline: 1px solid var(--border);
+    box-shadow: inset 3px 0 0 var(--accent);
+    background: color-mix(in srgb, var(--accent) 7%, transparent);
 }
 
-.ne-note-actions {
+.ne-note-child.ne-note-range-frame {
+    border-left-color: var(--accent);
+}
+
+.ne-note-text.ne-note-range-frame,
+.ne-note-child-row.ne-note-range-frame {
+    padding-left: 6px;
+}
+
+/* The bar of the active block: its buttons wrap into further lines; the "Wohin damit?" list opens below them. */
+.ne-note-bar {
+    margin-top: 4px;
+    padding: 4px 6px;
+    font-family: var(--font-ui);
+    font-size: 12px;
+    white-space: normal;
+    border-top: 1px solid var(--border);
+}
+
+/* At level −1 the bar follows the framed row and continues its frame. */
+.ne-note-range-frame ~ .ne-note-bar {
+    margin-top: 0;
+    border-top: none;
+    border-radius: 0 0 4px 4px;
+    outline: 1px solid var(--border);
+    box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.ne-note-bar-buttons {
     display: flex;
     flex-wrap: wrap;
-    gap: 6px;
-    margin-top: 6px;
+    align-items: center;
+    gap: 4px;
 }
 
-/* "Übernehmen" as a split button: the main part adopts the way used last, the arrow opens the menu of all ways. */
-.ne-adopt-split {
-    position: relative;
-    display: inline-flex;
-    flex-shrink: 0;
+.ne-note-bar-buttons button {
+    white-space: nowrap;
 }
 
-.ne-shell .ne-adopt-split > button:first-child {
-    border-top-right-radius: 0;
-    border-bottom-right-radius: 0;
+/* The handle that drags the range head into the book. */
+.ne-note-drag {
+    padding: 0 4px;
+    color: var(--fg-muted);
+    cursor: grab;
+    user-select: none;
 }
 
-.ne-shell .ne-adopt-split > button:nth-child(2) {
-    margin-left: -1px;
-    padding: 3px 6px;
-    border-top-left-radius: 0;
-    border-bottom-left-radius: 0;
+.ne-note-bar-label {
+    margin-left: 4px;
+    color: var(--fg-muted);
 }
 
-.ne-adopt-menu {
-    position: absolute;
-    left: 0;
-    top: calc(100% + 2px);
-    z-index: 20;
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    min-width: 140px;
-    padding: 4px;
-    font-family: var(--font-ui);
-    background: var(--bg-raised);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    box-shadow: 0 6px 20px rgb(0 0 0 / 0.18);
-}
-
-.ne-shell .ne-adopt-menu button {
-    text-align: left;
-    border-color: transparent;
-}
-
-.ne-shell .ne-adopt-menu button:hover {
-    border-color: var(--border);
+.ne-note-bar-buttons > .ne-day-mark {
+    font-size: 11px;
+    color: var(--fg-muted);
 }
 
 .ne-note-whereto-list {

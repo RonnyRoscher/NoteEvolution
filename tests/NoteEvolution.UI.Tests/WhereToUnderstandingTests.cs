@@ -97,6 +97,7 @@ public class WhereToUnderstandingTests : UiTestContext
     {
         var note = session.Notes.All().Single(n => n.Block.Content == SleepNote);
         var cut = Render<NoteCard>(p => p.Add(c => c.Note, note));
+        cut.Find(".ne-note-text").Click();
         cut.Find(".ne-note-whereto").Click();
         cut.WaitForAssertion(() => Assert.NotEmpty(cut.FindAll(".ne-note-whereto-item")));
         return cut;
@@ -386,6 +387,7 @@ public class WhereToUnderstandingTests : UiTestContext
         await Eventually(() => session.Placement(note.Key) is { Stale: true }, "The placement was not shown as stale.");
 
         var cut = Render<NoteCard>(p => p.Add(c => c.Note, note));
+        cut.Find(".ne-note-text").Click();
         cut.Find(".ne-note-whereto").Click();
         cut.WaitForAssertion(() => Assert.NotEmpty(cut.FindAll(".ne-note-whereto-recommended")));
 

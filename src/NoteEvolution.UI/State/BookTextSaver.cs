@@ -515,7 +515,11 @@ public sealed class BookTextSaver(AppState state, ILogger logger)
         return true;
     }
 
-    /// <summary>The search index knows which notes are used; it is updated for the notes whose used-in changed.</summary>
+    /// <summary>
+    /// The search index knows which notes are used; it is updated for the notes whose used-in changed. The notes tabs
+    /// read their notes again too (<see cref="AppState.NotifyNotesChanged"/>): a note whose usage went (a deleted
+    /// adopted block) comes back into a list that hides used ones.
+    /// </summary>
     private void UpdateSearch(VaultSession session, IEnumerable<Guid> noteIds)
     {
         var paths = noteIds.Select(id => session.Vault.FindBlockById(id)?.Page.FilePath).OfType<string>().Distinct();
@@ -531,5 +535,7 @@ public sealed class BookTextSaver(AppState state, ILogger logger)
                 logger.LogWarning(ex, "Updating the search index for {Path} failed", path);
             }
         }
+
+        state.NotifyNotesChanged();
     }
 }

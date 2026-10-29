@@ -13,7 +13,8 @@
 else
 {
     var filter = Filter();
-    <div class="ne-notes-pane">
+    @* Alt+Arrow up/down move the range of the active note block while the focus is in the pane. *@
+    <div class="ne-notes-pane" @onkeydown="OnKeyDown">
         @* The head stays in place; only what is below it scrolls (with the search field on top). *@
         <div class="ne-notes-head">
             <div class="ne-notes-tabs" role="tablist">
@@ -58,7 +59,7 @@ else
                         <button type="button" class="ne-note-focused-close" title="@L["NoteFocusedClose"]"
                                 aria-label="@L["NoteFocusedClose"]" @onclick="CloseFocused">×</button>
                     </div>
-                    <NoteCard @key="focused.Key" Note="focused" />
+                    <NoteCard @key="focused.Key" Note="focused" Focused="true" />
                 </div>
             }
             @if (_tab == Tab.Relevant)
@@ -112,6 +113,7 @@ else
         State.Changed += OnStateChanged;
         State.NoteRevealRequested += OnNoteRevealRequested;
         State.NotesTabRequested += OnNotesTabRequested;
+        State.NotesChanged += OnNotesChanged;
         TrackSession();
     }
 
@@ -120,6 +122,7 @@ else
         State.Changed -= OnStateChanged;
         State.NoteRevealRequested -= OnNoteRevealRequested;
         State.NotesTabRequested -= OnNotesTabRequested;
+        State.NotesChanged -= OnNotesChanged;
         Unsubscribe();
     }
 
@@ -154,7 +157,7 @@ else
 
         if (note.Date is not null && !MarkFilter().Hides(note.Page) && session.Notes.Journal(Filter()).Any(entry => entry.Key == note.Key))
         {
-            _tab = Tab.Journal;
+            SelectTab(Tab.Journal);
             _jump = note.Date;
             _revealKey = note.Key;
             _revealSequence++;
@@ -182,11 +185,38 @@ else
         StateHasChanged();
     });
 
+    /// <summary>Shows <paramref name="tab"/>; another tab than the one shown clears the active note block.</summary>
     private void SelectTab(Tab tab)
     {
+        if (tab != _tab)
+        {
+            State.ClearNoteSelection();
+        }
+
         _tab = tab;
         _revealKey = null;
     }
+
+    /// <summary>Alt+Arrow up widens the active note block's range by a level, Alt+Arrow down narrows it (as in the book view).</summary>
+    private void OnKeyDown(KeyboardEventArgs e)
+    {
+        if (!e.AltKey || e.CtrlKey || e.ShiftKey || e.MetaKey)
+        {
+            return;
+        }
+
+        if (e.Key == "ArrowUp")
+        {
+            State.ChangeNoteRange(1);
+        }
+        else if (e.Key == "ArrowDown")
+        {
+            State.ChangeNoteRange(-1);
+        }
+    }
+
+    /// <summary>The usages of notes changed (an adoption): the tabs read their notes again, as after a page change.</summary>
+    private void OnNotesChanged() => OnPagesChanged("");
 
     private void OnPagesChanged(string path) => _ = InvokeAsync(() =>
     {

@@ -83,36 +83,23 @@ public class NoteCardTests : UiTestContext
     }
 
     [Fact]
-    public async Task NoteCard_ShortSubBullet_NoButtonsOfItsOwn()
+    public async Task NoteCard_NoButtons_EveryBlockCanBeMadeActive()
     {
         using var tv = Create();
         var session = await OpenAlphaAsync(tv);
 
         var cut = RenderCard(Note(session, "Gedächtnis braucht"));
 
-        // "Unterpunkt Träume" is a single short line: it is adopted with its note, whose buttons stay.
-        Assert.Single(cut.FindAll(".ne-note-child"));
-        Assert.Empty(cut.FindAll(".ne-note-child .ne-adopt-column, .ne-note-child-adopt, .ne-note-child-whereto"));
-        Assert.Single(cut.FindAll(".ne-note-adopt"));
-    }
-
-    [Fact]
-    public async Task NoteCard_MainButtons_StandInSideColumnNextToText()
-    {
-        using var tv = Create();
-        var session = await OpenAlphaAsync(tv);
-
-        var cut = RenderCard(Note(session, "Gedächtnis braucht"));
-
-        // Outside a day the main element's buttons stand at the right of its text, as in a day card; no footer row of them.
-        var column = cut.Find(".ne-note-card > .ne-note-body > .ne-adopt-column");
-        Assert.Equal("ne-note-text", column.PreviousElementSibling!.ClassName);
-        Assert.NotNull(column.QuerySelector(".ne-note-adopt"));
-        Assert.Empty(cut.FindAll(".ne-note-actions .ne-note-adopt, .ne-note-actions .ne-note-whereto"));
-        // The status marks stay in the head; Logseq stays below.
-        Assert.Empty(column.QuerySelectorAll(".ne-note-dot, .ne-note-used"));
+        // No buttons and no footer on the card (the actions are in the bar of the active block); the status marks stay
+        // in the head. The note and its short sub-bullet can both be made active.
+        Assert.Empty(cut.FindAll(".ne-note-card button, .ne-note-actions"));
         Assert.NotNull(cut.Find(".ne-note-head"));
-        Assert.NotNull(cut.Find(".ne-note-actions > .ne-note-logseq"));
+        Assert.Equal(["Gedächtnis braucht Schlaf", "Unterpunkt Träume"], cut.FindAll(".ne-note-block").Select(OwnText));
+
+        cut.ClickBlock("Unterpunkt Träume");
+
+        Assert.Equal(Note(session, "Unterpunkt Träume").Block.Key, State.ActiveNote!.BlockKey);
+        Assert.NotNull(cut.Find(".ne-note-child .ne-note-bar .ne-note-adopt-cursor"));
     }
 
     [Fact]
@@ -120,13 +107,14 @@ public class NoteCardTests : UiTestContext
     {
         using var tv = Create();
 
-        // A sub-bullet of more than one line has buttons of its own.
+        // A sub-bullet of more than one line, adopted from the bar of its block.
         File.WriteAllText(
             Path.Combine(tv.Root, NotesPath), tv.Read(NotesPath).Replace("\t- Unterpunkt Träume\n", "\t- Unterpunkt Träume\n\t  aus der Nacht\n"));
         var session = await OpenAlphaAsync(tv);
         var cut = RenderCard(Note(session, "Gedächtnis braucht"));
 
-        cut.Find(".ne-note-child-adopt").Click();
+        cut.ClickBlock("Unterpunkt Träume");
+        cut.Find(".ne-note-adopt-cursor").Click();
 
         var book = session.Vault.FindBook("Buch - Alpha")!;
         var texts = book.Root.Children.First().TextBlocks.Select(t => t.Text).ToList();
@@ -148,9 +136,9 @@ public class NoteCardTests : UiTestContext
         SetCursorInTextBlock(first.Key);
         var cut = RenderCard(Note(session, "Gedächtnis braucht"));
 
-        // "Danach" in the menu of variants (a click on the button itself adopts the last used way, see AdoptVariantTests).
-        cut.Find(".ne-note-adopt-more").Click();
-        cut.Find(".ne-adopt-after").Click();
+        // "Danach" in the bar of the active note.
+        cut.Find(".ne-note-text").Click();
+        cut.Find(".ne-note-adopt-after").Click();
 
         var texts = State.CurrentBook!.Root.Children.First().TextBlocks.Select(t => t.Text).ToList();
         Assert.Equal(["Erster Text", "Gedächtnis braucht Schlaf", "Zweiter Text"], texts);
@@ -164,7 +152,8 @@ public class NoteCardTests : UiTestContext
         var cut = RenderCard(Note(session, "Gedächtnis wird"));
         Assert.Empty(cut.FindAll(".ne-note-used-count"));
 
-        cut.Find(".ne-note-adopt").Click();
+        cut.Find(".ne-note-text").Click();
+        cut.Find(".ne-note-adopt-cursor").Click();
 
         Assert.Equal("2", cut.Find(".ne-note-used-count").TextContent);
         Assert.Equal(2, Note(session, "Gedächtnis wird").Usages.Count);
@@ -179,7 +168,8 @@ public class NoteCardTests : UiTestContext
         State.Changed += () => notified++;
         var cut = RenderCard(Note(session, "Gedächtnis braucht"));
 
-        cut.Find(".ne-note-adopt").Click();
+        cut.Find(".ne-note-text").Click();
+        cut.Find(".ne-note-adopt-cursor").Click();
 
         Assert.True(notified > 0);
         var hits = session.Search.Search(new NoteEvolution.AI.Search.SearchQuery("Schlaf", new NoteFilter(HideUsed: true, null, null)));
@@ -197,7 +187,8 @@ public class NoteCardTests : UiTestContext
         ((IDisposable)session.Search).Dispose();
         Assert.ThrowsAny<Exception>(() => session.Search.UpdatePage(session.Notes, note.Page.FilePath));
 
-        cut.Find(".ne-note-adopt").Click();
+        cut.Find(".ne-note-text").Click();
+        cut.Find(".ne-note-adopt-cursor").Click();
 
         Assert.NotSame(staleBook, State.CurrentBook);
         Assert.Contains("Gedächtnis braucht Schlaf", State.CurrentBook!.Root.Children.First().TextBlocks.Select(t => t.Text));
@@ -213,7 +204,8 @@ public class NoteCardTests : UiTestContext
         var before = tv.Read(AlphaPath);
         var cut = RenderCard(Note(session, "Gedächtnis braucht"));
 
-        cut.Find(".ne-note-adopt").Click();
+        cut.Find(".ne-note-text").Click();
+        cut.Find(".ne-note-adopt-cursor").Click();
 
         var localizer = Services.GetRequiredService<IStringLocalizer<Strings>>();
         Assert.Equal(localizer["NoteAdoptFailed"].Value, cut.Find(".ne-note-error").TextContent);
@@ -233,7 +225,8 @@ public class NoteCardTests : UiTestContext
         };
         var cut = RenderCard(Note(session, "Gedächtnis braucht"));
 
-        cut.Find(".ne-note-adopt").Click();
+        cut.Find(".ne-note-text").Click();
+        cut.Find(".ne-note-adopt-cursor").Click();
 
         Assert.True(flushed, "the flush hook runs before the adoption writes anything");
     }
@@ -249,9 +242,15 @@ public class NoteCardTests : UiTestContext
         Assert.Equal("Kaputt", broken.Name);
         var cut = RenderCard(session.Notes.All().First(n => n.Page == broken));
 
-        var adoptButtons = cut.FindAll(".ne-note-adopt, .ne-note-adopt-more, .ne-note-child-adopt, .ne-note-child-adopt-more");
-        Assert.Equal(4, adoptButtons.Count);
-        Assert.All(adoptButtons, b => Assert.True(b.HasAttribute("disabled")));
+        // For the note and for its sub-point the bar's adopt buttons are greyed out.
+        foreach (var (block, offered) in new[] { ("Gedächtnis kaputt", 5), ("unten", 3) })
+        {
+            cut.ClickBlock(block);
+            var adoptButtons = cut.FindAll(".ne-note-bar [class^='ne-note-adopt-']");
+            Assert.Equal(offered, adoptButtons.Count);
+            Assert.All(adoptButtons, b => Assert.True(b.HasAttribute("disabled")));
+        }
+
         Assert.NotEmpty(cut.FindAll(".ne-note-hint"));
     }
 
@@ -270,9 +269,13 @@ public class NoteCardTests : UiTestContext
         var notesBefore = tv.Read(NotesPath);
         var cut = RenderCard(Note(session, "Gedächtnis braucht"));
 
-        cut.Find(".ne-note-adopt").Click();
+        // The bar greys adopting out and names the conflict; adopting itself refuses too (AdoptVariantTests).
+        cut.Find(".ne-note-text").Click();
+        var adopt = cut.Find(".ne-note-adopt-cursor");
 
-        Assert.NotEmpty(cut.FindAll(".ne-note-error"));
+        Assert.True(adopt.HasAttribute("disabled"));
+        Assert.Equal(
+            Services.GetRequiredService<IStringLocalizer<Strings>>()["NoteBarConflict"].Value, adopt.GetAttribute("title"));
         Assert.Equal(before, tv.Read(AlphaPath));
         Assert.Equal(notesBefore, tv.Read(NotesPath));
     }
@@ -288,7 +291,8 @@ public class NoteCardTests : UiTestContext
         session.PagesChanged += changed.Add;
         var cut = RenderCard(Note(session, "Gedächtnis braucht"));
 
-        cut.Find(".ne-note-adopt").Click();
+        cut.Find(".ne-note-text").Click();
+        cut.Find(".ne-note-adopt-cursor").Click();
 
         Assert.Contains(changed, p => string.Equals(p, session.Vault.FindBook("Buch - Alpha")!.Page.FilePath, StringComparison.OrdinalIgnoreCase));
         Assert.NotEmpty(cut.FindAll(".ne-note-error"));
@@ -319,8 +323,12 @@ public class NoteCardTests : UiTestContext
         var session = await OpenAlphaAsync(tv);
         var folder = Path.GetFileName(tv.Root);
 
-        RenderCard(Note(session, "Gedächtnis wird")).Find(".ne-note-logseq").Click();
-        RenderCard(Note(session, "Gedächtnis braucht")).Find(".ne-note-logseq").Click();
+        foreach (var startsWith in new[] { "Gedächtnis wird", "Gedächtnis braucht" })
+        {
+            var cut = RenderCard(Note(session, startsWith));
+            cut.Find(".ne-note-text").Click();
+            cut.Find(".ne-note-logseq").Click();
+        }
 
         Assert.Equal(
             [
@@ -338,7 +346,9 @@ public class NoteCardTests : UiTestContext
             ("pages/Große Ideen & mehr.md", "- Etwas\n"));
         var session = await OpenAlphaAsync(tv);
 
-        RenderCard(Note(session, "Etwas")).Find(".ne-note-logseq").Click();
+        var cut = RenderCard(Note(session, "Etwas"));
+        cut.Find(".ne-note-text").Click();
+        cut.Find(".ne-note-logseq").Click();
 
         Assert.EndsWith("?page=Gro%C3%9Fe%20Ideen%20%26%20mehr", Platform.OpenedUris.Single());
     }
@@ -350,14 +360,37 @@ public class NoteCardTests : UiTestContext
         var session = await OpenAlphaAsync(tv);
         var note = Note(session, "Gedächtnis braucht");
         var cut = RenderCard(note);
-        var card = cut.Find(".ne-note-card");
 
-        Assert.Equal("true", card.GetAttribute("draggable"));
-        Assert.Equal(note.Key.ToString(), card.GetAttribute("data-note-key"));
-        card.DragStart();
-        Assert.Equal(note.Key, State.DraggedNoteKey);
-        card.DragEnd();
+        // The card itself is not draggable (its text can be marked); the handle in the bar drags the range head.
+        Assert.False(cut.Find(".ne-note-card").HasAttribute("draggable"));
+        cut.ClickBlock("Unterpunkt Träume");
+        var handle = cut.Find(".ne-note-bar .ne-note-drag");
+        var child = Note(session, "Unterpunkt Träume").Block.Key;
+
+        Assert.Equal("true", handle.GetAttribute("draggable"));
+        Assert.Equal("⠿", handle.TextContent);
+        Assert.Equal("Ins Buch ziehen", handle.GetAttribute("title"));
+        Assert.Equal(child.ToString(), handle.GetAttribute("data-note-key"));
+        handle.DragStart();
+        Assert.Equal(child, State.DraggedNoteKey);
+        Assert.False(State.DraggedNoteOwnOnly);
+        cut.Find(".ne-note-drag").DragEnd();
         Assert.Null(State.DraggedNoteKey);
+
+        // At the note's own block it drags the note.
+        cut.ClickBlock("Gedächtnis braucht");
+        cut.Find(".ne-note-drag").DragStart();
+        Assert.Equal(note.Key, State.DraggedNoteKey);
+        Assert.False(State.DraggedNoteOwnOnly);
+        cut.Find(".ne-note-drag").DragEnd();
+
+        // At level −1 the drag carries that the block goes without its sub-points; the end clears it.
+        cut.Find(".ne-note-range-down").Click();
+        cut.Find(".ne-note-drag").DragStart();
+        Assert.Equal(note.Key, State.DraggedNoteKey);
+        Assert.True(State.DraggedNoteOwnOnly);
+        cut.Find(".ne-note-drag").DragEnd();
+        Assert.False(State.DraggedNoteOwnOnly);
     }
 
     [Fact]
@@ -372,6 +405,9 @@ public class NoteCardTests : UiTestContext
         foreach (var startsWith in new[] { "Gedächtnis wird", "Gedächtnis braucht", "Gedächtnis und Musik" })
         {
             var cut = RenderCard(Note(session, startsWith), 55);
+
+            // With the bar of the active note.
+            cut.Find(".ne-note-text").Click();
             foreach (var text in UiTexts(cut.Find(".ne-note-card")))
             {
                 Assert.True(

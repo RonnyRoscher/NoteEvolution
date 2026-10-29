@@ -1,0 +1,16 @@
+@inject IStringLocalizer<Strings> L
+
+@* The status dot of an unused note block while the language model works for the vault (spec 7.2), on the cards and in the bar. *@
+@if (Status is { } status && NoteProgress.Of(status with { Used = Used }, L) is { Dot: not NoteDot.None } dot)
+{
+    <span class="ne-note-dot ne-note-dot-@dot.Dot.ToString().ToLowerInvariant()" role="img"
+          title="@dot.Tooltip" aria-label="@dot.Tooltip"></span>
+}
+
+@code {
+    /// <summary>The block's status as the session has it (<see cref="VaultSession.NoteStatus"/>); nothing without one.</summary>
+    [Parameter] public NoteStatusInput? Status { get; set; }
+
+    /// <summary>Whether the block is used, read from the shown note, which is newer than the status.</summary>
+    [Parameter] public bool Used { get; set; }
+}

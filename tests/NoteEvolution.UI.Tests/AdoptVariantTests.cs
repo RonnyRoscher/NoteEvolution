@@ -308,6 +308,20 @@ public class AdoptVariantTests : UiTestContext
         Assert.Equal(NoteText + $"\t  used-in:: [[Buch - Alpha]] (({id}))\n", _vault.Read(NotePath));
     }
 
+    private const string LongChild = "Unterpunkt, der länger als eine Zeile ist und deshalb eigene Knöpfe zum Übernehmen bekommt";
+
+    /// <summary>Renders the card of "Eine Notiz" and makes <paramref name="block"/> (the note or its sub-bullet) active.</summary>
+    private IRenderedComponent<NoteCard> RenderActive(VaultSession session, string block)
+    {
+        var cut = Render<NoteCard>(p => p.Add(c => c.Note, session.Notes.All().Single(n => n.Block.Content == "Eine Notiz")));
+        cut.ClickBlock(block);
+        return cut;
+    }
+
+    /// <summary>The labels of the bar's adopt buttons, in order.</summary>
+    private static List<string> AdoptLabels(IRenderedComponent<NoteCard> cut) =>
+        [.. cut.FindAll(".ne-note-bar [class^='ne-note-adopt-']").Select(b => b.TextContent.Trim())];
+
     [Theory]
     [InlineData(false, AdoptVariant.AtCursor)]
     [InlineData(false, AdoptVariant.After)]
@@ -315,20 +329,19 @@ public class AdoptVariantTests : UiTestContext
     [InlineData(true, AdoptVariant.AtCursor)]
     [InlineData(true, AdoptVariant.After)]
     [InlineData(true, AdoptVariant.Below)]
-    public async Task Menu_AdoptsEachVariant(bool subBullet, AdoptVariant variant)
+    public async Task Bar_AdoptsEachVariant(bool subBullet, AdoptVariant variant)
     {
         var session = await OpenSessionAsync(_vault);
         CursorAt("Erster Text", 7);
-        var cut = Render<NoteCard>(p => p.Add(c => c.Note, session.Notes.All().Single(n => n.Block.Content == "Eine Notiz")));
-        var adopted = subBullet ? "Unterpunkt, der länger als eine Zeile ist und deshalb eigene Knöpfe zum Übernehmen bekommt" : "Eine Notiz";
+        var adopted = subBullet ? LongChild : "Eine Notiz";
+        var cut = RenderActive(session, adopted);
 
-        // Each entry of the menu adopts its block (the note or the sub-bullet) the way its variant says.
-        cut.Find(subBullet ? ".ne-note-child-adopt-more" : ".ne-note-adopt-more").Click();
-        cut.Find(".ne-adopt-menu " + variant switch
+        // Each button of the bar adopts the active block (the note or the sub-bullet) the way its variant says.
+        cut.Find(variant switch
         {
-            AdoptVariant.AtCursor => ".ne-adopt-at-cursor",
-            AdoptVariant.After => ".ne-adopt-after",
-            _ => ".ne-adopt-below",
+            AdoptVariant.AtCursor => ".ne-note-adopt-cursor",
+            AdoptVariant.After => ".ne-note-adopt-after",
+            _ => ".ne-note-adopt-under",
         }).Click();
 
         var section = Book.Root.Children.First();
@@ -349,76 +362,36 @@ public class AdoptVariantTests : UiTestContext
     }
 
     [Fact]
-    public async Task SplitButton_ShowsAndRepeatsTheLastUsedVariant_Remembered()
+    public async Task Bar_HeadingVariants_OnlyForBlocksWithSubPoints()
     {
         var session = await OpenSessionAsync(_vault);
-        CursorAt("Erster Text", 7);
-        var note = session.Notes.All().Single(n => n.Block.Content == "Eine Notiz");
-        var cut = Render<NoteCard>(p => p.Add(c => c.Note, note));
+        var cut = RenderActive(session, "Eine Notiz");
 
-        // Before any use the button adopts at the cursor.
-        Assert.Equal(AdoptVariant.AtCursor, Settings.LastAdoptVariant);
-        Assert.Equal(Text("AdoptAtCursor"), cut.Find(".ne-note-adopt").TextContent);
-
-        // "Danach" from the menu adopts, closes the menu and becomes the button's way, for the note and its sub-bullets.
-        cut.Find(".ne-note-adopt-more").Click();
-        cut.Find(".ne-adopt-menu .ne-adopt-after").Click();
-
-        Assert.Empty(cut.FindAll(".ne-adopt-menu"));
-        Assert.Equal(["Erster Text", "Eine Notiz", "Zweiter Text"], Book.Root.Children.First().TextBlocks.Select(t => t.Text));
-        Assert.Equal(AdoptVariant.After, Settings.LastAdoptVariant);
-        Assert.Equal(AdoptVariant.After, UiSettings.Load(Platform.UserDataDirectory).LastAdoptVariant);
-        Assert.Equal(Text("AdoptAfter"), cut.Find(".ne-note-adopt").TextContent);
-        Assert.Equal(Text("AdoptAfterTitle"), cut.Find(".ne-note-adopt").GetAttribute("title"));
-        Assert.Equal(Text("AdoptAfter"), cut.Find(".ne-note-child-adopt").TextContent);
-
-        // Another card shows it as well, and its button adopts that way: the sub-bullet after the current element.
-        var other = Render<NoteCard>(p => p.Add(c => c.Note, note));
-        Assert.Equal(Text("AdoptAfter"), other.Find(".ne-note-adopt").TextContent);
-        CursorAt("Zweiter Text", 3);
-
-        other.Find(".ne-note-child-adopt").Click();
-
-        Assert.Equal(
-            ["Erster Text", "Eine Notiz", "Zweiter Text", "Unterpunkt, der länger als eine Zeile ist und deshalb eigene Knöpfe zum Übernehmen bekommt"],
-            Book.Root.Children.First().TextBlocks.Select(t => t.Text));
-    }
-
-    [Fact]
-    public async Task Menu_HeadingVariants_OnlyForBlocksWithSubPoints()
-    {
-        var session = await OpenSessionAsync(_vault);
-        var cut = Render<NoteCard>(p => p.Add(c => c.Note, session.Notes.All().Single(n => n.Block.Content == "Eine Notiz")));
-
-        cut.Find(".ne-note-adopt-more").Click();
         Assert.Equal(
             [Text("AdoptAtCursor"), Text("AdoptAfter"), Text("AdoptBelow"), Text("AdoptAsHeading"), Text("AdoptAsSubheading")],
-            cut.FindAll(".ne-adopt-menu button").Select(b => b.TextContent));
-        Assert.Equal(Text("AdoptAsHeadingTitle"), cut.Find(".ne-adopt-menu .ne-adopt-as-heading").GetAttribute("title"));
+            AdoptLabels(cut));
+        Assert.Equal(Text("AdoptAsHeadingTitle"), cut.Find(".ne-note-adopt-heading").GetAttribute("title"));
 
         // The sub-bullet has no sub-points of its own.
-        cut.Find(".ne-note-child-adopt-more").Click();
-        Assert.Equal(
-            [Text("AdoptAtCursor"), Text("AdoptAfter"), Text("AdoptBelow")],
-            cut.FindAll(".ne-adopt-menu button").Select(b => b.TextContent));
+        cut.ClickBlock(LongChild);
+        Assert.Equal([Text("AdoptAtCursor"), Text("AdoptAfter"), Text("AdoptBelow")], AdoptLabels(cut));
     }
 
     [Theory]
     [InlineData(AdoptVariant.AsHeading, "- # Eine Notiz\n", "- # Zwei\n", 1)]
     [InlineData(AdoptVariant.AsSubheading, "\t- ## Eine Notiz\n", "\t- Zweiter Text\n", 2)]
-    public async Task Menu_AsHeading_AdoptsAndRevealsTheHeading(AdoptVariant variant, string headingLine, string neighbour, int level)
+    public async Task Bar_AsHeading_AdoptsAndRevealsTheHeading(AdoptVariant variant, string headingLine, string neighbour, int level)
     {
         var session = await OpenSessionAsync(_vault);
         CursorAt("Erster Text", 7);
-        var cut = Render<NoteCard>(p => p.Add(c => c.Note, session.Notes.All().Single(n => n.Block.Content == "Eine Notiz")));
+        var cut = RenderActive(session, "Eine Notiz");
 
-        cut.Find(".ne-note-adopt-more").Click();
-        cut.Find(".ne-adopt-menu " + (variant == AdoptVariant.AsHeading ? ".ne-adopt-as-heading" : ".ne-adopt-as-subheading")).Click();
+        cut.Find(variant == AdoptVariant.AsHeading ? ".ne-note-adopt-heading" : ".ne-note-adopt-subheading").Click();
 
         var heading = Book.FindNode(KeyOf(headingLine.Trim('\t', '-', ' ', '\n')))!;
         Assert.Equal(("Eine Notiz", level), (heading.Title, heading.Level));
         var textBlock = heading.TextBlocks.Single();
-        Assert.Equal("Unterpunkt, der länger als eine Zeile ist und deshalb eigene Knöpfe zum Übernehmen bekommt", textBlock.Text);
+        Assert.Equal(LongChild, textBlock.Text);
         Assert.Equal([Guid.Parse(ChildId)], textBlock.Sources);
         var book = _vault.Read(BookPath);
         Assert.True(
@@ -428,7 +401,6 @@ public class AdoptVariantTests : UiTestContext
         Assert.Contains("  used-in:: [[Buch - Alpha]]\n", _vault.Read(NotePath));
         Assert.Contains($"  used-in:: [[Buch - Alpha]] (({textBlock.Block.Id}))\n", _vault.Read(NotePath));
         AssertRevealed(headingLine.Trim('\t', '-', ' ', '\n'), ElementKind.Heading);
-        Assert.Equal(variant, Settings.LastAdoptVariant);
     }
 
     [Fact]
@@ -436,9 +408,8 @@ public class AdoptVariantTests : UiTestContext
     {
         var session = await OpenSessionAsync(_vault);
         CursorAt("Erster Text", 7);
-        var cut = Render<NoteCard>(p => p.Add(c => c.Note, session.Notes.All().Single(n => n.Block.Content == "Eine Notiz")));
-        cut.Find(".ne-note-adopt-more").Click();
-        cut.Find(".ne-adopt-menu .ne-adopt-as-heading").Click();
+        var cut = RenderActive(session, "Eine Notiz");
+        cut.Find(".ne-note-adopt-heading").Click();
         State.TakePendingReveal();
         CursorAt("Dritter Text");
 
@@ -449,7 +420,7 @@ public class AdoptVariantTests : UiTestContext
     }
 
     [Fact]
-    public async Task Level6Section_NoSubheading_SplitButtonFallsBack()
+    public async Task Level6Section_NoSubheading()
     {
         var deep = TestVault.Create(
             (BookPath, "title:: Alpha\ntype:: book\n\n- # A\n\t- ## B\n\t\t- ### C\n\t\t\t- #### D\n\t\t\t\t- ##### E\n\t\t\t\t\t- ###### F\n\t\t\t\t\t\t- Text unter F\n"),
@@ -457,35 +428,15 @@ public class AdoptVariantTests : UiTestContext
         _otherVaults.Add(deep);
         var session = await OpenSessionAsync(deep);
         CursorAt("Text unter F");
-        Settings.LastAdoptVariant = AdoptVariant.AsSubheading;
-        var cut = Render<NoteCard>(p => p.Add(c => c.Note, session.Notes.All().Single(n => n.Block.Content == "Eine Notiz")));
+        var cut = RenderActive(session, "Eine Notiz");
 
-        Assert.Equal(Text("AdoptAtCursor"), cut.Find(".ne-note-adopt").TextContent);
-        cut.Find(".ne-note-adopt-more").Click();
-        Assert.Equal(
-            [Text("AdoptAtCursor"), Text("AdoptAfter"), Text("AdoptBelow"), Text("AdoptAsHeading")],
-            cut.FindAll(".ne-adopt-menu button").Select(b => b.TextContent));
-        Assert.Equal(AdoptVariant.AsSubheading, Settings.LastAdoptVariant);
+        Assert.Equal([Text("AdoptAtCursor"), Text("AdoptAfter"), Text("AdoptBelow"), Text("AdoptAsHeading")], AdoptLabels(cut));
 
         // Above level 6 it is offered again.
         CursorAt("##### E");
         cut.Render();
-        Assert.Equal(Text("AdoptAsSubheading"), cut.Find(".ne-note-adopt").TextContent);
+        Assert.Contains(Text("AdoptAsSubheading"), AdoptLabels(cut));
     }
-
-    [Fact]
-    public async Task SplitButton_LastVariantAsHeading_FallsBackToAtCursorWithoutSubPoints()
-    {
-        var session = await OpenSessionAsync(_vault);
-        Settings.LastAdoptVariant = AdoptVariant.AsHeading;
-        var cut = Render<NoteCard>(p => p.Add(c => c.Note, session.Notes.All().Single(n => n.Block.Content == "Eine Notiz")));
-
-        Assert.Equal(Text("AdoptAsHeading"), cut.Find(".ne-note-adopt").TextContent);
-        Assert.Equal(Text("AdoptAtCursor"), cut.Find(".ne-note-child-adopt").TextContent);
-        Assert.Equal(Text("AdoptAtCursorTitle"), cut.Find(".ne-note-child-adopt").GetAttribute("title"));
-        Assert.Equal(AdoptVariant.AsHeading, Settings.LastAdoptVariant);
-    }
-
     [Theory]
     [InlineData(AdoptVariant.AtCursor)]
     [InlineData(AdoptVariant.After)]

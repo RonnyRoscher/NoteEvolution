@@ -23,7 +23,8 @@ public class PendingTests
             new NoteLocator(LinkSetup.JournalFile, [0], Sha256Hex("Kern")),
             "Buch - Test",
             r.TextBlockId,
-            Remove: false), entry);
+            Remove: false,
+            WithoutChildren: false), entry);
         Assert.True(File.Exists(Path.Combine(s.Tv.Root, ".noteevolution", "pending.json")));
 
         Assert.Equal(1, s.Links.RetryPending());

@@ -196,26 +196,37 @@ Am Anfang der Filterzeile steht, wie viele Notizen (Hauptpunkte) es gibt, bzw. w
 durchlässt („812 von 1.234 Notizen“; im Journal zählen auch „‚nicht relevant‘ ausblenden“ und „‚später‘ ausblenden“).
 
 Der Reiter **Journal** ist beim Start ausgewählt und zeigt jede Journal-Datei als eine Karte (ein Tag, mit Datum
-und „In Logseq öffnen“); ihre Hauptpunkte stehen darin als Kästen mit Linie, jeder mit seinen Knöpfen untereinander
-rechts neben dem Text (darüber ✓, wenn verwendet) und seinen Unterpunkten darunter. „Suche“ und „Relevant“ zeigen
-weiter einzelne Hauptpunkte als Treffer; auch dort stehen die Knöpfe des Hauptpunkts rechts neben dem Text. Im
+und „In Logseq öffnen“); ihre Hauptpunkte stehen darin als Kästen mit Linie, rechts neben dem Text ✓ (wenn
+verwendet) und der Fortschrittspunkt, darunter die Unterpunkte. „Suche“ und „Relevant“ zeigen weiter einzelne
+Hauptpunkte als Treffer. Die Karten haben keine Knöpfe; die Aktionen stehen in der Leiste des aktiven Blocks (siehe
+unten). Im
 Journal steht „Springen zum Tag“ in der Filterzeile („Von“/„Bis“ sind vorerst ausgeblendet). Rechts oben auf jeder
 Tageskarte markieren zwei Häkchen den Tag als **„nicht relevant“** (für das gewählte Buch; in der Datei als
 `not-relevant-for:: [[Buch]]`) oder **„später“** (`later:: true`); die Filter „‚nicht relevant‘ ausblenden“ und
 „‚später‘ ausblenden“ blenden solche Tage aus und bleiben nach einem Neustart erhalten.
 
-Zum Übernehmen hat jede Notiz einen geteilten Knopf, ebenso jeder Unteranstrich mit mehr als einer Zeile (mehr als
-80 Zeichen, ein Zeilenumbruch oder eigene Unteranstriche), der kein Punkt einer Aufzählung ist („1.“, „2)“, „a)“, „–“,
-„•“ an mindestens zwei Geschwistern); kurze Einträge und Listenpunkte werden mit ihrer Notiz übernommen. An einem
-Unteranstrich stehen die Knöpfe untereinander rechts neben dem Text; sie nehmen ihn mit allen seinen Unterpunkten (die
-Linie links umfasst sie, beim Zeigen auf die Knöpfe ist der Bereich hinterlegt). Der Knopf selbst übernimmt auf die
-zuletzt gewählte Art und trägt deren Namen (anfangs **Am Cursor**), der Pfeil daneben bietet alle drei Arten:
-**Am Cursor** (in den aktuellen Block an der Cursorstelle), **Danach** (neues Element nach dem aktuellen) und
-**Darunter** (als erstes Unterelement). Die gewählte Art gilt für alle Karten und bleibt nach einem Neustart
-erhalten (`ui.json`). Daneben steht **Wohin damit?** (nur mit lokaler KI). Die Quelle hängt immer am umgebenden
-Textblock. Neue Blöcke und Details aus „Danach“ und „Darunter“ bekommen den Status Relevant; am Cursor behält der
-Block seinen Status, nur die dabei entstehenden Details werden Relevant.
-Hat der Punkt Unterpunkte, bietet der Pfeil zusätzlich **Als Überschrift** (neue Überschrift auf der Ebene des aktuellen
+**Aktiver Block:** Ein Klick auf einen Hauptpunkt oder Unterpunkt (in Journal, Suche, Relevant oder der Karte oben)
+macht ihn zum aktiven Block; ein Klick, der Text markiert, tut das nicht, Markieren und Kopieren bleiben möglich. Aktiv
+ist immer nur ein Block; ein Wechsel des Reiters oder des Vaults hebt die Auswahl auf, ebenso wenn der Block nicht mehr
+zu sehen ist (z. B. verwendet bei „Verwendete ausblenden“). Wie in der Buchansicht hat sein Bereich einen Rahmen:
+zuerst der Block mit allen Unterpunkten; „Bereich ▲“ (Alt+Pfeil hoch, wenn der Fokus im Notizbereich liegt) nimmt den
+übergeordneten Block mit allem darunter, bis zum Hauptpunkt; „Bereich ▼“ (Alt+Pfeil runter) verkleinert bis zum Block
+allein, ohne seine Unterpunkte (nur bei einem Block mit Unterpunkten). Bei „Verwendete ausblenden“ zählen nur die
+angezeigten Unterpunkte: ausgeblendete, schon verwendete gehören nicht zum Bereich und kommen nicht ein zweites Mal ins
+Buch. Unten am Rahmen steht die Leiste: Bereich ▲/▼, die Arten zu übernehmen, **Wohin
+damit?** (nur mit lokaler KI), ✓ und Fortschrittspunkt des Bereichskopfs, bei Journal-Blöcken die Tagesmarken
+„nicht relevant“ und „später“ (dieselben wie an der Tageskarte) und „In Logseq öffnen“. Was nicht geht, ist ausgegraut
+und nennt den Grund im Tooltip (kein Buch gewählt, Buch schreibgeschützt, Notizdatei nicht sicher lesbar, offener
+Konflikt). Ins Buch gezogen wird mit dem Griff „⠿“ vorn in der Leiste (der Bereichskopf); die Karte selbst lässt sich
+nicht ziehen, damit ihr Text markiert werden kann.
+
+Übernommen wird genau der Bereich, auf eine von drei Arten: **Am Cursor** (in den aktuellen Block an der
+Cursorstelle), **Danach** (neues Element nach dem aktuellen) und **Darunter** (als erstes Unterelement). Bei „ohne
+Unterpunkte“ kommt nur der Block selbst ins Buch; `used-in::` steht dann nur an ihm, dazu `used-without-children:: true`
+(es geht mit seiner letzten Verwendung, „Rückgängig“ stellt es wieder her): seine Unterpunkte bleiben unverwendet, sichtbar und nicht grau. Die Quelle hängt immer am
+umgebenden Textblock. Neue Blöcke und Details aus „Danach“ und „Darunter“ bekommen den Status Relevant; am Cursor
+behält der Block seinen Status, nur die dabei entstehenden Details werden Relevant.
+Hat der Bereichskopf (angezeigte) Unterpunkte (und nimmt der Bereich sie mit), bietet die Leiste zusätzlich **Als Überschrift** (neue Überschrift auf der Ebene des aktuellen
 Abschnitts, an dessen Ende) und **Als Unterüberschrift** (eine Ebene tiefer, nach den Textblöcken des Abschnitts und vor
 seinen Unterabschnitten; nicht unter Ebene 6). Die erste Zeile wird der Titel, jeder direkte Unterpunkt ein eigener
 Textblock (Relevant, verknüpft); bestehender Text bleibt in seinem Abschnitt. „Rückgängig“ nimmt das zurück, solange
@@ -252,9 +263,9 @@ wieder der Standard. Auf den Bereich wirken zwei weitere Knöpfe:
   (bei einem Textblock samt der direkt folgenden Textblöcke bis zur nächsten Unterüberschrift); der Cursor steht im
   neuen Titel.
 
-**Wohin damit?** an einer Notiz oder einem Unteranstrich mit eigenen Knöpfen (siehe oben) zeigt die fünf passendsten Textblöcke des Buchs mit
-Überschriftenpfad, Textauszug und Prozent (✓, wenn die Notiz dort schon Quelle ist). Ein Klick springt zum Block,
-die Liste bleibt offen; übernommen wird dort mit „Danach“ oder „Darunter“. Solange im Reiter „Relevant“ eine solche
+**Wohin damit?** in der Leiste des aktiven Blocks (siehe oben) zeigt unter der Leiste die fünf passendsten Textblöcke
+des Buchs für den Bereichskopf mit Überschriftenpfad, Textauszug und Prozent (✓, wenn der Block dort schon Quelle
+ist). Ein Klick springt zum Block, die Liste bleibt offen; übernommen wird dort mit „Danach“ oder „Darunter“. Solange im Reiter „Relevant“ eine solche
 Liste offen ist, bleibt die Relevant-Liste unverändert; nach dem Schließen der letzten Liste wird sie einmal neu
 berechnet.
 
@@ -425,8 +436,10 @@ Editor
       „Rückgängig“ bringt Buch und Notizen zurück.
 - [ ] Quellen der Markierung aufklappen, eine Quelle anklicken: der Reiter Journal springt zur Notiz und hebt sie hervor.
 - [ ] Reiter Journal (beim Start ausgewählt): eine Karte je Tag (Datum und „In Logseq öffnen“ oben), darin jeder
-      Hauptpunkt als Kasten mit Linie und Knöpfen untereinander rechts; „Verwendete ausblenden“ blendet verwendete
-      Hauptpunkte in ihrer Tageskarte aus.
+      Hauptpunkt als Kasten mit Linie, ohne Knöpfe; „Verwendete ausblenden“ blendet verwendete
+      Blöcke auf jeder Ebene samt ihren Unterpunkten aus (ein Tag ohne sichtbaren Block verschwindet). Ohne den Haken
+      stehen verwendete Blöcke und ihre Unterpunkte in grauer Schrift; jeder Block mit eigenem `used-in::`, auch ein
+      Unterpunkt, trägt das ✓ (mit Zahl bei mehreren Verwendungen), ein Klick springt zum Ziel im Buch.
 - [ ] Großes Buch (mehrere hundert Blöcke): Tippen und Scrollen bleiben flüssig.
 - [ ] Bereich mit ▲/▼ und Alt+Pfeil erweitern und verkleinern; Kasten, Bereichsanzeige und Quellenanzahl folgen; ein
       Bereich mit Text nach Unterabschnitten zeigt zwei Kästen.
@@ -437,14 +450,17 @@ Editor
       Fenster bleibt offen und zeigt einen Hinweis; erneutes Schließen beendet das Programm.
 
 Notizen und Übernehmen
-- [ ] Eine Notiz mit einem Handgriff übernehmen (Knopf oder Ziehen an die gewünschte Stelle): die Karte zeigt ✓, der
+- [ ] Eine Notiz übernehmen (anklicken und Knopf in der Leiste, oder am Griff „⠿“ an die gewünschte Stelle ziehen): die Karte zeigt ✓, der
       Buchblock einen Quellen-Chip, der Hinweis bietet 8 s lang „Rückgängig“; in der Notizdatei kam nur eine
       `id::`/`used-in::`-Zeile hinzu.
 - [ ] „Verwendete ausblenden“ blendet verwendete Notizen aus.
 - [ ] Die drei Arten zu übernehmen: am Cursor mitten in einem Absatz (der Rest rückt dahinter), „Danach“ und
       „Darunter“ bei Textblock, Detail und Überschrift; die Quelle steht jeweils am umgebenden Textblock, der
-      neue Block bzw. das neue Detail ist grau (`status:: relevant`). Danach trägt der Übernehmen-Knopf den Namen der
-      zuletzt gewählten Art, auch nach einem Neustart.
+      neue Block bzw. das neue Detail ist grau (`status:: relevant`).
+- [ ] Aktiver Block: ein Klick auf einen Unterpunkt rahmt ihn samt Unterpunkten, die Leiste steht unten am Rahmen; Text
+      markieren macht nichts aktiv. Bereich ▲/▼ und Alt+Pfeil hoch/runter im Notizbereich ändern den Rahmen; bei „ohne
+      Unterpunkte“ kommt beim Übernehmen nur der Block ins Buch. Gesperrte Knöpfe nennen den Grund im Tooltip; die
+      Tagesmarken in der Leiste und an der Tageskarte zeigen dasselbe; ein Reiterwechsel hebt die Auswahl auf.
 
 Logseq und Obsidian
 - [ ] Den Vault in Logseq öffnen: keine Fehler, Buch und Notizen sehen wie erwartet aus.
@@ -475,7 +491,7 @@ Lokale KI (Modell installiert, Test-Vault mit einigen Dutzend Notizen und einem 
 - [ ] „Verwendete ausblenden“ und der Zeitraum wirken auch in „Relevant“.
 - [ ] Die Suche findet sinnverwandte Notizen ohne gleiche Wörter (z. B. nach „Müdigkeit“ suchen und eine Notiz über
       „Schlaf“ finden), Treffer mit dem gesuchten Wort stehen weiter oben.
-- [ ] „Wohin damit?“ an einer Notiz und an einem längeren Unteranstrich zeigt höchstens fünf Textblöcke mit Pfad, Auszug und
+- [ ] „Wohin damit?“ in der Leiste einer Notiz oder eines Unterpunkts zeigt höchstens fünf Textblöcke mit Pfad, Auszug und
       Prozentwert; ein Klick springt zum Block, die Liste bleibt offen; dort mit „Danach“ übernehmen. Im Reiter
       „Relevant“ bleibt die Liste dabei stehen, die Notiz verschwindet nicht.
 - [ ] `[handled]`-Assistent: neben jeder Notiz steht „Stelle unbekannt“ (Standard) und bis zu drei Fundstellen mit

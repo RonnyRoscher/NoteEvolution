@@ -164,8 +164,10 @@
                 ShowError(session.HasAnyOpenConflict ? L["UndoConflict"] : L["UndoFailed"]);
             }
 
-            // The undone operation changed (and saved) pages, or a failed one left them as their files are.
+            // The undone operation changed (and saved) pages, or a failed one left them as their files are. A note whose
+            // usage went comes back into the notes tabs.
             State.RefreshBook();
+            State.NotifyNotesChanged();
             State.Notify();
         }
         finally
