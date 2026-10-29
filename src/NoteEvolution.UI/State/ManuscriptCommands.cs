@@ -316,8 +316,9 @@ public static class ManuscriptCommands
     /// read-only book or an open conflict refuses it too. A text block or detail becomes a heading
     /// (<see cref="ManuscriptEditor.ToHeading"/>), a heading another level (<see cref="ManuscriptEditor.SetHeadingLevel"/>),
     /// each saved with a <see cref="StructureUndo"/>; Text on a heading removes it (<see cref="ManuscriptEditor.RemoveHeading"/>,
-    /// with its targeted undo). The same level, a level <see cref="LevelBlocked"/> refuses (shows <c>SectionCommandFailed</c>)
-    /// or no element changes nothing. A conversion that fails after it changed the page reads the page from the file
+    /// with its targeted undo). The heading's own level places a heading with an indentation warning by that level
+    /// (<see cref="CanPlace"/>; Einordnen spec 2); on any other element the same level changes nothing, as do a level
+    /// <see cref="LevelBlocked"/> refuses (shows <c>SectionCommandFailed</c>) and no element. A conversion that fails after it changed the page reads the page from the file
     /// again. The converted element is revealed and stays the active one (no jump in the history); the book view is
     /// taken from the vault again and <see cref="AppState.Notify"/> is raised.
     /// </summary>
@@ -328,7 +329,8 @@ public static class ManuscriptCommands
         try
         {
             var (message, session, book) = await PrepareAsync(state, logger);
-            if (session is null || book is null || LevelTargetOf(state, book) is not { } element || LevelAt(state) == level)
+            if (session is null || book is null || LevelTargetOf(state, book) is not { } element
+                || (LevelAt(state) == level && !IsMisplaced(book, element)))
             {
                 return message;
             }
@@ -370,6 +372,187 @@ public static class ManuscriptCommands
                 state.RevealElement(key);
             }
 
+            state.Notify();
+        }
+    }
+
+    /// <summary>
+    /// Whether the level button of the heading's own level places the heading at the cursor (Einordnen spec 2, „Gleiche
+    /// Ebene“): the book is writable, no conflict is open for it (R26), the element is a heading with an indentation
+    /// warning (<see cref="Book.Warnings"/>) and its level is possible (<see cref="LevelBlocked"/>).
+    /// </summary>
+    public static bool CanPlace(AppState state) =>
+        state is { Session: { } session, CurrentBook: { Page.IsReadOnly: false } book }
+        && !session.HasOpenConflict(book.Page.FilePath)
+        && LevelTargetOf(state, book) is { } element
+        && IsMisplaced(book, element)
+        && ManuscriptEditor.LevelBlocked(book, element, book.FindNode(element.Key)!.Level) is null;
+
+    /// <summary>Whether <paramref name="element"/> is a heading <paramref name="book"/> warns about (its place does not match its level).</summary>
+    private static bool IsMisplaced(Book book, BookElement element) =>
+        element.Kind == ElementKind.Heading && book.Warnings.Any(warning => warning.BlockKey == element.Key);
+
+    /// <summary>
+    /// Why „Einrücken ⇥“ cannot move the element at the cursor (as for Delete, never the fallback element;
+    /// <see cref="ManuscriptEditor.IndentBlocked"/>), for its tooltip: the resource key of the reason; <c>null</c> if it
+    /// can, or without an element.
+    /// </summary>
+    public static string? IndentBlocked(AppState state) =>
+        state.CurrentBook is { } book && LevelTargetOf(state, book) is { } element ? ManuscriptEditor.IndentBlocked(book, element) : null;
+
+    /// <summary>As <see cref="IndentBlocked"/>, for „⇤ Ausrücken“ (<see cref="ManuscriptEditor.OutdentBlocked"/>).</summary>
+    public static string? OutdentBlocked(AppState state) =>
+        state.CurrentBook is { } book && LevelTargetOf(state, book) is { } element ? ManuscriptEditor.OutdentBlocked(book, element) : null;
+
+    /// <summary>
+    /// Whether <see cref="IndentAsync"/> moves the element at the cursor now: the book is writable, no conflict is open
+    /// for it (R26) and <see cref="IndentBlocked"/> has no reason. A heading goes as Tab takes it
+    /// (<see cref="CanRun"/> with <see cref="SectionCommand.Indent"/>).
+    /// </summary>
+    public static bool CanIndent(AppState state) => CanShift(state, 1);
+
+    /// <summary>As <see cref="CanIndent"/>, for <see cref="OutdentAsync"/>.</summary>
+    public static bool CanOutdent(AppState state) => CanShift(state, -1);
+
+    private static bool CanShift(AppState state, int delta) =>
+        state is { Session: { } session, CurrentBook: { Page.IsReadOnly: false } book }
+        && !session.HasOpenConflict(book.Page.FilePath)
+        && LevelTargetOf(state, book) is { } element
+        && (element.Kind == ElementKind.Heading
+            ? CanRun(state, delta > 0 ? SectionCommand.Indent : SectionCommand.Outdent)
+            : ShiftBlocked(book, element, delta) is null);
+
+    private static string? ShiftBlocked(Book book, BookElement element, int delta) =>
+        delta > 0 ? ManuscriptEditor.IndentBlocked(book, element) : ManuscriptEditor.OutdentBlocked(book, element);
+
+    /// <summary>
+    /// „Einrücken ⇥“ and Tab on the element at the cursor (Einordnen spec 4): a heading goes one level deeper under the
+    /// previous heading of its level (<see cref="RunAsync"/> with <see cref="SectionCommand.Indent"/>), a text block
+    /// becomes the last sub-point of the text block before it (<see cref="ManuscriptEditor.IndentTextBlock"/>), a
+    /// detail goes one step deeper in the editor (<paramref name="shiftDepth"/> with +1), which saves it the normal
+    /// way. In the same order as <see cref="RunAsync"/>: the editor saves its text first, and text it could not save
+    /// refuses the command; a read-only book or an open conflict refuses it too; an element
+    /// <see cref="IndentBlocked"/> refuses does not change. The text block is saved with a <see cref="StructureUndo"/>
+    /// (<paramref name="undoDescription"/>) and revealed at the cursor's offset; the book view is taken from the vault
+    /// again and <see cref="AppState.Notify"/> is raised.
+    /// </summary>
+    /// <returns>The message to show, or <c>null</c> if the element moved (or nothing changed) without remark.</returns>
+    public static Task<AdoptMessage?> IndentAsync(AppState state, Func<int, Task> shiftDepth, string undoDescription, ILogger logger) =>
+        ShiftAsync(state, 1, shiftDepth, undoDescription, logger);
+
+    /// <summary>
+    /// „⇤ Ausrücken“ and Shift+Tab on the element at the cursor (Einordnen spec 4), as <see cref="IndentAsync"/>: a
+    /// heading goes one level higher and takes what followed it in its section along (<see cref="SectionCommand.Outdent"/>),
+    /// a detail of level 1 becomes a text block of its own after its text block (<see cref="ManuscriptEditor.OutdentDetail"/>),
+    /// a deeper detail goes one step higher in the editor (<paramref name="shiftDepth"/> with −1); a text block cannot.
+    /// </summary>
+    /// <returns>The message to show, or <c>null</c> if the element moved (or nothing changed) without remark.</returns>
+    public static Task<AdoptMessage?> OutdentAsync(AppState state, Func<int, Task> shiftDepth, string undoDescription, ILogger logger) =>
+        ShiftAsync(state, -1, shiftDepth, undoDescription, logger);
+
+    private static async Task<AdoptMessage?> ShiftAsync(
+        AppState state, int delta, Func<int, Task> shiftDepth, string undoDescription, ILogger logger)
+    {
+        // A heading goes exactly as its shortcut takes it.
+        if (state.CurrentBook is { } shown && LevelTargetOf(state, shown) is { Kind: ElementKind.Heading })
+        {
+            return await RunAsync(state, delta > 0 ? SectionCommand.Indent : SectionCommand.Outdent, undoDescription, logger);
+        }
+
+        Guid? reveal = null;
+        var offset = state.Cursor?.Offset ?? 0;
+        try
+        {
+            var (message, session, book) = await PrepareAsync(state, logger);
+            if (session is null || book is null || LevelTargetOf(state, book) is not { } element
+                || ShiftBlocked(book, element, delta) is not null)
+            {
+                return message;
+            }
+
+            switch (element.Kind)
+            {
+                case ElementKind.Heading:
+                    // The save made the cursor's block a heading the book did not know before (not expected).
+                    (message, reveal) = RunStructure(
+                        session, book, element, delta > 0 ? SectionCommand.Indent : SectionCommand.Outdent, undoDescription, logger);
+                    return message;
+                case ElementKind.TextBlock:
+                    (message, reveal) = RunStatus(
+                        session, book, () => ManuscriptEditor.IndentTextBlock(book, element.Key, session.Clock.Now), undoDescription, logger);
+                    return message;
+                default:
+                    if (delta < 0 && BlockOf(book, element).Parent == BookElements.TextBlockOf(book, element)!.Block)
+                    {
+                        (message, reveal) = RunStatus(
+                            session, book, () => ManuscriptEditor.OutdentDetail(book, element.Key, session.Clock.Now), undoDescription, logger);
+                        return message;
+                    }
+
+                    // A detail moves within its text block: the editor shifts it and saves it like typed text.
+                    await shiftDepth(delta);
+                    return null;
+            }
+        }
+        finally
+        {
+            // On success the book changed; after a failure the vault holds the page as it is on disk again.
+            state.RefreshBook();
+            if (reveal is { } key)
+            {
+                state.RevealElement(key, offset);
+            }
+
+            state.Notify();
+        }
+    }
+
+    /// <summary>
+    /// „Gliederung nach Ebenen ordnen“ (Einordnen spec 3): places every heading of the current book with an indentation
+    /// warning by its own level (<see cref="ManuscriptEditor.NormalizeOutline"/>), in the same order as
+    /// <see cref="RunAsync"/>: the editor saves its text first, and text it could not save refuses the command; a
+    /// read-only book or an open conflict refuses it too. When the headings to place are no longer
+    /// <paramref name="expected"/> (the preview's <see cref="ManuscriptEditor.MisplacedHeadings"/>; the save or another
+    /// change came in between), nothing changes and <c>NormalizeOutlineStale</c> is shown. The page is saved with one
+    /// <see cref="StructureUndo"/> (<paramref name="undoDescription"/>) for the whole command; the cursor stays; the book
+    /// view is taken from the vault again and <see cref="AppState.Notify"/> is raised.
+    /// </summary>
+    /// <returns>The message to show (<c>null</c> without remark) and the number of headings placed.</returns>
+    public static async Task<(AdoptMessage? Message, int Placed)> NormalizeOutlineAsync(
+        AppState state, IReadOnlyList<Guid> expected, string undoDescription, ILogger logger)
+    {
+        try
+        {
+            var (message, session, book) = await PrepareAsync(state, logger);
+            if (session is null || book is null)
+            {
+                return (message, 0);
+            }
+
+            if (!ManuscriptEditor.MisplacedHeadings(book).SequenceEqual(expected))
+            {
+                return (new AdoptMessage("NormalizeOutlineStale", true), 0);
+            }
+
+            if (expected.Count == 0)
+            {
+                return (null, 0);
+            }
+
+            var placed = 0;
+            (message, _) = RunStatus(session, book, () =>
+            {
+                placed = ManuscriptEditor.NormalizeOutline(book, session.Clock.Now);
+                return null;
+            }, undoDescription, logger);
+
+            // A change by another program merged with it still brings the placed headings into the file.
+            return (message, message is { IsError: true } ? 0 : placed);
+        }
+        finally
+        {
+            // On success the book changed; after a failure the vault holds the page as it is on disk again.
+            state.RefreshBook();
             state.Notify();
         }
     }

@@ -124,13 +124,14 @@ public class LevelConversionTests
 
         var key = ManuscriptEditor.ToHeading(book, KeyOf(book, "Punkt 1"), 2, Now);
 
-        // Only the sub-point with its sub-points goes; its text block is changed and keeps "Punkt 2".
+        // The sub-point goes with its sub-points and, so that the reading order stays, with "Punkt 2" after it (a text
+        // block under the heading too); its text block is changed.
         Assert.Equal(
             Text
                 .Replace($"\t  updated:: {Old}\n", $"\t  updated:: {Stamp}\n")
                 .Replace(
                     "\t\t- Punkt 1\n\t\t\t- Punkt 1a\n\t\t- Punkt 2\n\t- Text danach\n",
-                    "\t\t- Punkt 2\n\t- ## Punkt 1\n\t\t- Punkt 1a\n" + Dates("\t\t  ") + "\t\t- Text danach\n"),
+                    "\t- ## Punkt 1\n\t\t- Punkt 1a\n" + Dates("\t\t  ") + "\t\t- Punkt 2\n" + Dates("\t\t  ") + "\t\t- Text danach\n"),
             Serialize(book));
         Assert.Equal(KeyOf(book, "# Eins"), Book.Load(book.Page).FindNode(key)!.Parent!.Key);
     }
@@ -323,7 +324,7 @@ public class LevelConversionTests
         var book = Load(LevelSix);
 
         Assert.Throws<ArgumentException>(() => ManuscriptEditor.SetHeadingLevel(book, KeyOf(book, "##### 5"), 6));
-        Assert.Throws<ArgumentException>(() => ManuscriptEditor.SetHeadingLevel(book, KeyOf(book, "##### 5"), 3));
+        Assert.Throws<ArgumentException>(() => ManuscriptEditor.SetHeadingLevel(book, KeyOf(book, "##### 5"), 7));
 
         Assert.Equal(LevelSix, Serialize(book));
     }
@@ -373,16 +374,14 @@ public class LevelConversionTests
         var book = Load(Text);
         var einsA = ElementOf(book, "## Eins-A");
 
-        // Not above the parent heading's level + 1 (that is outdenting); Text is always possible.
-        Assert.Equal("LevelBlockedOutOfParent", ManuscriptEditor.LevelBlocked(book, einsA, 1));
-        Assert.All([0, 2, 3, 4, 5], level => Assert.Null(ManuscriptEditor.LevelBlocked(book, einsA, level)));
+        // Above the parent heading's level is possible (the heading is placed out of its section); Text always is.
+        Assert.All([0, 1, 2, 3, 4, 5], level => Assert.Null(ManuscriptEditor.LevelBlocked(book, einsA, level)));
 
         // Review focus 4: a sub-heading at H6 blocks every deeper level, never producing H7.
         Assert.Equal("LevelBlockedBelowH6", ManuscriptEditor.LevelBlocked(book, einsA, 6));
         var six = Load(LevelSix);
         Assert.Equal("LevelBlockedBelowH6", ManuscriptEditor.LevelBlocked(six, ElementOf(six, "##### 5"), 6));
-        Assert.All([1, 2, 3, 4], level =>
-            Assert.Equal("LevelBlockedOutOfParent", ManuscriptEditor.LevelBlocked(six, ElementOf(six, "##### 5"), level)));
+        Assert.All([1, 2, 3, 4], level => Assert.Null(ManuscriptEditor.LevelBlocked(six, ElementOf(six, "##### 5"), level)));
         Assert.Null(ManuscriptEditor.LevelBlocked(six, ElementOf(six, "###### 6"), 6));
         Assert.Equal("LevelBlockedNoSuchLevel", ManuscriptEditor.LevelBlocked(six, ElementOf(six, "###### 6"), 7));
         Assert.Null(ManuscriptEditor.LevelBlocked(six, ElementOf(six, "# 1"), 1));

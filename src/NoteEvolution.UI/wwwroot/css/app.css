@@ -1809,6 +1809,25 @@ html, body {
     color: var(--accent-fg);
 }
 
+/* The current level of a heading whose place does not match it: a click places it (Einordnen spec 2). */
+.ne-shell .ne-sec-level.ne-sec-level-place {
+    outline: 2px dashed var(--warning);
+    outline-offset: 1px;
+}
+
+/* The preview of „Gliederung nach Ebenen ordnen“: the titles as the file has them, with their level marks. */
+.ne-normalize-list {
+    max-height: 40vh;
+    overflow-y: auto;
+    margin: 4px 0 8px;
+    padding-left: 20px;
+}
+
+.ne-normalize-item {
+    font-family: var(--font-text);
+    overflow-wrap: anywhere;
+}
+
 .ne-ref-picker {
     position: absolute;
     left: 0;

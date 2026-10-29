@@ -99,14 +99,14 @@ public class SectionBarLevelTests : UiTestContext
         Assert.Equal(Text("LevelBlockedAboveSection"), Button(cut, 1).GetAttribute("title"));
         Assert.False(Button(cut, 2).HasAttribute("disabled"));
 
-        // A heading shows its level; above its parent's level + 1 and down to a sub-heading at H7 are greyed out.
+        // A heading shows its level; above its parent's level it is placed out of that section, so only a level that
+        // would put a sub-heading at H7 is greyed out.
         await MoveToAsync(cut, "## Eins-A");
         cut.WaitForAssertion(() => Assert.Equal("H2", Pressed(cut)));
-        Assert.True(Button(cut, 1).HasAttribute("disabled"));
-        Assert.Equal(Text("LevelBlockedOutOfParent"), Button(cut, 1).GetAttribute("title"));
         Assert.True(Button(cut, 6).HasAttribute("disabled"));
         Assert.Equal(Text("LevelBlockedBelowH6"), Button(cut, 6).GetAttribute("title"));
-        Assert.All([0, 3, 4, 5], level => Assert.False(Button(cut, level).HasAttribute("disabled")));
+        Assert.All([0, 1, 3, 4, 5], level => Assert.False(Button(cut, level).HasAttribute("disabled")));
+        Assert.Equal(string.Format(Text("SectionLevelHeadingTitle"), 1), Button(cut, 1).GetAttribute("title"));
         Assert.Equal(Text("SectionLevelTextTitle"), Button(cut, 0).GetAttribute("title"));
     }
 

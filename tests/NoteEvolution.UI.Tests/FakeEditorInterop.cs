@@ -87,6 +87,16 @@ public sealed class FakeEditorInterop : IEditorInterop, IDisposable
         return Task.CompletedTask;
     }
 
+    /// <summary>The deltas passed to <see cref="ShiftDepthAsync"/>, in order; <see cref="Calls"/> gets <c>shift:{delta}</c>.</summary>
+    public List<int> DepthShifts { get; } = [];
+
+    public Task ShiftDepthAsync(int delta)
+    {
+        DepthShifts.Add(delta);
+        Calls.Add($"shift:{delta}");
+        return Task.CompletedTask;
+    }
+
     public Task RevealAsync(Guid elementKey, int offset = 0, bool focus = true)
     {
         Reveals.Add(elementKey);

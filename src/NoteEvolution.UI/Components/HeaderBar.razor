@@ -64,7 +64,7 @@
     }
 
     @* The commands next to undo; the indicators (read-only files, AI, language model, system meter) at the right end. *@
-    @if (OnHandledWizard.HasDelegate || OnDraftWizard.HasDelegate)
+    @if (OnHandledWizard.HasDelegate || OnDraftWizard.HasDelegate || OnNormalizeOutline.HasDelegate)
     {
         <div class="ne-assistants">
             <button type="button" class="ne-assistants-toggle" disabled="@(State.Session is null)" aria-expanded="@(_assistantsOpen ? "true" : "false")"
@@ -74,6 +74,8 @@
                 <div class="ne-assistants-popup">
                     <button type="button" class="ne-assistant-handled" @onclick="OpenHandled">@L["AssistantHandled"]</button>
                     <button type="button" class="ne-assistant-draft" @onclick="OpenDraft">@L["AssistantDraft"]</button>
+                    <button type="button" class="ne-assistant-normalize" disabled="@(State.CurrentBook is null || !OnNormalizeOutline.HasDelegate)"
+                            @onclick="OpenNormalize">@L["AssistantNormalize"]</button>
                 </div>
             }
         </div>
@@ -204,6 +206,9 @@
 
     /// <summary>Opens the draft assistant; the assistants menu is hidden while both assistants are unset.</summary>
     [Parameter] public EventCallback OnDraftWizard { get; set; }
+
+    /// <summary>Opens „Gliederung nach Ebenen ordnen“ for the current book; its entry is disabled without a book or while unset.</summary>
+    [Parameter] public EventCallback OnNormalizeOutline { get; set; }
 
     /// <summary>Opens the PDF export dialog; the button is disabled while unset.</summary>
     [Parameter] public EventCallback OnPdfExport { get; set; }
@@ -503,6 +508,12 @@
     {
         _assistantsOpen = false;
         await OnDraftWizard.InvokeAsync();
+    }
+
+    private async Task OpenNormalize()
+    {
+        _assistantsOpen = false;
+        await OnNormalizeOutline.InvokeAsync();
     }
 
     private async Task Undo()

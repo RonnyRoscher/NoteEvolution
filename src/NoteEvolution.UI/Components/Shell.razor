@@ -19,6 +19,7 @@
 <div class="ne-shell" data-theme="@ThemeAttribute" style="--font-size: @(Settings.FontSizePt)pt; --line-width: @(Settings.LineWidthCh)ch;">
     <HeaderBar OnOpenVault="PickVaultAsync" OnPdfExport="() => Show(Dialog.Pdf)" OnLinkCheck="() => Show(Dialog.LinkCheck)"
                OnSettings="() => Show(Dialog.Settings)" OnShortcuts="() => Show(Dialog.Shortcuts)" OnHandledWizard="() => Show(Dialog.Handled)" OnDraftWizard="() => ShowDraft(null)"
+               OnNormalizeOutline="() => Show(Dialog.Normalize)"
                OnConvertPage="ShowDraft" OnToggleSplit="ToggleSplitAsync" />
 
     @if (_hintVisible)
@@ -128,6 +129,9 @@
         case Dialog.Draft:
             <DraftWizard OnClose="CloseDialog" InitialPage="_draftPage" OnConverted="OnDraftConverted" />
             break;
+        case Dialog.Normalize:
+            <NormalizeOutlineDialog OnClose="CloseDialog" />
+            break;
         case Dialog.Appendix:
             <AppendixDialog @key="_appendixRequest" Kind="_appendixKind" InitialEntry="_appendixEntry"
                             StartWithNew="_appendixStartWithNew" OnCreated="OnAppendixCreated" OnClose="CloseDialog" />
@@ -202,6 +206,7 @@
         Handled,
         Draft,
         Appendix,
+        Normalize,
     }
 
     private void Show(Dialog dialog) => _dialog = dialog;
