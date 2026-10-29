@@ -621,6 +621,9 @@
     /// </summary>
     public async Task OnNoteDropped(Guid noteBlockKey, Guid? afterTextBlockKey)
     {
+        // A range dragged at level −1 is adopted without its sub-points (spec B: exactly the range); read before the
+        // drag's end clears it.
+        var ownOnly = State.DraggedNoteKey == noteBlockKey && State.DraggedNoteOwnOnly;
         if (!await ActivateAsync())
         {
             return;
@@ -636,7 +639,8 @@
                 { } key when book.FindNode(key) is not null => new InsertPosition.SectionStart(key),
                 _ => new InsertPosition.SectionStart(book.FindNode(section) is not null ? section : book.Root.Key),
             },
-            Logger);
+            Logger,
+            includeChildren: !ownOnly);
         StateHasChanged();
     }
 

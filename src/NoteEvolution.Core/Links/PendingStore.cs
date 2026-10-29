@@ -23,8 +23,12 @@ public sealed record NoteLocator(string PagePath, int[] TreePath, string Content
 
 /// <summary>A <c>used-in::</c> change of a note that could not be written yet.</summary>
 /// <param name="Remove"><c>true</c>: remove the entry; <c>false</c>: add it (and set the note's <c>id::</c>).</param>
+/// <param name="WithoutChildren">
+/// An add of an adoption without the block's sub-points: <c>used-without-children:: true</c> is written with it (see
+/// <see cref="UsedInValue.WithoutChildrenKey"/>). Absent in older files: <c>false</c>.
+/// </param>
 public sealed record PendingNoteUpdate(
-    Guid NoteBlockId, NoteLocator Locator, string BookLinkName, Guid BookBlockId, bool Remove);
+    Guid NoteBlockId, NoteLocator Locator, string BookLinkName, Guid BookBlockId, bool Remove, bool WithoutChildren = false);
 
 /// <summary>
 /// The open note updates in <c>.noteevolution/pending.json</c>. A missing or damaged file counts as empty.

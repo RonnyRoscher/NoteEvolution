@@ -1143,7 +1143,7 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
                 throw new ReadOnlyPageException($"Die Datei '{page.FilePath}' ist schreibgeschützt: {page.ParseError}");
             }
 
-            Queue(new PendingNoteUpdate(noteId, Locate(page, note), linkName, id, remove));
+            Queue(new PendingNoteUpdate(noteId, Locate(page, note), linkName, id, remove, WithoutChildren: withoutChildren == true));
             pendingNow = true;
         }
         else
@@ -1157,7 +1157,7 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
                 ApplyEntry(note, linkName, bookBlockId, remove, replacing);
             }
 
-            pendingNow = SaveNote(page, note, noteId, linkName, bookBlockId, remove);
+            pendingNow = SaveNote(page, note, noteId, linkName, bookBlockId, remove, withoutChildren == true);
         }
 
         if (replacing is { } replaced)
@@ -1176,7 +1176,7 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
     }
 
     /// <summary>Writes the note page if it has changes; returns <c>true</c> if the write failed and was queued.</summary>
-    private bool SaveNote(Page page, Block note, Guid noteId, string linkName, Guid? bookBlockId, bool remove)
+    private bool SaveNote(Page page, Block note, Guid noteId, string linkName, Guid? bookBlockId, bool remove, bool withoutChildren = false)
     {
         try
         {
@@ -1187,7 +1187,7 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
         }
         catch (Exception ex) when (ex is IOException or InvalidOperationException && bookBlockId is not null)
         {
-            Queue(new PendingNoteUpdate(noteId, Locate(page, note), linkName, bookBlockId.Value, remove));
+            Queue(new PendingNoteUpdate(noteId, Locate(page, note), linkName, bookBlockId.Value, remove, withoutChildren));
             return true;
         }
 
@@ -1228,7 +1228,14 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
             note.Block.SetProperty("id", update.NoteBlockId.ToString("D"));
         }
 
-        ApplyEntry(note.Block, update.BookLinkName, update.BookBlockId, update.Remove);
+        if (update.WithoutChildren && !update.Remove)
+        {
+            AddEntry(note.Block, update.BookLinkName, update.BookBlockId, ownOnly: true);
+        }
+        else
+        {
+            ApplyEntry(note.Block, update.BookLinkName, update.BookBlockId, update.Remove);
+        }
         try
         {
             if (note.Page.IsDirty)

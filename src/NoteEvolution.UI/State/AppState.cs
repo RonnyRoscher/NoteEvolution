@@ -325,6 +325,12 @@ public sealed class AppState
     public Guid? DraggedNoteKey { get; set; }
 
     /// <summary>
+    /// The dragged range is its head alone (level −1, see <see cref="NoteRange.OwnOnly"/>): the drop adopts it without
+    /// its sub-points. Set and cleared with <see cref="DraggedNoteKey"/>.
+    /// </summary>
+    public bool DraggedNoteOwnOnly { get; set; }
+
+    /// <summary>
     /// Raised when the usages of notes changed outside the session's page events (an adoption, a note page read again
     /// after a failed write): the notes pane reads its notes again, so a used note leaves a list that hides used ones.
     /// </summary>

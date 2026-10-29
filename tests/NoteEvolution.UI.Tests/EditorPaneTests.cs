@@ -406,6 +406,28 @@ public class EditorPaneTests : UiTestContext
     }
 
     [Fact]
+    public async Task Pane_DropOwnOnlyRange_AdoptsTheBlockWithoutItsSubPoints()
+    {
+        using var tv = Alpha();
+        File.WriteAllText(
+            Path.Combine(tv.Root, NotesPath),
+            tv.Read(NotesPath).Replace("- Gedächtnis braucht Schlaf\n", "- Gedächtnis braucht Schlaf\n\t- Unterpunkt Traum\n"));
+        var (session, cut) = await RenderAsync(tv);
+        var note = session.Notes.All().Single(n => n.Block.Content == "Gedächtnis braucht Schlaf");
+        var first = Section("Eins").TextBlocks.First().Key;
+
+        // The bar's handle dragged the block alone (level −1); the drag ends only after the drop.
+        State.DraggedNoteKey = note.Key;
+        State.DraggedNoteOwnOnly = true;
+        await cut.InvokeAsync(() => Editor.Callbacks!.OnNoteDropped(note.Key, first));
+
+        Assert.Equal(["Erster Text", "Gedächtnis braucht Schlaf", "Zweiter Text"], Section("Eins").TextBlocks.Select(t => t.Text));
+        Assert.DoesNotContain("Unterpunkt Traum", tv.Read(BookPath));
+        Assert.Contains("used-without-children:: true", tv.Read(NotesPath));
+        Assert.False(session.Notes.All().Single(n => n.Block.Content == "Unterpunkt Traum").IsUsed);
+    }
+
+    [Fact]
     public async Task Pane_DropOnHeading_AdoptsAtThatSectionsStart()
     {
         using var tv = Alpha();

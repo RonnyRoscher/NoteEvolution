@@ -96,6 +96,41 @@ public class AdoptWithoutChildrenTests
     }
 
     [Fact]
+    public void WithoutChildren_NotePageNotWritten_TheRetryWritesTheMark()
+    {
+        using var s = new LinkSetup(Book, Journal);
+        s.Writer.FailNext(s.JournalPath, times: 2);
+
+        var r = s.Links.Adopt(s.Book, s.Note("Kern #notiz").Key, new InsertPosition.After(s.Text("Hallo Welt").Key), includeChildren: false);
+
+        Assert.True(r.NoteUpdatePending);
+        Assert.Equal(Journal, s.ReadJournal());
+        Assert.True(Assert.Single(s.Pending.Load()).WithoutChildren);
+
+        // The note page is read from disk again (without the change that failed to write); the retry brings both lines.
+        s.Reopen();
+
+        Assert.Equal(1, s.Links.RetryPending());
+        Assert.Contains($"  used-in:: [[Buch - Test]] (({r.TextBlockId}))\n  used-without-children:: true\n", s.ReadJournal());
+    }
+
+    [Fact]
+    public void PendingFile_WithoutTheField_ReadsAsWithChildren()
+    {
+        using var s = new LinkSetup(Book, Journal);
+        s.Pending.Add(new PendingNoteUpdate(Guid.NewGuid(), new NoteLocator("journals/x.md", [0], "00"), "Buch - Test", Guid.NewGuid(), Remove: false, WithoutChildren: true));
+        var file = Path.Combine(s.Tv.Root, ".noteevolution", "pending.json");
+        var json = File.ReadAllText(file);
+        Assert.Contains("\"withoutChildren\": true", json);
+        File.WriteAllText(file, json.Replace(",\n    \"withoutChildren\": true", "").Replace(",\r\n    \"withoutChildren\": true", ""));
+
+        var update = Assert.Single(new PendingStore(s.Tv.Root).Load());
+
+        Assert.DoesNotContain("withoutChildren", File.ReadAllText(file));
+        Assert.False(update.WithoutChildren);
+    }
+
+    [Fact]
     public void WithChildren_NoMark()
     {
         using var s = new LinkSetup(Book, Journal);

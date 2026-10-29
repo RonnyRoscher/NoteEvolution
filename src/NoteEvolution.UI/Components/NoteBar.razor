@@ -27,13 +27,12 @@
     <div class="ne-note-bar-buttons">
         @* The handle drags the range head into the book (the card itself is not draggable, so its text can be marked). *@
         <span class="ne-note-drag" draggable="true" role="img" title="@L["NoteDragTitle"]" aria-label="@L["NoteDragTitle"]"
-              data-note-key="@head.Key" @ondragstart="() => State.DraggedNoteKey = head.Key"
-              @ondragend="() => State.DraggedNoteKey = null">⠿</span>
+              data-note-key="@head.Key" @ondragstart="() => StartDrag(head)" @ondragend="EndDrag">⠿</span>
         @* Moving the range changes no file, so it stays possible while adopting is not. *@
         <button type="button" class="ne-note-range-up" title="@(level < max ? L["NoteRangeUpTitle"] : L["NoteRangeUpLimit"])"
-                disabled="@(level >= max)" @onclick="() => State.ChangeNoteRange(1)">@L["RangeUp"]</button>
+                disabled="@(level >= max)" @onclick="() => ChangeRangeAsync(1)">@L["RangeUp"]</button>
         <button type="button" class="ne-note-range-down" title="@(level > min ? L["NoteRangeDownTitle"] : L["NoteRangeDownLimit"])"
-                disabled="@(level <= min)" @onclick="() => State.ChangeNoteRange(-1)">@L["RangeDown"]</button>
+                disabled="@(level <= min)" @onclick="() => ChangeRangeAsync(-1)">@L["RangeDown"]</button>
         <span class="ne-note-bar-label">@L["NoteBarAdopt"]</span>
         @foreach (var (variant, cssClass) in Variants.Where(v => Offered(head, v.Variant)))
         {
@@ -315,6 +314,26 @@
         {
             // The window is closing.
         }
+    }
+
+    /// <summary>Moves the range by <paramref name="delta"/> levels; the card renders the new frame (and this bar at its new place).</summary>
+    private async Task ChangeRangeAsync(int delta)
+    {
+        State.ChangeNoteRange(delta);
+        await Changed.InvokeAsync();
+    }
+
+    /// <summary>The handle drags the range: its head, without its sub-points at level −1 (the drop adopts exactly the range).</summary>
+    private void StartDrag(Block head)
+    {
+        State.DraggedNoteKey = head.Key;
+        State.DraggedNoteOwnOnly = Range.OwnOnly;
+    }
+
+    private void EndDrag()
+    {
+        State.DraggedNoteKey = null;
+        State.DraggedNoteOwnOnly = false;
     }
 
     /// <summary>The block with <paramref name="key"/> in the tree below <paramref name="block"/>; <c>null</c> if it is not there.</summary>
