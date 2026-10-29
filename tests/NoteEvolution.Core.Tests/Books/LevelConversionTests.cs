@@ -289,6 +289,13 @@ public class LevelConversionTests
         Assert.Empty(CrossRefIndex.Of(after).Missing);
         Assert.Empty(after.Warnings);
 
+        // A punctuation mark after a removed reference keeps no space before it; one left at the start goes.
+        var punct = Load("type:: book\n\n- # Eins\n\t- Siehe ((" + Id + ")), dort ((" + Id + ")).\n\t- ((" + Id + ")): Anfang\n");
+        var punctKey = ManuscriptEditor.ToHeading(punct, ElementOf(punct, "Siehe ((" + Id + ")), dort ((" + Id + ")).").Key, 2, Now);
+        Assert.Equal("Siehe, dort.", Book.Load(punct.Page).FindNode(punctKey)!.Title);
+        var startKey = ManuscriptEditor.ToHeading(Book.Load(punct.Page), ElementOf(Book.Load(punct.Page), "((" + Id + ")): Anfang").Key, 3, Now);
+        Assert.Equal("Anfang", Book.Load(punct.Page).FindNode(startKey)!.Title);
+
         // A source citation and a cross reference in the title move together, in their order.
         var cite = Load("type:: book\n\n- # Eins\n\t- {{quelle ((" + Id + ")) S. 3}} Mehr ((" + Id + "))\n");
         var citeKey = ManuscriptEditor.ToHeading(cite, ElementOf(cite, "{{quelle ((" + Id + ")) S. 3}} Mehr ((" + Id + "))").Key, 2, Now);
