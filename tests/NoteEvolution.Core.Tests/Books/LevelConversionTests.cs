@@ -289,6 +289,13 @@ public class LevelConversionTests
         Assert.Empty(CrossRefIndex.Of(after).Missing);
         Assert.Empty(after.Warnings);
 
+        // A source citation and a cross reference in the title move together, in their order.
+        var cite = Load("type:: book\n\n- # Eins\n\t- {{quelle ((" + Id + ")) S. 3}} Mehr ((" + Id + "))\n");
+        var citeKey = ManuscriptEditor.ToHeading(cite, ElementOf(cite, "{{quelle ((" + Id + ")) S. 3}} Mehr ((" + Id + "))").Key, 2, Now);
+        var citeHeading = Book.Load(cite.Page).FindNode(citeKey)!;
+        Assert.Equal("Mehr", citeHeading.Title);
+        Assert.StartsWith("{{quelle ((" + Id + ")) S. 3}} ((" + Id + "))", citeHeading.TextBlocks.First().Block.Content);
+
         // Only a reference in the title: an untitled heading, the reference in a text block of its own.
         var only = Load("type:: book\n\n- # Eins\n\t- ((" + Id + "))\n\t- Ziel\n\t  id:: " + Id + "\n");
         var onlyKey = ManuscriptEditor.ToHeading(only, ElementOf(only, "((" + Id + "))").Key, 2, Now);

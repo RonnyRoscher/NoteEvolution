@@ -109,8 +109,8 @@ public class NormalizeOutlineTests : UiTestContext
         await cut.InvokeAsync(() => cut.Find(".ne-normalize-run").Click());
 
         var file = vault.Read(BookPath);
-        Assert.Contains("\t- ## Mit\n", file);
-        Assert.Contains($"(({id}))", file);
+        // The reference now opens the text block right under the heading.
+        Assert.Contains($"\t- ## Mit\n\t\t- (({id}))", file);
         Assert.Equal(Text("NormalizeDoneOne"), cut.Find(".ne-normalize-done").TextContent);
     }
 
