@@ -88,38 +88,9 @@ public class NormalizeOutlineTests : UiTestContext
     }
 
     [Fact]
-    public async Task Normalize_OneHeading_UnplaceableListedApart()
+    public async Task Normalize_HeadingWithReferenceInTitle_IsPlacedToo()
     {
-        // A heading in a text block whose title holds a reference cannot become a heading: it stays and is named apart.
-        const string id = "11111111-1111-4111-8111-111111111111";
-        const string text =
-            "title:: Alpha\ntype:: book\n\n" +
-            "- # Eins\n" +
-            "\t- Ziel\n" +
-            $"\t  id:: {id}\n" +
-            "\t\t- ## Mit ((" + id + "))\n" +
-            "\t- # Zwei\n";
-        using var vault = TestVault.Create((BookPath, text));
-        await OpenSessionAsync(vault);
-
-        var cut = Render<NormalizeOutlineDialog>();
-
-        Assert.Equal(Text("NormalizeCountOne"), cut.Find(".ne-normalize-count").TextContent);
-        Assert.Equal(Text("NormalizeUnplaceable"), cut.Find(".ne-normalize-unplaceable").TextContent);
-        Assert.Equal(
-            ["# Zwei", $"## Mit (({id}))"],
-            cut.FindAll(".ne-normalize-item").Select(item => item.TextContent));
-
-        await cut.InvokeAsync(() => cut.Find(".ne-normalize-run").Click());
-
-        Assert.Equal(text.Replace("\t- # Zwei\n", "- # Zwei\n"), vault.Read(BookPath));
-        Assert.Equal(Text("NormalizeDoneOne"), cut.Find(".ne-normalize-done").TextContent);
-    }
-
-    [Fact]
-    public async Task Normalize_OnlyUnplaceableLeft_NamedInsteadOfAlreadyOrdered()
-    {
-        // Final review: a book with nothing but a heading that cannot be placed is not "schon geordnet".
+        // A heading in a text block whose title holds a reference is placed like any other; the reference moves below it.
         const string id = "11111111-1111-4111-8111-111111111111";
         const string text =
             "title:: Alpha\ntype:: book\n\n" +
@@ -132,11 +103,15 @@ public class NormalizeOutlineTests : UiTestContext
 
         var cut = Render<NormalizeOutlineDialog>();
 
-        Assert.Equal(Text("NormalizeOnlyUnplaceable"), cut.Find(".ne-normalize-unplaceable-only").TextContent);
+        Assert.Equal(Text("NormalizeCountOne"), cut.Find(".ne-normalize-count").TextContent);
         Assert.Equal([$"## Mit (({id}))"], cut.FindAll(".ne-normalize-item").Select(item => item.TextContent));
-        Assert.Empty(cut.FindAll(".ne-normalize-none"));
-        Assert.Empty(cut.FindAll(".ne-normalize-run"));
-        Assert.Empty(cut.FindAll(".ne-normalize-count"));
+
+        await cut.InvokeAsync(() => cut.Find(".ne-normalize-run").Click());
+
+        var file = vault.Read(BookPath);
+        // The reference now opens the text block right under the heading.
+        Assert.Contains($"\t- ## Mit\n\t\t- (({id}))", file);
+        Assert.Equal(Text("NormalizeDoneOne"), cut.Find(".ne-normalize-done").TextContent);
     }
 
     [Fact]

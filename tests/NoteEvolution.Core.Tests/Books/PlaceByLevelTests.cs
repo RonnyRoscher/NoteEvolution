@@ -437,7 +437,6 @@ public partial class PlaceByLevelTests
         var book = Load(TwoHeadingsInText);
         var misplaced = ManuscriptEditor.MisplacedHeadings(book);
         Assert.Equal([KeyOf(book, "## A"), KeyOf(book, "## B")], misplaced);
-        Assert.Empty(ManuscriptEditor.UnplaceableHeadings(book));
 
         var before = ReadingOrder(book);
         Assert.Equal(2, ManuscriptEditor.NormalizeOutline(book, Now));
@@ -447,10 +446,11 @@ public partial class PlaceByLevelTests
     }
 
     [Fact]
-    public void MisplacedHeadings_ExactlyThosePlaced_UnplaceableListedApart()
+    public void MisplacedHeadings_ExactlyThosePlaced_ReferenceTitleToo()
     {
-        // Ruling 3: "Mit" (a reference in its title) cannot become a heading; "### Innen", a sub-point of the converted
-        // "## Aussen", becomes text; its own sub-point "#### Tiefer" stays one inside a text block and is placed after.
+        // "Mit" (a reference in its title) becomes a heading, its reference moving into the text below it; "### Innen", a
+        // sub-point of the converted "## Aussen", becomes text; its own sub-point "#### Tiefer" stays one inside a text
+        // block and is placed after.
         const string text =
             Head +
             "- # Eins\n" +
@@ -465,16 +465,16 @@ public partial class PlaceByLevelTests
 
         var misplaced = ManuscriptEditor.MisplacedHeadings(book);
         var mit = KeyOf(book, "# Mit ((11111111-1111-1111-1111-111111111111))");
-        Assert.Equal([KeyOf(book, "## Aussen"), KeyOf(book, "#### Tiefer")], misplaced);
-        Assert.Equal([mit], ManuscriptEditor.UnplaceableHeadings(book));
+        Assert.Equal([mit, KeyOf(book, "## Aussen"), KeyOf(book, "#### Tiefer")], misplaced);
         Assert.Equal(text, Serialize(book));
 
-        var before = ReadingOrder(book);
         Assert.Equal(misplaced.Count, ManuscriptEditor.NormalizeOutline(book, Now));
         var after = Book.Load(book.Page);
-        Assert.Equal(before, ReadingOrder(after));
-        Assert.Equal([mit], after.Warnings.Select(w => w.BlockKey));
+        Assert.Empty(after.Warnings);
         Assert.Empty(ManuscriptEditor.MisplacedHeadings(after));
+        var made = after.Root.Children.SelectMany(n => n.Children.Prepend(n)).Single(n => n.Title == "Mit");
+        Assert.Equal(1, made.Level);
+        Assert.Contains("((11111111-1111-1111-1111-111111111111))", made.TextBlocks.First().Block.Content);
     }
 
     [Fact]
@@ -491,7 +491,6 @@ public partial class PlaceByLevelTests
         var lines = book.Page.AllBlocks().Select(b => (b.Parent?.Key, b.Lines.ToList())).ToList();
 
         Assert.Empty(ManuscriptEditor.MisplacedHeadings(book));
-        Assert.Empty(ManuscriptEditor.UnplaceableHeadings(book));
         Assert.Throws<InvalidOperationException>(() => ManuscriptEditor.NormalizeOutline(book, Now));
         Assert.Equal(lines, book.Page.AllBlocks().Select(b => (b.Parent?.Key, b.Lines.ToList())));
         Assert.False(book.Page.IsDirty);

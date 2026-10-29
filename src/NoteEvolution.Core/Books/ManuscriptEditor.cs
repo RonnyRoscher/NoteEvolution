@@ -214,9 +214,9 @@ public static class ManuscriptEditor
     /// outside 0–6. A text block or detail cannot become a heading above the level of its section (it would take over
     /// sections not its own), except in the prologue. A heading may take any level, also above its parent heading's
     /// (<see cref="SetHeadingLevel"/> places it out of that section), but not so deep that a sub-heading would fall below
-    /// H6, nor so high that a sub-heading of an irregular outline (one that is not deeper) would rise above H1. A text
-    /// block or detail whose first line (the title) holds a reference cannot become a heading either (a heading holds no
-    /// reference). Text is always possible.
+    /// H6, nor so high that a sub-heading of an irregular outline (one that is not deeper) would rise above H1. A
+    /// reference in the first line (the title) is no obstacle: <see cref="ToHeading"/> moves it into the text below.
+    /// Text is always possible.
     /// </summary>
     /// <exception cref="ArgumentException">The element is not in the book.</exception>
     public static string? LevelBlocked(Book book, BookElement element, int level)
@@ -234,10 +234,7 @@ public static class ManuscriptEditor
         if (element.Kind != ElementKind.Heading)
         {
             var section = BookElements.TextBlockOf(book, element)!.Section;
-            return level == 0 ? null
-                : BlockRefs.Find(HeadingSplit(BlockOf(book, element)).Title).Count > 0 ? "LevelBlockedReference"
-                : level < section.Level ? "LevelBlockedAboveSection"
-                : null;
+            return level == 0 || level >= section.Level ? null : "LevelBlockedAboveSection";
         }
 
         var node = book.FindNode(element.Key)!;
@@ -474,6 +471,14 @@ public static class ManuscriptEditor
 
         var hasTag = NoteTag.Has(block.Content);
         var (title, further) = HeadingSplit(block);
+
+        // A heading holds no reference: the title's references and citations open the text below it, on a line of their own.
+        if (TakeReferences(title) is ({ } plain, { } references))
+        {
+            title = plain;
+            further = further is null ? references : references + "\n" + further;
+        }
+
         if (further is not null)
         {
             // Escaped anew as the editor saves it, so that no line of it reads as structure as the first one of a block.
@@ -676,18 +681,10 @@ public static class ManuscriptEditor
     /// <summary>
     /// The headings <see cref="NormalizeOutline"/> places, in reading order: of the headings with an indentation warning
     /// (<see cref="Book.Warnings"/>: not deeper than their parent heading, or inside a text block) those it moves or
-    /// makes a heading. Left out are the appendix (it is not changed), the headings of <see cref="UnplaceableHeadings"/>
-    /// and those that a conversion before them turns into text (a sub-point of a converted heading). The command is
-    /// tried on a copy of the page; the book is not changed.
+    /// makes a heading. Left out are the appendix (it is not changed) and those that a conversion before them turns into
+    /// text (a sub-point of a converted heading). The command is tried on a copy of the page; the book is not changed.
     /// </summary>
-    public static IReadOnlyList<Guid> MisplacedHeadings(Book book) => TryNormalize(book).Placed;
-
-    /// <summary>
-    /// The headings with an indentation warning that <see cref="NormalizeOutline"/> leaves as they are, in reading order:
-    /// one inside a text block whose title holds a reference cannot become a heading (<see cref="LevelBlocked"/>). The
-    /// appendix is left out. The book is not changed.
-    /// </summary>
-    public static IReadOnlyList<Guid> UnplaceableHeadings(Book book) => TryNormalize(book).Unplaceable;
+    public static IReadOnlyList<Guid> MisplacedHeadings(Book book) => TryNormalize(book);
 
     /// <summary>
     /// Places every heading with an indentation warning outside the appendix, in reading order (Einordnen spec 3): a
@@ -695,7 +692,7 @@ public static class ManuscriptEditor
     /// section's level where that level is above its section, and then placed by its own level (<see cref="SetHeadingLevel"/>); every other heading keeps its level and
     /// is placed by it (<see cref="SetHeadingLevel"/>). A heading that is no longer warned when its turn comes (a
     /// sub-point of a converted one, which became a text block, or a later heading in the same text block, which that
-    /// conversion placed and which counts with it) is skipped, as are those of <see cref="UnplaceableHeadings"/>. Afterwards the book's text has no indentation warnings but those. All or
+    /// conversion placed and which counts with it) is skipped. A reference in such a heading's title moves into the text below it (<see cref="ToHeading"/>). Afterwards the book's text has no indentation warnings. All or
     /// nothing: if a step throws, the page gets its state before the command back.
     /// </summary>
     /// <param name="now">The dates for the text blocks <see cref="ToHeading"/> makes.</param>
@@ -779,11 +776,11 @@ public static class ManuscriptEditor
     /// left. If a step fails, the steps before it count (the command itself would then change nothing). A read-only page
     /// gets neither: the command refuses it.
     /// </summary>
-    private static (List<Guid> Placed, List<Guid> Unplaceable) TryNormalize(Book book)
+    private static List<Guid> TryNormalize(Book book)
     {
         if (book.Page.IsReadOnly)
         {
-            return ([], []);
+            return [];
         }
 
         var copy = Book.Load(LogseqParser.Parse(book.Page.FilePath, PageSerializer.Serialize(book.Page)));
@@ -798,8 +795,7 @@ public static class ManuscriptEditor
             // NormalizeOutline throws there and changes nothing; the preview shows what came before.
         }
 
-        var left = Warned(Book.Load(copy.Page)).Where(keys.ContainsKey);
-        return ([.. placed.Select(key => keys[key])], [.. left.Select(key => keys[key])]);
+        return [.. placed.Select(key => keys[key])];
     }
 
     /// <summary>
@@ -808,6 +804,34 @@ public static class ManuscriptEditor
     /// </summary>
     private static (string Title, string? Further) HeadingSplit(Block block) =>
         HeadingText.Split(BlockTextEscape.Unescape(NoteTag.Has(block.Content) ? NoteTag.Remove(block.Content) : block.Content));
+
+    /// <summary>
+    /// The title without its block references and source citations, and those (as written, in their order, joined by a
+    /// space); <c>(null, null)</c> if the title has none. Spaces left around a removed one are collapsed.
+    /// </summary>
+    private static (string? Plain, string? References) TakeReferences(string title)
+    {
+        var spans = BlockRefs.Find(title).Select(r => (r.Start, r.Length))
+            .Concat(SourceCitations.Find(title).Select(c => (c.Start, c.Length)))
+            .OrderBy(span => span.Start)
+            .ToList();
+        if (spans.Count == 0)
+        {
+            return (null, null);
+        }
+
+        var plain = new System.Text.StringBuilder();
+        var position = 0;
+        foreach (var (start, length) in spans)
+        {
+            plain.Append(title, position, start - position);
+            position = start + length;
+        }
+
+        plain.Append(title, position, title.Length - position);
+        var collapsed = string.Join(' ', plain.ToString().Split(' ', StringSplitOptions.RemoveEmptyEntries));
+        return (collapsed, string.Join(' ', spans.Select(span => title.Substring(span.Start, span.Length))));
+    }
 
     private static bool IsKey(BlockProperty property, string key) => property.Key.Equals(key, StringComparison.OrdinalIgnoreCase);
 

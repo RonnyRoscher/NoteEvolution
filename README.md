@@ -104,8 +104,9 @@ diesem Abschnitt nach ihr kam, kommt mit; steht direkt vor ihr eine höhere Übe
 Unterabschnitt. Die Reihenfolge des Textes bleibt immer gleich. Steht eine Überschrift in der Datei falsch eingerückt
 (Warnung in der Gliederung), ist der Knopf ihrer eigenen Ebene gestrichelt umrandet („Nach Ebene neu einordnen“), und
 ein Klick ordnet sie ein. Nicht möglich (ausgegraut, mit Grund im Tooltip) sind Ebenen, die eine Unterüberschrift unter
-H6 oder über H1 brächten, eine Ebene über dem Abschnitt eines Textblocks und eine Überschrift aus einem Block, der in
-der ersten Zeile einen Verweis trägt. „Überschrift entfernen“ behält den Titel jetzt als Textblock (mit derselben
+H6 oder über H1 brächten, und eine Ebene über dem Abschnitt eines Textblocks. Steht in der ersten Zeile eines Blocks,
+der zur Überschrift wird, ein Verweis (Querverweis, Mensch oder Quelle), wandert er aus dem Titel an den Anfang des
+ersten Textblocks unter der neuen Überschrift (in einer eigenen Zeile); der Verweis bleibt gültig. „Überschrift entfernen“ behält den Titel jetzt als Textblock (mit derselben
 `id::`, damit Verweise darauf gültig bleiben).
 
 **Einrücken:** „⇤ Ausrücken“ und „Einrücken ⇥“ in der Leiste (wie Umschalt+Tab und Tab) wirken auf das Element am
@@ -126,9 +127,9 @@ ausgegraut, und der Tooltip nennt den Grund.
 ihrer Ebene eingerückt sind, und ordnet sie mit „Einordnen“ alle nach ihrer Ebene ein, Überschriften in einem Textblock
 werden Überschriften ihrer Ebene: Eine „# Hoch“ im Textblock eines H2-Abschnitts bleibt eine H1 und steht danach hinter
 dem H1-Abschnitt (nicht als H3 darin); was nach ihr kam, gehört nach der Gliederung zu ihr. Die Lesereihenfolge bleibt
-dabei gleich. Ein „Rückgängig“ nimmt alles zurück. Überschriften, deren Titel einen Verweis enthält, bleiben, wie sie
-sind, und werden eigens genannt (stehen nur noch solche da, nennt der Dialog nur sie); bei einer nicht sicher lesbaren
-(schreibgeschützten) Buchdatei zeigt er stattdessen den Hinweis auf den Schreibschutz.
+dabei gleich. Ein „Rückgängig“ nimmt alles zurück. Enthält der Titel einen Verweis, wandert er in den Textblock unter
+der Überschrift (wie bei den Ebenen-Knöpfen). Bei einer nicht sicher lesbaren (schreibgeschützten) Buchdatei zeigt der
+Dialog stattdessen den Hinweis auf den Schreibschutz.
 
 **Querverweise:** „Verweis einfügen“ in der Leiste öffnet eine Auswahl aller Überschriften und Textblöcke des Buchs
 (mit Suchfeld, Pfeiltasten und Enter); der Verweis steht als Logseq-Blockverweis `((id))` im Text und erscheint im

@@ -273,17 +273,35 @@ public class LevelConversionTests
     }
 
     [Fact]
-    public void ToHeading_ReferenceInTheFirstLine_Blocked()
+    public void ToHeading_ReferenceInTheFirstLine_MovesIntoTheTextBelow()
     {
         var text = "type:: book\n\n- # Eins\n\t- Siehe ((" + Id + ")) dort\n\t  Weiter\n\t- Ziel\n\t  id:: " + Id + "\n";
         var book = Load(text);
         var element = ElementOf(book, "Siehe ((" + Id + ")) dort\nWeiter");
 
-        // A heading holds no reference (its title is plain text): the level buttons refuse, Text stays possible.
-        Assert.Equal("LevelBlockedReference", ManuscriptEditor.LevelBlocked(book, element, 2));
-        Assert.Null(ManuscriptEditor.LevelBlocked(book, element, 0));
-        Assert.Throws<ArgumentException>(() => ManuscriptEditor.ToHeading(book, element.Key, 2, Now));
-        Assert.Equal(text, Serialize(book));
+        // A heading holds no reference: the title loses it, and it opens the text below on a line of its own.
+        Assert.Null(ManuscriptEditor.LevelBlocked(book, element, 2));
+        var key = ManuscriptEditor.ToHeading(book, element.Key, 2, Now);
+        var after = Book.Load(book.Page);
+        var heading = after.FindNode(key)!;
+        Assert.Equal("Siehe dort", heading.Title);
+        Assert.Equal("((" + Id + "))\nWeiter", heading.TextBlocks.First().Block.Content);
+        Assert.Empty(CrossRefIndex.Of(after).Missing);
+        Assert.Empty(after.Warnings);
+
+        // A source citation and a cross reference in the title move together, in their order.
+        var cite = Load("type:: book\n\n- # Eins\n\t- {{quelle ((" + Id + ")) S. 3}} Mehr ((" + Id + "))\n");
+        var citeKey = ManuscriptEditor.ToHeading(cite, ElementOf(cite, "{{quelle ((" + Id + ")) S. 3}} Mehr ((" + Id + "))").Key, 2, Now);
+        var citeHeading = Book.Load(cite.Page).FindNode(citeKey)!;
+        Assert.Equal("Mehr", citeHeading.Title);
+        Assert.StartsWith("{{quelle ((" + Id + ")) S. 3}} ((" + Id + "))", citeHeading.TextBlocks.First().Block.Content);
+
+        // Only a reference in the title: an untitled heading, the reference in a text block of its own.
+        var only = Load("type:: book\n\n- # Eins\n\t- ((" + Id + "))\n\t- Ziel\n\t  id:: " + Id + "\n");
+        var onlyKey = ManuscriptEditor.ToHeading(only, ElementOf(only, "((" + Id + "))").Key, 2, Now);
+        var onlyAfter = Book.Load(only.Page);
+        Assert.Equal("", onlyAfter.FindNode(onlyKey)!.Title);
+        Assert.StartsWith("((" + Id + "))", onlyAfter.FindNode(onlyKey)!.TextBlocks.First().Block.Content);
 
         // A reference in the further text is no obstacle.
         var further = Load("type:: book\n\n- # Eins\n\t- Titel\n\t  Siehe ((" + Id + "))\n");
