@@ -164,6 +164,21 @@
             },
         };
 
+        // Called by a note card (NoteCard.razor) before a click makes its block active: a click that marked text in the
+        // notes pane does not, so marking and copying stay possible.
+        window.neNotes = {
+            hasSelection() {
+                const selection = window.getSelection();
+                if (!selection || selection.isCollapsed || selection.rangeCount === 0) {
+                    return false;
+                }
+
+                const node = selection.getRangeAt(0).commonAncestorContainer;
+                const element = node instanceof Element ? node : node?.parentElement;
+                return !!element?.closest('.ne-notes-pane');
+            },
+        };
+
         // The arrow keys on a row splitter change the list's height (RowSplitter.razor); they must not also scroll a
         // pane. Tab and the other keys keep their default.
         document.addEventListener('keydown', e => {

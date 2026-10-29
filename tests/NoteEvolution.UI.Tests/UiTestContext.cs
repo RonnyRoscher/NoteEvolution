@@ -60,7 +60,14 @@ public abstract class UiTestContext : BunitContext
 
         // The header registers for Alt+Left/Right, which index.html catches in the whole window.
         JSInterop.SetupVoid("neNav.register", _ => true).SetVoidResult();
+
+        // Whether a click on a note block marked text (index.html); without a marking the click makes the block active.
+        TextSelection = JSInterop.Setup<bool>("neNotes.hasSelection");
+        TextSelection.SetResult(false);
     }
+
+    /// <summary>The answer of <c>neNotes.hasSelection</c> (index.html): <c>false</c> unless a test sets another result.</summary>
+    protected JSRuntimeInvocationHandler<bool> TextSelection { get; }
 
     /// <summary>
     /// The editor every rendered <c>EditorPane</c> talks to; after <see cref="UseEditorPerPane"/> only the first one

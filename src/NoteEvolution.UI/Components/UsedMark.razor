@@ -1,0 +1,112 @@
+@using NoteEvolution.Core.Books
+@using NoteEvolution.Core.Links
+@using NoteEvolution.Core.Model
+@inject AppState State
+@inject IStringLocalizer<Strings> L
+
+@* The mark of a note block with a used-in:: of its own (how often; a click goes to the usage), on the cards and in the bar. *@
+@if (UsagesOf(Block) is { Count: > 0 } usages)
+{
+    @* The click does not also make the block it stands in active (NoteCard). *@
+    <button type="button" class="ne-note-used" title="@L["NoteUsedTitle", usages.Count]"
+            aria-label="@L["NoteUsedTitle", usages.Count]" @onclick="GoToUsage" @onclick:stopPropagation="true">
+        <span class="ne-note-used-mark">✓</span>
+        @if (usages.Count > 1)
+        {
+            <span class="ne-note-used-count">@usages.Count</span>
+        }
+    </button>
+}
+
+@code {
+    /// <summary>The block (a note or one of its sub-points); nothing is shown for a block that is only used through an ancestor.</summary>
+    [Parameter, EditorRequired] public Block Block { get; set; } = default!;
+
+    /// <summary>The block's own <c>used-in::</c> entries.</summary>
+    private static IReadOnlyList<UsedInEntry> UsagesOf(Block block) =>
+        block.GetProperty("used-in") is { } value ? UsedInValue.Parse(value) : [];
+
+    /// <summary>The block or one of its ancestors has a <c>used-in::</c> (as <see cref="NoteBlock.IsUsed"/> for a note).</summary>
+    public static bool IsUsed(Block block)
+    {
+        for (var current = block; current is not null; current = current.Parent)
+        {
+            if (!string.IsNullOrWhiteSpace(current.GetProperty("used-in")))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Goes to the place where the block is used: the book of its first <c>used-in::</c> entry with a block reference
+    /// (else its first entry), where the editor reveals that block. An entry without a block reveals the heading the
+    /// note was adopted as (<see cref="HeadingOfSubPoints"/>); without one, like a block that is not found, it only
+    /// switches the book.
+    /// </summary>
+    private void GoToUsage()
+    {
+        if (State.Session is not { } session)
+        {
+            return;
+        }
+
+        var usages = UsagesOf(Block);
+        var entry = usages.FirstOrDefault(u => u.BookBlockId is not null) ?? usages.FirstOrDefault();
+        if (entry is null || session.Vault.FindBook(entry.PageName) is not { } book)
+        {
+            return;
+        }
+
+        var sameBook = string.Equals(State.CurrentBook?.LinkName, book.LinkName, StringComparison.OrdinalIgnoreCase);
+        var target = entry.BookBlockId is { } blockId ? TargetOf(book.Root, blockId) : HeadingOfSubPoints(Block, book);
+
+        // A jump in the back/forward history; without a target it goes to the start of the other book.
+        if (target is { } key)
+        {
+            State.JumpTo(key, book);
+        }
+        else if (!sameBook)
+        {
+            State.JumpTo(book.Root.Key, book);
+        }
+        else
+        {
+            State.CurrentBook = book;
+        }
+
+        State.Notify();
+    }
+
+    /// <summary>
+    /// The heading the note went to when it was adopted as a heading (its own entry has no block): the heading of the
+    /// first text block in <paramref name="book"/> one of its sub-points is used in; <c>null</c> if there is none.
+    /// </summary>
+    private static Guid? HeadingOfSubPoints(Block block, Book book) =>
+        block.Children
+            .SelectMany(child => UsedInValue.Parse(child.GetProperty("used-in") ?? ""))
+            .Where(entry => string.Equals(entry.PageName, book.LinkName, StringComparison.OrdinalIgnoreCase))
+            .Select(entry => entry.BookBlockId is { } id ? book.FindTextBlockById(id)?.Section : null)
+            .FirstOrDefault(section => section?.Block is not null)?.Key;
+
+    /// <summary>
+    /// The key of the heading or text block with the id <paramref name="blockId"/>; for a paragraph (detail) the key of
+    /// its text block.
+    /// </summary>
+    private static Guid? TargetOf(OutlineNode node, Guid blockId)
+    {
+        if (node.Block?.Id == blockId)
+        {
+            return node.Key;
+        }
+
+        if (node.TextBlocks.FirstOrDefault(text => text.Block.Id == blockId || text.Paragraphs.Any(p => p.Block.Id == blockId)) is { } textBlock)
+        {
+            return textBlock.Key;
+        }
+
+        return node.Children.Select(child => TargetOf(child, blockId)).FirstOrDefault(key => key is not null);
+    }
+}

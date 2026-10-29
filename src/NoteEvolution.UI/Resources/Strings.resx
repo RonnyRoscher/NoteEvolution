@@ -1897,4 +1897,52 @@
   <data name="UndoNormalize" xml:space="preserve">
     <value>Gliederung ordnen</value>
   </data>
+  <data name="NoteBarLabel" xml:space="preserve">
+    <value>Aktionen für den aktiven Block</value>
+  </data>
+  <data name="NoteBarAdopt" xml:space="preserve">
+    <value>Übernehmen:</value>
+  </data>
+  <data name="NoteRangeUpTitle" xml:space="preserve">
+    <value>Bereich erweitern: der übergeordnete Block mit allem darunter (Alt+Pfeil hoch)</value>
+  </data>
+  <data name="NoteRangeUpLimit" xml:space="preserve">
+    <value>Der Bereich umfasst schon den Hauptpunkt</value>
+  </data>
+  <data name="NoteRangeDownTitle" xml:space="preserve">
+    <value>Bereich verkleinern: der Block ohne seine Unterpunkte (Alt+Pfeil runter)</value>
+  </data>
+  <data name="NoteRangeDownLimit" xml:space="preserve">
+    <value>Der Bereich ist schon nur dieser Block ohne Unterpunkte</value>
+  </data>
+  <data name="NoteBarNoBook" xml:space="preserve">
+    <value>Kein Buch gewählt</value>
+  </data>
+  <data name="NoteBarBookReadOnly" xml:space="preserve">
+    <value>Das Buch ist schreibgeschützt</value>
+  </data>
+  <data name="NoteBarNoteReadOnly" xml:space="preserve">
+    <value>Diese Notizdatei ist nicht sicher lesbar</value>
+  </data>
+  <data name="NoteBarConflict" xml:space="preserve">
+    <value>Für das Buch oder die Notizseite liegt ein ungelöster Konflikt vor</value>
+  </data>
+  <data name="NoteOpenLogseqTitle" xml:space="preserve">
+    <value>Den Block in Logseq öffnen</value>
+  </data>
+  <data name="KeysGroupNotes" xml:space="preserve">
+    <value>Notizbereich</value>
+  </data>
+  <data name="KeysNotes1Keys" xml:space="preserve">
+    <value>Klick</value>
+  </data>
+  <data name="KeysNotes1" xml:space="preserve">
+    <value>Block einer Notiz aktiv machen (nicht beim Markieren von Text)</value>
+  </data>
+  <data name="KeysNotes2Keys" xml:space="preserve">
+    <value>Alt+Pfeil hoch / runter</value>
+  </data>
+  <data name="KeysNotes2" xml:space="preserve">
+    <value>Bereich um den aktiven Block erweitern / verkleinern</value>
+  </data>
 </root>

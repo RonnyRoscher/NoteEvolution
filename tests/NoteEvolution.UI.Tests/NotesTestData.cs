@@ -1,3 +1,6 @@
+using AngleSharp.Dom;
+using Bunit;
+using Microsoft.AspNetCore.Components;
 using NoteEvolution.Core.Vaults;
 using NoteEvolution.TestSupport;
 using NoteEvolution.UI.State;
@@ -56,4 +59,21 @@ internal static class NotesTestData
     /// <summary>The note block (any depth) whose content starts with <paramref name="startsWith"/>.</summary>
     public static NoteBlock Note(VaultSession session, string startsWith) =>
         session.Notes.All().First(n => n.Block.Content.StartsWith(startsWith, StringComparison.Ordinal));
+
+    /// <summary>
+    /// The clickable row of the first block in <paramref name="root"/> whose own text starts with
+    /// <paramref name="startsWith"/>: a note's text or a sub-point's row (<c>NoteCard</c>); a click on it makes the block
+    /// active and shows its bar.
+    /// </summary>
+    public static IElement BlockRow(IParentNode root, string startsWith) =>
+        root.QuerySelectorAll(".ne-note-block").First(row => OwnText(row).StartsWith(startsWith, StringComparison.Ordinal));
+
+    /// <summary>The text of a block row (<see cref="BlockRow"/>) without its marks.</summary>
+    public static string OwnText(IElement row) =>
+        (row.ClassList.Contains("ne-note-text") ? row : row.QuerySelector(".ne-note-child-text")!).TextContent.Trim();
+
+    /// <summary>Makes the block whose own text starts with <paramref name="startsWith"/> active (a click on its row).</summary>
+    public static void ClickBlock<TComponent>(this IRenderedComponent<TComponent> cut, string startsWith)
+        where TComponent : IComponent =>
+        cut.FindAll(".ne-note-block").First(row => OwnText(row).StartsWith(startsWith, StringComparison.Ordinal)).Click();
 }

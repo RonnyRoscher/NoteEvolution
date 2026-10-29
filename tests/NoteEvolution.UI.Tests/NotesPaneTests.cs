@@ -98,7 +98,8 @@ public class NotesPaneTests : UiTestContext
 
         ShowJournal(cut);
 
-        // One card per journal file, its date on top once; the main points stand in it, each with its own buttons.
+        // One card per journal file, its date on top once; the main points stand in it, each with its marks at the
+        // right of its text and no buttons (the bar of the active block has them).
         var days = cut.FindAll(".ne-journal-day");
         Assert.Equal(["01.10.2026", "15.09.2026"], days.Select(d => d.QuerySelector(".ne-journal-day-date")!.TextContent));
         Assert.Equal(
@@ -106,11 +107,10 @@ public class NotesPaneTests : UiTestContext
             days[0].QuerySelectorAll(".ne-note-card > .ne-note-body > .ne-note-text").Select(e => e.TextContent));
         Assert.All(days[0].QuerySelectorAll(".ne-note-card"), card =>
         {
-            // Its buttons stand stacked at the right of its text, as for sub-bullets; no footer row.
             Assert.Contains("ne-note-in-day", card.ClassList);
-            var column = card.QuerySelector(":scope > .ne-note-body > .ne-adopt-column")!;
-            Assert.Equal("ne-note-text", column.PreviousElementSibling!.ClassName);
-            Assert.NotNull(column.QuerySelector(".ne-note-adopt"));
+            var marks = card.QuerySelector(":scope > .ne-note-body > .ne-note-marks")!;
+            Assert.Contains("ne-note-text", marks.PreviousElementSibling!.ClassList);
+            Assert.Empty(card.QuerySelectorAll("button"));
             Assert.Null(card.QuerySelector(".ne-note-actions"));
             Assert.Null(card.QuerySelector(".ne-note-head"));
         });
@@ -170,8 +170,8 @@ public class NotesPaneTests : UiTestContext
         var cut = Render<NotesPane>();
         ShowJournal(cut);
 
-        // "Gedächtnis und Musik" is used: its mark stands on top of its buttons; with hide-used its day keeps only "Septemberidee".
-        Assert.NotNull(cut.FindAll(".ne-journal-day")[1].QuerySelector(".ne-note-card .ne-adopt-column > .ne-note-used"));
+        // "Gedächtnis und Musik" is used: its mark stands at the right of its text; with hide-used its day keeps only "Septemberidee".
+        Assert.NotNull(cut.FindAll(".ne-journal-day")[1].QuerySelector(".ne-note-card .ne-note-marks > .ne-note-used"));
         cut.Find(".ne-hide-used").Change(true);
         var september = cut.FindAll(".ne-journal-day")[1];
         Assert.Equal("15.09.2026", september.QuerySelector(".ne-journal-day-date")!.TextContent);
@@ -286,7 +286,8 @@ public class NotesPaneTests : UiTestContext
         var cut = Render<NotesPane>();
         Search(cut, "Schlaf");
 
-        CardOf(cut, "Gedächtnis braucht Schlaf").QuerySelector(".ne-note-adopt")!.Click();
+        cut.ClickBlock("Gedächtnis braucht Schlaf");
+        CardOf(cut, "Gedächtnis braucht Schlaf").QuerySelector(".ne-note-adopt-cursor")!.Click();
 
         var eins = State.CurrentBook!.Root.Children.First();
         Assert.Equal(["Erster Text", "Zweiter Text", "Gedächtnis braucht Schlaf"], eins.TextBlocks.Select(t => t.Text));
@@ -303,8 +304,8 @@ public class NotesPaneTests : UiTestContext
         var cut = Render<NotesPane>();
         ShowJournal(cut);
 
-        cut.FindAll(".ne-note-adopt-more")[1].Click();
-        cut.Find(".ne-adopt-after").Click();
+        cut.ClickBlock("Eine ganz andere Idee");
+        cut.Find(".ne-note-adopt-after").Click();
 
         Assert.Equal(
             ["Erster Text", "Eine ganz andere Idee", "Zweiter Text"],

@@ -195,8 +195,7 @@
 
     /// <summary>
     /// Sets or clears a mark of the day's page (<paramref name="change"/> returns <c>true</c> if it changed the page) and saves
-    /// it through the session like other note writes. A read-only page or an open conflict is refused before anything
-    /// changes; an external change is merged by the session; after any other failure the page is read from its file again.
+    /// it (see <see cref="DayMarkSaving.Apply"/>); a refusal or failure is shown at the day.
     /// </summary>
     private void Mark(Page shown, Func<Page, bool> change)
     {
@@ -206,44 +205,19 @@
             return;
         }
 
-        var page = session.Vault.FindPageByPath(shown.FilePath) ?? shown;
-        if (page.IsReadOnly)
+        var result = DayMarkSaving.Apply(session, shown, change);
+        if (result.Reloaded)
         {
-            Refused(page, "JournalDayReadOnly");
-            return;
-        }
-
-        if (session.HasOpenConflict(page.FilePath))
-        {
-            Refused(page, "NoteAdoptConflict");
-            return;
-        }
-
-        if (!change(page))
-        {
-            // The file already has the clicked state (the view was behind): show the page's state.
-            _markRefresh++;
-            return;
-        }
-
-        if (session.TrySave(page, out var error))
-        {
-            return;
-        }
-
-        if (session.HasOpenConflict(page.FilePath))
-        {
-            Refused(page, "NoteAdoptConflict");
-        }
-        else if (error is FileChangedExternallyException)
-        {
-            Refused(page, "JournalDayExternalChange", ownRevisions: 1);
-        }
-        else
-        {
-            PageReload.FromDisk(session, page);
             ReadEntries();
-            Refused(page, "JournalDayFailed");
+        }
+
+        if (result.MessageKey is { } key)
+        {
+            Refused(shown, key, result.OwnRevisions);
+        }
+        else if (!result.Saved)
+        {
+            _markRefresh++;
         }
     }
 
