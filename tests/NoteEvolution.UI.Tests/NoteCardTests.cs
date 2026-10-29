@@ -377,17 +377,20 @@ public class NoteCardTests : UiTestContext
         cut.Find(".ne-note-drag").DragEnd();
         Assert.Null(State.DraggedNoteKey);
 
-        // At level −1 the drag carries that the block goes without its sub-points; the end clears it.
-        cut.Find(".ne-note-range-down").Click();
-        cut.Find(".ne-note-drag").DragStart();
-        Assert.True(State.DraggedNoteOwnOnly);
-        cut.Find(".ne-note-drag").DragEnd();
-        Assert.False(State.DraggedNoteOwnOnly);
-
         // At the note's own block it drags the note.
         cut.ClickBlock("Gedächtnis braucht");
         cut.Find(".ne-note-drag").DragStart();
         Assert.Equal(note.Key, State.DraggedNoteKey);
+        Assert.False(State.DraggedNoteOwnOnly);
+        cut.Find(".ne-note-drag").DragEnd();
+
+        // At level −1 the drag carries that the block goes without its sub-points; the end clears it.
+        cut.Find(".ne-note-range-down").Click();
+        cut.Find(".ne-note-drag").DragStart();
+        Assert.Equal(note.Key, State.DraggedNoteKey);
+        Assert.True(State.DraggedNoteOwnOnly);
+        cut.Find(".ne-note-drag").DragEnd();
+        Assert.False(State.DraggedNoteOwnOnly);
     }
 
     [Fact]

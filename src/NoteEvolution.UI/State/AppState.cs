@@ -23,6 +23,13 @@ public enum NotesTab
 public sealed class AppState
 {
     private readonly TimeProvider _time;
+    private readonly UiSettings? _settings;
+
+    /// <summary>
+    /// "Verwendete ausblenden" is on: the note ranges and adoptions take only the shown sub-points
+    /// (<see cref="NoteBlock.ShownChildren"/>), so a used sub-point the card hides does not go into the book again.
+    /// </summary>
+    public bool HideUsedNotes => _settings?.HideUsed == true;
 
     /// <summary>The back/forward history; locked, since the dwell timer records from another thread.</summary>
     private readonly NavigationHistory _history = new();
@@ -46,9 +53,11 @@ public sealed class AppState
     private bool _sessionChanged;
 
     /// <param name="time">The clock of the cursor dwell (<see cref="NavigationHistory.DwellTime"/>); <see cref="TimeProvider.System"/> if <c>null</c>.</param>
-    public AppState(TimeProvider? time = null)
+    /// <param name="settings">The user's settings, for <see cref="HideUsedNotes"/>; without them used notes count as shown.</param>
+    public AppState(TimeProvider? time = null, UiSettings? settings = null)
     {
         _time = time ?? TimeProvider.System;
+        _settings = settings;
         _active = _first;
         Views = [_first];
     }
@@ -547,7 +556,7 @@ public sealed class AppState
     /// <summary>The marked range of the active note block (see <see cref="NoteRanges"/>); <c>null</c> without one.</summary>
     public NoteRange? ActiveNoteRange =>
         ActiveNote is { } selection && FindNote(selection) is { } note
-            ? NoteRanges.Of(note, selection.BlockKey, selection.Level)
+            ? NoteRanges.Of(note, selection.BlockKey, selection.Level, HideUsedNotes)
             : null;
 
     /// <summary>
@@ -580,7 +589,7 @@ public sealed class AppState
             return;
         }
 
-        var (min, max) = NoteRanges.LevelBounds(note, selection.BlockKey);
+        var (min, max) = NoteRanges.LevelBounds(note, selection.BlockKey, HideUsedNotes);
         var level = Math.Clamp(selection.Level + delta, min, max);
         if (level != selection.Level)
         {

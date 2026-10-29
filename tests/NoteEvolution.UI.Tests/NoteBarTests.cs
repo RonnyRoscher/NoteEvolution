@@ -157,9 +157,15 @@ public class NoteBarTests : UiTestContext
         Assert.Equal(["Tiefer"], InRange(cut));
         Assert.False(State.ActiveNoteRange!.OwnOnly);
 
+        // A block without sub-points has no level −1: alone it is the same as with its subtree.
+        Assert.True(cut.Find(".ne-note-range-down").HasAttribute("disabled"));
+        AltKey(cut, "ArrowDown");
+        Assert.Equal(0, State.ActiveNote!.Level);
+
         // Level −1: the block alone; its row is the frame now, the bar follows it.
+        cut.ClickBlock("Unter A");
         cut.Find(".ne-note-range-down").Click();
-        Assert.Equal(["Tiefer"], InRange(cut));
+        Assert.Equal(["Unter A"], InRange(cut));
         Assert.True(State.ActiveNoteRange!.OwnOnly);
         var down = cut.Find(".ne-note-range-down");
         Assert.True(down.HasAttribute("disabled"));
@@ -283,6 +289,98 @@ public class NoteBarTests : UiTestContext
         cut.WaitForAssertion(() => Assert.Equal(["Haupt", "Unter B", "Andere"], Blocks(cut)));
         Assert.True(Note(session, "Tiefer").IsUsed);
         Assert.DoesNotContain("used-without-children", _vault.Read(JournalPath));
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task HideUsed_AdoptWithSubPoints_LeavesOutTheHiddenUsedOnes(bool hideUsed)
+    {
+        var session = await OpenAsync();
+        var cut = Render<NotesPane>();
+        cut.Find(".ne-hide-used").Change(hideUsed);
+        int InBook(string text) => _vault.Read(BookPath).Split($"- {text}\n").Length - 1;
+
+        // "Unter A" goes into the book with its sub-point first.
+        cut.ClickBlock("Unter A");
+        cut.Find(".ne-note-adopt-after").Click();
+        cut.WaitForAssertion(() => Assert.Equal(1, InBook("Unter A")));
+
+        // The main point: with "Verwendete ausblenden" the frame and the book take the shown blocks only.
+        cut.ClickBlock("Haupt");
+        Assert.Equal(hideUsed ? ["Haupt", "Unter B"] : ["Haupt", "Unter A", "Tiefer", "Unter B"], InRange(cut));
+        Assert.Equal(hideUsed ? [Key("Haupt"), Key("Unter B")] : [Key("Haupt"), Key("Unter A"), Key("Tiefer"), Key("Unter B")],
+            State.ActiveNoteRange!.Keys);
+        cut.Find(".ne-note-adopt-after").Click();
+
+        cut.WaitForAssertion(() => Assert.Equal(1, InBook("Haupt")));
+        Assert.Equal(hideUsed ? 1 : 2, InBook("Unter A"));
+        Assert.Equal(hideUsed ? 1 : 2, InBook("Tiefer"));
+        Assert.Equal(1, InBook("Unter B"));
+        Assert.True(Note(session, "Unter B").IsUsed);
+    }
+
+    [Fact]
+    public async Task HideUsed_AllSubPointsHidden_NoHeadingVariantsAndNoLevelMinus1()
+    {
+        await OpenAsync();
+        var cut = Render<NotesPane>();
+        cut.Find(".ne-hide-used").Change(true);
+        foreach (var block in new[] { "Unter A", "Unter B" })
+        {
+            cut.ClickBlock(block);
+            cut.Find(".ne-note-adopt-after").Click();
+            cut.WaitForAssertion(() => Assert.DoesNotContain(block, Blocks(cut)));
+        }
+
+        cut.ClickBlock("Haupt");
+
+        Assert.Equal(["Haupt"], InRange(cut));
+        Assert.Empty(cut.FindAll(".ne-note-adopt-heading, .ne-note-adopt-subheading"));
+        Assert.True(cut.Find(".ne-note-range-down").HasAttribute("disabled"));
+
+        // With the used ones shown again, the sub-points count again.
+        cut.Find(".ne-hide-used").Change(false);
+        cut.ClickBlock("Haupt");
+
+        Assert.Equal(2, cut.FindAll(".ne-note-adopt-heading, .ne-note-adopt-subheading").Count);
+        Assert.False(cut.Find(".ne-note-range-down").HasAttribute("disabled"));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task HideUsed_AdoptThenUndo_TheNoteIsShownAndFoundAgain(bool fromHeader)
+    {
+        var session = await OpenAsync();
+        var cut = Render<NotesPane>();
+        var toast = Render<UndoToast>();
+        var header = Render<HeaderBar>();
+        cut.Find(".ne-hide-used").Change(true);
+        List<Guid> Found() =>
+            [.. session.Search.Search(new NoteEvolution.AI.Search.SearchQuery("Andere", new NoteFilter(HideUsed: true, null, null)))
+                .Select(hit => hit.NoteBlockKey)];
+        var key = Key("Andere");
+        Assert.Contains(key, Found());
+
+        cut.ClickBlock("Andere");
+        cut.Find(".ne-note-adopt-after").Click();
+        cut.WaitForAssertion(() => Assert.DoesNotContain("Andere", Blocks(cut)));
+        Assert.DoesNotContain(key, Found());
+
+        if (fromHeader)
+        {
+            header.Find(".ne-undo").Click();
+        }
+        else
+        {
+            toast.WaitForAssertion(() => Assert.Single(toast.FindAll(".ne-toast")));
+            toast.Find(".ne-toast-undo").Click();
+        }
+
+        cut.WaitForAssertion(() => Assert.Contains("Andere", Blocks(cut)));
+        Assert.DoesNotContain("used-in::", _vault.Read(JournalPath));
+        Assert.Contains(key, Found());
     }
 
     [Fact]

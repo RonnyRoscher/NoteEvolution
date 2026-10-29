@@ -19,6 +19,14 @@ public sealed record HeadingAdoptResult(Guid HeadingKey, bool NoteUpdatePending)
 /// <see cref="Book.Load"/>. If the book cannot be written, the exception is passed on and the vault holds the
 /// book page as it is on disk again (take it from <see cref="Vaults.IVault.FindBook"/>). A note that cannot be
 /// written (or is read-only) gets its update recorded in <c>pending.json</c> instead.
+/// <para>
+/// The adopt methods take the note block with its sub-points, or without <c>includeChildren</c> its own text alone; then
+/// the note gets <c>used-without-children:: true</c> (<see cref="UsedInValue.WithoutChildrenKey"/>) while every usage
+/// takes it alone, unless it has no sub-point to leave out. With <c>hideUsed</c> ("Verwendete ausblenden") the
+/// sub-points the notes pane hides (<see cref="Vaults.NoteBlock.ShownChildren"/>) are left out of the copy, so a used
+/// sub-point does not go into the book again. Undoing an adoption gives a note still as the adoption left it its lines
+/// back (with its mark); any other note loses the usage, and the mark of its remaining usages is set as it was before.
+/// </para>
 /// </summary>
 public interface ILinkService
 {
@@ -31,7 +39,7 @@ public interface ILinkService
     /// <exception cref="ArgumentException">Unknown note block or position.</exception>
     /// <exception cref="ReadOnlyPageException">The book page is read-only.</exception>
     /// <exception cref="InvalidOperationException">The note's page is read-only; nothing was changed.</exception>
-    AdoptResult Adopt(Book book, Guid noteBlockKey, InsertPosition position, bool includeChildren = true);
+    AdoptResult Adopt(Book book, Guid noteBlockKey, InsertPosition position, bool includeChildren = true, bool hideUsed = false);
 
     /// <summary>
     /// Copies the note block's text and sub-bullets (without property lines, and without a <c>#notiz</c> tag in the
@@ -46,7 +54,7 @@ public interface ILinkService
     /// <exception cref="ArgumentOutOfRangeException">The offset of <see cref="IntoPosition.AtCursor"/> is outside the element's text.</exception>
     /// <exception cref="ReadOnlyPageException">The book page is read-only.</exception>
     /// <exception cref="InvalidOperationException">The note's page is read-only; nothing was changed.</exception>
-    AdoptResult AdoptInto(Book book, Guid noteBlockKey, IntoPosition position, bool includeChildren = true);
+    AdoptResult AdoptInto(Book book, Guid noteBlockKey, IntoPosition position, bool includeChildren = true, bool hideUsed = false);
 
     /// <summary>
     /// Adopts a note block with sub-points as a new heading relative to the section <paramref name="sectionKey"/>
@@ -69,7 +77,8 @@ public interface ILinkService
     /// <exception cref="ReadOnlyPageException">The book page is read-only.</exception>
     /// <exception cref="InvalidOperationException">The note's page is read-only; nothing was changed.</exception>
     HeadingAdoptResult AdoptAsHeading(
-        Book book, Guid noteBlockKey, Guid sectionKey, bool asSubheading, string untitledTitle, bool includeChildren = true);
+        Book book, Guid noteBlockKey, Guid sectionKey, bool asSubheading, string untitledTitle, bool includeChildren = true,
+        bool hideUsed = false);
 
     /// <summary>
     /// Fully links an existing text block and a note block (a confirmed placement): gives both an <c>id::</c>, adds

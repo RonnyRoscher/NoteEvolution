@@ -20,7 +20,7 @@
     var head = FindBlock(Note.Block, Range.HeadKey) ?? Note.Block;
     var blocked = AdoptBlocked();
     var selection = State.ActiveNote;
-    var (min, max) = selection is not null && NoteRanges.Contains(Note, selection.BlockKey) ? NoteRanges.LevelBounds(Note, selection.BlockKey) : (0, 0);
+    var (min, max) = selection is not null && NoteRanges.Contains(Note, selection.BlockKey) ? NoteRanges.LevelBounds(Note, selection.BlockKey, State.HideUsedNotes) : (0, 0);
     var level = selection?.Level ?? 0;
 }
 <div class="ne-note-bar" role="toolbar" aria-label="@L["NoteBarLabel"]">

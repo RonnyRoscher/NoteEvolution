@@ -24,11 +24,13 @@ public sealed record NoteLocator(string PagePath, int[] TreePath, string Content
 /// <summary>A <c>used-in::</c> change of a note that could not be written yet.</summary>
 /// <param name="Remove"><c>true</c>: remove the entry; <c>false</c>: add it (and set the note's <c>id::</c>).</param>
 /// <param name="WithoutChildren">
-/// An add of an adoption without the block's sub-points: <c>used-without-children:: true</c> is written with it (see
-/// <see cref="UsedInValue.WithoutChildrenKey"/>). Absent in older files: <c>false</c>.
+/// For an add: <c>true</c> an adoption without the block's sub-points (<c>used-without-children:: true</c> is written with
+/// it while every usage takes the block alone, see <see cref="UsedInValue.WithoutChildrenKey"/>), <c>false</c> an
+/// adoption with them (the mark goes), <c>null</c> no adoption (the mark stays as it is). For a remove (an adoption taken
+/// back): whether the remaining usages take the block alone; <c>null</c> keeps the mark. Absent in older files: <c>null</c>.
 /// </param>
 public sealed record PendingNoteUpdate(
-    Guid NoteBlockId, NoteLocator Locator, string BookLinkName, Guid BookBlockId, bool Remove, bool WithoutChildren = false);
+    Guid NoteBlockId, NoteLocator Locator, string BookLinkName, Guid BookBlockId, bool Remove, bool? WithoutChildren = null);
 
 /// <summary>
 /// The open note updates in <c>.noteevolution/pending.json</c>. A missing or damaged file counts as empty.

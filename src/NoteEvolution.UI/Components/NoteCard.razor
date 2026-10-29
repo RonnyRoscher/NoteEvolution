@@ -220,11 +220,11 @@
     /// <summary>
     /// The sub-bullets of <paramref name="parent"/>, each as a box with the line on its left: its own row (text and usage
     /// mark) and the boxes of all its sub-blocks; with "Verwendete ausblenden" a used one is left out with all below it
-    /// (<see cref="NoteBlock.IsHiddenWhenUsedHidden"/>: not one adopted without its sub-points while one of them is shown).
+    /// (<see cref="NoteBlock.ShownChildren"/>: not one adopted without its sub-points while one of them is shown).
     /// </summary>
     private RenderFragment SubBullets(NoteRange? range, Block parent) =>
         @<text>
-            @foreach (var child in parent.Children.Where(child => !(Settings.HideUsed && NoteBlock.IsHiddenWhenUsedHidden(child))))
+            @foreach (var child in NoteBlock.ShownChildren(parent, Settings.HideUsed))
             {
                 <div @key="child.Key" class="@BoxClass(range, child, "ne-note-child")">
                     <div class="@BlockClass(range, child, "ne-note-child-row")" @onclick="() => SelectAsync(child)">

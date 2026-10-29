@@ -555,7 +555,8 @@ public class WhereToTests : UiTestContext
         Assert.Equal(
             [
                 ("ne-note-range-up", Text("RangeUp"), Text(subBullet ? "NoteRangeUpTitle" : "NoteRangeUpLimit")),
-                ("ne-note-range-down", Text("RangeDown"), Text("NoteRangeDownTitle")),
+                // The sub-bullet has no sub-points of its own: no level −1 below it.
+                ("ne-note-range-down", Text("RangeDown"), Text(subBullet ? "NoteRangeDownLimit" : "NoteRangeDownTitle")),
                 ("ne-note-adopt-cursor", Text("AdoptAtCursor"), Text("AdoptAtCursorTitle")),
                 ("ne-note-adopt-after", Text("AdoptAfter"), Text("AdoptAfterTitle")),
                 ("ne-note-adopt-under", Text("AdoptBelow"), Text("AdoptBelowTitle")),

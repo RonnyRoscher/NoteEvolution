@@ -59,6 +59,13 @@ public sealed class NoteBlock
              && block.Children.Any(child => !IsHiddenWhenUsedHidden(child)));
 
     /// <summary>
+    /// The sub-points of <paramref name="block"/> that are shown: with <paramref name="hideUsed"/> ("Verwendete
+    /// ausblenden") without those <see cref="IsHiddenWhenUsedHidden"/> leaves out, else all of them.
+    /// </summary>
+    public static IEnumerable<Block> ShownChildren(Block block, bool hideUsed) =>
+        hideUsed ? block.Children.Where(child => !IsHiddenWhenUsedHidden(child)) : block.Children;
+
+    /// <summary>
     /// Whether <paramref name="block"/> is used: it has a <c>used-in::</c> property itself, or an ancestor has one that
     /// passes its usage on to its sub-points, which an ancestor adopted only without its sub-points
     /// (<see cref="UsedInValue.WithoutChildrenKey"/>) does not.

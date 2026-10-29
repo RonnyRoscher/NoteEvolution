@@ -69,7 +69,7 @@ public class NoteSelectionTests : UiTestContext
     public async Task ChangeRange_IsBoundedByTheLevelBounds_AndNotifiesOnChange()
     {
         await OpenSessionAsync(_vault);
-        State.SelectNoteBlock(NoteKey("Haupt"), NoteKey("Tiefer"));
+        State.SelectNoteBlock(NoteKey("Haupt"), NoteKey("Unter A"));
         var notified = 0;
         State.Changed += () => notified++;
 
@@ -82,14 +82,20 @@ public class NoteSelectionTests : UiTestContext
         Assert.Equal(1, notified);
 
         State.ChangeNoteRange(10);
-        Assert.Equal(2, State.ActiveNote.Level);
+        Assert.Equal(1, State.ActiveNote.Level);
         Assert.Equal(NoteKey("Haupt"), State.ActiveNoteRange!.HeadKey);
         Assert.Equal(
             [NoteKey("Haupt"), NoteKey("Unter A"), NoteKey("Tiefer"), NoteKey("Unter B")], State.ActiveNoteRange.Keys);
 
         State.ChangeNoteRange(1);
-        Assert.Equal(2, State.ActiveNote.Level);
+        Assert.Equal(1, State.ActiveNote.Level);
         Assert.Equal(2, notified);
+
+        // A block without sub-points has no level −1.
+        State.SelectNoteBlock(NoteKey("Haupt"), NoteKey("Tiefer"));
+        State.ChangeNoteRange(-1);
+        Assert.Equal(0, State.ActiveNote!.Level);
+        Assert.False(State.ActiveNoteRange!.OwnOnly);
     }
 
     [Fact]

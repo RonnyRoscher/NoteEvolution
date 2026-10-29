@@ -211,7 +211,9 @@ ist immer nur ein Block; ein Wechsel des Reiters oder des Vaults hebt die Auswah
 zu sehen ist (z. B. verwendet bei „Verwendete ausblenden“). Wie in der Buchansicht hat sein Bereich einen Rahmen:
 zuerst der Block mit allen Unterpunkten; „Bereich ▲“ (Alt+Pfeil hoch, wenn der Fokus im Notizbereich liegt) nimmt den
 übergeordneten Block mit allem darunter, bis zum Hauptpunkt; „Bereich ▼“ (Alt+Pfeil runter) verkleinert bis zum Block
-allein, ohne seine Unterpunkte. Unten am Rahmen steht die Leiste: Bereich ▲/▼, die Arten zu übernehmen, **Wohin
+allein, ohne seine Unterpunkte (nur bei einem Block mit Unterpunkten). Bei „Verwendete ausblenden“ zählen nur die
+angezeigten Unterpunkte: ausgeblendete, schon verwendete gehören nicht zum Bereich und kommen nicht ein zweites Mal ins
+Buch. Unten am Rahmen steht die Leiste: Bereich ▲/▼, die Arten zu übernehmen, **Wohin
 damit?** (nur mit lokaler KI), ✓ und Fortschrittspunkt des Bereichskopfs, bei Journal-Blöcken die Tagesmarken
 „nicht relevant“ und „später“ (dieselben wie an der Tageskarte) und „In Logseq öffnen“. Was nicht geht, ist ausgegraut
 und nennt den Grund im Tooltip (kein Buch gewählt, Buch schreibgeschützt, Notizdatei nicht sicher lesbar, offener
@@ -221,10 +223,10 @@ nicht ziehen, damit ihr Text markiert werden kann.
 Übernommen wird genau der Bereich, auf eine von drei Arten: **Am Cursor** (in den aktuellen Block an der
 Cursorstelle), **Danach** (neues Element nach dem aktuellen) und **Darunter** (als erstes Unterelement). Bei „ohne
 Unterpunkte“ kommt nur der Block selbst ins Buch; `used-in::` steht dann nur an ihm, dazu `used-without-children:: true`
-(es geht mit seiner letzten Verwendung): seine Unterpunkte bleiben unverwendet, sichtbar und nicht grau. Die Quelle hängt immer am
+(es geht mit seiner letzten Verwendung, „Rückgängig“ stellt es wieder her): seine Unterpunkte bleiben unverwendet, sichtbar und nicht grau. Die Quelle hängt immer am
 umgebenden Textblock. Neue Blöcke und Details aus „Danach“ und „Darunter“ bekommen den Status Relevant; am Cursor
 behält der Block seinen Status, nur die dabei entstehenden Details werden Relevant.
-Hat der Bereichskopf Unterpunkte (und nimmt der Bereich sie mit), bietet die Leiste zusätzlich **Als Überschrift** (neue Überschrift auf der Ebene des aktuellen
+Hat der Bereichskopf (angezeigte) Unterpunkte (und nimmt der Bereich sie mit), bietet die Leiste zusätzlich **Als Überschrift** (neue Überschrift auf der Ebene des aktuellen
 Abschnitts, an dessen Ende) und **Als Unterüberschrift** (eine Ebene tiefer, nach den Textblöcken des Abschnitts und vor
 seinen Unterabschnitten; nicht unter Ebene 6). Die erste Zeile wird der Titel, jeder direkte Unterpunkt ein eigener
 Textblock (Relevant, verknüpft); bestehender Text bleibt in seinem Abschnitt. „Rückgängig“ nimmt das zurück, solange

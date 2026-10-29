@@ -28,7 +28,7 @@ public abstract class UiTestContext : BunitContext
 
     protected UiTestContext()
     {
-        State = new AppState(NavTime);
+        State = new AppState(NavTime, Settings);
         Services.AddLocalization();
         Services.AddLogging();
         Services.AddSingleton<IPlatformServices>(Platform);
