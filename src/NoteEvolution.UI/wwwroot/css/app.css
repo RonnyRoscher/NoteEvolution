@@ -2696,3 +2696,86 @@ html, body {
     gap: 8px;
     color: var(--danger);
 }
+
+/* „Historie“ of a text block: the versions at the left, the comparison at the right (block history spec 6). */
+.ne-history {
+    width: min(900px, 94vw);
+}
+
+.ne-history-body {
+    display: flex;
+    gap: 12px;
+    min-height: 240px;
+    max-height: 60vh;
+}
+
+.ne-history-versions {
+    flex: 0 0 220px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    overflow-y: auto;
+}
+
+.ne-history-version {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    text-align: left;
+}
+
+.ne-history-selected {
+    outline: 2px solid var(--accent);
+}
+
+.ne-history-reason {
+    color: var(--fg-muted);
+    font-size: 0.85em;
+}
+
+.ne-history-compare {
+    flex: 1;
+    overflow-y: auto;
+    font-family: var(--font-text);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.ne-history-removed {
+    color: var(--danger);
+    text-decoration: line-through;
+}
+
+.ne-history-added {
+    color: var(--success);
+}
+
+/* „Gelöschte Blöcke“: one row per block. */
+.ne-deleted-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    max-height: 60vh;
+    overflow-y: auto;
+}
+
+.ne-deleted-item {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 4px 0;
+    border-bottom: 1px solid var(--border);
+}
+
+.ne-deleted-when,
+.ne-deleted-section {
+    flex: 0 0 auto;
+    color: var(--fg-muted);
+}
+
+.ne-deleted-text {
+    flex: 1;
+    min-width: 0;
+    font-family: var(--font-text);
+    overflow-wrap: anywhere;
+}

@@ -1,0 +1,86 @@
+@using System.Globalization
+@using NoteEvolution.UI.Editor
+@using NoteEvolution.UI.History
+@inject AppState State
+@inject IStringLocalizer<Strings> L
+@inject TimeProvider Time
+@inject ILogger<DeletedBlocksDialog> Logger
+
+@* „Gelöschte Blöcke“ of the current book (block history spec 5), opened from the assistants menu: date, section and
+   start of the text, newest first. A block can be put back or its history viewed. *@
+<Modal Title="@L["AssistantDeletedBlocks"]" CssClass="ne-deleted" OnClose="OnClose">
+<ChildContent>
+    @if (_error is not null)
+    {
+        <p class="ne-dialog-error" role="alert">@_error</p>
+    }
+    @if (_deleted.Count == 0)
+    {
+        <p class="ne-deleted-empty">@L["DeletedBlocksEmpty"]</p>
+    }
+    else
+    {
+        var blocked = ManuscriptCommands.RestoreBlocked(State);
+        <ul class="ne-deleted-list">
+            @foreach (var block in _deleted)
+            {
+                <li class="ne-deleted-item">
+                    <span class="ne-deleted-when">@When(block.At)</span>
+                    <span class="ne-deleted-section">@block.SectionPath</span>
+                    <span class="ne-deleted-text">@RefLabels.Excerpt(block.Stand.Text, ExcerptLength)</span>
+                    <button type="button" class="ne-deleted-history" @onclick="() => _viewing = block">@L["SectionHistory"]</button>
+                    <button type="button" class="ne-deleted-restore" title="@(blocked is null ? null : L[blocked].Value)"
+                            disabled="@(_busy || !ManuscriptCommands.CanRestore(State))"
+                            @onclick="() => RestoreAsync(block)">@L["HistoryRestore"]</button>
+                </li>
+            }
+        </ul>
+    }
+    @if (_viewing is { } viewing)
+    {
+        <HistoryDialog @key="viewing.BlockId" BlockId="viewing.BlockId" Deleted="viewing" OnClose="() => _viewing = null" />
+    }
+</ChildContent>
+<Footer>
+    <button type="button" class="ne-deleted-close" @onclick="OnClose">@L["HistoryClose"]</button>
+</Footer>
+</Modal>
+
+@code {
+    private const int ExcerptLength = 80;
+
+    private IReadOnlyList<DeletedBlock> _deleted = [];
+
+    private DeletedBlock? _viewing;
+
+    private string? _error;
+
+    private bool _busy;
+
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    protected override void OnInitialized() => Load();
+
+    /// <summary>Reads the list of the current book anew; a block put back is no longer in it.</summary>
+    private void Load() =>
+        _deleted = State.CurrentBook is { } book ? State.Session?.History?.Deleted(book.LinkName) ?? [] : [];
+
+    private async Task RestoreAsync(DeletedBlock block)
+    {
+        _busy = true;
+        _error = null;
+        try
+        {
+            var message = await ManuscriptCommands.RestoreDeletedAsync(State, block, L["UndoRestore"], Logger);
+            _error = message is { IsError: true } ? L[message.Key].Value : null;
+            Load();
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private string When(DateTimeOffset at) =>
+        TimeZoneInfo.ConvertTime(at, Time.LocalTimeZone).ToString("g", CultureInfo.CurrentCulture);
+}
