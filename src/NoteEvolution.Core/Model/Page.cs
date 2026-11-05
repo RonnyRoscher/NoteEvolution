@@ -227,6 +227,9 @@ public sealed class Page
     /// </summary>
     internal SavedState Saved => _saved;
 
+    /// <summary>The blocks of the page as last loaded or saved that are no longer on it. A merge removes a block deleted locally this way, while the file still has it.</summary>
+    public IEnumerable<Block> RemovedSinceSaved() => _saved.Blocks.Select(saved => saved.Block).Where(block => block.Page != this);
+
     /// <summary>
     /// The file's bytes as they were when the page was last loaded or saved, or the bytes accepted with
     /// <see cref="AcceptDiskAsBase"/> since then.

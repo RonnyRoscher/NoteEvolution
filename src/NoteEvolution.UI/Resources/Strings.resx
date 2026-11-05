@@ -1969,6 +1969,9 @@
   <data name="AssistantDeletedBlocks" xml:space="preserve">
     <value>Gelöschte Blöcke</value>
   </data>
+  <data name="HistoryReadFailed" xml:space="preserve">
+    <value>Die Änderungshistorie konnte nicht gelesen werden.</value>
+  </data>
   <data name="HistoryRestore" xml:space="preserve">
     <value>Wiederherstellen</value>
   </data>

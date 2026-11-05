@@ -1,4 +1,3 @@
-@using Microsoft.Data.Sqlite
 @using NoteEvolution.Core.Books
 @using NoteEvolution.Core.Text
 @using NoteEvolution.Core.Vaults
@@ -429,7 +428,7 @@
         {
             return State.Session?.History?.HasVersions(id) == true ? id : null;
         }
-        catch (Exception ex) when (ex is SqliteException or ObjectDisposedException)
+        catch (Exception)
         {
             return null;
         }

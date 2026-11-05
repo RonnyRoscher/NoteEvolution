@@ -75,7 +75,17 @@
 
     protected override void OnInitialized()
     {
-        _versions = State.Session?.History?.Versions(BlockId) ?? [];
+        try
+        {
+            _versions = State.Session?.History?.Versions(BlockId) ?? [];
+        }
+        catch (Exception ex)
+        {
+            // A broken database only gives a log entry and a hint (spec 2); a bad row must not take the window down.
+            Logger.LogError(ex, "Reading the versions of the block {Id} failed", BlockId);
+            _error = L["HistoryReadFailed"];
+        }
+
         _current = Deleted?.Stand ?? (State.CurrentBook?.FindTextBlockById(BlockId) is { } text ? BlockStand.Of(text) : null);
         Select(_versions.FirstOrDefault());
     }

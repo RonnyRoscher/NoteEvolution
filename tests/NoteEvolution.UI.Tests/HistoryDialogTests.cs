@@ -1,4 +1,5 @@
 using Bunit;
+using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Localization;
 using NoteEvolution.Core.Books;
@@ -253,6 +254,86 @@ public class HistoryDialogTests : UiTestContext
         cut.WaitForAssertion(() => Assert.Empty(cut.FindAll(".ne-deleted-item")));
         Assert.NotNull(State.CurrentBook!.FindTextBlockById(Guid.Parse(BlockId)));
         Assert.Equal(Text("DeletedBlocksEmpty"), cut.Find(".ne-deleted-empty").TextContent);
+    }
+
+    /// <summary>Spoils the stored stands, past the store: the rows can no longer be read.</summary>
+    private void BreakStands(string table)
+    {
+        using var db = new SqliteConnection($"Data Source={Path.Combine(_vault.Root, ".noteevolution", "history.db")};Pooling=False");
+        db.Open();
+        using var command = db.CreateCommand();
+        command.CommandText = $"UPDATE {table} SET stand = 'kein JSON'";
+        Assert.True(command.ExecuteNonQuery() > 0);
+    }
+
+    [Fact]
+    public async Task Dialog_StoreClosed_ShowsTheError_EmptyList()
+    {
+        var session = await OpenSessionAsync(_vault);
+        AddVersions(session);
+        session.History!.Dispose();
+
+        var cut = RenderDialog();
+
+        Assert.Equal(Text("HistoryReadFailed"), cut.Find(".ne-dialog-error").TextContent);
+        Assert.Empty(cut.FindAll(".ne-history-version"));
+        Assert.True(cut.Find(".ne-history-restore").HasAttribute("disabled"));
+    }
+
+    [Fact]
+    public async Task Dialog_BadRow_ShowsTheError_EmptyList()
+    {
+        var session = await OpenSessionAsync(_vault);
+        AddVersions(session);
+        BreakStands("versions");
+
+        var cut = RenderDialog();
+
+        Assert.Equal(Text("HistoryReadFailed"), cut.Find(".ne-dialog-error").TextContent);
+        Assert.Empty(cut.FindAll(".ne-history-version"));
+    }
+
+    [Fact]
+    public async Task Deleted_StoreClosed_ShowsTheError_NoEmptyHint()
+    {
+        var session = await OpenSessionAsync(_vault);
+        session.History!.Dispose();
+
+        var cut = Render<DeletedBlocksDialog>();
+
+        Assert.Equal(Text("HistoryReadFailed"), cut.Find(".ne-dialog-error").TextContent);
+        Assert.Empty(cut.FindAll(".ne-deleted-item"));
+        Assert.Empty(cut.FindAll(".ne-deleted-empty"));
+    }
+
+    [Fact]
+    public async Task Deleted_BadRow_ShowsTheError()
+    {
+        var session = await OpenSessionAsync(_vault);
+        var block = State.CurrentBook!.FindTextBlockById(Guid.Parse(BlockId))!;
+        session.Links.DeleteTextBlock(State.CurrentBook, block.Key);
+        BreakStands("deleted");
+
+        var cut = Render<DeletedBlocksDialog>();
+
+        Assert.Equal(Text("HistoryReadFailed"), cut.Find(".ne-dialog-error").TextContent);
+        Assert.Empty(cut.FindAll(".ne-deleted-item"));
+    }
+
+    [Fact]
+    public async Task Deleted_StoreFailsAfterRestore_ShowsTheError_BlockIsBack()
+    {
+        var session = await OpenSessionAsync(_vault);
+        var block = State.CurrentBook!.FindTextBlockById(Guid.Parse(BlockId))!;
+        session.Links.DeleteTextBlock(State.CurrentBook, block.Key);
+        State.RefreshBook();
+        var cut = Render<DeletedBlocksDialog>();
+        session.History!.Dispose();
+
+        cut.Find(".ne-deleted-restore").Click();
+
+        cut.WaitForAssertion(() => Assert.Equal(Text("HistoryReadFailed"), cut.Find(".ne-dialog-error").TextContent));
+        Assert.NotNull(State.CurrentBook!.FindTextBlockById(Guid.Parse(BlockId)));
     }
 
     [Fact]

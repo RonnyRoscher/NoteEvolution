@@ -9,7 +9,8 @@ namespace NoteEvolution.UI.History;
 /// <summary>
 /// Decides when a version of a text block arises: compares the text blocks of a book page with their last known stand
 /// when the page is saved (<see cref="OnSaving"/>, which may give a block its <c>id::</c>) and when it is replaced in the
-/// vault (<see cref="OnReplaced"/>, which never changes the page). Headings, the appendix, note pages and read-only
+/// vault (<see cref="OnReplaced"/>, which changes only blocks holding local text not saved yet: those get their
+/// <c>id::</c> there, since the save that follows finds nothing changed). Headings, the appendix, note pages and read-only
 /// pages are left out. Nothing here ever stops a book from being saved: every error is caught and logged, and sets
 /// <see cref="HasProblem"/>. Safe to call from several threads.
 /// </summary>
@@ -18,10 +19,10 @@ public sealed class BlockHistoryTracker(IVault vault, Func<HistoryStore?> store,
     /// <summary>How long a block must stay unchanged before its open stand becomes a version.</summary>
     public static readonly TimeSpan Pause = TimeSpan.FromMinutes(10);
 
-    private const string PathSeparator = " › ";
     private const int ShortestDeletedStand = 40;
     private const int LargeDeletion = 200;
     private const int ShortestMergedText = 20;
+    private const int LongestAfterText = 200;
 
     private readonly object _gate = new();
 
@@ -185,6 +186,7 @@ public sealed class BlockHistoryTracker(IVault vault, Func<HistoryStore?> store,
         }
 
         var look = new Look(book.LinkName, firstLook, mayWrite, before ?? []);
+        var texts = new Lazy<List<string>>(() => TextsOf(book));
         var now = new List<Known>();
         Known? previous = null;
         foreach (var text in TextBlocksOf(book.Root))
@@ -205,14 +207,14 @@ public sealed class BlockHistoryTracker(IVault vault, Func<HistoryStore?> store,
             }
 
             // What is read has really been in the file; what a save has just added is only sure once the save is through.
-            known.IdInFile |= text.Block.Id is not null && !mayWrite;
+            known.IdInFile |= text.Block.Id is not null && !mayWrite && !text.Block.IsDirty;
             now.Add(known);
             previous = known;
         }
 
         foreach (var gone in look.Before.Except(now))
         {
-            ObserveGone(gone, book, mayWrite);
+            ObserveGone(gone, book, texts, mayWrite);
         }
 
         _pages[page.FilePath] = now;
@@ -325,10 +327,17 @@ public sealed class BlockHistoryTracker(IVault vault, Func<HistoryStore?> store,
             return known;
         }
 
-        var id = text.Block.Id ?? (mayWrite ? TryEnsureId(text.Block) : null);
+        // A dirty block in a page just replaced holds local text merged into an external change (a block changed from
+        // outside comes clean). The save that follows sees no change any more, so it gets its id here.
+        var id = text.Block.Id ?? (mayWrite || text.Block.IsDirty ? TryEnsureId(text.Block) : null);
         if (id is not { } blockId)
         {
-            // Read again without an id: the new text is only the starting point.
+            // Read again without an id: the new text is only the starting point. What waited for the pause must not go with it.
+            if (known.Open)
+            {
+                StoreOpen(known, HistoryReason.BeforeDelete);
+            }
+
             known.Stand = stand;
             known.Longest = stand;
             known.Open = false;
@@ -361,16 +370,24 @@ public sealed class BlockHistoryTracker(IVault vault, Func<HistoryStore?> store,
     }
 
     /// <summary>A known block is no longer among the page's text blocks.</summary>
-    private void ObserveGone(Known gone, Book book, bool mayWrite)
+    private void ObserveGone(Known gone, Book book, Lazy<List<string>> texts, bool mayWrite)
     {
         if (IsBlank(gone.Stand))
         {
-            return;
+            // Emptied first and removed then: what can come back is the text it had; a block that never had one is not missed.
+            gone.Open = false;
+            if (LastTextOf(gone) is not { } last)
+            {
+                return;
+            }
+
+            gone.Stand = last;
         }
 
-        // After reading a page a missing block without an id in the file may just have been changed in Logseq.
-        var unrecognizable = !mayWrite && (gone.Id is null || !gone.IdInFile);
-        if (unrecognizable || IsStillOnPage(gone, book.Page) || IsMerged(gone, book) || IsUndoneTitle(gone, book))
+        // After reading a page a missing block without an id in the file may just have been changed in Logseq; unless the
+        // file still has it and only the page, merged with local changes, does not.
+        var unrecognizable = !mayWrite && (gone.Id is null || !gone.IdInFile) && !IsRemovedLocally(gone, book.Page);
+        if (unrecognizable || IsStillOnPage(gone, book.Page) || IsMerged(gone, texts) || IsUndoneTitle(gone, book))
         {
             // Not deleted, but it is forgotten here: what waited for the pause must not go with it.
             if (gone.Open)
@@ -386,7 +403,7 @@ public sealed class BlockHistoryTracker(IVault vault, Func<HistoryStore?> store,
         AddUnlessLatest(id, gone.Book, HistoryReason.BeforeDelete, gone.Stand);
         try
         {
-            store()?.MarkDeleted(new DeletedBlock(id, gone.Book, clock.Now, gone.SectionPath, gone.Previous?.Id, gone.Stand));
+            store()?.MarkDeleted(new DeletedBlock(id, gone.Book, clock.Now, gone.SectionPath, gone.Previous?.Id, gone.Stand, AfterTextOf(gone.Previous)));
             _deletedIds.Add(id);
             _deletedNow.Add((id, gone.Stand));
         }
@@ -396,6 +413,46 @@ public sealed class BlockHistoryTracker(IVault vault, Func<HistoryStore?> store,
         }
     }
 
+    /// <summary>The newest stand of the block with some text, among its versions.</summary>
+    private BlockStand? LastTextOf(Known gone)
+    {
+        if (gone.Id is not { } id)
+        {
+            return null;
+        }
+
+        try
+        {
+            return store()?.Versions(id).FirstOrDefault(version => !IsBlank(version.Stand))?.Stand;
+        }
+        catch (Exception ex)
+        {
+            Report(ex, "Reading the versions of a removed block");
+            return null;
+        }
+    }
+
+    /// <summary>The start of the predecessor's own text; a pair of surrogates is not cut in two (the store could not keep half of it).</summary>
+    private static string? AfterTextOf(Known? previous)
+    {
+        if (previous is null || string.IsNullOrWhiteSpace(previous.Stand.Text))
+        {
+            return null;
+        }
+
+        var text = previous.Stand.Text;
+        if (text.Length <= LongestAfterText)
+        {
+            return text;
+        }
+
+        return text[..(char.IsHighSurrogate(text[LongestAfterText - 1]) ? LongestAfterText - 1 : LongestAfterText)];
+    }
+
+    /// <summary>A block with this text was in the file the page was last read from and is not on the page.</summary>
+    private static bool IsRemovedLocally(Known gone, Page page) =>
+        page.RemovedSinceSaved().Any(block => block.Content == gone.Stand.Text);
+
     /// <summary>The block is still on the page as something else: a heading now, or a sub-point.</summary>
     private static bool IsStillOnPage(Known gone, Page page) =>
         page.AllBlocks().Any(block => block.Key == gone.Key || (gone.Id is not null && block.Id == gone.Id));
@@ -404,19 +461,14 @@ public sealed class BlockHistoryTracker(IVault vault, Func<HistoryStore?> store,
     /// The block went into others: its text, long enough not to stand there by chance, is in another text block or
     /// sub-point, and its sub-points are on the page too.
     /// </summary>
-    private static bool IsMerged(Known gone, Book book)
-    {
-        if (gone.Stand.Text.Length < ShortestMergedText)
-        {
-            return false;
-        }
+    private static bool IsMerged(Known gone, Lazy<List<string>> texts) =>
+        gone.Stand.Text.Length >= ShortestMergedText
+        && Holds(texts.Value, gone.Stand.Text)
+        && gone.Stand.Paragraphs.All(paragraph => string.IsNullOrWhiteSpace(paragraph.Text) || Holds(texts.Value, paragraph.Text));
 
-        var texts = TextBlocksOf(book.Root)
-            .SelectMany(block => block.Paragraphs.Select(paragraph => paragraph.Text).Prepend(block.Text))
-            .ToList();
-        return Holds(texts, gone.Stand.Text)
-            && gone.Stand.Paragraphs.All(paragraph => string.IsNullOrWhiteSpace(paragraph.Text) || Holds(texts, paragraph.Text));
-    }
+    /// <summary>The texts of all text blocks and sub-points of the book's text.</summary>
+    private static List<string> TextsOf(Book book) =>
+        [.. TextBlocksOf(book.Root).SelectMany(block => block.Paragraphs.Select(paragraph => paragraph.Text).Prepend(block.Text))];
 
     private static bool Holds(List<string> texts, string text) => texts.Any(other => other.Contains(text, StringComparison.Ordinal));
 
@@ -456,7 +508,7 @@ public sealed class BlockHistoryTracker(IVault vault, Func<HistoryStore?> store,
             titles.Insert(0, node.Title);
         }
 
-        return string.Join(PathSeparator, titles);
+        return string.Join(ManuscriptEditor.SectionPathSeparator, titles);
     }
 
     private void MakeOpen(Known known, BlockStand stand)

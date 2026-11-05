@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NoteEvolution.Core.Books;
 using NoteEvolution.Core.Model;
+using NoteEvolution.Core.Storage;
 using NoteEvolution.TestSupport;
 using NoteEvolution.UI.Components;
 using NoteEvolution.UI.Editor;
@@ -283,6 +284,37 @@ public class BlockHistoryTrackerTests : UiTestContext
     }
 
     [Fact]
+    public async Task DeletedBlock_NotesThePredecessorsText_First200Characters()
+    {
+        var longText = new string('v', 199) + "\U0001F600 und weiter";
+        var book = $"title:: Buch\ntype:: book\n\n- # Eins\n\t- {longText}\n\t- Verschwindet\n\t- Kurz davor\n\t- Auch weg\n";
+        using var vault = VaultOf(book);
+        var session = await OpenSessionAsync(vault);
+
+        session.Links.DeleteTextBlock(BookOf(session), Find(session, "Verschwindet").Key);
+        session.Links.DeleteTextBlock(BookOf(session), Find(session, "Auch weg").Key);
+
+        var deleted = session.History!.Deleted(BookName);
+        var first = deleted.Single(d => d.Stand.Text == "Verschwindet");
+        Assert.Null(first.AfterBlockId);
+
+        // 199 characters: the 200th would cut the emoji in two.
+        Assert.Equal(new string('v', 199), first.AfterText);
+        Assert.Equal("Kurz davor", deleted.Single(d => d.Stand.Text == "Auch weg").AfterText);
+    }
+
+    [Fact]
+    public async Task DeletedBlock_FirstInBook_NoPredecessorsText()
+    {
+        using var vault = VaultOf(BookWith("Ganz vorn"));
+        var session = await OpenSessionAsync(vault);
+
+        session.Links.DeleteTextBlock(BookOf(session), Find(session, "Ganz").Key);
+
+        Assert.Null(Assert.Single(session.History!.Deleted(BookName)).AfterText);
+    }
+
+    [Fact]
     public async Task DeletedBlock_WithoutText_NotListed()
     {
         using var vault = VaultOf(BookWith(""));
@@ -290,6 +322,45 @@ public class BlockHistoryTrackerTests : UiTestContext
         var empty = Blocks(BookOf(session).Root).First();
 
         session.Links.DeleteTextBlock(BookOf(session), empty.Key);
+
+        Assert.Empty(session.History!.Deleted(BookName));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)] // the empty stand has become a version of its own, the newest
+    public async Task EmptiedThenRemoved_ListedWithItsText(bool pauseWhileEmpty)
+    {
+        using var vault = VaultOf(BookWith("Text, der erst geleert wird"));
+        var session = await OpenSessionAsync(vault);
+        var block = Find(session, "Text, der").Block;
+
+        Write(session, block, "");
+        if (pauseWhileEmpty)
+        {
+            Time.Advance(BlockHistoryTracker.Pause);
+            Assert.Equal("", session.History!.Latest(block.Id!.Value)!.Stand.Text);
+        }
+
+        session.Links.DeleteTextBlock(BookOf(session), block.Key);
+
+        var deleted = Assert.Single(session.History!.Deleted(BookName));
+        Assert.Equal(block.Id, deleted.BlockId);
+        Assert.Equal("Text, der erst geleert wird", deleted.Stand.Text);
+        Assert.Equal("Text, der erst geleert wird", session.History.Latest(deleted.BlockId)!.Stand.Text);
+    }
+
+    [Fact]
+    public async Task EmptiedThenRemoved_TextHeldElsewhere_NotListed()
+    {
+        var moved = "Dieser Text steht nachher in einem anderen Block";
+        using var vault = VaultOf(BookWith(moved));
+        var session = await OpenSessionAsync(vault);
+        var block = Find(session, "Dieser").Block;
+
+        Write(session, block, "");
+        Write(session, Find(session, "Anderer").Block, "Anderer Text. " + moved);
+        session.Links.DeleteTextBlock(BookOf(session), block.Key);
 
         Assert.Empty(session.History!.Deleted(BookName));
     }
@@ -584,6 +655,100 @@ public class BlockHistoryTrackerTests : UiTestContext
         session.HandleExternalChange(path);
 
         Assert.Equal(Guid.Parse(FirstId), Assert.Single(session.History!.Deleted(BookName)).BlockId);
+    }
+
+    [Fact]
+    public async Task ExternalChange_MergedWithLocalText_FirstVersionAndIdInTheFile()
+    {
+        using var vault = VaultOf();
+        var session = await OpenSessionAsync(vault);
+        var path = Path.Combine(vault.Root, BookPath);
+
+        // What the editor does with pending text: into the page, not saved.
+        Find(session, "Erster").Block.SetContent("Erster Text, lokal");
+        File.WriteAllText(path, BookText.Replace("Zweiter Text", "Zweiter Text, außen"));
+        session.HandleExternalChange(path);
+
+        var local = Find(session, "Erster");
+        var version = Assert.Single(Versions(session, local.Block));
+        Assert.Equal(HistoryReason.First, version.Reason);
+        Assert.Equal("Erster Text", version.Stand.Text);
+        Assert.Contains($"\t- Erster Text, lokal\n\t  id:: {local.Block.Id}\n", vault.Read(BookPath));
+
+        // The block changed from outside gets no id; its new text is only a starting point.
+        Assert.Contains("\t- Zweiter Text, außen\n\t- ## Eins-A", vault.Read(BookPath));
+        Assert.Null(Find(session, "Zweiter").Block.Id);
+        Assert.Single(session.History!.BlocksWithHistory());
+        Assert.Empty(session.History.Deleted(BookName));
+
+        Time.Advance(BlockHistoryTracker.Pause);
+        Assert.Equal("Erster Text, lokal", Versions(session, local.Block)[0].Stand.Text);
+    }
+
+    [Fact]
+    public async Task ExternalChange_MergedWithLocalDeletion_BlockWithoutId_Listed()
+    {
+        using var vault = VaultOf();
+        var session = await OpenSessionAsync(vault);
+        var path = Path.Combine(vault.Root, BookPath);
+        var page = BookOf(session).Page;
+
+        page.RemoveBlock(Find(session, "Zweiter").Block);
+        File.WriteAllText(path, BookText.Replace("Dritter Text", "Dritter Text, außen"));
+        session.HandleExternalChange(path);
+
+        var deleted = Assert.Single(session.History!.Deleted(BookName));
+        Assert.Equal("Zweiter Text", deleted.Stand.Text);
+        Assert.Equal("Zweiter Text", session.History.Latest(deleted.BlockId)!.Stand.Text);
+        Assert.DoesNotContain("Zweiter Text", vault.Read(BookPath));
+        Assert.Contains("Dritter Text, außen", vault.Read(BookPath));
+    }
+
+    [Fact]
+    public async Task Conflict_ResolvedWithMine_FirstVersionAndIdInTheFile()
+    {
+        using var vault = VaultOf();
+        var session = await OpenSessionAsync(vault);
+        var path = Path.Combine(vault.Root, BookPath);
+        ExternalChangeOutcome.Conflict? conflict = null;
+        session.ConflictDetected += c => conflict = c;
+
+        Find(session, "Erster").Block.SetContent("Erster Text, lokal");
+        File.WriteAllText(path, BookText.Replace("Erster Text", "Erster Text, außen"));
+        session.HandleExternalChange(path);
+        session.ResolveConflict(conflict!, conflict!.Conflicts.ToDictionary(c => c.Local.Key, _ => ConflictChoice.Mine));
+        Assert.True(session.TrySave(BookOf(session).Page, out var error), error?.Message);
+
+        var local = Find(session, "Erster");
+        Assert.Equal("Erster Text", Assert.Single(Versions(session, local.Block)).Stand.Text);
+        Assert.Contains($"\t- Erster Text, lokal\n\t  id:: {local.Block.Id}\n", vault.Read(BookPath));
+    }
+
+    [Fact]
+    public async Task Conflict_ResolvedWithTheirs_IdNeverSaved_OpenStandIsKept()
+    {
+        using var vault = VaultOf();
+        var session = await OpenSessionAsync(vault);
+        var path = Path.Combine(vault.Root, BookPath);
+        ExternalChangeOutcome.Conflict? conflict = null;
+        session.ConflictDetected += c => conflict = c;
+        var block = Find(session, "Erster").Block;
+
+        // The save gives the block its id, then finds the file changed: the id never reaches the file.
+        block.SetContent("Erster Text, lokal");
+        File.WriteAllText(path, BookText.Replace("Erster Text", "Erster Text, außen"));
+        Assert.False(session.TrySave(BookOf(session).Page, out _));
+        var id = block.Id!.Value;
+        session.ResolveConflict(conflict!, conflict!.Conflicts.ToDictionary(c => c.Local.Key, _ => ConflictChoice.Theirs));
+
+        Assert.Equal(["Erster Text, lokal", "Erster Text"], session.History!.Versions(id).Select(v => v.Stand.Text));
+        Assert.Equal("Erster Text, außen", Find(session, "Erster").Text);
+        Assert.Equal(BookText.Replace("Erster Text", "Erster Text, außen"), vault.Read(BookPath));
+
+        // The text of the file is the starting point: nothing waits for a pause.
+        var count = session.History.Versions(id).Count;
+        Time.Advance(BlockHistoryTracker.Pause);
+        Assert.Equal(count, session.History.Versions(id).Count);
     }
 
     [Fact]

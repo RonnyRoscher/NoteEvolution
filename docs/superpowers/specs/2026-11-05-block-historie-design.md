@@ -46,7 +46,7 @@ Die App vergleicht beim Speichern und beim Neueinlesen einer Buchseite jeden Blo
 - **Verschwindet ein Block aus dem Buch,** wird sein letzter Stand gesichert, und er gilt als gelöscht, mit Buch, Abschnittspfad und Vorgänger (`id::` des Blocks davor, soweit vorhanden).
 - **Keine Löschung:** Steht sein Text beim selben Vergleich in einem anderen Block des Buchs (Zusammenführen), ist er nicht gelöscht. Sein Verlauf bleibt erhalten, er erscheint aber nicht in der Liste.
 - **Liste:** „Gelöschte Blöcke“ im Menü „Assistenten“, je Buch: Datum, Abschnitt, Textanfang, neueste zuerst. Von dort lässt sich der Verlauf ansehen.
-- **Wiederherstellen eines gelöschten Blocks:** hinter seinen früheren Vorgänger, sonst ans Ende seines früheren Abschnitts, sonst ans Ende des Buchs. Er behält `id::`, Verlauf und seinen zuletzt gesicherten Status und verschwindet aus der Liste. Quellen kommen zurück, soweit die Notizen noch existieren; deren Verwendungen werden wieder eingetragen.
+- **Wiederherstellen eines gelöschten Blocks:** hinter seinen früheren Vorgänger, sonst ans Ende seines früheren Abschnitts, sonst ans Ende des Buchs. Einen Vorgänger ohne `id::` findet die App am Anfang seines Texts (die ersten 200 Zeichen, gesucht im selben Abschnitt); er bekommt dabei keine `id::`. Der wiederhergestellte Block behält `id::`, Verlauf und seinen zuletzt gesicherten Status und verschwindet aus der Liste. Quellen, auch die seiner Unterpunkte, kommen zurück, soweit die Notizen noch existieren; deren Verwendungen werden wieder eingetragen.
 
 ## 6. Historie ansehen und wiederherstellen
 

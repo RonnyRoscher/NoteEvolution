@@ -642,10 +642,11 @@ public static class ManuscriptCommands
 
     /// <summary>
     /// Puts a deleted text block of the change history back (spec 5), in the same order as <see cref="NormalizeOutlineAsync"/>
-    /// (and refused in the same cases): behind its former predecessor, else at the end of its former section, else at the
-    /// end of the book, before the appendix (<see cref="ManuscriptEditor.RestoreTextBlock"/>). It keeps its <c>id::</c>,
-    /// so its history goes on and it leaves the list of deleted blocks. Its sources come back as far as the notes still
-    /// exist, and those notes gain the usage again. The page is saved with one <see cref="StructureUndo"/>
+    /// (and refused in the same cases): behind its former predecessor (by its <c>id::</c>, else by its text), else at the
+    /// end of its former section, else at the end of the book, before the appendix
+    /// (<see cref="ManuscriptEditor.RestoreTextBlock"/>). It keeps its <c>id::</c>, so its history goes on and it leaves
+    /// the list of deleted blocks. Its sources and those of its sub-points come back as far as the notes still exist, and
+    /// those notes gain the usage again. The page is saved with one <see cref="StructureUndo"/>
     /// (<paramref name="undoDescription"/>) that also takes the added usages back (<see cref="RestoreUndo"/>). A block of another book than the current
     /// one is refused.
     /// </summary>
@@ -668,8 +669,15 @@ public static class ManuscriptCommands
                 return new AdoptMessage("SectionCommandFailed", true);
             }
 
-            var sources = deleted.Stand.Sources.Distinct().Where(id => session.Vault.FindBlockById(id) is not null).ToList();
-            var notePages = NotePagesOf(session, sources);
+            var sources = LivingNotes(session, deleted.Stand.Sources);
+            var paragraphs = RestoredParagraphs(session, deleted);
+            List<BlockSplit> usages =
+            [
+                .. paragraphs.Where(p => p.Id is not null).Select(p => new BlockSplit(p.Id!.Value, p.Sources ?? []))
+                    .Prepend(new BlockSplit(deleted.BlockId, sources))
+                    .Where(usage => usage.Sources.Count > 0),
+            ];
+            var notePages = NotePagesOf(session, usages.SelectMany(usage => usage.Sources));
             if (notePages.Any(session.HasOpenConflict))
             {
                 return new AdoptMessage("EditorConflict", true);
@@ -677,12 +685,11 @@ public static class ManuscriptCommands
 
             (message, reveal) = RunStatus(session, book, () => ManuscriptEditor.RestoreTextBlock(
                 book, deleted.BlockId, deleted.AfterBlockId, deleted.SectionPath, deleted.Stand.Text,
-                [.. deleted.Stand.Paragraphs.Select(p => (p.Text, p.Depth, p.Status))], deleted.Stand.Status, sources,
-                session.Clock.Now), undoDescription, logger,
-                undo => new RestoreUndo(undo, session, book.LinkName, sources.Count > 0 ? [new BlockSplit(deleted.BlockId, sources)] : []));
-            if (message is null && sources.Count > 0)
+                paragraphs, deleted.Stand.Status, sources, session.Clock.Now, deleted.AfterText), undoDescription, logger,
+                undo => new RestoreUndo(undo, session, book.LinkName, usages));
+            if (message is null)
             {
-                ApplyNoteEffects(state, session, book, [new BlockSplit(deleted.BlockId, sources)], notePages, logger);
+                ApplyNoteEffects(state, session, book, usages, notePages, logger);
             }
 
             return message;
@@ -698,6 +705,29 @@ public static class ManuscriptCommands
 
             state.Notify();
         }
+    }
+
+    /// <summary>The distinct <paramref name="sources"/> that still exist in the vault.</summary>
+    private static List<Guid> LivingNotes(VaultSession session, IEnumerable<Guid> sources) =>
+        [.. sources.Distinct().Where(id => session.Vault.FindBlockById(id) is not null)];
+
+    /// <summary>
+    /// The sub-points of a deleted block for putting it back. A sub-point keeps its <c>id::</c> unless a block in the vault
+    /// has that id by now; without an id it can have no sources, since a usage names the block by its id.
+    /// </summary>
+    private static List<RestoredParagraph> RestoredParagraphs(VaultSession session, DeletedBlock deleted)
+    {
+        var used = new HashSet<Guid> { deleted.BlockId };
+        var result = new List<RestoredParagraph>();
+        foreach (var point in deleted.Stand.Paragraphs)
+        {
+            var free = point.Id is { } id && used.Add(id) && session.Vault.FindBlockById(id) is null;
+            result.Add(free
+                ? new RestoredParagraph(point.Text, point.Depth, point.Status, point.Id, LivingNotes(session, point.Sources ?? []))
+                : new RestoredParagraph(point.Text, point.Depth, point.Status));
+        }
+
+        return result;
     }
 
     /// <summary>

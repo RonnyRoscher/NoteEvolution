@@ -1,4 +1,5 @@
 using NoteEvolution.Core.Books;
+using NoteEvolution.Core.Links;
 using NoteEvolution.Core.Model;
 using NoteEvolution.Core.Tests.Links;
 
@@ -111,7 +112,7 @@ public class ManuscriptEditorRestoreTests
         var id = Guid.NewGuid();
 
         var key = ManuscriptEditor.RestoreTextBlock(
-            s.Book, id, Guid.Parse(B1), "Kapitel › Abschnitt", "Zurück", [("Punkt", 1, BlockStatus.Relevant)],
+            s.Book, id, Guid.Parse(B1), "Kapitel › Abschnitt", "Zurück", [new RestoredParagraph("Punkt", 1, BlockStatus.Relevant)],
             BlockStatus.Wording, [Guid.Parse(N1)], Now);
 
         var book = Book.Load(s.Book.Page);
@@ -139,6 +140,64 @@ public class ManuscriptEditorRestoreTests
         // The end of the section is behind its sub-sections.
         Assert.Equal(key, section.Block!.Children[^1].Key);
         Assert.Equal(["Erster Text", "Zweiter Text", "Zurück"], section.TextBlocks.Select(t => t.Text));
+    }
+
+    [Fact]
+    public void RestoreTextBlock_AfterTheTextOfThePredecessor_InTheSameSection()
+    {
+        using var s = new LinkSetup(BookText, Journal);
+
+        ManuscriptEditor.RestoreTextBlock(
+            s.Book, Guid.NewGuid(), Guid.NewGuid(), "Kapitel › Abschnitt", "Zurück", [], BlockStatus.Draft, [], Now, afterText: "Erster");
+
+        var section = Book.Load(s.Book.Page).Root.Children.First().Children.First();
+        Assert.Equal(["Erster Text", "Zurück", "Zweiter Text"], section.TextBlocks.Select(t => t.Text));
+    }
+
+    [Theory]
+    [InlineData("Text anderer")] // in another section
+    [InlineData("Text unter")] // in a sub-section
+    [InlineData("Gibt es nicht")]
+    [InlineData("")]
+    public void RestoreTextBlock_PredecessorsTextNotInTheSection_EndOfSection(string afterText)
+    {
+        using var s = new LinkSetup(BookText, Journal);
+
+        var key = ManuscriptEditor.RestoreTextBlock(
+            s.Book, Guid.NewGuid(), null, "Kapitel › Abschnitt", "Zurück", [], BlockStatus.Draft, [], Now, afterText);
+
+        Assert.Equal(key, Book.Load(s.Book.Page).Root.Children.First().Children.First().Block!.Children[^1].Key);
+    }
+
+    [Fact]
+    public void RestoreTextBlock_IdOfThePredecessor_GoesBeforeItsText()
+    {
+        using var s = new LinkSetup(BookText, Journal);
+
+        ManuscriptEditor.RestoreTextBlock(
+            s.Book, Guid.NewGuid(), Guid.Parse(B2), "Kapitel › Abschnitt", "Zurück", [], BlockStatus.Draft, [], Now, afterText: "Erster");
+
+        var section = Book.Load(s.Book.Page).Root.Children.First().Children.First();
+        Assert.Equal(["Erster Text", "Zweiter Text", "Zurück"], section.TextBlocks.Select(t => t.Text));
+    }
+
+    [Fact]
+    public void RestoreTextBlock_SubPoints_GetIdAndSources()
+    {
+        using var s = new LinkSetup(BookText, Journal);
+        var point = Guid.NewGuid();
+
+        var key = ManuscriptEditor.RestoreTextBlock(
+            s.Book, Guid.NewGuid(), null, "Kapitel › Abschnitt", "Zurück",
+            [new RestoredParagraph("Verknüpft", 1, BlockStatus.Relevant, point, [Guid.Parse(N1)]), new RestoredParagraph("Schlicht", 2, BlockStatus.Draft)],
+            BlockStatus.Draft, [], Now);
+
+        var paragraphs = Book.Load(s.Book.Page).FindTextBlock(key)!.Paragraphs;
+        Assert.Equal(point, paragraphs[0].Block.Id);
+        Assert.Equal(SourceValue.Format([Guid.Parse(N1)]), paragraphs[0].Block.GetProperty("source"));
+        Assert.Equal(BlockStatus.Relevant, paragraphs[0].Status);
+        Assert.Null(paragraphs[1].Block.Id);
+        Assert.Null(paragraphs[1].Block.GetProperty("source"));
     }
 
     [Fact]

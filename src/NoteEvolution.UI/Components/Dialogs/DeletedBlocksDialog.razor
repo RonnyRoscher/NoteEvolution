@@ -14,11 +14,11 @@
     {
         <p class="ne-dialog-error" role="alert">@_error</p>
     }
-    @if (_deleted.Count == 0)
+    @if (_deleted.Count == 0 && _error is null)
     {
         <p class="ne-deleted-empty">@L["DeletedBlocksEmpty"]</p>
     }
-    else
+    else if (_deleted.Count > 0)
     {
         var blocked = ManuscriptCommands.RestoreBlocked(State);
         <ul class="ne-deleted-list">
@@ -62,8 +62,20 @@
     protected override void OnInitialized() => Load();
 
     /// <summary>Reads the list of the current book anew; a block put back is no longer in it.</summary>
-    private void Load() =>
-        _deleted = State.CurrentBook is { } book ? State.Session?.History?.Deleted(book.LinkName) ?? [] : [];
+    private void Load()
+    {
+        try
+        {
+            _deleted = State.CurrentBook is { } book ? State.Session?.History?.Deleted(book.LinkName) ?? [] : [];
+        }
+        catch (Exception ex)
+        {
+            // A broken database only gives a log entry and a hint (spec 2); a bad row must not take the window down.
+            Logger.LogError(ex, "Reading the deleted blocks failed");
+            _deleted = [];
+            _error = L["HistoryReadFailed"];
+        }
+    }
 
     private async Task RestoreAsync(DeletedBlock block)
     {

@@ -6,6 +6,14 @@ using NoteEvolution.Core.Vaults;
 
 namespace NoteEvolution.Core.Books;
 
+/// <summary>A sub-point of a text block put back by <see cref="ManuscriptEditor.RestoreTextBlock"/>.</summary>
+/// <param name="Text">The text as <see cref="Paragraph.Text"/> holds it.</param>
+/// <param name="Depth">As <see cref="Paragraph.Depth"/>.</param>
+/// <param name="Status">As <see cref="Paragraph.Status"/>.</param>
+/// <param name="Id">Its <c>id::</c>; the caller passes only an id no other block has.</param>
+/// <param name="Sources">Its sources to write; the caller passes only notes that still exist, and only with an <paramref name="Id"/>.</param>
+public sealed record RestoredParagraph(string Text, int Depth, BlockStatus Status, Guid? Id = null, IReadOnlyList<Guid>? Sources = null);
+
 /// <summary>
 /// Structure commands of the manuscript (new section after / below, indent, outdent, remove a heading, delete a
 /// detail, put a range under a new heading) and the status commands (set a status, add a remark). Like
@@ -1406,19 +1414,21 @@ public static partial class ManuscriptEditor
 
     /// <summary>
     /// Puts a deleted text block back (the change history) with its <c>id::</c>, its status and its sources: directly
-    /// behind the text block with <paramref name="afterBlockId"/>, else at the end of the section with the title path
-    /// <paramref name="sectionPath"/> (<see cref="SectionPathSeparator"/>; after its sub-sections), else at the end of
-    /// the book, always before the appendix. The block gets both dates.
+    /// behind the text block with <paramref name="afterBlockId"/>, else behind the first text block of the section with
+    /// the title path <paramref name="sectionPath"/> (<see cref="SectionPathSeparator"/>) whose text starts with
+    /// <paramref name="afterText"/>, else at the end of that section (after its sub-sections), else at the end of the
+    /// book, always before the appendix. The block gets both dates.
     /// </summary>
     /// <param name="text">The text as <see cref="TextBlock.Text"/> holds it.</param>
-    /// <param name="paragraphs">The sub-points as <see cref="Paragraph.Text"/>, <see cref="Paragraph.Depth"/> and <see cref="Paragraph.Status"/> hold them.</param>
+    /// <param name="paragraphs">The sub-points, with their ids and sources.</param>
     /// <param name="sources">The sources to write; the caller passes only notes that still exist.</param>
+    /// <param name="afterText">The start of the text of the block it stood behind, when that block may have no <c>id::</c>.</param>
     /// <returns>The <see cref="Block.Key"/> of the new block.</returns>
     /// <exception cref="ArgumentException">A text would change the block tree, or a block with <paramref name="blockId"/> is in the book already; nothing is changed.</exception>
     public static Guid RestoreTextBlock(
         Book book, Guid blockId, Guid? afterBlockId, string sectionPath, string text,
-        IReadOnlyList<(string Text, int Depth, BlockStatus Status)> paragraphs, BlockStatus status, IReadOnlyList<Guid> sources,
-        DateTimeOffset now)
+        IReadOnlyList<RestoredParagraph> paragraphs, BlockStatus status, IReadOnlyList<Guid> sources,
+        DateTimeOffset now, string? afterText = null)
     {
         var page = book.Page;
         if (page.AllBlocks().Any(b => b.Id == blockId))
@@ -1432,7 +1442,33 @@ public static partial class ManuscriptEditor
             Block.ValidateContent(paragraph.Text);
         }
 
-        List<BlockProperty> properties = [new("id", blockId.ToString("D"))];
+        var block = Block.CreateDetached(text, RestoredProperties(blockId, status, sources));
+        BlockDates.StampNew(block, now);
+        var (parent, index) = RestorePlace(book, afterBlockId, afterText, sectionPath);
+        page.InsertBlock(parent, index, block);
+
+        var path = new List<Block> { block };
+        foreach (var paragraph in paragraphs)
+        {
+            var level = Math.Clamp(paragraph.Depth, 1, path.Count);
+            path.RemoveRange(level, path.Count - level);
+            var detail = Block.CreateDetached(paragraph.Text, RestoredProperties(paragraph.Id, paragraph.Status, paragraph.Sources ?? []));
+            page.InsertBlock(path[level - 1], path[level - 1].Children.Count, detail);
+            path.Add(detail);
+        }
+
+        return block.Key;
+    }
+
+    /// <summary>The property lines of a block put back: <c>id::</c>, <c>status::</c> and <c>source::</c>, as far as it has them.</summary>
+    private static List<BlockProperty> RestoredProperties(Guid? id, BlockStatus status, IReadOnlyList<Guid> sources)
+    {
+        List<BlockProperty> properties = [];
+        if (id is { } own)
+        {
+            properties.Add(new BlockProperty("id", own.ToString("D")));
+        }
+
         if (BlockStatuses.FileValue(status) is { } fileStatus)
         {
             properties.Add(new BlockProperty(BlockStatuses.Key, fileStatus));
@@ -1443,27 +1479,11 @@ public static partial class ManuscriptEditor
             properties.Add(new BlockProperty("source", SourceValue.Format(sources)));
         }
 
-        var block = Block.CreateDetached(text, properties);
-        BlockDates.StampNew(block, now);
-        var (parent, index) = RestorePlace(book, afterBlockId, sectionPath);
-        page.InsertBlock(parent, index, block);
-
-        var path = new List<Block> { block };
-        foreach (var (paragraphText, depth, paragraphStatus) in paragraphs)
-        {
-            var level = Math.Clamp(depth, 1, path.Count);
-            path.RemoveRange(level, path.Count - level);
-            var detail = Block.CreateDetached(
-                paragraphText, BlockStatuses.FileValue(paragraphStatus) is { } value ? [new BlockProperty(BlockStatuses.Key, value)] : null);
-            page.InsertBlock(path[level - 1], path[level - 1].Children.Count, detail);
-            path.Add(detail);
-        }
-
-        return block.Key;
+        return properties;
     }
 
     /// <summary>The parent and the index for a restored text block (see <see cref="RestoreTextBlock"/>).</summary>
-    private static (Block? Parent, int Index) RestorePlace(Book book, Guid? afterBlockId, string sectionPath)
+    private static (Block? Parent, int Index) RestorePlace(Book book, Guid? afterBlockId, string? afterText, string sectionPath)
     {
         var page = book.Page;
         if (afterBlockId is { } after && book.FindTextBlockById(after) is { } predecessor && !book.IsInAppendix(predecessor.Key))
@@ -1471,7 +1491,14 @@ public static partial class ManuscriptEditor
             return (predecessor.Block.Parent, IndexOf(page, predecessor.Block) + 1);
         }
 
-        if (sectionPath.Length > 0 && SectionsOf(book.Root, "").FirstOrDefault(s => s.Path == sectionPath).Node?.Block is { } heading)
+        var section = sectionPath.Length > 0 ? SectionsOf(book.Root, "").FirstOrDefault(s => s.Path == sectionPath).Node : book.Root;
+        if (!string.IsNullOrEmpty(afterText)
+            && section?.TextBlocks.FirstOrDefault(block => block.Text.StartsWith(afterText, StringComparison.Ordinal)) is { } sameText)
+        {
+            return (sameText.Block.Parent, IndexOf(page, sameText.Block) + 1);
+        }
+
+        if (section?.Block is { } heading)
         {
             return (heading, heading.Children.Count);
         }

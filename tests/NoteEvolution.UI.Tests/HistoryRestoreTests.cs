@@ -190,6 +190,101 @@ public class HistoryRestoreTests : UiTestContext
     }
 
     [Fact]
+    public async Task RestoreDeleted_LinkedSubPoint_SourceAndUsageBack_UndoTakesThemAway()
+    {
+        using var vault = VaultOf();
+        var session = await OpenSessionAsync(vault);
+        session.Links.DeleteTextBlock(BookOf(session), Find(session, "Erster").Block.Key);
+        var deleted = Assert.Single(session.History!.Deleted(BookName));
+        Assert.DoesNotContain("used-in::", UsedIn(vault, NoteTwo));
+        var gone = vault.Read(BookPath);
+
+        Assert.Null(await ManuscriptCommands.RestoreDeletedAsync(State, deleted, "Wiederherstellen", NullLogger.Instance));
+
+        Assert.Contains($"\t\t- Punkt B\n\t\t  id:: {PointId}\n\t\t  source:: (({NoteTwo}))\n", vault.Read(BookPath));
+        Assert.Contains($"(({PointId}))", UsedIn(vault, NoteTwo));
+        Assert.Contains($"(({BlockId}))", UsedIn(vault, NoteOne));
+        AssertLinksConsistent(session);
+
+        Assert.True(session.TryUndo(out var error), error?.ToString());
+
+        Assert.Equal(gone, vault.Read(BookPath));
+        Assert.DoesNotContain("used-in::", UsedIn(vault, NoteTwo));
+        Assert.DoesNotContain("used-in::", UsedIn(vault, NoteOne));
+        AssertLinksConsistent(session);
+    }
+
+    [Fact]
+    public async Task RestoreDeleted_SubPoint_IdTakenOrNoteGone()
+    {
+        using var vault = VaultOf();
+        var session = await OpenSessionAsync(vault);
+        var free = Guid.Parse("88888888-8888-4888-8888-888888888888");
+        var noteGone = Guid.Parse("55555555-5555-4555-8555-555555555555");
+        var deleted = new DeletedBlock(
+            Guid.Parse("66666666-6666-4666-8666-666666666666"), BookName, At, "Eins", null,
+            new BlockStand("Zurück", [
+                new StandParagraph("Id vergeben", 1, BlockStatus.Draft, Guid.Parse(PointId), [Guid.Parse(NoteOne)]),
+                new StandParagraph("Notiz weg", 1, BlockStatus.Draft, free, [noteGone]),
+            ], BlockStatus.Draft, []));
+
+        Assert.Null(await ManuscriptCommands.RestoreDeletedAsync(State, deleted, "Wiederherstellen", NullLogger.Instance));
+
+        var points = Find(session, "Zurück").Paragraphs;
+
+        // The id belongs to the sub-point still in the book: the restored one goes without id and source.
+        Assert.Null(points[0].Block.Id);
+        Assert.Null(points[0].Block.GetProperty("source"));
+
+        // The id comes back, the source of a note that is gone does not.
+        Assert.Equal(free, points[1].Block.Id);
+        Assert.Null(points[1].Block.GetProperty("source"));
+        AssertLinksConsistent(session);
+    }
+
+    private const string PlainBook =
+        "title:: Buch\ntype:: book\n\n" +
+        "- # Eins\n" +
+        "\t- Vorher\n" +
+        "\t- Verschwindet\n" +
+        "\t- Danach\n" +
+        "- # Zwei\n" +
+        "\t- Vorher\n";
+
+    private static List<string> TextsOfFirstSection(VaultSession session) =>
+        [.. BookOf(session).Root.Children.First().TextBlocks.Select(t => t.Text)];
+
+    [Fact]
+    public async Task RestoreDeleted_PredecessorWithoutId_RightBehindIt_ItGetsNoId()
+    {
+        using var vault = VaultOf(PlainBook);
+        var session = await OpenSessionAsync(vault);
+        session.Links.DeleteTextBlock(BookOf(session), Find(session, "Verschwindet").Block.Key);
+        var deleted = Assert.Single(session.History!.Deleted(BookName));
+        Assert.Null(deleted.AfterBlockId);
+
+        Assert.Null(await ManuscriptCommands.RestoreDeletedAsync(State, deleted, "Wiederherstellen", NullLogger.Instance));
+
+        Assert.Equal(["Vorher", "Verschwindet", "Danach"], TextsOfFirstSection(session));
+        Assert.StartsWith("title:: Buch\ntype:: book\n\n- # Eins\n\t- Vorher\n\t- Verschwindet\n", vault.Read(BookPath));
+    }
+
+    [Fact]
+    public async Task RestoreDeleted_PredecessorTextChanged_EndOfSection()
+    {
+        using var vault = VaultOf(PlainBook);
+        var session = await OpenSessionAsync(vault);
+        session.Links.DeleteTextBlock(BookOf(session), Find(session, "Verschwindet").Block.Key);
+        var deleted = Assert.Single(session.History!.Deleted(BookName));
+        Find(session, "Vorher").Block.SetContent("Ganz anders");
+        Assert.True(session.TrySave(BookOf(session).Page, out _));
+
+        Assert.Null(await ManuscriptCommands.RestoreDeletedAsync(State, deleted, "Wiederherstellen", NullLogger.Instance));
+
+        Assert.Equal(["Ganz anders", "Danach", "Verschwindet"], TextsOfFirstSection(session));
+    }
+
+    [Fact]
     public async Task RestoreDeleted_SourceNoteGone_Skipped()
     {
         using var vault = VaultOf();
