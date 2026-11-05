@@ -120,10 +120,42 @@ public class HistoryRestoreTests : UiTestContext
         Assert.Contains($"(({BlockId}))", UsedIn(vault, NoteOne));
         Assert.Equal("Wiederherstellen", session.Undo.NextDescription);
 
-        // The structure undo brings the sub-point back with its id:: and source::; the usage in the note is not re-entered.
+        // One undo brings the sub-point back with its id:: and source:: and the usage into the note.
         Assert.True(session.TryUndo(out var error), error?.ToString());
         Assert.Equal(BookText, vault.Read(BookPath));
-        Assert.DoesNotContain("used-in::", UsedIn(vault, NoteTwo));
+        Assert.Contains($"(({PointId}))", UsedIn(vault, NoteTwo));
+        AssertLinksConsistent(session);
+    }
+
+    private static void AssertLinksConsistent(VaultSession session)
+    {
+        var report = new LinkChecker(session.Vault, session.Links, session.Writer).Analyze();
+        Assert.Empty(report.Missing);
+        Assert.Empty(report.Orphans);
+        Assert.Empty(report.Broken);
+    }
+
+    [Fact]
+    public async Task RestoreDeleted_Undo_RemovesUsage_ListedAgain()
+    {
+        using var vault = VaultOf();
+        var session = await OpenSessionAsync(vault);
+        session.Links.DeleteTextBlock(BookOf(session), Find(session, "Erster").Block.Key);
+        var deleted = Assert.Single(session.History!.Deleted(BookName));
+        Assert.DoesNotContain("used-in::", UsedIn(vault, NoteOne));
+        var gone = vault.Read(BookPath);
+
+        Assert.Null(await ManuscriptCommands.RestoreDeletedAsync(State, deleted, "Wiederherstellen", NullLogger.Instance));
+        Assert.Contains($"(({BlockId}))", UsedIn(vault, NoteOne));
+        Assert.Empty(session.History.Deleted(BookName));
+        AssertLinksConsistent(session);
+
+        Assert.True(session.TryUndo(out var error), error?.ToString());
+
+        Assert.Equal(gone, vault.Read(BookPath));
+        Assert.DoesNotContain("used-in::", UsedIn(vault, NoteOne));
+        AssertLinksConsistent(session);
+        Assert.Equal(deleted.BlockId, Assert.Single(session.History.Deleted(BookName)).BlockId);
     }
 
     [Fact]

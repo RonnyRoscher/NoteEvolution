@@ -578,8 +578,8 @@ public static class ManuscriptCommands
     /// conflict refuses it too, as does one for the page of a note that is a source of a linked sub-point. The current stand
     /// is stored as a version first (<see cref="BlockHistoryTracker.SaveBeforeRestore"/>). Status, sources and properties of
     /// the block stay (<see cref="ManuscriptEditor.RestoreText"/>). The page is saved with one <see cref="StructureUndo"/>
-    /// (<paramref name="undoDescription"/>); a linked sub-point that goes loses its usage in the notes, which that undo does
-    /// not bring back. A version with the text the block has already changes nothing.
+    /// (<paramref name="undoDescription"/>) that also puts back the usage of a linked sub-point that went
+    /// (<see cref="RestoreUndo"/>). A version with the text the block has already changes nothing.
     /// </summary>
     /// <returns>The message to show, or <c>null</c> if the version was restored (or nothing changed) without remark.</returns>
     public static async Task<AdoptMessage?> RestoreVersionAsync(
@@ -619,7 +619,7 @@ public static class ManuscriptCommands
                     session.Vault, session.Clock.Now);
                 effects = result.Effects;
                 return text.Key;
-            }, undoDescription, logger);
+            }, undoDescription, logger, undo => new RestoreUndo(undo, session, book.LinkName, effects));
             if (message is null)
             {
                 ApplyNoteEffects(state, session, book, effects, notePages, logger);
@@ -646,7 +646,7 @@ public static class ManuscriptCommands
     /// end of the book, before the appendix (<see cref="ManuscriptEditor.RestoreTextBlock"/>). It keeps its <c>id::</c>,
     /// so its history goes on and it leaves the list of deleted blocks. Its sources come back as far as the notes still
     /// exist, and those notes gain the usage again. The page is saved with one <see cref="StructureUndo"/>
-    /// (<paramref name="undoDescription"/>), which does not take the usages back. A block of another book than the current
+    /// (<paramref name="undoDescription"/>) that also takes the added usages back (<see cref="RestoreUndo"/>). A block of another book than the current
     /// one is refused.
     /// </summary>
     /// <returns>The message to show, or <c>null</c> if the block was restored without remark.</returns>
@@ -678,7 +678,8 @@ public static class ManuscriptCommands
             (message, reveal) = RunStatus(session, book, () => ManuscriptEditor.RestoreTextBlock(
                 book, deleted.BlockId, deleted.AfterBlockId, deleted.SectionPath, deleted.Stand.Text,
                 [.. deleted.Stand.Paragraphs.Select(p => (p.Text, p.Depth, p.Status))], deleted.Stand.Status, sources,
-                session.Clock.Now), undoDescription, logger);
+                session.Clock.Now), undoDescription, logger,
+                undo => new RestoreUndo(undo, session, book.LinkName, sources.Count > 0 ? [new BlockSplit(deleted.BlockId, sources)] : []));
             if (message is null && sources.Count > 0)
             {
                 ApplyNoteEffects(state, session, book, [new BlockSplit(deleted.BlockId, sources)], notePages, logger);
@@ -1030,7 +1031,8 @@ public static class ManuscriptCommands
     /// status change).
     /// </returns>
     private static (AdoptMessage? Message, Guid? Reveal) RunStatus(
-        VaultSession session, Book book, Func<Guid?> change, string undoDescription, ILogger logger)
+        VaultSession session, Book book, Func<Guid?> change, string undoDescription, ILogger logger,
+        Func<StructureUndo, IUndoAction>? wrapUndo = null)
     {
         var page = book.Page;
         var before = PageStructureSnapshot.Capture(page);
@@ -1051,8 +1053,49 @@ public static class ManuscriptCommands
             return (SaveFailed(session, page, error), null);
         }
 
-        session.Undo.Push(new StructureUndo(undoDescription, session, page.FilePath, before, PageStructureSnapshot.Capture(page)));
+        var undo = new StructureUndo(undoDescription, session, page.FilePath, before, PageStructureSnapshot.Capture(page));
+        session.Undo.Push(wrapUndo is null ? undo : wrapUndo(undo));
         return (null, reveal);
+    }
+
+    /// <summary>
+    /// Takes back a restore of the change history: the page as <see cref="StructureUndo"/> restores it, then the notes'
+    /// usages the restore changed, each the other way round (a usage that was removed comes back, one that was added goes).
+    /// A page that changed after the restore refuses the undo before any note is touched. A session with an open conflict
+    /// does not undo at all (<see cref="VaultSession.TryUndo"/>).
+    /// </summary>
+    private sealed class RestoreUndo(
+        StructureUndo page, VaultSession session, string linkName, IReadOnlyList<SyncEffect> effects) : IUndoAction
+    {
+        public string Description => page.Description;
+
+        /// <exception cref="InvalidOperationException">The page cannot be restored, or saving it failed.</exception>
+        public void Undo()
+        {
+            page.Undo();
+            foreach (var effect in effects)
+            {
+                switch (effect)
+                {
+                    case BlockDeleted deleted:
+                        foreach (var note in deleted.Sources.Distinct())
+                        {
+                            session.Links.AddUsage(note, new UsedInEntry(linkName, deleted.BookBlockId));
+                        }
+
+                        break;
+                    case BlockSplit split:
+                        foreach (var note in split.Sources.Distinct())
+                        {
+                            session.Links.RemoveUsage(note, linkName, split.NewBookBlockId);
+                        }
+
+                        break;
+                }
+            }
+
+            session.Links.RetryPending();
+        }
     }
 
     /// <summary>
