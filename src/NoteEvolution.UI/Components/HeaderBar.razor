@@ -62,9 +62,13 @@
     {
         <span class="ne-undo-error" role="alert">@_undoError</span>
     }
+    @if (_session?.HistoryProblem == true)
+    {
+        <span class="ne-history-problem" role="status">@L["HistoryProblem"]</span>
+    }
 
     @* The commands next to undo; the indicators (read-only files, AI, language model, system meter) at the right end. *@
-    @if (OnHandledWizard.HasDelegate || OnDraftWizard.HasDelegate || OnNormalizeOutline.HasDelegate)
+    @if (OnHandledWizard.HasDelegate || OnDraftWizard.HasDelegate || OnNormalizeOutline.HasDelegate || OnDeletedBlocks.HasDelegate)
     {
         <div class="ne-assistants">
             <button type="button" class="ne-assistants-toggle" disabled="@(State.Session is null)" aria-expanded="@(_assistantsOpen ? "true" : "false")"
@@ -76,6 +80,8 @@
                     <button type="button" class="ne-assistant-draft" @onclick="OpenDraft">@L["AssistantDraft"]</button>
                     <button type="button" class="ne-assistant-normalize" disabled="@(State.CurrentBook is null || !OnNormalizeOutline.HasDelegate)"
                             @onclick="OpenNormalize">@L["AssistantNormalize"]</button>
+                    <button type="button" class="ne-assistant-deleted" disabled="@(State.CurrentBook is null || !OnDeletedBlocks.HasDelegate)"
+                            @onclick="OpenDeleted">@L["AssistantDeletedBlocks"]</button>
                 </div>
             }
         </div>
@@ -209,6 +215,9 @@
 
     /// <summary>Opens „Gliederung nach Ebenen ordnen“ for the current book; its entry is disabled without a book or while unset.</summary>
     [Parameter] public EventCallback OnNormalizeOutline { get; set; }
+
+    /// <summary>Opens the list of the deleted blocks of the current book; its entry is disabled without a book or while unset.</summary>
+    [Parameter] public EventCallback OnDeletedBlocks { get; set; }
 
     /// <summary>Opens the PDF export dialog; the button is disabled while unset.</summary>
     [Parameter] public EventCallback OnPdfExport { get; set; }
@@ -416,6 +425,7 @@
             _session.AiStatusChanged += OnSessionChanged;
             _session.UnderstandingChanged += OnSessionChanged;
             _session.NoteStatusChanged += OnSessionChanged;
+            _session.HistoryProblemChanged += OnSessionChanged;
         }
     }
 
@@ -429,6 +439,7 @@
             _session.AiStatusChanged -= OnSessionChanged;
             _session.UnderstandingChanged -= OnSessionChanged;
             _session.NoteStatusChanged -= OnSessionChanged;
+            _session.HistoryProblemChanged -= OnSessionChanged;
         }
     }
 
@@ -514,6 +525,12 @@
     {
         _assistantsOpen = false;
         await OnNormalizeOutline.InvokeAsync();
+    }
+
+    private async Task OpenDeleted()
+    {
+        _assistantsOpen = false;
+        await OnDeletedBlocks.InvokeAsync();
     }
 
     private async Task Undo()

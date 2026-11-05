@@ -43,7 +43,7 @@ public partial class ReferencePickerTests : UiTestContext
         }
     }
 
-    [GeneratedRegex(@"id:: ([0-9a-f-]{36})")]
+    [GeneratedRegex(@"\(\(([0-9a-f-]{36})\)\)")]
     private static partial Regex IdRegex();
 
     private Book Book => State.CurrentBook!;
@@ -210,7 +210,7 @@ public partial class ReferencePickerTests : UiTestContext
         // The heading gets an id:: (no date), the reference goes in inside the bold text, its text block is stamped.
         var after = _vault.Read(BookPath);
         var id = IdRegex().Match(after).Groups[1].Value;
-        Assert.Equal(
+        AssertSameBesidesNewIds(
             BookText
                 .Replace("\t- Erster **fetter** Text\n", $"\t- Erster **fe(({id}))tter** Text\n\t  updated:: {Stamp}\n")
                 .Replace("- # Zwei\n", $"- # Zwei\n  id:: {id}\n"),
@@ -227,7 +227,8 @@ public partial class ReferencePickerTests : UiTestContext
 
         // One undo takes back the reference and the id.
         Assert.True(session.TryUndo(out var error), error?.ToString());
-        Assert.Equal(BookText, _vault.Read(BookPath));
+        AssertSameBesidesNewIds(BookText, _vault.Read(BookPath));
+        Assert.DoesNotContain(id, _vault.Read(BookPath));
         Assert.False(session.Undo.CanUndo);
     }
 
@@ -251,7 +252,7 @@ public partial class ReferencePickerTests : UiTestContext
 
         var after = _vault.Read(BookPath);
         var id = IdRegex().Match(after).Groups[1].Value;
-        Assert.Equal(
+        AssertSameBesidesNewIds(
             BookText
                 .Replace("\t- Erster **fetter** Text\n", $"\t- Erster **fetter** Text\n\t  updated:: {Stamp}\n")
                 .Replace("\t\t- Ein Detail\n", $"\t\t- Ein(({id})) Detail\n")

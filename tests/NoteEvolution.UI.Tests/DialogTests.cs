@@ -407,7 +407,7 @@ public class DialogTests : UiTestContext
         Assert.Equal("Ja", cut.Find(".ne-linkcheck-crossrefs-yes").TextContent);
         cut.Find(".ne-linkcheck-crossrefs-yes").Click();
 
-        Assert.Equal(
+        AssertSameBesidesNewIds(
             "title:: Alpha\ntype:: book\n\n- # Eins\n\t- Siehe dort\n\t- Anderer Text\n", tv.Read("pages/Buch - Alpha.md"));
         Assert.Empty(cut.FindAll(".ne-linkcheck-crossrefs-confirm"));
         cut.WaitForAssertion(() => Assert.Empty(cut.FindAll(".ne-linkcheck-crossref")));
@@ -1026,6 +1026,8 @@ public class DialogTests : UiTestContext
         OpenAndClose(cut, ".ne-assistant-draft", ".ne-draft", ".ne-draft-close");
         cut.Find(".ne-assistants-toggle").Click();
         OpenAndClose(cut, ".ne-assistant-normalize", ".ne-normalize", ".ne-normalize-close");
+        cut.Find(".ne-assistants-toggle").Click();
+        OpenAndClose(cut, ".ne-assistant-deleted", ".ne-deleted", ".ne-deleted-close");
     }
 
     [Fact]

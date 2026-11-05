@@ -20,6 +20,7 @@
     <HeaderBar OnOpenVault="PickVaultAsync" OnPdfExport="() => Show(Dialog.Pdf)" OnLinkCheck="() => Show(Dialog.LinkCheck)"
                OnSettings="() => Show(Dialog.Settings)" OnShortcuts="() => Show(Dialog.Shortcuts)" OnHandledWizard="() => Show(Dialog.Handled)" OnDraftWizard="() => ShowDraft(null)"
                OnNormalizeOutline="() => Show(Dialog.Normalize)"
+               OnDeletedBlocks="() => Show(Dialog.Deleted)"
                OnConvertPage="ShowDraft" OnToggleSplit="ToggleSplitAsync" />
 
     @if (_hintVisible)
@@ -132,6 +133,12 @@
         case Dialog.Normalize:
             <NormalizeOutlineDialog OnClose="CloseDialog" />
             break;
+        case Dialog.Deleted:
+            <DeletedBlocksDialog OnClose="CloseDialog" />
+            break;
+        case Dialog.History:
+            <HistoryDialog @key="_historyRequest" BlockId="_historyBlockId" OnClose="CloseDialog" />
+            break;
         case Dialog.Appendix:
             <AppendixDialog @key="_appendixRequest" Kind="_appendixKind" InitialEntry="_appendixEntry"
                             StartWithNew="_appendixStartWithNew" OnCreated="OnAppendixCreated" OnClose="CloseDialog" />
@@ -207,9 +214,31 @@
         Draft,
         Appendix,
         Normalize,
+        Deleted,
+        History,
     }
 
     private void Show(Dialog dialog) => _dialog = dialog;
+
+    /// <summary>The block whose history window is shown (<see cref="AppState.RequestBlockHistory"/>).</summary>
+    private Guid _historyBlockId;
+
+    /// <summary>Counts the requests, so each one shows the window anew.</summary>
+    private int _historyRequest;
+
+    /// <summary>Someone asked for the history of a text block (the bar's „Historie“); a block without <c>id::</c> has none.</summary>
+    private void OnBlockHistoryRequested(Guid textBlockKey) => _ = InvokeAsync(() =>
+    {
+        if (State.CurrentBook?.FindTextBlock(textBlockKey)?.Block.Id is not { } id)
+        {
+            return;
+        }
+
+        _historyBlockId = id;
+        _historyRequest++;
+        _dialog = Dialog.History;
+        StateHasChanged();
+    });
 
     /// <summary>Someone asked for the glossary, people or sources window (the outline's appendix row).</summary>
     private void OnAppendixDialogRequested(AppendixKind kind, Guid? entry) => _ = InvokeAsync(() =>
@@ -480,6 +509,7 @@
         State.AiModelDialogRequested += OnAiModelDialogRequested;
         State.AppendixDialogRequested += OnAppendixDialogRequested;
         State.NewAppendixEntryRequested += OnNewAppendixEntryRequested;
+        State.BlockHistoryRequested += OnBlockHistoryRequested;
         State.BookSelected += RememberBook;
         // The host page's splash screen (index.html) says what the start waits for and fades out after it (the last
         // vault is open, or there is none). It is only a display, so the start never waits for it.
@@ -516,6 +546,7 @@
         State.AiModelDialogRequested -= OnAiModelDialogRequested;
         State.AppendixDialogRequested -= OnAppendixDialogRequested;
         State.NewAppendixEntryRequested -= OnNewAppendixEntryRequested;
+        State.BlockHistoryRequested -= OnBlockHistoryRequested;
         State.BookSelected -= RememberBook;
         if (_subscribed is not null)
         {

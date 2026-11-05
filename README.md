@@ -275,6 +275,28 @@ dem sie steht, auf oberster Ebene nur ihr eigener. Die Reihenfolge bleibt, die �
 verschwindet mit „Verwendete ausblenden“. Neu berechnet wird sofort, wenn der Cursor den Bereich verlässt, das Buch
 wechselt, „Verwendete ausblenden“ umgeschaltet oder die Übernahme rückgängig gemacht wird.
 
+## Änderungshistorie
+
+Jeder Textblock mit `id::` hat einen Verlauf früherer Fassungen. Er liegt in `<vault>/.noteevolution/history.db`, nicht
+in den Buchdateien; die Datei ist Arbeit des Nutzers und wird nie von selbst gelöscht (eine unbrauchbare wird zu
+`history.db.defekt-<zeit>` umbenannt).
+
+- **Wann eine Version entsteht:** beim ersten Speichern eines Blocks (der Stand davor, „Erste Fassung“), nach einer
+  Pause von 10 Minuten ohne Änderung („Pause“), vor größerem Löschen („Vor dem Löschen“), beim Schließen der App oder des Vaults („Beim Schließen“),
+  beim Öffnen, wenn ein Block von seiner letzten Version abweicht („Beim Öffnen“) und vor dem Wiederherstellen („Vor dem Wiederherstellen“).
+- **Historie ansehen:** In der Leiste am Textblock oder an einem seiner Unterpunkte öffnet „Historie“ das Fenster. Links
+  stehen die Versionen, neueste zuerst, mit Datum, Uhrzeit und Grund; rechts die gewählte Version wortweise im
+  Vergleich zur aktuellen Fassung (Entferntes rot und durchgestrichen, Neues grün). Ohne Versionen ist der Knopf
+  ausgegraut, der Tooltip nennt den Grund. An Überschriften gibt es ihn nicht.
+- **Wiederherstellen:** ersetzt Text und Unterpunkte des Blocks durch die gewählte Version; Quellen, Status und übrige
+  Eigenschaften bleiben. „Rückgängig“ nimmt es zurück. Bei schreibgeschütztem Buch oder offenem Konflikt ist der Knopf
+  ausgegraut, Ansehen bleibt möglich.
+- **Entfernen:** Der Knopf löscht an Textblock und Unterpunkt unter dem Namen „Entfernen“ den Block samt Unterpunkten
+  (ohne Nachfrage, mit „Rückgängig“); an einer Überschrift heißt er weiter „Abschnitt löschen“.
+- **Gelöschte Blöcke:** Menü „Assistenten“ > „Gelöschte Blöcke“ listet die aus dem Buch verschwundenen Blöcke (Datum,
+  Abschnitt, Textanfang, neueste zuerst). Von dort lässt sich der Verlauf ansehen oder der Block wiederherstellen:
+  hinter seinen früheren Vorgänger, sonst ans Ende seines Abschnitts, sonst ans Ende des Buchs, mit `id::`, Verlauf und
+  Status.
 ## Wo was liegt
 
 | Was | Ort |
@@ -287,6 +309,7 @@ wechselt, „Verwendete ausblenden“ umgeschaltet oder die Übernahme rückgän
 | Noch nicht geschriebene Notiz-Änderungen (z. B. schreibgeschützte Notiz) | `<vault>/.noteevolution/pending.json` |
 | KI-Modell (nach dem Download; immer nur eines) | `<Benutzerdaten>/models/<Modell-Id>/` |
 | Gespeicherte Bedeutungsvektoren der Notizen | `<vault>/.noteevolution/vectors.db` |
+| Änderungshistorie der Textblöcke | `<vault>/.noteevolution/history.db` |
 
 `<Benutzerdaten>` ist der Ordner `NoteEvolution` im Anwendungsdatenordner des Systems (Windows:
 `%APPDATA%\NoteEvolution`, Linux und macOS: `~/.config/NoteEvolution`).
@@ -610,3 +633,14 @@ PDF
       einen sinnvollen Dateinamen vor; das PDF hat Titelseite und Inhaltsverzeichnis, Schrift und Abstände sehen gut
       aus, Blöcke mit Status Relevant oder Bemerkung (auch `#notiz`) fehlen samt Details; Warnungen erscheinen im
       Dialog.
+
+Änderungshistorie
+- [ ] Einen Textblock mit `id::` ändern, 10 Minuten warten (oder die App schließen und öffnen): „Historie“ in der Leiste
+      ist aktiv und listet die Version mit Grund; in einem Block ohne Versionen ist sie ausgegraut und nennt den Grund.
+- [ ] „Historie“ am Unterpunkt öffnet den Verlauf des Textblocks; an einer Überschrift fehlt der Knopf.
+- [ ] Eine frühere Version wählen: Entferntes rot und durchgestrichen, Neues grün. „Wiederherstellen“ ersetzt Text und
+      Unterpunkte, schließt das Fenster; „Rückgängig“ holt die vorherige Fassung zurück. Im schreibgeschützten Buch ist
+      „Wiederherstellen“ ausgegraut, Ansehen geht.
+- [ ] „Entfernen“ an Textblock und Unterpunkt (an einer Überschrift „Abschnitt löschen“); „Rückgängig“ holt den Block zurück.
+- [ ] Menü „Assistenten“ > „Gelöschte Blöcke“: der entfernte Block steht in der Liste (ohne Buch ist der Eintrag
+      ausgegraut); „Wiederherstellen“ setzt ihn an seine Stelle zurück und nimmt ihn aus der Liste; „Historie“ zeigt seinen Verlauf.

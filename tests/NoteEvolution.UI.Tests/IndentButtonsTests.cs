@@ -1,3 +1,4 @@
+using System.Text;
 using Bunit;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Localization;
@@ -81,7 +82,7 @@ public class IndentButtonsTests : UiTestContext
     private void UndoAndCheck(byte[] before)
     {
         Assert.True(State.Session!.TryUndo(out var error), error?.ToString());
-        Assert.Equal(before, File.ReadAllBytes(FilePath));
+        AssertSameBesidesNewIds(Encoding.UTF8.GetString(before), _vault.Read(BookPath));
     }
 
     /// <summary>The text after the text block "Zweiter Text" became the last sub-point of "Erster Text".</summary>
@@ -105,7 +106,7 @@ public class IndentButtonsTests : UiTestContext
         // A text block goes into the text block before it, with its own details; the cursor stays in it.
         await MoveToAsync(cut, "Zweiter Text");
         await ClickAsync(cut, ".ne-sec-indent-any");
-        Assert.Equal(TextBlockIndented, _vault.Read(BookPath));
+        AssertSameBesidesNewIds(TextBlockIndented, _vault.Read(BookPath));
         Assert.Equal(Text("UndoStructure"), State.Session!.Undo.NextDescription);
         Assert.Equal(ElementKind.Detail, State.Cursor!.Kind);
         Assert.Equal(KeyOf("Zweiter Text"), State.Cursor.Key);
@@ -115,14 +116,14 @@ public class IndentButtonsTests : UiTestContext
         // A detail of level 1 becomes a text block of its own after its text block.
         await MoveToAsync(cut, "Punkt A");
         await ClickAsync(cut, ".ne-sec-outdent-any");
-        Assert.Equal(DetailOutdented, _vault.Read(BookPath));
+        AssertSameBesidesNewIds(DetailOutdented, _vault.Read(BookPath));
         Assert.Equal(ElementKind.TextBlock, State.Cursor!.Kind);
         UndoAndCheck(before);
 
         // A heading one level higher takes along what followed it in its section (here nothing): it goes after "# Eins".
         await MoveToAsync(cut, "## Eins-A");
         await ClickAsync(cut, ".ne-sec-outdent-any");
-        Assert.Equal(
+        AssertSameBesidesNewIds(
             BookText.Replace("\t- ## Eins-A\n\t\t- Text A\n", "").Replace("- # Zwei\n", "- # Eins-A\n\t- Text A\n- # Zwei\n"),
             _vault.Read(BookPath));
         Assert.Equal(KeyOf("# Eins-A"), State.Cursor!.Key);
@@ -131,7 +132,7 @@ public class IndentButtonsTests : UiTestContext
         // A heading one level deeper goes under the previous heading of its level, with its sub-headings.
         await MoveToAsync(cut, "# Zwei");
         await ClickAsync(cut, ".ne-sec-indent-any");
-        Assert.Equal(BookText.Replace("- # Zwei\n\t- ## Zwei-A\n", "\t- ## Zwei\n\t\t- ### Zwei-A\n"), _vault.Read(BookPath));
+        AssertSameBesidesNewIds(BookText.Replace("- # Zwei\n\t- ## Zwei-A\n", "\t- ## Zwei\n\t\t- ### Zwei-A\n"), _vault.Read(BookPath));
         UndoAndCheck(before);
 
         // None of these went to the editor.
@@ -238,7 +239,7 @@ public class IndentButtonsTests : UiTestContext
 
         await cut.InvokeAsync(() => Editor.Callbacks!.OnSectionCommand(SectionCommand.IndentText));
 
-        Assert.Equal(TextBlockIndented, _vault.Read(BookPath));
+        AssertSameBesidesNewIds(TextBlockIndented, _vault.Read(BookPath));
         Assert.Equal(KeyOf("Zweiter Text"), Editor.Reveals[^1]);
         Assert.Equal(Text("UndoStructure"), State.Session!.Undo.NextDescription);
         UndoAndCheck(before);
@@ -253,7 +254,7 @@ public class IndentButtonsTests : UiTestContext
 
         await cut.InvokeAsync(() => Editor.Callbacks!.OnSectionCommand(SectionCommand.OutdentDetail));
 
-        Assert.Equal(DetailOutdented, _vault.Read(BookPath));
+        AssertSameBesidesNewIds(DetailOutdented, _vault.Read(BookPath));
         Assert.Equal(KeyOf("Punkt A"), Editor.Reveals[^1]);
         Assert.Equal(KeyOf("Punkt A"), Book.FindTextBlock(KeyOf("Punkt A"))!.Key);
         Assert.Empty(Editor.DepthShifts);
@@ -318,7 +319,7 @@ public class IndentButtonsTests : UiTestContext
         await cut.InvokeAsync(() => Editor.Callbacks!.OnSectionCommand(SectionCommand.OutdentDetail));
 
         // The typed text is saved and the detail it was typed in became a text block of its own, taking its later siblings.
-        Assert.Equal(DetailOutdented.Replace("Punkt A", "Punkt A, neu"), _vault.Read(BookPath));
+        AssertSameBesidesNewIds(DetailOutdented.Replace("Punkt A", "Punkt A, neu"), _vault.Read(BookPath));
         Assert.Empty(Editor.DepthShifts);
         Assert.Empty(cut.FindAll(".ne-editor-error"));
     }

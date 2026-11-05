@@ -268,7 +268,7 @@ public class RangeCommandTests : UiTestContext
 
         await ClickAsync(cut, ".ne-sec-merge");
 
-        Assert.Equal(MergedBook, _vault.Read(BookPath));
+        AssertSameBesidesNewIds(MergedBook, _vault.Read(BookPath));
         AssertChangedLines(
             BookText, MergedBook,
             removed: [$"\t  source:: (({NoteA}))", "\t- Zweiter Text", $"\t  id:: {ZweiterId}", $"\t  source:: (({NoteB}))", "\t\t- Unter Zwei"],
@@ -380,7 +380,7 @@ public class RangeCommandTests : UiTestContext
 
         Assert.Null(await ManuscriptCommands.RunAsync(State, SectionCommand.Merge, "x", NullLogger.Instance));
 
-        Assert.Equal(
+        AssertSameBesidesNewIds(
             book.Replace("\t- Mit Details\n", "\t- Mit Details\n\t  updated:: " + Stamp + "\n").Replace("\t\t\t- Tiefer\n", "\n\t\t  Tiefer\n"),
             vault.Read(BookPath));
         Assert.Equal(detail, State.Cursor!.Key);
@@ -499,12 +499,12 @@ public class RangeCommandTests : UiTestContext
         var session = State.Session!;
         await MoveToAsync(cut, "# Eins");
         await ClickAsync(cut, ".ne-sec-merge");
-        Assert.Equal(MergedBook, _vault.Read(BookPath));
+        AssertSameBesidesNewIds(MergedBook, _vault.Read(BookPath));
         header.WaitForAssertion(() => Assert.Equal("Zusammenfügen", header.Find(".ne-undo").GetAttribute("title")));
 
         await header.InvokeAsync(() => header.Find(".ne-undo").Click());
 
-        Assert.Equal(BookText, _vault.Read(BookPath));
+        AssertSameBesidesNewIds(BookText, _vault.Read(BookPath));
         Assert.Equal(NotesText, _vault.Read(NotesPath));
         header.WaitForAssertion(() => Assert.Empty(header.FindAll(".ne-undo-error")));
         Assert.False(session.Undo.CanUndo);

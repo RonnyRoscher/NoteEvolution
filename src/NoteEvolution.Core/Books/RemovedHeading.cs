@@ -51,7 +51,8 @@ public sealed class RemovedHeading
     /// its former parent still is, every moved child (by key) still has that parent, and every other moved block still
     /// on the page still has the parent the command left it with (so all of them are still inside the moved subtrees).
     /// The text block made from the title is gone, or still in the heading's place exactly as the command made it (its
-    /// lines unchanged, no details). Other edits of the page, also of the moved blocks' text, do not matter.
+    /// lines unchanged but for an <c>id::</c> it got when it was saved, no details). Other edits of the page, also of the
+    /// moved blocks' text, do not matter.
     /// </summary>
     public bool CanRestore(Page page)
     {
@@ -70,7 +71,7 @@ public sealed class RemovedHeading
         // the command made it and without details of its own: removing it must not lose anything typed or added there.
         if (_titleKey is { } titleKey
             && Find(page, titleKey) is { } title
-            && (title.Parent != parent || title.Children.Count > 0 || !title.Lines.SequenceEqual(_titleLines)))
+            && (title.Parent != parent || title.Children.Count > 0 || !WithoutId(title.Lines).SequenceEqual(WithoutId(_titleLines))))
         {
             return false;
         }
@@ -142,6 +143,9 @@ public sealed class RemovedHeading
     }
 
     private static Block? Find(Page page, Guid key) => page.AllBlocks().FirstOrDefault(block => block.Key == key);
+
+    private static IEnumerable<RawLine> WithoutId(IEnumerable<RawLine> lines) => lines.Where(line =>
+        !string.Equals(LogseqSyntax.TryParseProperty(line.Text)?.Key, "id", StringComparison.OrdinalIgnoreCase));
 
     /// <summary>The block and all blocks below it, in file order.</summary>
     private static IEnumerable<Block> Subtree(Block block) => block.Children.SelectMany(Subtree).Prepend(block);

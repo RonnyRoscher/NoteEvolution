@@ -1,0 +1,142 @@
+@using System.Globalization
+@using NoteEvolution.UI.History
+@inject AppState State
+@inject IStringLocalizer<Strings> L
+@inject TimeProvider Time
+@inject ILogger<HistoryDialog> Logger
+
+@* „Historie“ of a text block (block history spec 6): the versions on the left, newest first; on the right the chosen one
+   compared word by word with the block as it is now (or, for a deleted block, as it was last stored). Restoring replaces
+   the block's text and sub-points as one edit. Viewing stays possible while the book is locked. *@
+<Modal Title="@L["HistoryDialogTitle"]" CssClass="ne-history" OnClose="OnClose">
+<ChildContent>
+    @if (_error is not null)
+    {
+        <p class="ne-dialog-error" role="alert">@_error</p>
+    }
+    <div class="ne-history-body">
+        <ul class="ne-history-versions">
+            @foreach (var version in _versions)
+            {
+                var chosen = version.Id == _selected?.Id;
+                <li>
+                    <button type="button" class="@(chosen ? "ne-history-version ne-history-selected" : "ne-history-version")"
+                            aria-pressed="@(chosen ? "true" : "false")" @onclick="() => Select(version)">
+                        <span class="ne-history-when">@When(version.At)</span>
+                        <span class="ne-history-reason">@L[ReasonKey(version.Reason)]</span>
+                    </button>
+                </li>
+            }
+        </ul>
+        <div class="ne-history-compare">
+            @if (_selected is not null)
+            {
+                @foreach (var part in _parts)
+                {
+                    <span class="@PartClass(part.Kind)">@part.Text</span>
+                }
+            }
+        </div>
+    </div>
+</ChildContent>
+<Footer>
+    @if (Deleted is null)
+    {
+        var blocked = ManuscriptCommands.RestoreBlocked(State);
+        var can = _selected is not null && !_busy && ManuscriptCommands.CanRestore(State) && _current is not null;
+        <button type="button" class="ne-history-restore" title="@(blocked is null ? null : L[blocked].Value)" disabled="@(!can)"
+                @onclick="RestoreAsync">@L["HistoryRestore"]</button>
+    }
+    <button type="button" class="ne-history-close" @onclick="OnClose">@L["HistoryClose"]</button>
+</Footer>
+</Modal>
+
+@code {
+    private IReadOnlyList<HistoryVersion> _versions = [];
+
+    private HistoryVersion? _selected;
+
+    /// <summary>The block as it is now (or the stand of the deleted block); <c>null</c> if it is not in the book.</summary>
+    private BlockStand? _current;
+
+    private IReadOnlyList<DiffPart> _parts = [];
+
+    private string? _error;
+
+    private bool _busy;
+
+    /// <summary>The <c>id::</c> of the block whose versions are shown.</summary>
+    [Parameter, EditorRequired] public Guid BlockId { get; set; }
+
+    /// <summary>The block was deleted: its last stand is what the versions are compared with, and it cannot be restored here.</summary>
+    [Parameter] public DeletedBlock? Deleted { get; set; }
+
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    protected override void OnInitialized()
+    {
+        try
+        {
+            _versions = State.Session?.History?.Versions(BlockId) ?? [];
+        }
+        catch (Exception ex)
+        {
+            // A broken database only gives a log entry and a hint (spec 2); a bad row must not take the window down.
+            Logger.LogError(ex, "Reading the versions of the block {Id} failed", BlockId);
+            _error = L["HistoryReadFailed"];
+        }
+
+        _current = Deleted?.Stand ?? (State.CurrentBook?.FindTextBlockById(BlockId) is { } text ? BlockStand.Of(text) : null);
+        Select(_versions.FirstOrDefault());
+    }
+
+    private void Select(HistoryVersion? version)
+    {
+        _selected = version;
+        _parts = version is null ? [] : WordDiff.Compare(Compare(version.Stand), _current is null ? "" : Compare(_current));
+    }
+
+    /// <summary>The text of a stand as compared: the text, then the sub-points one to a line, indented two spaces per depth.</summary>
+    private static string Compare(BlockStand stand) =>
+        string.Join('\n', stand.Paragraphs.Select(p => new string(' ', 2 * p.Depth) + p.Text).Prepend(stand.Text));
+
+    private async Task RestoreAsync()
+    {
+        if (_selected is null)
+        {
+            return;
+        }
+
+        _busy = true;
+        _error = null;
+        try
+        {
+            var message = await ManuscriptCommands.RestoreVersionAsync(State, BlockId, _selected, L["UndoRestore"], Logger);
+            if (message is { IsError: true })
+            {
+                _error = L[message.Key];
+                return;
+            }
+
+            await OnClose.InvokeAsync();
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    /// <summary>Date and time of a version in the computer's time zone.</summary>
+    private string When(DateTimeOffset at) =>
+        TimeZoneInfo.ConvertTime(at, Time.LocalTimeZone).ToString("g", CultureInfo.CurrentCulture);
+
+    /// <summary>The resource key of the German text of a reason.</summary>
+    private static string ReasonKey(HistoryReason reason) => "HistoryReason" + reason;
+
+    private static string PartClass(DiffKind kind) => kind switch
+    {
+        DiffKind.Removed => "ne-history-removed",
+        DiffKind.Added => "ne-history-added",
+        _ => "ne-history-same",
+    };
+}

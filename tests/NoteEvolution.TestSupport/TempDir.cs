@@ -2,10 +2,19 @@ using System.Text;
 
 namespace NoteEvolution.TestSupport;
 
-/// <summary>A unique temporary directory that is deleted recursively on dispose.</summary>
+/// <summary>
+/// A unique temporary directory that is deleted recursively on dispose. A session still open holds its database (a
+/// test's context closes the session after the test's vault is disposed); such a folder is deleted by a later dispose,
+/// or at the end of the run.
+/// </summary>
 public sealed class TempDir : IDisposable
 {
     private static readonly UTF8Encoding Utf8NoBom = new(false);
+
+    /// <summary>The folders that could not be deleted yet.</summary>
+    private static readonly List<string> Left = [];
+
+    static TempDir() => AppDomain.CurrentDomain.ProcessExit += (_, _) => DeleteLeft();
 
     public TempDir()
     {
@@ -26,9 +35,38 @@ public sealed class TempDir : IDisposable
 
     public void Dispose()
     {
-        if (Directory.Exists(Path))
+        DeleteLeft();
+        if (Directory.Exists(Path) && !TryDelete(Path))
         {
-            Directory.Delete(Path, recursive: true);
+            lock (Left)
+            {
+                Left.Add(Path);
+            }
+        }
+    }
+
+    private static void DeleteLeft()
+    {
+        lock (Left)
+        {
+            Left.RemoveAll(TryDelete);
+        }
+    }
+
+    private static bool TryDelete(string path)
+    {
+        try
+        {
+            Directory.Delete(path, recursive: true);
+            return true;
+        }
+        catch (DirectoryNotFoundException)
+        {
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return false;
         }
     }
 }

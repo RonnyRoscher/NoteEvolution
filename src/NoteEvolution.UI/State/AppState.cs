@@ -525,6 +525,9 @@ public sealed class AppState
     /// </summary>
     public event Action<AppendixKind, Action<Guid>>? NewAppendixEntryRequested;
 
+    /// <summary>Someone asked for the history of a text block (see <see cref="RequestBlockHistory"/>); the shell shows it.</summary>
+    public event Action<Guid>? BlockHistoryRequested;
+
     /// <summary>
     /// The user chose another book (<see cref="SelectBook"/>, or back/forward into another book); the shell remembers it
     /// for the next start.
@@ -636,6 +639,9 @@ public sealed class AppState
     /// of an insert picker); <paramref name="onCreated"/> gets the entry's block key after its first save.
     /// </summary>
     public void RequestNewAppendixEntry(AppendixKind kind, Action<Guid> onCreated) => NewAppendixEntryRequested?.Invoke(kind, onCreated);
+
+    /// <summary>Asks the shell to show the history window of the text block with the key <paramref name="textBlockKey"/>.</summary>
+    public void RequestBlockHistory(Guid textBlockKey) => BlockHistoryRequested?.Invoke(textBlockKey);
 
     /// <summary>
     /// Asks the notes pane to bring the note with the block id <paramref name="noteId"/> (the <c>id::</c> a

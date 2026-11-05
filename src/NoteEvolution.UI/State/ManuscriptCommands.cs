@@ -5,6 +5,7 @@ using NoteEvolution.Core.Links;
 using NoteEvolution.Core.Model;
 using NoteEvolution.Core.Storage;
 using NoteEvolution.UI.Editor;
+using NoteEvolution.UI.History;
 
 namespace NoteEvolution.UI.State;
 
@@ -557,6 +558,220 @@ public static class ManuscriptCommands
         }
     }
 
+    /// <summary>
+    /// Whether the change history may restore into the current book now: it is writable and no conflict is open for it
+    /// (R26).
+    /// </summary>
+    public static bool CanRestore(AppState state) => RestoreBlocked(state) is null && state.Session is not null && state.CurrentBook is not null;
+
+    /// <summary>Why the history cannot restore (for the tooltip): the resource key of the reason; <c>null</c> if it can, or without a book.</summary>
+    public static string? RestoreBlocked(AppState state) =>
+        state is not { Session: { } session, CurrentBook: { } book } ? null
+        : book.Page.IsReadOnly ? "EditorReadOnly"
+        : session.HasOpenConflict(book.Page.FilePath) ? "EditorConflict"
+        : null;
+
+    /// <summary>
+    /// Replaces the text and the sub-points of the text block <paramref name="blockId"/> (its <c>id::</c>) by the
+    /// <paramref name="version"/> of the change history (spec 6), in the same order as <see cref="NormalizeOutlineAsync"/>:
+    /// the editor saves its text first, and text it could not save refuses the command; a read-only book or an open
+    /// conflict refuses it too, as does one for the page of a note that is a source of a linked sub-point. The current stand
+    /// is stored as a version first (<see cref="BlockHistoryTracker.SaveBeforeRestore"/>). Status, sources and properties of
+    /// the block stay (<see cref="ManuscriptEditor.RestoreText"/>). The page is saved with one <see cref="StructureUndo"/>
+    /// (<paramref name="undoDescription"/>) that also puts back the usage of a linked sub-point that went
+    /// (<see cref="RestoreUndo"/>). A version with the text the block has already changes nothing.
+    /// </summary>
+    /// <returns>The message to show, or <c>null</c> if the version was restored (or nothing changed) without remark.</returns>
+    public static async Task<AdoptMessage?> RestoreVersionAsync(
+        AppState state, Guid blockId, HistoryVersion version, string undoDescription, ILogger logger)
+    {
+        Guid? reveal = null;
+        try
+        {
+            var (message, session, book) = await PrepareAsync(state, logger);
+            if (session is null || book is null)
+            {
+                return message;
+            }
+
+            if (book.FindTextBlockById(blockId) is not { } text)
+            {
+                return new AdoptMessage("SectionCommandFailed", true);
+            }
+
+            if (BlockStand.Of(text).SameText(version.Stand))
+            {
+                return null;
+            }
+
+            var notePages = NotePagesOf(session, text.Block.Children.SelectMany(SourceValue.LinkedBlocksIn).SelectMany(linked => linked.Sources));
+            if (notePages.Any(session.HasOpenConflict))
+            {
+                return new AdoptMessage("EditorConflict", true);
+            }
+
+            session.HistoryTracker.SaveBeforeRestore(blockId, book.LinkName);
+            IReadOnlyList<SyncEffect> effects = [];
+            (message, reveal) = RunStatus(session, book, () =>
+            {
+                var result = ManuscriptEditor.RestoreText(
+                    book, text.Key, version.Stand.Text, [.. version.Stand.Paragraphs.Select(p => (p.Text, p.Depth, p.Status))],
+                    session.Vault, session.Clock.Now);
+                effects = result.Effects;
+                return text.Key;
+            }, undoDescription, logger, undo => new RestoreUndo(undo, session, book.LinkName, effects));
+            if (message is null)
+            {
+                ApplyNoteEffects(state, session, book, effects, notePages, logger);
+            }
+
+            return message;
+        }
+        finally
+        {
+            // On success the book changed; after a failure the vault holds the page as it is on disk again.
+            state.RefreshBook();
+            if (reveal is { } key)
+            {
+                state.RevealElement(key);
+            }
+
+            state.Notify();
+        }
+    }
+
+    /// <summary>
+    /// Puts a deleted text block of the change history back (spec 5), in the same order as <see cref="NormalizeOutlineAsync"/>
+    /// (and refused in the same cases): behind its former predecessor (by its <c>id::</c>, else by its text), else at the
+    /// end of its former section, else at the end of the book, before the appendix
+    /// (<see cref="ManuscriptEditor.RestoreTextBlock"/>). It keeps its <c>id::</c>, so its history goes on and it leaves
+    /// the list of deleted blocks. Its sources and those of its sub-points come back as far as the notes still exist, and
+    /// those notes gain the usage again. The page is saved with one <see cref="StructureUndo"/>
+    /// (<paramref name="undoDescription"/>) that also takes the added usages back (<see cref="RestoreUndo"/>). A block of another book than the current
+    /// one is refused.
+    /// </summary>
+    /// <returns>The message to show, or <c>null</c> if the block was restored without remark.</returns>
+    public static async Task<AdoptMessage?> RestoreDeletedAsync(
+        AppState state, DeletedBlock deleted, string undoDescription, ILogger logger)
+    {
+        Guid? reveal = null;
+        try
+        {
+            var (message, session, book) = await PrepareAsync(state, logger);
+            if (session is null || book is null)
+            {
+                return message;
+            }
+
+            if (!string.Equals(book.LinkName, deleted.Book, StringComparison.OrdinalIgnoreCase)
+                || book.Page.AllBlocks().Any(block => block.Id == deleted.BlockId))
+            {
+                return new AdoptMessage("SectionCommandFailed", true);
+            }
+
+            var sources = LivingNotes(session, deleted.Stand.Sources);
+            var paragraphs = RestoredParagraphs(session, deleted);
+            List<BlockSplit> usages =
+            [
+                .. paragraphs.Where(p => p.Id is not null).Select(p => new BlockSplit(p.Id!.Value, p.Sources ?? []))
+                    .Prepend(new BlockSplit(deleted.BlockId, sources))
+                    .Where(usage => usage.Sources.Count > 0),
+            ];
+            var notePages = NotePagesOf(session, usages.SelectMany(usage => usage.Sources));
+            if (notePages.Any(session.HasOpenConflict))
+            {
+                return new AdoptMessage("EditorConflict", true);
+            }
+
+            (message, reveal) = RunStatus(session, book, () => ManuscriptEditor.RestoreTextBlock(
+                book, deleted.BlockId, deleted.AfterBlockId, deleted.SectionPath, deleted.Stand.Text,
+                paragraphs, deleted.Stand.Status, sources, session.Clock.Now, deleted.AfterText), undoDescription, logger,
+                undo => new RestoreUndo(undo, session, book.LinkName, usages));
+            if (message is null)
+            {
+                ApplyNoteEffects(state, session, book, usages, notePages, logger);
+            }
+
+            return message;
+        }
+        finally
+        {
+            // On success the book changed; after a failure the vault holds the page as it is on disk again.
+            state.RefreshBook();
+            if (reveal is { } key)
+            {
+                state.RevealElement(key);
+            }
+
+            state.Notify();
+        }
+    }
+
+    /// <summary>The distinct <paramref name="sources"/> that still exist in the vault.</summary>
+    private static List<Guid> LivingNotes(VaultSession session, IEnumerable<Guid> sources) =>
+        [.. sources.Distinct().Where(id => session.Vault.FindBlockById(id) is not null)];
+
+    /// <summary>
+    /// The sub-points of a deleted block for putting it back. A sub-point keeps its <c>id::</c> unless a block in the vault
+    /// has that id by now; without an id it can have no sources, since a usage names the block by its id.
+    /// </summary>
+    private static List<RestoredParagraph> RestoredParagraphs(VaultSession session, DeletedBlock deleted)
+    {
+        var used = new HashSet<Guid> { deleted.BlockId };
+        var result = new List<RestoredParagraph>();
+        foreach (var point in deleted.Stand.Paragraphs)
+        {
+            var free = point.Id is { } id && used.Add(id) && session.Vault.FindBlockById(id) is null;
+            result.Add(free
+                ? new RestoredParagraph(point.Text, point.Depth, point.Status, point.Id, LivingNotes(session, point.Sources ?? []))
+                : new RestoredParagraph(point.Text, point.Depth, point.Status));
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Passes the effects of a saved restore to the notes (as <see cref="BookTextSaver"/> does after saving) and updates the
+    /// search index for the notes whose usage changed. A removed sub-point loses its usage without an undo action of the
+    /// link service (it would clash with the <see cref="StructureUndo"/> the restore pushed). The book is saved: a failure
+    /// is logged, the link check repairs the notes.
+    /// </summary>
+    private static void ApplyNoteEffects(
+        AppState state, VaultSession session, Book book, IReadOnlyList<SyncEffect> effects, IReadOnlyList<string> notePages, ILogger logger)
+    {
+        if (effects.Count == 0)
+        {
+            return;
+        }
+
+        try
+        {
+            session.Links.ApplySyncEffects(
+                book, [.. effects.Select(effect => effect is BlockDeleted deleted ? new BlockDeleted(deleted.BookBlockId, deleted.Sources) : effect)]);
+            session.Links.RetryPending();
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Updating the notes after restoring in {Path} failed", book.Page.FilePath);
+        }
+
+        var paths = notePages.Concat(NotePagesOf(session, effects.OfType<BlockSplit>().SelectMany(split => split.Sources))).Distinct();
+        foreach (var path in paths)
+        {
+            try
+            {
+                session.Search.UpdatePage(session.Notes, path);
+            }
+            catch (Exception ex)
+            {
+                // A stale index (an aid, rebuilt on opening) must not hide that the notes were updated.
+                logger.LogWarning(ex, "Updating the search index for {Path} failed", path);
+            }
+        }
+
+        state.NotifyNotesChanged();
+    }
+
     private static async Task<(AdoptMessage? Message, Guid? Reveal)> TryRunAsync(
         AppState state, SectionCommand command, string undoDescription, ILogger logger)
     {
@@ -846,7 +1061,8 @@ public static class ManuscriptCommands
     /// status change).
     /// </returns>
     private static (AdoptMessage? Message, Guid? Reveal) RunStatus(
-        VaultSession session, Book book, Func<Guid?> change, string undoDescription, ILogger logger)
+        VaultSession session, Book book, Func<Guid?> change, string undoDescription, ILogger logger,
+        Func<StructureUndo, IUndoAction>? wrapUndo = null)
     {
         var page = book.Page;
         var before = PageStructureSnapshot.Capture(page);
@@ -867,8 +1083,49 @@ public static class ManuscriptCommands
             return (SaveFailed(session, page, error), null);
         }
 
-        session.Undo.Push(new StructureUndo(undoDescription, session, page.FilePath, before, PageStructureSnapshot.Capture(page)));
+        var undo = new StructureUndo(undoDescription, session, page.FilePath, before, PageStructureSnapshot.Capture(page));
+        session.Undo.Push(wrapUndo is null ? undo : wrapUndo(undo));
         return (null, reveal);
+    }
+
+    /// <summary>
+    /// Takes back a restore of the change history: the page as <see cref="StructureUndo"/> restores it, then the notes'
+    /// usages the restore changed, each the other way round (a usage that was removed comes back, one that was added goes).
+    /// A page that changed after the restore refuses the undo before any note is touched. A session with an open conflict
+    /// does not undo at all (<see cref="VaultSession.TryUndo"/>).
+    /// </summary>
+    private sealed class RestoreUndo(
+        StructureUndo page, VaultSession session, string linkName, IReadOnlyList<SyncEffect> effects) : IUndoAction
+    {
+        public string Description => page.Description;
+
+        /// <exception cref="InvalidOperationException">The page cannot be restored, or saving it failed.</exception>
+        public void Undo()
+        {
+            page.Undo();
+            foreach (var effect in effects)
+            {
+                switch (effect)
+                {
+                    case BlockDeleted deleted:
+                        foreach (var note in deleted.Sources.Distinct())
+                        {
+                            session.Links.AddUsage(note, new UsedInEntry(linkName, deleted.BookBlockId));
+                        }
+
+                        break;
+                    case BlockSplit split:
+                        foreach (var note in split.Sources.Distinct())
+                        {
+                            session.Links.RemoveUsage(note, linkName, split.NewBookBlockId);
+                        }
+
+                        break;
+                }
+            }
+
+            session.Links.RetryPending();
+        }
     }
 
     /// <summary>

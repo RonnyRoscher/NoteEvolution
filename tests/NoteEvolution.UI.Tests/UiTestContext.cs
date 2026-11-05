@@ -194,6 +194,21 @@ public abstract class UiTestContext : BunitContext
         return LanguageModel;
     }
 
+    /// <summary>
+    /// <paramref name="file"/> without the <c>id::</c> lines <paramref name="expected"/> does not have: the change history
+    /// gives a text block its id when it first changes, and it stays after an undo.
+    /// </summary>
+    protected static string WithoutNewIds(string file, string expected) =>
+        System.Text.RegularExpressions.Regex.Replace(
+            file,
+            @"^[ \t]*id:: [0-9a-f-]{36}\r?\n",
+            line => expected.Contains(line.Value, StringComparison.Ordinal) ? line.Value : "",
+            System.Text.RegularExpressions.RegexOptions.Multiline);
+
+    /// <summary>Asserts the file's text, leaving out the ids of the change history (<see cref="WithoutNewIds"/>).</summary>
+    protected static void AssertSameBesidesNewIds(string expected, string file) =>
+        Assert.Equal(expected, WithoutNewIds(file, expected));
+
     /// <summary>Puts the editor cursor (as the editor would report it) into the text block with <paramref name="textBlockKey"/>.</summary>
     protected void SetCursorInTextBlock(Guid textBlockKey) =>
         State.Cursor = new CursorInfo(ElementKind.TextBlock, textBlockKey, textBlockKey, 0);

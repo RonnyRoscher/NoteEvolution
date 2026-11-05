@@ -121,7 +121,7 @@ public class SectionBarLevelTests : UiTestContext
         await ClickAsync(cut, 2);
 
         // The sub-point becomes a text block with both dates, the following text block goes under the new heading.
-        Assert.Equal(
+        AssertSameBesidesNewIds(
             "title:: Alpha\ntype:: book\n\n" +
             "- # Eins\n" +
             "\t- ## Erster Text\n" +
@@ -140,7 +140,7 @@ public class SectionBarLevelTests : UiTestContext
         Assert.Empty(cut.FindAll(".ne-editor-error"));
 
         Assert.True(session.TryUndo(out var error), error?.ToString());
-        Assert.Equal(before, File.ReadAllBytes(Path.Combine(_vault.Root, BookPath)));
+        AssertSameBesidesNewIds(System.Text.Encoding.UTF8.GetString(before), _vault.Read(BookPath));
     }
 
     [Fact]
@@ -154,7 +154,7 @@ public class SectionBarLevelTests : UiTestContext
         await ClickAsync(cut, 2);
 
         // The heading follows its text block, which is changed; the following text block goes under the heading.
-        Assert.Equal(
+        AssertSameBesidesNewIds(
             BookText.Replace(
                 "\t- Erster Text\n\t\t- Ein Punkt\n\t- Zweiter Text\n",
                 $"\t- Erster Text\n\t  updated:: {Stamp}\n\t- ## Ein Punkt\n\t\t- Zweiter Text\n"),
@@ -163,7 +163,7 @@ public class SectionBarLevelTests : UiTestContext
         cut.WaitForAssertion(() => Assert.Equal("H2", Pressed(cut)));
 
         Assert.True(session.TryUndo(out var error), error?.ToString());
-        Assert.Equal(before, File.ReadAllBytes(Path.Combine(_vault.Root, BookPath)));
+        AssertSameBesidesNewIds(System.Text.Encoding.UTF8.GetString(before), _vault.Read(BookPath));
     }
 
     [Fact]
@@ -222,7 +222,7 @@ public class SectionBarLevelTests : UiTestContext
         await ClickAsync(cut, 0);
 
         // As „Überschrift entfernen“: the title is a text block, the content moves up into "# Eins".
-        Assert.Equal(
+        AssertSameBesidesNewIds(
             BookText.Replace(
                 "\t- ## Eins-A\n\t\t- Text A\n\t\t- ### Eins-A-i\n",
                 $"\t- Eins-A\n\t  created:: {Stamp}\n\t  updated:: {Stamp}\n\t- Text A\n\t- ## Eins-A-i\n"),
@@ -232,7 +232,7 @@ public class SectionBarLevelTests : UiTestContext
         Assert.Equal(Text("UndoLevel"), session.Undo.NextDescription);
 
         Assert.True(session.TryUndo(out var error), error?.ToString());
-        Assert.Equal(before, File.ReadAllBytes(Path.Combine(_vault.Root, BookPath)));
+        AssertSameBesidesNewIds(System.Text.Encoding.UTF8.GetString(before), _vault.Read(BookPath));
     }
 
     [Fact]

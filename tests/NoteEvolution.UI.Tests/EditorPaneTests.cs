@@ -141,7 +141,7 @@ public class EditorPaneTests : UiTestContext
         await cut.InvokeAsync(() => State.FlushEditor!()); // waits for the autosave's own sync to finish
         var (removed, added) = LineDiff.Changed(Encoding.UTF8.GetBytes(before), Encoding.UTF8.GetBytes(tv.Read(BookPath)));
         Assert.Single(removed);
-        Assert.Equal(2, added.Count); // the text line and the block's new updated:: line
+        Assert.Equal(3, added.Count); // the text line, the block's new updated:: line and its id:: (the change history)
         Assert.Contains("\t- Zweiter Text, geändert\n\t  updated:: " + Stamp + "\n", tv.Read(BookPath));
         Assert.Single(Editor.Documents); // the editor is not reloaded after its own save
         Assert.False(State.CurrentBook!.Page.IsDirty);
@@ -522,7 +522,7 @@ public class EditorPaneTests : UiTestContext
         await ChangeAsync(cut, doc);
         await cut.InvokeAsync(() => State.FlushEditor!());
 
-        Assert.Equal(
+        AssertSameBesidesNewIds(
             "title:: Alpha\ntype:: book\n\n- # Eins\n\t- Vorher\n\t  updated:: " + Stamp + "\n\t\t- Erster Text\n", tv.Read(BookPath));
         Assert.DoesNotContain("used-in::", tv.Read(NotesPath));
         Assert.True(session.Undo.CanUndo);
@@ -542,7 +542,7 @@ public class EditorPaneTests : UiTestContext
 
         cut.WaitForAssertion(() =>
             Assert.Contains(
-                "\t- Zweiter Text, noch nicht gespeichert\n\t  updated:: " + Stamp + "\n- # Zwei\n\t- Dritter Text\n", tv.Read(BookPath)));
+                "\t- Zweiter Text, noch nicht gespeichert\n\t  updated:: " + Stamp + "\n- # Zwei\n\t- Dritter Text\n", WithoutNewIds(tv.Read(BookPath), "")));
         await cut.InvokeAsync(() => State.FlushEditor!());
         Assert.Single(Editor.Documents);
     }

@@ -1134,6 +1134,9 @@
   <data name="UndoConflict" xml:space="preserve">
     <value>Rückgängig ist nicht möglich, solange ein Konflikt offen ist.</value>
   </data>
+  <data name="HistoryProblem" xml:space="preserve">
+    <value>Die Änderungshistorie kann gerade nicht gespeichert werden; das Buch wird weiter normal gespeichert.</value>
+  </data>
   <data name="UndoFailed" xml:space="preserve">
     <value>Die Aktion konnte nicht rückgängig gemacht werden.</value>
   </data>
@@ -1894,6 +1897,9 @@
   <data name="UndoNormalize" xml:space="preserve">
     <value>Gliederung ordnen</value>
   </data>
+  <data name="UndoRestore" xml:space="preserve">
+    <value>Wiederherstellen</value>
+  </data>
   <data name="NoteBarLabel" xml:space="preserve">
     <value>Aktionen für den aktiven Block</value>
   </data>
@@ -1944,5 +1950,56 @@
   </data>
   <data name="NoteDragTitle" xml:space="preserve">
     <value>Ins Buch ziehen</value>
+  </data>
+  <data name="SectionHistory" xml:space="preserve">
+    <value>Historie</value>
+  </data>
+  <data name="SectionHistoryTitle" xml:space="preserve">
+    <value>Frühere Fassungen dieses Blocks ansehen</value>
+  </data>
+  <data name="SectionHistoryNone" xml:space="preserve">
+    <value>Für diesen Block gibt es noch keine Versionen</value>
+  </data>
+  <data name="SectionRemove" xml:space="preserve">
+    <value>Entfernen</value>
+  </data>
+  <data name="SectionRemoveTitle" xml:space="preserve">
+    <value>Diesen Block samt Unterpunkten entfernen</value>
+  </data>
+  <data name="AssistantDeletedBlocks" xml:space="preserve">
+    <value>Gelöschte Blöcke</value>
+  </data>
+  <data name="HistoryReadFailed" xml:space="preserve">
+    <value>Die Änderungshistorie konnte nicht gelesen werden.</value>
+  </data>
+  <data name="HistoryRestore" xml:space="preserve">
+    <value>Wiederherstellen</value>
+  </data>
+  <data name="HistoryClose" xml:space="preserve">
+    <value>Schließen</value>
+  </data>
+  <data name="HistoryReasonFirst" xml:space="preserve">
+    <value>Erste Fassung</value>
+  </data>
+  <data name="HistoryReasonPause" xml:space="preserve">
+    <value>Pause</value>
+  </data>
+  <data name="HistoryReasonBeforeDelete" xml:space="preserve">
+    <value>Vor dem Löschen</value>
+  </data>
+  <data name="HistoryReasonOnClose" xml:space="preserve">
+    <value>Beim Schließen</value>
+  </data>
+  <data name="HistoryReasonOnOpen" xml:space="preserve">
+    <value>Beim Öffnen</value>
+  </data>
+  <data name="HistoryReasonBeforeRestore" xml:space="preserve">
+    <value>Vor dem Wiederherstellen</value>
+  </data>
+  <data name="HistoryDialogTitle" xml:space="preserve">
+    <value>Historie des Blocks</value>
+  </data>
+  <data name="DeletedBlocksEmpty" xml:space="preserve">
+    <value>Keine gelöschten Blöcke in diesem Buch</value>
   </data>
 </root>

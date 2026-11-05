@@ -49,8 +49,11 @@
                     continue;
                 }
 
-                <button type="button" class="@css" disabled="@(Locked || !ManuscriptCommands.CanRun(State, command))"
-                        @onclick="() => OnCommand.InvokeAsync(command)">@L[key]</button>
+                @* On a block the delete command is „Entfernen“ (block history spec 7); a heading keeps „Abschnitt löschen“. *@
+                var removesBlock = command == SectionCommand.Delete && element.Kind != ElementKind.Heading;
+                <button type="button" class="@css" title="@(removesBlock ? L["SectionRemoveTitle"].Value : null)"
+                        disabled="@(Locked || !ManuscriptCommands.CanRun(State, command))"
+                        @onclick="() => OnCommand.InvokeAsync(command)">@L[removesBlock ? "SectionRemove" : key]</button>
                 @if (command == SectionCommand.InsertChild)
                 {
                     @* One step out or in for every kind of element, as Shift+Tab and Tab (Einordnen spec 4); a step it
@@ -62,6 +65,13 @@
                     <button type="button" class="ne-sec-indent-any" title="@L[indentBlocked ?? "SectionIndentTitle"]"
                             disabled="@(Locked || !ManuscriptCommands.CanIndent(State))" @onclick="() => OnIndent.InvokeAsync()">@L["SectionIndent"]</button>
                 }
+            }
+            @* The versions of the text block at the cursor (block history spec 6); viewing them stays possible while the book is locked. *@
+            @if (element.Kind != ElementKind.Heading)
+            {
+                var hasVersions = HistoryBlockKey(book, element) is not null;
+                <button type="button" class="ne-sec-history" title="@L[hasVersions ? "SectionHistoryTitle" : "SectionHistoryNone"]"
+                        disabled="@(!hasVersions)" @onclick="() => RequestHistory(book, element)">@L["SectionHistory"]</button>
             }
             @* The level of the element at the cursor (cross references spec 4): the current one is pressed, a level it
                cannot take is greyed out and names the reason. *@
@@ -399,6 +409,37 @@
             case "Escape":
                 await OnCitationCancel.InvokeAsync();
                 break;
+        }
+    }
+
+    /// <summary>
+    /// The <c>id::</c> of the text block of <paramref name="element"/> (itself, or the block of a detail) if the change
+    /// history has versions of it; <c>null</c> for a block without id, without versions or without a history.
+    /// </summary>
+    private Guid? HistoryBlockKey(Book book, BookElement element)
+    {
+        if (BookElements.TextBlockOf(book, element) is not { Block.Id: { } id })
+        {
+            return null;
+        }
+
+        // The bar renders on every cursor move: a store that fails (or was closed with the vault) only greys the button out.
+        try
+        {
+            return State.Session?.History?.HasVersions(id) == true ? id : null;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>Asks the shell for the history window of the text block of <paramref name="element"/>.</summary>
+    private void RequestHistory(Book book, BookElement element)
+    {
+        if (BookElements.TextBlockOf(book, element) is { } text)
+        {
+            State.RequestBlockHistory(text.Key);
         }
     }
 

@@ -1,8 +1,18 @@
 using NoteEvolution.Core.Format;
+using NoteEvolution.Core.Links;
 using NoteEvolution.Core.Model;
 using NoteEvolution.Core.Text;
+using NoteEvolution.Core.Vaults;
 
 namespace NoteEvolution.Core.Books;
+
+/// <summary>A sub-point of a text block put back by <see cref="ManuscriptEditor.RestoreTextBlock"/>.</summary>
+/// <param name="Text">The text as <see cref="Paragraph.Text"/> holds it.</param>
+/// <param name="Depth">As <see cref="Paragraph.Depth"/>.</param>
+/// <param name="Status">As <see cref="Paragraph.Status"/>.</param>
+/// <param name="Id">Its <c>id::</c>; the caller passes only an id no other block has.</param>
+/// <param name="Sources">Its sources to write; the caller passes only notes that still exist, and only with an <paramref name="Id"/>.</param>
+public sealed record RestoredParagraph(string Text, int Depth, BlockStatus Status, Guid? Id = null, IReadOnlyList<Guid>? Sources = null);
 
 /// <summary>
 /// Structure commands of the manuscript (new section after / below, indent, outdent, remove a heading, delete a
@@ -1305,6 +1315,210 @@ public static partial class ManuscriptEditor
     }
 
     private static string EmptyHeading(int level) => HeadingText.WithTitle("", level, "");
+
+    /// <summary>Separates the section titles in the path <see cref="RestoreTextBlock"/> takes.</summary>
+    public const string SectionPathSeparator = " › ";
+
+    /// <summary>
+    /// Replaces the text and the sub-points of a text block by an earlier stand (the change history). Status, sources and
+    /// the other properties of the block stay, and so does the status of every sub-point that is kept. A sub-point keeps
+    /// its key when its text and depth are still there; otherwise it takes, in order, the next unused old key of the same
+    /// depth, and only when there is none a new one. A new sub-point gets the status of the stand.
+    /// </summary>
+    /// <param name="text">The text as <see cref="TextBlock.Text"/> holds it.</param>
+    /// <param name="paragraphs">The sub-points as <see cref="Paragraph.Text"/>, <see cref="Paragraph.Depth"/> and <see cref="Paragraph.Status"/> hold them.</param>
+    /// <returns>
+    /// As <see cref="BookSync.Apply"/>; the caller saves the page and passes the effects (a removed linked sub-point gives
+    /// a <see cref="BlockDeleted"/>) to the link service. The book is stale afterwards.
+    /// </returns>
+    /// <exception cref="ArgumentException">The book has no such text block, or a text would change the block tree; nothing is changed.</exception>
+    public static SyncResult RestoreText(
+        Book book, Guid textBlockKey, string text, IReadOnlyList<(string Text, int Depth, BlockStatus Status)> paragraphs,
+        IVault vault, DateTimeOffset now)
+    {
+        var textBlock = book.FindTextBlock(textBlockKey)
+                        ?? throw new ArgumentException("No text block has this key.", nameof(textBlockKey));
+        var snapshot = BookSnapshot.Create(book, vault, textBlock.Section.Key, includeSubsections: false);
+        var current = snapshot.Nodes.OfType<SnapshotTextBlock>().Single(node => node.Key == textBlockKey);
+        var restored = KeepKeys(current.Paragraphs, paragraphs);
+        var edited = snapshot with
+        {
+            Nodes =
+            [
+                .. snapshot.Nodes.Select(node => node.Key == textBlockKey
+                    ? current with { Text = BlockTextEscape.Unescape(text), Paragraphs = restored }
+                    : node),
+            ],
+        };
+
+        var result = BookSync.Apply(book, edited, vault, now);
+
+        // The sync never sets a status; a sub-point the stand brings back new has the one of the stand.
+        var known = current.Paragraphs.Select(p => p.Key).ToHashSet();
+        var changed = result.Changed;
+        foreach (var paragraph in restored.Where(p => !known.Contains(p.Key) && BlockStatuses.FileValue(p.Status) is not null))
+        {
+            var block = book.Page.AllBlocks().First(b => b.Key == paragraph.Key);
+            try
+            {
+                block.SetProperty(BlockStatuses.Key, BlockStatuses.FileValue(paragraph.Status)!);
+                changed = true;
+            }
+            catch (InvalidOperationException)
+            {
+                // A block with an open code fence has no place for properties: it stays a draft.
+            }
+        }
+
+        return new SyncResult(changed, result.Effects);
+    }
+
+    /// <summary>The sub-points of <paramref name="wanted"/> as snapshot paragraphs, with old keys where they fit.</summary>
+    private static List<SnapshotParagraph> KeepKeys(
+        IReadOnlyList<SnapshotParagraph> old, IReadOnlyList<(string Text, int Depth, BlockStatus Status)> wanted)
+    {
+        var used = new HashSet<Guid>();
+        var kept = new SnapshotParagraph?[wanted.Count];
+        for (var i = 0; i < wanted.Count; i++)
+        {
+            var text = BlockTextEscape.Unescape(wanted[i].Text).Trim();
+            var same = old.FirstOrDefault(o => !used.Contains(o.Key) && o.Depth == wanted[i].Depth && o.Text.Trim() == text);
+            if (same is not null)
+            {
+                used.Add(same.Key);
+                kept[i] = same;
+            }
+        }
+
+        for (var i = 0; i < wanted.Count; i++)
+        {
+            if (kept[i] is not null)
+            {
+                continue;
+            }
+
+            var (text, depth, status) = wanted[i];
+            var free = old.FirstOrDefault(o => !used.Contains(o.Key) && o.Depth == depth);
+            if (free is not null)
+            {
+                used.Add(free.Key);
+            }
+
+            kept[i] = free is not null
+                ? free with { Text = BlockTextEscape.Unescape(text) }
+                : new SnapshotParagraph(Guid.NewGuid(), BlockTextEscape.Unescape(text), depth, IsNote: false, status);
+        }
+
+        return [.. kept.Select(p => p!)];
+    }
+
+    /// <summary>
+    /// Puts a deleted text block back (the change history) with its <c>id::</c>, its status and its sources: directly
+    /// behind the text block with <paramref name="afterBlockId"/>, else behind the first text block of the section with
+    /// the title path <paramref name="sectionPath"/> (<see cref="SectionPathSeparator"/>) whose text starts with
+    /// <paramref name="afterText"/>, else at the end of that section (after its sub-sections), else at the end of the
+    /// book, always before the appendix. The block gets both dates.
+    /// </summary>
+    /// <param name="text">The text as <see cref="TextBlock.Text"/> holds it.</param>
+    /// <param name="paragraphs">The sub-points, with their ids and sources.</param>
+    /// <param name="sources">The sources to write; the caller passes only notes that still exist.</param>
+    /// <param name="afterText">The start of the text of the block it stood behind, when that block may have no <c>id::</c>.</param>
+    /// <returns>The <see cref="Block.Key"/> of the new block.</returns>
+    /// <exception cref="ArgumentException">A text would change the block tree, or a block with <paramref name="blockId"/> is in the book already; nothing is changed.</exception>
+    public static Guid RestoreTextBlock(
+        Book book, Guid blockId, Guid? afterBlockId, string sectionPath, string text,
+        IReadOnlyList<RestoredParagraph> paragraphs, BlockStatus status, IReadOnlyList<Guid> sources,
+        DateTimeOffset now, string? afterText = null)
+    {
+        var page = book.Page;
+        if (page.AllBlocks().Any(b => b.Id == blockId))
+        {
+            throw new ArgumentException("A block with this id is in the book already.", nameof(blockId));
+        }
+
+        Block.ValidateContent(text);
+        foreach (var paragraph in paragraphs)
+        {
+            Block.ValidateContent(paragraph.Text);
+        }
+
+        var block = Block.CreateDetached(text, RestoredProperties(blockId, status, sources));
+        BlockDates.StampNew(block, now);
+        var (parent, index) = RestorePlace(book, afterBlockId, afterText, sectionPath);
+        page.InsertBlock(parent, index, block);
+
+        var path = new List<Block> { block };
+        foreach (var paragraph in paragraphs)
+        {
+            var level = Math.Clamp(paragraph.Depth, 1, path.Count);
+            path.RemoveRange(level, path.Count - level);
+            var detail = Block.CreateDetached(paragraph.Text, RestoredProperties(paragraph.Id, paragraph.Status, paragraph.Sources ?? []));
+            page.InsertBlock(path[level - 1], path[level - 1].Children.Count, detail);
+            path.Add(detail);
+        }
+
+        return block.Key;
+    }
+
+    /// <summary>The property lines of a block put back: <c>id::</c>, <c>status::</c> and <c>source::</c>, as far as it has them.</summary>
+    private static List<BlockProperty> RestoredProperties(Guid? id, BlockStatus status, IReadOnlyList<Guid> sources)
+    {
+        List<BlockProperty> properties = [];
+        if (id is { } own)
+        {
+            properties.Add(new BlockProperty("id", own.ToString("D")));
+        }
+
+        if (BlockStatuses.FileValue(status) is { } fileStatus)
+        {
+            properties.Add(new BlockProperty(BlockStatuses.Key, fileStatus));
+        }
+
+        if (sources.Count > 0)
+        {
+            properties.Add(new BlockProperty("source", SourceValue.Format(sources)));
+        }
+
+        return properties;
+    }
+
+    /// <summary>The parent and the index for a restored text block (see <see cref="RestoreTextBlock"/>).</summary>
+    private static (Block? Parent, int Index) RestorePlace(Book book, Guid? afterBlockId, string? afterText, string sectionPath)
+    {
+        var page = book.Page;
+        if (afterBlockId is { } after && book.FindTextBlockById(after) is { } predecessor && !book.IsInAppendix(predecessor.Key))
+        {
+            return (predecessor.Block.Parent, IndexOf(page, predecessor.Block) + 1);
+        }
+
+        var section = sectionPath.Length > 0 ? SectionsOf(book.Root, "").FirstOrDefault(s => s.Path == sectionPath).Node : book.Root;
+        if (!string.IsNullOrEmpty(afterText)
+            && section?.TextBlocks.FirstOrDefault(block => block.Text.StartsWith(afterText, StringComparison.Ordinal)) is { } sameText)
+        {
+            return (sameText.Block.Parent, IndexOf(page, sameText.Block) + 1);
+        }
+
+        if (section?.Block is { } heading)
+        {
+            return (heading, heading.Children.Count);
+        }
+
+        return (null, book.BeforeAppendix(page.Roots.Count));
+    }
+
+    /// <summary>Every section below <paramref name="node"/> (not the appendix) with its title path, depth-first in file order.</summary>
+    private static IEnumerable<(OutlineNode Node, string Path)> SectionsOf(OutlineNode node, string path)
+    {
+        foreach (var child in node.Children.Where(child => child.AppendixKind == AppendixKind.None))
+        {
+            var childPath = path.Length == 0 ? child.Title : path + SectionPathSeparator + child.Title;
+            yield return (child, childPath);
+            foreach (var deeper in SectionsOf(child, childPath))
+            {
+                yield return deeper;
+            }
+        }
+    }
 
     /// <summary>The index of <paramref name="block"/> among its siblings (for a root block: among the page's roots).</summary>
     private static int IndexOf(Page page, Block block)
