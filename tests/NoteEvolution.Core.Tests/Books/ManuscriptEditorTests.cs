@@ -308,6 +308,32 @@ public class ManuscriptEditorTests
     }
 
     [Fact]
+    public void RemoveHeading_TitleBlockGotAnIdWhenSaved_CanStillBeRestored_ButNotAfterAnEdit()
+    {
+        var book = Load(Text);
+        var removed = ManuscriptEditor.RemoveHeading(book, KeyOf(book, "## Zwei-A"));
+
+        BlockOf(book, "Zwei-A").EnsureId();
+        Assert.True(removed.CanRestore(book.Page));
+
+        BlockOf(book, "Zwei-A").SetContent("Getippt");
+        Assert.False(removed.CanRestore(book.Page));
+    }
+
+    [Fact]
+    public void StructureSnapshot_Matches_IgnoresIdLines_NotOtherChanges()
+    {
+        var book = Load(Text);
+        var snapshot = PageStructureSnapshot.Capture(book.Page);
+
+        BlockOf(book, "Text zwei").EnsureId();
+        Assert.True(snapshot.Matches(book.Page));
+
+        BlockOf(book, "Text zwei").SetContent("Getippt");
+        Assert.False(snapshot.Matches(book.Page));
+    }
+
+    [Fact]
     public void RemoveHeading_WithoutContent_TitleBecomesTheRevealedTextBlock()
     {
         var book = Load(Text);

@@ -1134,6 +1134,9 @@
   <data name="UndoConflict" xml:space="preserve">
     <value>Rückgängig ist nicht möglich, solange ein Konflikt offen ist.</value>
   </data>
+  <data name="HistoryProblem" xml:space="preserve">
+    <value>Die Änderungshistorie kann gerade nicht gespeichert werden; das Buch wird weiter normal gespeichert.</value>
+  </data>
   <data name="UndoFailed" xml:space="preserve">
     <value>Die Aktion konnte nicht rückgängig gemacht werden.</value>
   </data>

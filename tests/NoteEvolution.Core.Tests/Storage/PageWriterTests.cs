@@ -43,6 +43,32 @@ public class PageWriterTests
     }
 
     [Fact]
+    public void Save_RaisesSaving_BeforeWriting_ChangesGoIntoTheFile()
+    {
+        using var s = Create();
+        Guid? id = null;
+        s.Writer.Saving += page => id = page.Roots[0].EnsureId();
+
+        s.Page.Roots[0].SetContent("geändert");
+        s.Writer.Save(s.Page);
+
+        Assert.Equal($"- geändert\n  id:: {id:D}\n- zwei\n", s.Tv.Read(PageFile));
+        Assert.False(s.Page.IsDirty);
+    }
+
+    [Fact]
+    public void Save_ReadOnly_DoesNotRaiseSaving()
+    {
+        using var s = Create("- ```\n  offen\n");
+        var raised = false;
+        s.Writer.Saving += _ => raised = true;
+
+        Assert.Throws<ReadOnlyPageException>(() => s.Writer.Save(s.Page));
+
+        Assert.False(raised);
+    }
+
+    [Fact]
     public void Save_ReadOnlyPage_Throws_FileUntouched()
     {
         using var s = Create("- ```\n  offen\n");

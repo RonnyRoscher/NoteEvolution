@@ -407,7 +407,7 @@ public class DialogTests : UiTestContext
         Assert.Equal("Ja", cut.Find(".ne-linkcheck-crossrefs-yes").TextContent);
         cut.Find(".ne-linkcheck-crossrefs-yes").Click();
 
-        Assert.Equal(
+        AssertSameBesidesNewIds(
             "title:: Alpha\ntype:: book\n\n- # Eins\n\t- Siehe dort\n\t- Anderer Text\n", tv.Read("pages/Buch - Alpha.md"));
         Assert.Empty(cut.FindAll(".ne-linkcheck-crossrefs-confirm"));
         cut.WaitForAssertion(() => Assert.Empty(cut.FindAll(".ne-linkcheck-crossref")));

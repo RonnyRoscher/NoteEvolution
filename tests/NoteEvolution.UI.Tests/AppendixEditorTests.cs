@@ -113,7 +113,7 @@ public class AppendixEditorTests : UiTestContext
         await cut.InvokeAsync(() => cut.Find(".ne-ref-query").Input("ab"));
         await cut.InvokeAsync(() => cut.Find(".ne-ref-query").KeyDown("Enter"));
 
-        Assert.Equal(
+        AssertSameBesidesNewIds(
             BookText.Replace("\t- Achtsamkeit ist ein Wort\n", $"\t- Achtsamkeit(({AnnaId})) ist ein Wort\n\t  updated:: {Stamp}\n"),
             vault.Read(BookPath));
         Assert.Equal(L("UndoPersonRef"), session.Undo.NextDescription);
@@ -140,7 +140,7 @@ public class AppendixEditorTests : UiTestContext
         await cut.InvokeAsync(() => cut.Find(".ne-appendix-locator").Input(" S. 12 "));
         await cut.InvokeAsync(() => cut.FindAll(".ne-ref-option")[0].Click());
 
-        Assert.Equal(
+        AssertSameBesidesNewIds(
             BookText.Replace("\t- Noch einmal Achtsamkeit\n", $"\t- Noch{{{{quelle (({SourceId})) S. 12}}}} einmal Achtsamkeit\n\t  updated:: {Stamp}\n"),
             vault.Read(BookPath));
         Assert.Equal(L("UndoSourceRef"), State.Session!.Undo.NextDescription);
@@ -236,7 +236,7 @@ public class AppendixEditorTests : UiTestContext
 
         // One undo takes the reference and the new id back.
         session.Undo.Undo();
-        Assert.Equal(text, vault.Read(BookPath));
+        AssertSameBesidesNewIds(text, vault.Read(BookPath));
 
         // A source without an id works the same way.
         await cut.InvokeAsync(() => State.FlushEditor!());
@@ -354,7 +354,7 @@ public class AppendixEditorTests : UiTestContext
         await cut.InvokeAsync(() => cut.Find(".ne-citation-locator").Input("Min. 14:30"));
         await cut.InvokeAsync(() => cut.Find(".ne-citation-locator").KeyDown("Enter"));
 
-        Assert.Equal(
+        AssertSameBesidesNewIds(
             text.Replace(Cited + "\n", Cited.Replace("S. 12", "Min. 14:30") + $"\n\t  updated:: {Stamp}\n"),
             vault.Read(BookPath));
         Assert.Equal(L("UndoCitationLocator"), State.Session!.Undo.NextDescription);

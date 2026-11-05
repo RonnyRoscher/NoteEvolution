@@ -235,6 +235,12 @@ html, body {
     max-width: 220px;
 }
 
+.ne-history-problem {
+    color: var(--warning);
+    font-size: 12px;
+    max-width: 220px;
+}
+
 .ne-readonly {
     position: relative;
 }

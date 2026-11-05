@@ -292,7 +292,7 @@ public class ShellTests : UiTestContext
         WaitForVaultOpened(cut, firstSession);
         Assert.Equal(second.Root, State.Session!.Vault.Root);
         Assert.Equal([true], flushedWhileShown);
-        Assert.Equal(
+        AssertSameBesidesNewIds(
             "title:: Alpha\ntype:: book\n\n- Vorspann, gerade getippt\n  updated:: " + Stamp + "\n- # Eins\n", first.Read(bookPath));
     }
 

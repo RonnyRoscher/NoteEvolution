@@ -62,6 +62,10 @@
     {
         <span class="ne-undo-error" role="alert">@_undoError</span>
     }
+    @if (_session?.HistoryProblem == true)
+    {
+        <span class="ne-history-problem" role="status">@L["HistoryProblem"]</span>
+    }
 
     @* The commands next to undo; the indicators (read-only files, AI, language model, system meter) at the right end. *@
     @if (OnHandledWizard.HasDelegate || OnDraftWizard.HasDelegate || OnNormalizeOutline.HasDelegate)
@@ -416,6 +420,7 @@
             _session.AiStatusChanged += OnSessionChanged;
             _session.UnderstandingChanged += OnSessionChanged;
             _session.NoteStatusChanged += OnSessionChanged;
+            _session.HistoryProblemChanged += OnSessionChanged;
         }
     }
 
@@ -429,6 +434,7 @@
             _session.AiStatusChanged -= OnSessionChanged;
             _session.UnderstandingChanged -= OnSessionChanged;
             _session.NoteStatusChanged -= OnSessionChanged;
+            _session.HistoryProblemChanged -= OnSessionChanged;
         }
     }
 

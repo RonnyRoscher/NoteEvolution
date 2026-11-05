@@ -12,12 +12,20 @@ public sealed class PageWriter(IVault vault, BackupService backups, SelfWriteReg
     /// <summary>How the writer waits between attempts; tests replace it so they do not really sleep.</summary>
     internal Action<TimeSpan> Sleep { get; set; } = Thread.Sleep;
 
+    /// <summary>
+    /// A writable page is about to be written; what a handler changes in it goes into the file. A handler that throws
+    /// stops the save, so it must not throw. If the save fails afterwards the changes stay in the page.
+    /// </summary>
+    public event Action<Page>? Saving;
+
     public void Save(Page page)
     {
         if (page.IsReadOnly)
         {
             throw new ReadOnlyPageException($"Die Datei '{page.FilePath}' ist schreibgeschützt: {page.ParseError}");
         }
+
+        Saving?.Invoke(page);
 
         var bytes = PageSerializer.Serialize(page);
 

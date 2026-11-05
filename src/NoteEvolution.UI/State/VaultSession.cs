@@ -13,6 +13,7 @@ using NoteEvolution.Core.Links;
 using NoteEvolution.Core.Model;
 using NoteEvolution.Core.Storage;
 using NoteEvolution.Core.Vaults;
+using NoteEvolution.UI.History;
 using NoteEvolution.UI.Platform;
 
 namespace NoteEvolution.UI.State;
@@ -59,6 +60,7 @@ public sealed class VaultSession : IDisposable
     private readonly Func<Action, Task> _dispatch;
     private readonly BackupService _backups;
     private readonly FullTextSearchService _search;
+    private readonly PageWriter _pageWriter;
     private readonly HashSet<string> _openConflicts = new(StringComparer.OrdinalIgnoreCase);
     private readonly object _gate = new();
     private List<string>? _changesDuringOpen = [];
@@ -138,7 +140,8 @@ public sealed class VaultSession : IDisposable
         _search = new FullTextSearchService();
         Vault = vault;
         Notes = new NoteRepository(vault);
-        Writer = new PageWriter(vault, _backups, registry);
+        _pageWriter = new PageWriter(vault, _backups, registry);
+        Writer = _pageWriter;
         Undo = new UndoManager();
         Links = new LinkService(vault, Writer, Undo, new PendingStore(vault.Root), clock);
         Checker = new LinkChecker(vault, Links, Writer);
@@ -164,9 +167,40 @@ public sealed class VaultSession : IDisposable
         vault.PageReplaced += OnPageReplacedForCoverage;
         PagesChanged += _ => _coverage.Schedule();
         PlacementsChanged += _coverage.Schedule;
+
+        // The history is an aid: without its database the session runs as without it, and the book is saved as usual.
+        try
+        {
+            History = HistoryStore.Open(vault.Root, logger);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "The history of {Root} could not be opened", vault.Root);
+        }
+
+        HistoryTracker = new BlockHistoryTracker(vault, () => History, clock, timeProvider, logger);
+        HistoryTracker.Start();
+        _pageWriter.Saving += HistoryTracker.OnSaving;
+        vault.PageReplaced += HistoryTracker.OnReplaced;
     }
 
     public IVault Vault { get; }
+
+    /// <summary>The versions of the text blocks; <c>null</c> if the database could not be opened.</summary>
+    public HistoryStore? History { get; }
+
+    /// <summary>A part of the history could not be stored in this session; the book is saved as usual.</summary>
+    public bool HistoryProblem => HistoryTracker.HasProblem;
+
+    /// <summary><see cref="HistoryProblem"/> became true; raised once, on any thread.</summary>
+    public event Action? HistoryProblemChanged
+    {
+        add => HistoryTracker.ProblemChanged += value;
+        remove => HistoryTracker.ProblemChanged -= value;
+    }
+
+    /// <summary>Decides when versions of text blocks arise.</summary>
+    internal BlockHistoryTracker HistoryTracker { get; }
 
     /// <summary>The app clock, e.g. for the dates of the book's text blocks.</summary>
     public IClock Clock { get; }
@@ -644,6 +678,13 @@ public sealed class VaultSession : IDisposable
             _noteStatus.Dispose();
             _coverage.Dispose();
         }
+
+        // The open stands are stored while the database is still open.
+        HistoryTracker.Flush();
+        _pageWriter.Saving -= HistoryTracker.OnSaving;
+        Vault.PageReplaced -= HistoryTracker.OnReplaced;
+        HistoryTracker.Dispose();
+        History?.Dispose();
 
         Vault.PageReplaced -= OnPageReplacedForCoverage;
 

@@ -79,7 +79,7 @@ public class StatusCommandUiTests : UiTestContext
     /// <summary>Asserts the book file and, with <see cref="LineDiff"/>, that exactly the given lines differ from <paramref name="before"/>.</summary>
     private void AssertBook(string before, string expected, string[] removed, string[] added)
     {
-        var after = _vault.Read(BookPath);
+        var after = WithoutNewIds(_vault.Read(BookPath), expected);
         Assert.Equal(expected, after);
         var (removedIndices, addedIndices) = LineDiff.Changed(Encoding.UTF8.GetBytes(before), Encoding.UTF8.GetBytes(after));
         Assert.Equal(removed, removedIndices.Select(i => before.Split('\n')[i]));
@@ -307,7 +307,7 @@ public class StatusCommandUiTests : UiTestContext
 
         Assert.True(session.TryUndo(out var error), error?.ToString());
 
-        Assert.Equal(BookText, _vault.Read(BookPath));
+        AssertSameBesidesNewIds(BookText, _vault.Read(BookPath));
         Assert.False(session.Undo.CanUndo);
     }
 
