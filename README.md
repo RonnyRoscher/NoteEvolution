@@ -374,6 +374,9 @@ verglichen; dadurch weiß jede Überschrift, worum es in ihren Unterabschnitten 
   Eintrag, eine Zuordnung knapp eine Minute. Die Kopfzeile zeigt den Fortschritt mit Balken und Restzeit („Sprachmodell
   34/120 · noch ca. 1 h 10 min“); ein Klick darauf schlüsselt ihn nach Embedding, Zusammenfassungen, Kernaussagen und
   Zuordnungen auf (je mit Balken und Restzeit, dazu Pausengrund und übersprungene Einträge).
+  Das Log des Vaults (`.noteevolution/logs`) hält fest, was eine Buchänderung kostet: „Heading churn“ (geänderte
+  Zusammenfassungen und warum), „Placement churn“ (neue Zuordnungsanfragen und warum) und „Placement recheck“ (ob die neu
+  berechnete Zuordnung anders ausfiel).
   Eine Anfrage darf höchstens 5 Minuten dauern; nach 3 Fehlversuchen wird ein Eintrag bis zur nächsten Änderung
   übersprungen; scheitern mehrere Einträge hintereinander am Server, pausiert die Berechnung und versucht es nach 60 s
   erneut.

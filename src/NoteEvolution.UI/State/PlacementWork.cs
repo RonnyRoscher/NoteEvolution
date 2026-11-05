@@ -27,6 +27,9 @@ internal sealed class PlacementWork(
 
     public IReadOnlyList<UnderstandingItem>? PlacementItems { get; private set; }
 
+    /// <summary>Measures in the log what a change of the book costs.</summary>
+    public PlacementChurn Churn { get; } = new(store.Fingerprints, fingerprint => store.Get(fingerprint)?.Text, logger);
+
     /// <summary>
     /// The unused notes of the placement map's book that got no check as there was no topic to offer them; read by the
     /// coverage in the background.
@@ -234,6 +237,7 @@ internal sealed class PlacementWork(
         }
 
         understanding.UpdatePlacements(book, placements);
+        Churn.Checks(book, checks);
         PlacementBook = book;
         PlacementItems = checks;
         WithoutTopics = withoutTopics;
