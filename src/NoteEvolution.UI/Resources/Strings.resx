@@ -1897,6 +1897,9 @@
   <data name="UndoNormalize" xml:space="preserve">
     <value>Gliederung ordnen</value>
   </data>
+  <data name="UndoRestore" xml:space="preserve">
+    <value>Wiederherstellen</value>
+  </data>
   <data name="NoteBarLabel" xml:space="preserve">
     <value>Aktionen für den aktiven Block</value>
   </data>
