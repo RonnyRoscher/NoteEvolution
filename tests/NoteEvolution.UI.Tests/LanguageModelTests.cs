@@ -874,6 +874,39 @@ public class LanguageModelTests : UiTestContext
     }
 
     [Fact]
+    public async Task Session_HeadingEdited_ChurnIsLogged()
+    {
+        var tv = Vault();
+        AnswerPlacements();
+        var language = UseLanguageModel(_chat);
+        await language.RefreshAsync(CancellationToken.None);
+        var logger = new ListLogger();
+        var session = await OpenWithAiAsync(tv, logger: logger);
+        await AllDone(session, 5);
+        Time.Advance(VaultSession.PageIndexDelay);
+        await AllDone(session, 8);
+        await Eventually(() => logger.Entries.Any(e => e.Message.StartsWith("Placement churn", StringComparison.Ordinal)), "The first checks were not logged.");
+        logger.Entries.Clear();
+
+        // "Träume" changes by its own text, its parent "Schlaf" only through it, "Arbeit" not.
+        Edit(session, BookPath, DreamText, "Träume ordnen das Erlebte neu.");
+        Time.Advance(VaultSession.PageIndexDelay);
+        await Eventually(() => logger.Entries.Any(e => e.Message.StartsWith("Heading churn", StringComparison.Ordinal)), "The headings were not logged.");
+        var headings = logger.Entries.First(e => e.Message.StartsWith("Heading churn", StringComparison.Ordinal)).Message;
+        Assert.Contains("2 of 3 headings changed", headings);
+        Assert.Contains("1 by their own text, 1 only through a sub-heading, 0 new or renamed", headings);
+
+        await Eventually(() => session.Understanding is { Done: 8, Total: 8 }, "The summaries were not done.");
+        await Task.Delay(100);
+        Time.Advance(VaultSession.PageIndexDelay);
+        await Eventually(() => logger.Entries.Any(e => e.Message.StartsWith("Placement recheck", StringComparison.Ordinal)), "The new result was not logged.");
+
+        // The three unused notes (also the short one) have a check each.
+        Assert.Contains(logger.Entries, e => e.Message.StartsWith("Placement churn", StringComparison.Ordinal) && e.Message.Contains("3 checks", StringComparison.Ordinal));
+        Assert.DoesNotContain(logger.Entries, e => e.Message.StartsWith("Measuring", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task Session_SummarySettledWhileReadinessIsRead_FeedStillScheduled()
     {
         var tv = TestVault.Create(

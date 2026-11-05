@@ -1506,6 +1506,11 @@ public sealed class VaultSession : IDisposable
                 ScheduleFeedFor(parts, putOff: false);
             }
 
+            if (work.Book is { } measured)
+            {
+                parts.Placements.Churn.Headings(measured, work.Current);
+            }
+
             parts.Worker.SetWork(work.Current, section, work.Notes, work.Others, checks);
             Interlocked.Increment(ref _feedsApplied);
             _noteStatus.Use(parts, notes, book, work.Notes, parts.Placements.PlacementItems ?? []);
@@ -1543,6 +1548,7 @@ public sealed class VaultSession : IDisposable
         _noteStatus.Schedule(fingerprint);
         if (kind == UnderstandingKind.Placement)
         {
+            parts.Placements.Churn.Stored(fingerprint);
             RaisePlacementsChanged();
         }
         else if (kind is UnderstandingKind.Heading or UnderstandingKind.Note && parts.Settle())
