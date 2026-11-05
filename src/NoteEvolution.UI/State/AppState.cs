@@ -203,6 +203,7 @@ public sealed class AppState
                 }
 
                 _noteSelection = null;
+                RelevantHold = null;
 
                 lock (_history)
                 {
@@ -338,6 +339,15 @@ public sealed class AppState
     /// its sub-points. Set and cleared with <see cref="DraggedNoteKey"/>.
     /// </summary>
     public bool DraggedNoteOwnOnly { get; set; }
+
+    /// <summary>The range is dragged from the "Relevant" tab. Set and cleared with <see cref="DraggedNoteKey"/>.</summary>
+    public bool DraggedNoteFromRelevant { get; set; }
+
+    /// <summary>
+    /// Set after a text was adopted from the "Relevant" tab: the tab keeps its list while the cursor stays in the area
+    /// around that text, and clears this once it leaves it. Another <see cref="Session"/> clears it too.
+    /// </summary>
+    public RelevantHold? RelevantHold { get; set; }
 
     /// <summary>
     /// Raised when the usages of notes changed outside the session's page events (an adoption, a note page read again

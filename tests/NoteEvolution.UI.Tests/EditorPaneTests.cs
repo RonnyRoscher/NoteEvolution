@@ -427,6 +427,22 @@ public class EditorPaneTests : UiTestContext
         Assert.False(session.Notes.All().Single(n => n.Block.Content == "Unterpunkt Traum").IsUsed);
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Pane_DropNote_KeepsTheRelevantList_OnlyWhenDraggedFromThere(bool fromRelevant)
+    {
+        using var tv = Alpha();
+        var (session, cut) = await RenderAsync(tv);
+        var note = session.Notes.All().Single(n => n.Block.Content == "Gedächtnis braucht Schlaf");
+
+        State.DraggedNoteKey = note.Key;
+        State.DraggedNoteFromRelevant = fromRelevant;
+        await cut.InvokeAsync(() => Editor.Callbacks!.OnNoteDropped(note.Key, Section("Zwei").Key));
+
+        Assert.Equal(fromRelevant ? Section("Zwei").Key : (Guid?)null, State.RelevantHold?.AreaKey);
+    }
+
     [Fact]
     public async Task Pane_DropOnHeading_AdoptsAtThatSectionsStart()
     {
