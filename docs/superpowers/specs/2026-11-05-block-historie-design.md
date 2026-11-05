@@ -36,7 +36,8 @@ Die App vergleicht beim Speichern und beim Neueinlesen einer Buchseite jeden Blo
 | Beim Öffnen weicht ein Block mit Verlauf von seiner letzten Version ab (Absturz, Änderung in Logseq bei geschlossener App) | der Stand aus der Datei | „Beim Öffnen“ |
 | Vor dem Wiederherstellen | der aktuelle Stand | „Vor dem Wiederherstellen“ |
 
-- **Größeres Löschen:** Zwischen zwei Vergleichen ist der Text um mindestens 200 Zeichen oder mindestens ein Viertel kürzer geworden. Blöcke mit weniger als 40 Zeichen zählen nicht. Der offene Stand vor dem Löschen geht dabei nicht verloren, und auch das anschließende Weiterschreiben wird nach der Pause zu einer eigenen Version.
+- **Größeres Löschen:** Der Text ist gegenüber seinem längsten Stand seit der letzten Version um mindestens 200 Zeichen oder mindestens ein Viertel kürzer geworden; so zählt auch langsames Löschen über mehrere Speichervorgänge. Blöcke mit weniger als 40 Zeichen zählen nicht. Gesichert wird dieser längste Stand; das anschließende Weiterschreiben wird nach der Pause zu einer eigenen Version.
+- **Blöcke ohne `id::` bei Änderungen in Logseq:** Die App kann sie nach dem Neueinlesen nicht wiedererkennen. Ihr neuer Text gilt als Ausgangsstand ohne Version; von ihrer nächsten Änderung in der App an haben sie einen Verlauf. Blöcke mit `id::` werden auch bei Änderungen in Logseq verglichen.
 - **10-Minuten-Zähler:** je Block; jede weitere Änderung an diesem Block startet ihn neu. Die Zeit läuft über den `TimeProvider` der App.
 - **Gleicher Text:** Stimmt der Text mit der letzten Version überein, entsteht keine neue.
 
