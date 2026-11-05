@@ -41,7 +41,7 @@ public class SystemMeterTests : UiTestContext
 
         var meter = cut.Find(".ne-sysmeter");
         // "App" is NoteEvolution and Ollama together: 12,4 + 40,2 % and 0,6 + 4,86 GB.
-        Assert.Equal("CPU 63 % (App 53 %) · RAM 9,8/15,8 GB (App 5,5 GB) · Frei 112 GB · Analyse 38 MB", meter.TextContent);
+        Assert.Equal("CPU 63 % (App 53 %) · RAM 9,8/15,8 GB (App 5,5 GB) · Frei 112 GB · App-Daten 38 MB", meter.TextContent);
         Assert.False(meter.ClassList.Contains("ne-sysmeter-warn"));
 
         // The shares are in the line itself, no tooltip.
@@ -55,7 +55,7 @@ public class SystemMeterTests : UiTestContext
 
         var cut = Render<SystemMeter>();
 
-        Assert.Equal("CPU 63 % (App 12 %) · RAM 9,8/15,8 GB (App 0,6 GB) · Frei 112 GB · Analyse 38 MB", cut.Find(".ne-sysmeter").TextContent);
+        Assert.Equal("CPU 63 % (App 12 %) · RAM 9,8/15,8 GB (App 0,6 GB) · Frei 112 GB · App-Daten 38 MB", cut.Find(".ne-sysmeter").TextContent);
     }
 
     [Fact]
@@ -70,7 +70,7 @@ public class SystemMeterTests : UiTestContext
     }
 
     [Fact]
-    public void SystemMeter_AnalysisSize_FormattedAndOptional()
+    public void SystemMeter_DataSize_FormattedAndOptional()
     {
         string TextFor(long? bytes)
         {
@@ -78,13 +78,13 @@ public class SystemMeterTests : UiTestContext
             return Render<SystemMeter>().Find(".ne-sysmeter").TextContent;
         }
 
-        Assert.EndsWith("· Analyse 0 MB", TextFor(0), StringComparison.Ordinal);
-        Assert.EndsWith("· Analyse 38 MB", TextFor(38_400_000), StringComparison.Ordinal);
-        Assert.EndsWith("· Analyse 120 MB", TextFor(123_000_000), StringComparison.Ordinal);
-        Assert.EndsWith("· Analyse 1,5 GB", TextFor(1_540_000_000), StringComparison.Ordinal);
+        Assert.EndsWith("· App-Daten 0 MB", TextFor(0), StringComparison.Ordinal);
+        Assert.EndsWith("· App-Daten 38 MB", TextFor(38_400_000), StringComparison.Ordinal);
+        Assert.EndsWith("· App-Daten 120 MB", TextFor(123_000_000), StringComparison.Ordinal);
+        Assert.EndsWith("· App-Daten 1,5 GB", TextFor(1_540_000_000), StringComparison.Ordinal);
 
         // Without a vault there is no size.
-        Assert.DoesNotContain("Analyse", TextFor(null), StringComparison.Ordinal);
+        Assert.DoesNotContain("App-Daten", TextFor(null), StringComparison.Ordinal);
     }
 
     [Fact]
