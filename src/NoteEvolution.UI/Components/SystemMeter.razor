@@ -6,7 +6,7 @@
 @inject IServiceProvider Services
 @inject IStringLocalizer<Strings> L
 
-@* The system meter in the header (spec 11.2): "CPU 63 % (App 53 %) · RAM 9,8/15,8 GB (App 5,5 GB) · Frei 112 GB · Analyse 38 MB";
+@* The system meter in the header (spec 11.2): "CPU 63 % (App 53 %) · RAM 9,8/15,8 GB (App 5,5 GB) · Frei 112 GB · App-Daten 38 MB";
    "App" is NoteEvolution and Ollama together (its language model works for the app). *@
 @if (Settings.SystemMeterVisible && _snapshot is { } snapshot)
 {
@@ -110,7 +110,7 @@
     {
         var line = L["SysMeter", Whole(s.CpuPercent), Whole(Sum(s.AppCpuPercent, s.OllamaCpuPercent)), Decimal(s.RamUsedGb),
             Decimal(s.RamTotalGb), Decimal(Sum(s.AppRamGb, s.OllamaRamGb)), Whole(s.DiskFreeGb)].Value;
-        return line + (s.AnalysisBytes is { } bytes ? L["SysMeterAnalysis", Size(bytes)].Value : "");
+        return line + (s.VaultDataBytes is { } bytes ? L["SysMeterData", Size(bytes)].Value : "");
     }
 
     /// <summary>A size as the model dialogs show it (whole MB, rounded to tens above 100), in GB from 1000 MB on.</summary>

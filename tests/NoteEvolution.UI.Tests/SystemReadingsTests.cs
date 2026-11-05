@@ -82,26 +82,29 @@ public class SystemReadingsTests
     }
 
     [Fact]
-    public void SystemReadings_AnalysisBytes_SumsFilesAndToleratesMissingOrLocked()
+    public void SystemReadings_VaultDataBytes_SumsFilesAndToleratesMissingOrLocked()
     {
-        var root = Path.Combine(Path.GetTempPath(), "ne-analysis-" + Guid.NewGuid().ToString("N"));
+        var root = Path.Combine(Path.GetTempPath(), "ne-vault-data-" + Guid.NewGuid().ToString("N"));
         try
         {
             // No folder at all: 0.
-            Assert.Equal(0, SystemReadings.AnalysisBytes(root));
+            Assert.Equal(0, SystemReadings.VaultDataBytes(root));
 
             var folder = Directory.CreateDirectory(Path.Combine(root, ".noteevolution")).FullName;
             File.WriteAllBytes(Path.Combine(folder, "vectors.db"), new byte[1000]);
             File.WriteAllBytes(Path.Combine(folder, "vectors.db-wal"), new byte[200]);
             File.WriteAllBytes(Path.Combine(folder, "understanding.db-shm"), new byte[30]);
+            File.WriteAllBytes(Path.Combine(folder, "history.db"), new byte[4000]);
+            File.WriteAllBytes(Path.Combine(folder, "history.db-wal"), new byte[400]);
             File.WriteAllBytes(Path.Combine(folder, "other.db"), new byte[5000]);
+            File.WriteAllBytes(Path.Combine(folder, "history.db.defekt-20261105120000"), new byte[7000]);
 
-            // Missing files (understanding.db, vectors.db-shm, ...) count as 0; other files do not count.
-            Assert.Equal(1230, SystemReadings.AnalysisBytes(root));
+            // Missing files (understanding.db, vectors.db-shm, ...) count as 0; other files, also a history moved aside, do not count.
+            Assert.Equal(5630, SystemReadings.VaultDataBytes(root));
 
             // A file held open exclusively is no error.
             using var locked = new FileStream(Path.Combine(folder, "vectors.db"), FileMode.Open, FileAccess.ReadWrite, FileShare.None);
-            Assert.InRange(SystemReadings.AnalysisBytes(root), 230, 1230);
+            Assert.InRange(SystemReadings.VaultDataBytes(root), 4630, 5630);
         }
         finally
         {

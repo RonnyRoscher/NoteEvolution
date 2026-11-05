@@ -413,8 +413,8 @@ verglichen; dadurch weiß jede Überschrift, worum es in ihren Unterabschnitten 
 
 **Systemanzeige:** Rechts in der Kopfzeile stehen Prozessorlast, belegter Arbeitsspeicher und freier Platz auf dem
 Laufwerk des Vaults, dazu als „App“ den Anteil von NoteEvolution zusammen mit Ollama, wenn es läuft (alle Prozesse
-`ollama…` und `llama-server`, das das Modell rechnet), sowie die Größe der Analysedateien des Vaults (`vectors.db` und
-`understanding.db`): „CPU 63 % (App 53 %) · RAM 9,8/15,8 GB (App 5,5 GB) · Frei 112 GB · Analyse 38 MB“, alle 2 s. Über 90 % CPU oder unter 1 GB freiem Arbeitsspeicher erscheint der Wert in der Warnfarbe.
+`ollama…` und `llama-server`, das das Modell rechnet), sowie die Größe der Datenbanken des Vaults (`vectors.db`,
+`understanding.db` und `history.db`): „CPU 63 % (App 53 %) · RAM 9,8/15,8 GB (App 5,5 GB) · Frei 112 GB · App-Daten 38 MB“, alle 2 s. Über 90 % CPU oder unter 1 GB freiem Arbeitsspeicher erscheint der Wert in der Warnfarbe.
 Abschaltbar in den Einstellungen.
 
 ## Manuelle Abnahme

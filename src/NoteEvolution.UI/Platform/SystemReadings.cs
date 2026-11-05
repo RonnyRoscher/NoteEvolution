@@ -151,13 +151,13 @@ public static class SystemReadings
     }
 
     /// <summary>
-    /// The size of the vault's analysis files in bytes: <c>vectors.db</c> and <c>understanding.db</c> in
+    /// The size of the vault's data files in bytes: <c>vectors.db</c>, <c>understanding.db</c> and <c>history.db</c> in
     /// <c>.noteevolution</c> with their <c>-wal</c>/<c>-shm</c> files. A missing or unreadable (locked) file counts as 0.
     /// </summary>
-    public static long AnalysisBytes(string vaultRoot)
+    public static long VaultDataBytes(string vaultRoot)
     {
         long sum = 0;
-        foreach (var name in new[] { "vectors.db", "understanding.db" })
+        foreach (var name in new[] { "vectors.db", "understanding.db", "history.db" })
         {
             foreach (var suffix in new[] { "", "-wal", "-shm" })
             {
