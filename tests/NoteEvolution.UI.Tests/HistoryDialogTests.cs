@@ -194,6 +194,20 @@ public class HistoryDialogTests : UiTestContext
     }
 
     [Fact]
+    public async Task Bar_HistoryButton_StoreClosed_BarRenders_ButtonDisabled()
+    {
+        var session = await OpenSessionAsync(_vault);
+        AddVersions(session);
+        var cut = await RenderEditorAsync(session);
+        session.History!.Dispose();
+
+        await MoveToAsync(cut, "Erster Text");
+
+        cut.WaitForAssertion(() => Assert.True(cut.Find(".ne-sec-history").HasAttribute("disabled")));
+        Assert.Equal(Text("SectionHistoryNone"), cut.Find(".ne-sec-history").GetAttribute("title"));
+    }
+
+    [Fact]
     public async Task Bar_Delete_LabelByElement()
     {
         var session = await OpenSessionAsync(_vault);

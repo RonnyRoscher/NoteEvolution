@@ -1,3 +1,4 @@
+@using Microsoft.Data.Sqlite
 @using NoteEvolution.Core.Books
 @using NoteEvolution.Core.Text
 @using NoteEvolution.Core.Vaults
@@ -416,8 +417,23 @@
     /// The <c>id::</c> of the text block of <paramref name="element"/> (itself, or the block of a detail) if the change
     /// history has versions of it; <c>null</c> for a block without id, without versions or without a history.
     /// </summary>
-    private Guid? HistoryBlockKey(Book book, BookElement element) =>
-        BookElements.TextBlockOf(book, element) is { Block.Id: { } id } && State.Session?.History?.Latest(id) is not null ? id : null;
+    private Guid? HistoryBlockKey(Book book, BookElement element)
+    {
+        if (BookElements.TextBlockOf(book, element) is not { Block.Id: { } id })
+        {
+            return null;
+        }
+
+        // The bar renders on every cursor move: a store that fails (or was closed with the vault) only greys the button out.
+        try
+        {
+            return State.Session?.History?.HasVersions(id) == true ? id : null;
+        }
+        catch (Exception ex) when (ex is SqliteException or ObjectDisposedException)
+        {
+            return null;
+        }
+    }
 
     /// <summary>Asks the shell for the history window of the text block of <paramref name="element"/>.</summary>
     private void RequestHistory(Book book, BookElement element)

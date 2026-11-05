@@ -43,6 +43,19 @@ public class HistoryStoreTests : IDisposable
     }
 
     [Fact]
+    public void HasVersions_TrueOnlyForABlockWithVersions()
+    {
+        using var store = Open();
+        var id = Guid.NewGuid();
+        Assert.False(store.HasVersions(id));
+
+        store.Add(id, "Buch", T0, HistoryReason.First, Stand("eins"));
+
+        Assert.True(store.HasVersions(id));
+        Assert.False(store.HasVersions(Guid.NewGuid()));
+    }
+
+    [Fact]
     public void Stand_RoundTrip_KeepsParagraphsStatusAndSources()
     {
         using var store = Open();

@@ -86,6 +86,19 @@ public sealed class HistoryStore : IDisposable
         }
     }
 
+    /// <summary>Whether the block has at least one version; reads no stand.</summary>
+    public bool HasVersions(Guid blockId)
+    {
+        lock (_gate)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            using var command = _db.CreateCommand();
+            command.CommandText = "SELECT 1 FROM versions WHERE block_id = $block LIMIT 1";
+            command.Parameters.AddWithValue("$block", blockId.ToString("D"));
+            return command.ExecuteScalar() is not null;
+        }
+    }
+
     /// <summary>The newest version of the block, or null.</summary>
     public HistoryVersion? Latest(Guid blockId)
     {
