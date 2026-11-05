@@ -86,6 +86,9 @@
     /// <summary>Raised after an action that changes what the card shows (adopting, a day mark), so the card renders again.</summary>
     [Parameter] public EventCallback Changed { get; set; }
 
+    /// <summary>The card stands in the "Relevant" tab: that list stays after adopting from it (<see cref="AppState.RelevantHold"/>).</summary>
+    [CascadingParameter(Name = "FromRelevant")] public bool FromRelevant { get; set; }
+
     private AdoptMessage? _message;
 
     /// <summary>The selection the bar was last rendered for (see <see cref="Dispose"/>).</summary>
@@ -328,12 +331,14 @@
     {
         State.DraggedNoteKey = head.Key;
         State.DraggedNoteOwnOnly = Range.OwnOnly;
+        State.DraggedNoteFromRelevant = FromRelevant;
     }
 
     private void EndDrag()
     {
         State.DraggedNoteKey = null;
         State.DraggedNoteOwnOnly = false;
+        State.DraggedNoteFromRelevant = false;
     }
 
     /// <summary>The block with <paramref name="key"/> in the tree below <paramref name="block"/>; <c>null</c> if it is not there.</summary>
@@ -392,7 +397,7 @@
     {
         _message = null;
         var range = Range;
-        _message = await NoteAdoption.AdoptAsync(State, range.HeadKey, variant, L["OutlineUntitled"].Value, Logger, includeChildren: !range.OwnOnly);
+        _message = await NoteAdoption.AdoptAsync(State, range.HeadKey, variant, L["OutlineUntitled"].Value, Logger, includeChildren: !range.OwnOnly, fromRelevant: FromRelevant);
         if (!_disposed)
         {
             await Changed.InvokeAsync();

@@ -44,12 +44,14 @@ public static class NoteAdoption
     /// happens, the book view is taken from the vault again and <see cref="AppState.Notify"/> is raised.
     /// Without <paramref name="includeChildren"/> only the block's own text is adopted, not its sub-points; with
     /// "Verwendete ausblenden" (<see cref="AppState.HideUsedNotes"/>) the sub-points it hides are left out.
+    /// <paramref name="fromRelevant"/> says the note was taken from the "Relevant" tab, which then keeps its list (see
+    /// <see cref="AppState.RelevantHold"/>).
     /// </summary>
     /// <returns>The message to show, or <c>null</c> if the note was adopted without remark.</returns>
     public static Task<AdoptMessage?> AdoptAsync(
-        AppState state, Guid noteBlockKey, Func<Book, InsertPosition> position, ILogger logger, bool includeChildren = true) =>
+        AppState state, Guid noteBlockKey, Func<Book, InsertPosition> position, ILogger logger, bool includeChildren = true, bool fromRelevant = false) =>
         RunAsync(state, noteBlockKey,
-            (links, book) => NewTextBlock(links.Adopt(book, noteBlockKey, position(book), includeChildren, state.HideUsedNotes)), logger);
+            (links, book) => NewTextBlock(links.Adopt(book, noteBlockKey, position(book), includeChildren, state.HideUsedNotes)), logger, fromRelevant);
 
     /// <summary>
     /// Whether <paramref name="variant"/> is offered for <paramref name="noteBlock"/>: the heading variants only for a
@@ -98,11 +100,13 @@ public static class NoteAdoption
     /// heading relative to <see cref="ReferenceSection"/>; <paramref name="untitledTitle"/> is the title of a heading
     /// from a note block whose first line is blank.
     /// Without <paramref name="includeChildren"/> only the block's own text is adopted, not its sub-points.
+    /// <paramref name="fromRelevant"/> says the note was taken from the "Relevant" tab, which then keeps its list (see
+    /// <see cref="AppState.RelevantHold"/>).
     /// </summary>
     /// <returns>The message to show, or <c>null</c> if the note was adopted without remark.</returns>
     public static Task<AdoptMessage?> AdoptAsync(
-        AppState state, Guid noteBlockKey, AdoptVariant variant, string untitledTitle, ILogger logger, bool includeChildren = true) =>
-        RunAsync(state, noteBlockKey, (links, book) => Adopt(links, state, book, noteBlockKey, variant, untitledTitle, includeChildren), logger);
+        AppState state, Guid noteBlockKey, AdoptVariant variant, string untitledTitle, ILogger logger, bool includeChildren = true, bool fromRelevant = false) =>
+        RunAsync(state, noteBlockKey, (links, book) => Adopt(links, state, book, noteBlockKey, variant, untitledTitle, includeChildren), logger, fromRelevant);
 
     /// <summary>
     /// Adopts the note into the element the variant and the cursor name (see the mapping in spec 4), or as a heading;
@@ -154,10 +158,11 @@ public static class NoteAdoption
 
     /// <summary>
     /// Runs an adoption (<paramref name="adopt"/>, which also names the element to reveal) with the checks
-    /// of <see cref="AdoptAsync(AppState, Guid, Func{Book, InsertPosition}, ILogger)"/>, then reveals that element.
+    /// of <see cref="AdoptAsync(AppState, Guid, Func{Book, InsertPosition}, ILogger, bool, bool)"/>, then reveals that
+    /// element. The notes pane is told only then, so a "Relevant" list that is to stay sees the hold and the new place.
     /// </summary>
     private static async Task<AdoptMessage?> RunAsync(
-        AppState state, Guid noteBlockKey, Func<ILinkService, Book, (bool NoteUpdatePending, Guid? Reveal)> adopt, ILogger logger)
+        AppState state, Guid noteBlockKey, Func<ILinkService, Book, (bool NoteUpdatePending, Guid? Reveal)> adopt, ILogger logger, bool fromRelevant)
     {
         Guid? reveal = null;
         try
@@ -172,6 +177,13 @@ public static class NoteAdoption
             if (reveal is { } key)
             {
                 state.RevealElement(key);
+                if (fromRelevant && state.CurrentBook is { } book)
+                {
+                    state.RelevantHold = RelevantHold.Around(book, key);
+                }
+
+                // The note is used now: the notes pane reads its notes again (with "Verwendete ausblenden" it leaves them).
+                state.NotifyNotesChanged();
             }
 
             state.Notify();
@@ -258,8 +270,6 @@ public static class NoteAdoption
             }
         }
 
-        // The note is used now: the notes pane reads its notes again (with "Verwendete ausblenden" it leaves them).
-        state.NotifyNotesChanged();
         return (noteUpdatePending ? new AdoptMessage("NoteUpdatePending", false) : null, reveal);
     }
 }

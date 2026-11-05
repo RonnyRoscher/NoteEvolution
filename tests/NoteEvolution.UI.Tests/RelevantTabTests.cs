@@ -298,12 +298,18 @@ public class RelevantTabTests : UiTestContext
         Assert.Equal(3, WhereToItems(cut, index).Count);
         Assert.NotNull(cut.FindAll(".ne-relevant-list .ne-note-card")[index].QuerySelector(".ne-note-used"));
 
-        // Closing the list lets the tab compute once with the current state, which leaves out the used note.
+        // The cursor is in the area of the adopted text: closing the list only lets the used note go.
         cut.FindAll(".ne-relevant-list .ne-note-card")[index].QuerySelector(".ne-note-whereto")!.Click();
 
-        AdvanceUntil(cut, () => Assert.DoesNotContain(note.Block.Content, Texts(cut)), Debounce);
-        Assert.Equal(30, Texts(cut).Count);
+        cut.WaitForAssertion(() => Assert.Equal(shown.Where(text => text != note.Block.Content), Texts(cut)));
         Assert.Empty(State.WhereToOpenNotes);
+
+        // Leaving the area lets the tab compute once with the current state.
+        State.ActiveView.TakePendingReveal();
+        await cut.InvokeAsync(() => Select(2));
+
+        cut.WaitForAssertion(() => Assert.Equal(30, Texts(cut).Count));
+        Assert.DoesNotContain(note.Block.Content, Texts(cut));
     }
 
     [Fact]

@@ -43,39 +43,41 @@
                 <div class="ne-search-empty">@L["NotesSearchEmpty"]</div>
             }
 
-            <div class="ne-relevant-list">
-                @if (_placed.Count > 0)
-                {
-                    <h4 class="ne-relevant-group-heading ne-relevant-group-placed">@L["NotesRelevantPlaced"]</h4>
-                    @foreach (var placed in _placed)
+            <CascadingValue Name="FromRelevant" Value="true" IsFixed="true">
+                <div class="ne-relevant-list">
+                    @if (_placed.Count > 0)
                     {
-                        if (session.Notes.Get(placed.Key) is { } placedNote)
+                        <h4 class="ne-relevant-group-heading ne-relevant-group-placed">@L["NotesRelevantPlaced"]</h4>
+                        @foreach (var placed in _placed)
                         {
-                            <div @key="placed.Key" class="ne-relevant-placed-item" title="@PlacedTitle(placed)">
-                                @if (placed.Stale)
-                                {
-                                    <span class="ne-relevant-stale">@L["NoteWhereToStale"]</span>
-                                }
-                                <NoteCard Note="placedNote" />
-                            </div>
+                            if (session.Notes.Get(placed.Key) is { } placedNote)
+                            {
+                                <div @key="placed.Key" class="ne-relevant-placed-item" title="@PlacedTitle(placed)">
+                                    @if (placed.Stale)
+                                    {
+                                        <span class="ne-relevant-stale">@L["NoteWhereToStale"]</span>
+                                    }
+                                    <NoteCard Note="placedNote" />
+                                </div>
+                            }
+                        }
+
+                        @if (_hits.Count > 0)
+                        {
+                            <h4 class="ne-relevant-group-heading ne-relevant-group-similar">@L["NotesRelevantSimilar"]</h4>
                         }
                     }
 
-                    @if (_hits.Count > 0)
+                    @foreach (var hit in _hits)
                     {
-                        <h4 class="ne-relevant-group-heading ne-relevant-group-similar">@L["NotesRelevantSimilar"]</h4>
+                        // Read live (not kept): a page replaced after an external change gives new views; keys may be stale.
+                        if (session.Notes.Get(hit.Key) is { } note)
+                        {
+                            <NoteCard @key="hit.Key" Note="note" Percent="hit.Percent" />
+                        }
                     }
-                }
-
-                @foreach (var hit in _hits)
-                {
-                    // Read live (not kept): a page replaced after an external change gives new views; keys may be stale.
-                    if (session.Notes.Get(hit.Key) is { } note)
-                    {
-                        <NoteCard @key="hit.Key" Note="note" Percent="hit.Percent" />
-                    }
-                }
-            </div>
+                </div>
+            </CascadingValue>
         }
     }
 </div>
@@ -103,7 +105,7 @@
     /// </summary>
     private int _indexVersion;
 
-    private (VaultSession?, Book?, Guid, Guid?, bool, int, NoteFilter, int, AiState, bool, int)? _last;
+    private (VaultSession?, Book?, Guid, Guid?, bool, int, NoteFilter Filter, int, AiState, bool, int)? _last;
     private List<(Guid Key, int Percent)> _hits = [];
 
     /// <summary>The notes the model placed into the current section (newest first); they are not in <see cref="_hits"/>.</summary>
@@ -118,10 +120,14 @@
     private bool _computed;
 
     /// <summary>
-    /// True once the list stayed as it was because it was frozen (<see cref="Frozen"/>): the first refresh after the
-    /// last list closed computes it again, also if nothing it depends on changed.
+    /// True once the list stayed as it was because it was frozen (<see cref="Frozen"/>) or held
+    /// (<see cref="AppState.RelevantHold"/>): the first refresh after that computes it again, also if nothing it depends
+    /// on changed.
     /// </summary>
-    private bool _heldWhileFrozen;
+    private bool _heldBack;
+
+    /// <summary>The notes that left the list while it was held (see <see cref="DropFilteredOut"/>).</summary>
+    private readonly HashSet<Guid> _droppedWhileHeld = [];
 
     [Parameter, EditorRequired] public NoteFilter Filter { get; set; } = default!;
 
@@ -143,6 +149,7 @@
     public void Dispose()
     {
         _disposed = true;
+        State.RelevantHold = null;
         Unsubscribe();
         _generation++;
         _pending?.Cancel();
@@ -177,11 +184,11 @@
     /// <summary>
     /// The stored placements changed: only the placed group is put together again, at once (it is read on the UI thread
     /// anyway); the similar notes stay, without the ones placed here now, and a search in flight goes on (its result is
-    /// sorted the same way when it arrives). Nothing while the list is frozen or before the first computation.
+    /// sorted the same way when it arrives). Nothing while the list is frozen or held or before the first computation.
     /// </summary>
     private void OnPlacementsChanged() => _ = InvokeAsync(() =>
     {
-        if (_disposed || _last is null || Frozen
+        if (_disposed || _last is null || Frozen || State.RelevantHold is not null
             || State is not { Session: { Relevance.IsAvailable: true } session, CurrentBook: { } book })
         {
             return;
@@ -219,14 +226,71 @@
             .Any(key => State.WhereToOpenNotes.Contains(key) && State.Session?.Notes.Get(key) is not null);
 
     /// <summary>
+    /// Ends the hold (<see cref="AppState.RelevantHold"/>) when the list is no longer to stay: the cursor left the area,
+    /// another book, the filter changed, the AI went, a shown note is gone (its page was read again under new keys) or a
+    /// note that left the list is back (the adoption was undone or its text deleted). While the editor has yet to reveal
+    /// the adopted text the cursor does not count: loading the new document, it reports a place near the old cursor first.
+    /// </summary>
+    private void ReleaseHold()
+    {
+        if (State.RelevantHold is not { } hold)
+        {
+            return;
+        }
+
+        var stays = _last?.Filter == Filter && State is { Session.Relevance.IsAvailable: true, CurrentBook: { } book } && hold.IsFor(book)
+                    && (State.PendingReveal == hold.RevealKey || hold.Covers(book, State.CurrentSectionKey))
+                    && !ShownNoteGone() && !DroppedNoteBack();
+        if (!stays)
+        {
+            State.RelevantHold = null;
+            _droppedWhileHeld.Clear();
+            _heldBack = true;
+        }
+    }
+
+    private bool ShownNoteGone() =>
+        _hits.Select(hit => hit.Key).Concat(_placed.Select(placed => placed.Key)).Any(key => State.Session?.Notes.Get(key) is null);
+
+    private bool DroppedNoteBack() =>
+        _droppedWhileHeld.Any(key => State.Session?.Notes.Get(key) is { } note && State.Session.Notes.Matches(note, Filter));
+
+    /// <summary>While the list is held, only the notes the filter no longer lets through (the adopted one) leave it.</summary>
+    private void DropFilteredOut(VaultSession session)
+    {
+        bool FilteredOut(Guid key)
+        {
+            var filteredOut = session.Notes.Get(key) is { } note && !session.Notes.Matches(note, Filter);
+            if (filteredOut)
+            {
+                _droppedWhileHeld.Add(key);
+            }
+
+            return filteredOut;
+        }
+
+        _hits.RemoveAll(hit => FilteredOut(hit.Key));
+        _placed.RemoveAll(placed => FilteredOut(placed.Key));
+    }
+
+    /// <summary>
     /// Starts a new computation if something the list depends on has changed since the last one; nothing while the list
-    /// is frozen (<see cref="Frozen"/>), and once after it was, at once with the current state.
+    /// is frozen (<see cref="Frozen"/>) or held (<see cref="AppState.RelevantHold"/>), and once after it was, at once with
+    /// the current state.
     /// </summary>
     private void Refresh()
     {
+        ReleaseHold();
         if (Frozen)
         {
-            _heldWhileFrozen = true;
+            _heldBack = true;
+            return;
+        }
+
+        if (State is { RelevantHold: not null, Session: { } held })
+        {
+            DropFilteredOut(held);
+            _heldBack = true;
             return;
         }
 
@@ -235,13 +299,13 @@
         var available = session?.Relevance.IsAvailable == true;
         var current = (session, State.CurrentBook, State.CurrentSectionKey, State.CursorTextBlockKey, State.CursorTextBlockKey is not null,
             State.RangeLevel, Filter, Revision, status?.State ?? AiState.Off, available, _indexVersion);
-        if (_last == current && !_heldWhileFrozen)
+        if (_last == current && !_heldBack)
         {
             return;
         }
 
-        var first = _last is null || _heldWhileFrozen;
-        _heldWhileFrozen = false;
+        var first = _last is null || _heldBack;
+        _heldBack = false;
         _last = current;
         _computed = false;
         _generation++;
@@ -287,10 +351,10 @@
                     return;
                 }
 
-                // A list opened while this ran froze the list: the result is dropped, the list is computed after it closed.
-                if (Frozen)
+                // A list opened or a text adopted while this ran: the result is dropped, the list is computed after that.
+                if (Frozen || State.RelevantHold is not null)
                 {
-                    _heldWhileFrozen = true;
+                    _heldBack = true;
                     return;
                 }
 

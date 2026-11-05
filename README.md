@@ -269,6 +269,12 @@ ist). Ein Klick springt zum Block, die Liste bleibt offen; übernommen wird dort
 Liste offen ist, bleibt die Relevant-Liste unverändert; nach dem Schließen der letzten Liste wird sie einmal neu
 berechnet.
 
+**Nach einer Übernahme aus „Relevant“** (Knöpfe oder Ziehen) bleibt die Liste ebenfalls stehen, solange der Cursor im
+Abschnitt des übernommenen Textes samt Unterabschnitten bleibt; bei einer neuen Überschrift ist es der Abschnitt, in
+dem sie steht, auf oberster Ebene nur ihr eigener. Die Reihenfolge bleibt, die übernommene Notiz wird grau oder
+verschwindet mit „Verwendete ausblenden“. Neu berechnet wird sofort, wenn der Cursor den Bereich verlässt, das Buch
+wechselt, „Verwendete ausblenden“ umgeschaltet oder die Übernahme rückgängig gemacht wird.
+
 ## Wo was liegt
 
 | Was | Ort |
