@@ -21,6 +21,7 @@ public sealed class BlockHistoryTracker(IVault vault, Func<HistoryStore?> store,
     private const string PathSeparator = " › ";
     private const int ShortestDeletedStand = 40;
     private const int LargeDeletion = 200;
+    private const int ShortestMergedText = 20;
 
     private readonly object _gate = new();
 
@@ -211,7 +212,7 @@ public sealed class BlockHistoryTracker(IVault vault, Func<HistoryStore?> store,
 
         foreach (var gone in look.Before.Except(now))
         {
-            ObserveGone(gone, page, mayWrite);
+            ObserveGone(gone, book, mayWrite);
         }
 
         _pages[page.FilePath] = now;
@@ -294,7 +295,7 @@ public sealed class BlockHistoryTracker(IVault vault, Func<HistoryStore?> store,
     /// <summary>A block not known before, written in this session.</summary>
     private Known NewBlock(string book, TextBlock text, BlockStand stand)
     {
-        var known = new Known(text.Key, stand) { Id = text.Block.Id, Book = book };
+        var known = new Known(text.Key, stand) { Id = text.Block.Id, Book = book, Started = true };
         if (text.Block.Id is null && _deletedNow.FindIndex(deleted => deleted.Stand.SameText(stand)) is >= 0 and var index
             && !IsBlank(stand) && SetId(text.Block, _deletedNow[index].Id))
         {
@@ -335,7 +336,12 @@ public sealed class BlockHistoryTracker(IVault vault, Func<HistoryStore?> store,
         }
 
         known.Id = blockId;
-        if (!IsBlank(known.Stand) && !HasVersion(blockId))
+        if (IsBlank(known.Stand))
+        {
+            // An empty block typed into starts here; what is typed next is no first version of it.
+            known.Started = true;
+        }
+        else if (!known.Started && !HasVersion(blockId))
         {
             Add(blockId, known.Book, HistoryReason.First, known.Stand);
         }
@@ -354,13 +360,24 @@ public sealed class BlockHistoryTracker(IVault vault, Func<HistoryStore?> store,
         return known;
     }
 
-    /// <summary>A known block is no longer on the page.</summary>
-    private void ObserveGone(Known gone, Page page, bool mayWrite)
+    /// <summary>A known block is no longer among the page's text blocks.</summary>
+    private void ObserveGone(Known gone, Book book, bool mayWrite)
     {
+        if (IsBlank(gone.Stand))
+        {
+            return;
+        }
+
         // After reading a page a missing block without an id in the file may just have been changed in Logseq.
         var unrecognizable = !mayWrite && (gone.Id is null || !gone.IdInFile);
-        if (IsBlank(gone.Stand) || unrecognizable || StandsElsewhere(gone, page))
+        if (unrecognizable || IsStillOnPage(gone, book.Page) || IsMerged(gone, book) || IsUndoneTitle(gone, book))
         {
+            // Not deleted, but it is forgotten here: what waited for the pause must not go with it.
+            if (gone.Open)
+            {
+                StoreOpen(gone, HistoryReason.BeforeDelete);
+            }
+
             return;
         }
 
@@ -379,15 +396,39 @@ public sealed class BlockHistoryTracker(IVault vault, Func<HistoryStore?> store,
         }
     }
 
+    /// <summary>The block is still on the page as something else: a heading now, or a sub-point.</summary>
+    private static bool IsStillOnPage(Known gone, Page page) =>
+        page.AllBlocks().Any(block => block.Key == gone.Key || (gone.Id is not null && block.Id == gone.Id));
+
     /// <summary>
-    /// The block is still on the page as something else (a heading now, a sub-point), or another block holds its text
-    /// (a merge; the title of a heading whose removal was undone).
+    /// The block went into others: its text, long enough not to stand there by chance, is in another text block or
+    /// sub-point, and its sub-points are on the page too.
     /// </summary>
-    private static bool StandsElsewhere(Known gone, Page page) =>
-        page.AllBlocks().Any(block =>
-            block.Key == gone.Key
-            || (gone.Id is not null && block.Id == gone.Id)
-            || (!string.IsNullOrWhiteSpace(gone.Stand.Text) && block.Content.Contains(gone.Stand.Text, StringComparison.Ordinal)));
+    private static bool IsMerged(Known gone, Book book)
+    {
+        if (gone.Stand.Text.Length < ShortestMergedText)
+        {
+            return false;
+        }
+
+        var texts = TextBlocksOf(book.Root)
+            .SelectMany(block => block.Paragraphs.Select(paragraph => paragraph.Text).Prepend(block.Text))
+            .ToList();
+        return Holds(texts, gone.Stand.Text)
+            && gone.Stand.Paragraphs.All(paragraph => string.IsNullOrWhiteSpace(paragraph.Text) || Holds(texts, paragraph.Text));
+    }
+
+    private static bool Holds(List<string> texts, string text) => texts.Any(other => other.Contains(text, StringComparison.Ordinal));
+
+    /// <summary>
+    /// The text block made from a heading's title in this session, gone again because the removal of the heading was
+    /// undone: the heading's title is back, exactly its text.
+    /// </summary>
+    private static bool IsUndoneTitle(Known gone, Book book) =>
+        gone.Started && gone.Stand.Paragraphs.Count == 0 && HeadingsOf(book.Root).Any(heading => heading.Title == gone.Stand.Text);
+
+    private static IEnumerable<OutlineNode> HeadingsOf(OutlineNode section) =>
+        section.Children.SelectMany(child => HeadingsOf(child).Prepend(child));
 
     private static bool IsLargeDeletion(BlockStand longest, BlockStand stand)
     {
@@ -614,6 +655,9 @@ public sealed class BlockHistoryTracker(IVault vault, Func<HistoryStore?> store,
 
         /// <summary>The <c>id::</c> was seen in the page as read or saved, not only as about to be saved.</summary>
         public bool IdInFile { get; set; }
+
+        /// <summary>The block began in this session, so there is no earlier text a first version would keep.</summary>
+        public bool Started { get; set; }
 
         /// <summary>The last stand.</summary>
         public BlockStand Stand { get; set; } = stand;

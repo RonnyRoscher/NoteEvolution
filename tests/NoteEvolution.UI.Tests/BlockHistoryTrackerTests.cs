@@ -228,6 +228,32 @@ public class BlockHistoryTrackerTests : UiTestContext
         Assert.NotNull(block.Id);
         Assert.Empty(Versions(session, block));
 
+        // Written on within the pause: the earlier stand is a fragment, no first version.
+        Time.Advance(5 * Minute);
+        Write(session, block, "Neuer Text, weitergeschrieben");
+        Assert.Empty(Versions(session, block));
+
+        Time.Advance(10 * Minute);
+
+        var version = Assert.Single(Versions(session, block));
+        Assert.Equal(HistoryReason.Pause, version.Reason);
+        Assert.Equal("Neuer Text, weitergeschrieben", version.Stand.Text);
+    }
+
+    [Fact]
+    public async Task EmptyNewBlock_TypedInTwice_NoFirst()
+    {
+        using var vault = VaultOf();
+        var session = await OpenSessionAsync(vault);
+        var page = BookOf(session).Page;
+        var block = Block.CreateDetached("");
+        page.InsertBlock(Find(session, "Zweiter").Block.Parent, 0, block);
+        Assert.True(session.TrySave(page, out _));
+
+        Write(session, block, "Neu");
+        Write(session, block, "Neuer Text");
+        Assert.Empty(Versions(session, block));
+
         Time.Advance(10 * Minute);
 
         var version = Assert.Single(Versions(session, block));
@@ -271,16 +297,89 @@ public class BlockHistoryTrackerTests : UiTestContext
     [Fact]
     public async Task MergedBlock_NotListed()
     {
-        using var vault = VaultOf();
+        var text =
+            "title:: Buch\ntype:: book\n\n- # Eins\n" +
+            "\t- Der erste lange Absatz\n" +
+            "\t- Der zweite lange Absatz\n" +
+            "\t\t- Sein Unterpunkt\n";
+        using var vault = VaultOf(text);
         var session = await OpenSessionAsync(vault);
         var book = BookOf(session);
-        var first = Find(session, "Erster");
-        var second = Find(session, "Zweiter");
+        var first = Find(session, "Der erste");
+        var second = Find(session, "Der zweite");
 
         session.Links.MergeTextBlocks(book, [[first.Key, second.Key]]);
 
         Assert.Empty(session.History!.Deleted(BookName));
-        Assert.Equal("Erster Text", Versions(session, first.Block).Last().Stand.Text);
+        Assert.Equal("Der erste lange Absatz", Versions(session, first.Block).Last().Stand.Text);
+    }
+
+    [Fact]
+    public async Task MergedBlock_OpenStandBecomesAVersion()
+    {
+        var text =
+            "title:: Buch\ntype:: book\n\n- # Eins\n" +
+            "\t- Der erste lange Absatz\n" +
+            "\t- Der zweite lange Absatz\n";
+        using var vault = VaultOf(text);
+        var session = await OpenSessionAsync(vault);
+        Write(session, Find(session, "Der erste").Block, "Der erste lange Absatz, neu");
+        var second = Find(session, "Der zweite");
+        Write(session, second.Block, "Der zweite lange Absatz, neu");
+        var id = second.Block.Id!.Value;
+
+        session.Links.MergeTextBlocks(BookOf(session), [[Find(session, "Der erste").Key, Find(session, "Der zweite").Key]]);
+
+        Assert.Empty(session.History!.Deleted(BookName));
+        Assert.Equal("Der zweite lange Absatz, neu", session.History.Latest(id)!.Stand.Text);
+    }
+
+    [Fact]
+    public async Task DeletedBlock_WithSubPoints_UnderAHeadingOfTheSameName_Listed()
+    {
+        var text =
+            "title:: Buch\ntype:: book\n\n- # Eins\n" +
+            "\t- ## Ein langer Name für den Abschnitt\n" +
+            "\t\t- Ein langer Name für den Abschnitt\n" +
+            "\t\t\t- Sein Unterpunkt\n";
+        using var vault = VaultOf(text);
+        var session = await OpenSessionAsync(vault);
+
+        session.Links.DeleteTextBlock(BookOf(session), Find(session, "Ein langer").Key);
+
+        var deleted = Assert.Single(session.History!.Deleted(BookName));
+        Assert.Equal("Sein Unterpunkt", Assert.Single(deleted.Stand.Paragraphs).Text);
+    }
+
+    [Fact]
+    public async Task DeletedBlock_TextHeldElsewhere_ButSubPointsGone_Listed()
+    {
+        var text =
+            "title:: Buch\ntype:: book\n\n- # Eins\n" +
+            "\t- Dieser Satz steht zweimal im Buch\n" +
+            "\t\t- Nur hier ein Unterpunkt\n" +
+            "\t- Davor: Dieser Satz steht zweimal im Buch\n";
+        using var vault = VaultOf(text);
+        var session = await OpenSessionAsync(vault);
+
+        session.Links.DeleteTextBlock(BookOf(session), Find(session, "Dieser").Key);
+
+        Assert.Single(session.History!.Deleted(BookName));
+    }
+
+    [Fact]
+    public async Task DeletedBlock_ShortTextThatOccursElsewhere_Listed()
+    {
+        var text =
+            "title:: Buch\ntype:: book\n\n- # Ja\n" +
+            "\t- Ja\n" +
+            "\t- Ja, sagte sie.\n";
+        using var vault = VaultOf(text);
+        var session = await OpenSessionAsync(vault);
+
+        session.Links.DeleteTextBlock(BookOf(session), Blocks(BookOf(session).Root).First().Key);
+
+        Assert.Equal("Ja", Assert.Single(session.History!.Deleted(BookName)).Stand.Text);
     }
 
     [Fact]

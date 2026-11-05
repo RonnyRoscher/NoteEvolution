@@ -237,6 +237,7 @@ public class AppendixEditorTests : UiTestContext
         // One undo takes the reference and the new id back.
         session.Undo.Undo();
         AssertSameBesidesNewIds(text, vault.Read(BookPath));
+        Assert.DoesNotContain(anna.Id.ToString("D"), vault.Read(BookPath));
 
         // A source without an id works the same way.
         await cut.InvokeAsync(() => State.FlushEditor!());

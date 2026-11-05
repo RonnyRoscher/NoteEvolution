@@ -228,6 +228,7 @@ public partial class ReferencePickerTests : UiTestContext
         // One undo takes back the reference and the id.
         Assert.True(session.TryUndo(out var error), error?.ToString());
         AssertSameBesidesNewIds(BookText, _vault.Read(BookPath));
+        Assert.DoesNotContain(id, _vault.Read(BookPath));
         Assert.False(session.Undo.CanUndo);
     }
 
