@@ -5,6 +5,7 @@ using NoteEvolution.AI.Language;
 using NoteEvolution.AI.Tests;
 using NoteEvolution.AI.Understanding;
 using NoteEvolution.Core.Books;
+using NoteEvolution.Core.Vaults;
 using NoteEvolution.TestSupport;
 using NoteEvolution.UI.Platform;
 using NoteEvolution.UI.State;
@@ -564,6 +565,63 @@ public class LanguageModelTests : UiTestContext
 
         Assert.Equal(UnderstandingItems.NoteIdentity("Gleiche Zeile", "journals/2026_03_03.md"), identities[a]);
         Assert.Equal(UnderstandingItems.NoteIdentity("Gleiche Zeile", "journals/2026_03_04.md"), identities[b]);
+    }
+
+    [Fact]
+    public void NoteIdentities_ThreeNotesSameFirstLine_NumberedInFileOrder()
+    {
+        const string path = "journals/2026_03_03.md";
+        using var tv = TestVault.Create((path, "- Gleiche Zeile\n  eins\n- Dazwischen\n- Gleiche Zeile\n  zwei\n- Gleiche Zeile\n  drei\n"));
+        var roots = new NoteRepository(tv.Open()).All().Where(n => n.Block.Parent is null).ToList();
+
+        var identities = UnderstandingItems.NoteIdentities(roots.Select(n => (n.Key, n.Block.Content, n.Page.FilePath)));
+
+        var plain = UnderstandingItems.NoteIdentity("Gleiche Zeile", path);
+        string[] numbered = [.. roots.Where(n => n.Block.Content.StartsWith("Gleiche Zeile", StringComparison.Ordinal)).Select(n => identities[n.Key])];
+        Assert.Equal([plain, plain + "#2", plain + "#3"], numbered);
+        Assert.Contains("eins", roots.Single(n => identities[n.Key] == plain).Block.Content);
+        Assert.Contains("zwei", roots.Single(n => identities[n.Key] == plain + "#2").Block.Content);
+        Assert.Contains("drei", roots.Single(n => identities[n.Key] == plain + "#3").Block.Content);
+    }
+
+    /// <summary>Runs a manual check of the note with <paramref name="content"/>, closes the session and tells whether a verdict is stored under the identity.</summary>
+    private async Task<bool> ManualCheckStoredUnderAsync(VaultSession session, TestVault tv, string content, string identity)
+    {
+        AnswerPlacements();
+        var book = CurrentBook(session);
+        var (verdict, failure) = await session.CheckPlacementAsync(NoteKey(session, content), NoteText(session, content), book, CancellationToken.None);
+        Assert.Null(failure);
+        Assert.NotNull(verdict);
+        session.Dispose();
+        using var store = UnderstandingStore.Open(tv.Root);
+        return store.LatestByIdentity(UnderstandingKind.Placement, UnderstandingItems.PlacementIdentity(book.LinkName, identity)) is not null;
+    }
+
+    [Fact]
+    public async Task Session_ManualCheck_AfterFirstLineEdit_StoredUnderNewIdentity()
+    {
+        var tv = Vault();
+        var session = await OpenReadyAsync(tv);
+
+        // No time passes, so the snapshot still has the old first line.
+        const string edited = "Ganz neue erste Zeile. " + OlderNote;
+        Edit(session, OlderJournal, OlderNote, edited);
+
+        Assert.True(await ManualCheckStoredUnderAsync(session, tv, edited, UnderstandingItems.NoteIdentity(edited, OlderJournal)));
+    }
+
+    [Fact]
+    public async Task Session_ManualCheck_NoteWithDuplicateFirstLineAfterSnapshot_GetsNumber()
+    {
+        var tv = Vault();
+        var session = await OpenReadyAsync(tv);
+
+        // The second block of the page takes the first line of the first one after the snapshot was taken.
+        const string duplicate = OlderNote + " Noch einmal.";
+        Edit(session, OlderJournal, "kurz", duplicate);
+
+        Assert.True(await ManualCheckStoredUnderAsync(
+            session, tv, duplicate, UnderstandingItems.NoteIdentity(OlderNote, OlderJournal) + "#2"));
     }
 
     [Fact]

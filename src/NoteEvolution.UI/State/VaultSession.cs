@@ -108,7 +108,6 @@ public sealed class VaultSession : IDisposable
     private string? _focusBook;
     private Guid _focusSection;
     private IReadOnlyList<NoteSnapshot>? _noteSnapshot;
-    private IReadOnlyDictionary<Guid, string> _noteIdentities = new Dictionary<Guid, string>();
 
     /// <summary>The number of the last feed started; only its result is applied (under <see cref="_feedGate"/>).</summary>
     private int _feedsStarted;
@@ -1061,11 +1060,13 @@ public sealed class VaultSession : IDisposable
         // Read here, on the UI thread: the identity the verdict is stored under (none for a note not in the vault), and
         // the note's core statement item (none for a short note).
         var note = Notes.Get(noteKey);
-        // The identity is the one of the last snapshot (it tells notes with the same first line apart); a note it does not
-        // know yet (added since) has the plain one.
+        // Numbered again here (not taken from the last snapshot), so an edited first line or a note added since counts.
         var identity = note is null
             ? null
-            : _noteIdentities.GetValueOrDefault(noteKey) ?? UnderstandingItems.NoteIdentity(note.Block.Content, note.Page.FilePath);
+            : UnderstandingItems.NoteIdentities(
+                    Notes.All().Where(n => n.Block.Parent is null).Select(n => (n.Key, n.Block.Content, n.Page.FilePath)))
+                .GetValueOrDefault(noteKey) // nested notes are not numbered
+                ?? UnderstandingItems.NoteIdentity(note.Block.Content, note.Page.FilePath);
         var core = note is null ? null : UnderstandingItems.ForNote(note, understanding.ChatModel, identity);
         PlacementCheckPrompt prompt;
         try
@@ -1371,7 +1372,6 @@ public sealed class VaultSession : IDisposable
                 var roots = Notes.All().Where(note => note.Block.Parent is null).ToList();
                 var identities = UnderstandingItems.NoteIdentities(
                     roots.Select(note => (note.Key, note.Block.Content, note.Page.FilePath)));
-                _noteIdentities = identities;
                 _noteSnapshot =
                 [
                     .. roots
