@@ -92,6 +92,12 @@ stehen mit „verwendet“ dabei (Tooltip: in welchen Büchern), die bisherigen 
 verknüpfen“ verknüpft wie der `[handled]`-Assistent: der Block bekommt `source::`, die Notiz
 `used-in:: [[Buch]] ((id))`; das × am Quellen-Chip nimmt es zurück.
 
+**Quellen der Leiste:** „N Quellen ▸“ zeigt die Verknüpfungen des Bereichs, die des Textblocks und die seiner Details
+(bei einer Überschrift die ihres ganzen Abschnitts), je Verknüpfung eine Zeile; hängt dieselbe Notiz an mehreren Blöcken,
+steht sie einmal je Block (Tooltip des ×: der Block). Das × „Verknüpfung lösen“ entfernt die Quelle am Block und den
+passenden `used-in::`-Eintrag an der Notiz (auch bei „Quelle nicht gefunden“); Text, `id::` und Status bleiben. Die Liste
+bleibt offen, mehrere Korrekturen gehen nacheinander; ein „Rückgängig“ nimmt das Lösen zurück.
+
 Jeder Befehl lässt sich mit „Rückgängig“ in der Kopfzeile zurücknehmen, solange danach nichts an der Buchdatei
 geändert wurde. „N Quellen ▸“ klappt die Quellen des Abschnitts auf; ein Klick springt im Reiter Journal zur Notiz.
 Ist „Verwendete ausblenden“ eingeschaltet, erscheint die Notiz stattdessen als Karte oben im Notizbereich.
@@ -123,6 +129,14 @@ Cursor:
 Ein neuer Textblock bekommt neue Daten und keine Quellen (`source::` bleibt am alten Block, der `updated::` bekommt).
 Verweise auf einen eingerückten Textblock zeigen danach auf den Textblock, der ihn aufnimmt. Was nicht geht, ist
 ausgegraut, und der Tooltip nennt den Grund.
+
+**Verknüpfungen der Unterpunkte nachtragen** (Menü „Assistenten“): ältere Übernahmen haben nur den Hauptpunkt
+verknüpft. Der Assistent sucht die Details ohne `source::`, deren Text genau einem Unterpunkt der Quellnotiz entspricht,
+und zeigt vorab, wie viele Unterpunkte in wie vielen Büchern verknüpft werden und wie viele Details ohne eindeutigen
+Treffer bleiben (z. B. umformulierte). „Nachtragen“ ergänzt nur Eigenschaftszeilen (`id::`, `source::`, `used-in::`),
+nie Text oder Reihenfolge, wie beim `[handled]`-Assistenten (ungespeicherter Editortext, offener Konflikt: es wird
+nichts geschrieben). Ein „Rückgängig“ gibt Buch- und Notizseiten ihre alten Zeilen zurück; eine inzwischen geänderte
+Seite bleibt, wie sie ist, und die Meldung nennt sie. Ein zweiter Lauf findet nichts mehr.
 
 **Gliederung nach Ebenen ordnen** (Menü „Assistenten“): zeigt, wie viele und welche Überschriften des Buchs nicht nach
 ihrer Ebene eingerückt sind, und ordnet sie mit „Einordnen“ alle nach ihrer Ebene ein, Überschriften in einem Textblock
@@ -220,6 +234,10 @@ damit?** (nur mit lokaler KI), ✓ und Fortschrittspunkt des Bereichskopfs, bei 
 und nennt den Grund im Tooltip (kein Buch gewählt, Buch schreibgeschützt, Notizdatei nicht sicher lesbar, offener
 Konflikt). Ins Buch gezogen wird mit dem Griff „⠿“ vorn in der Leiste (der Bereichskopf); die Karte selbst lässt sich
 nicht ziehen, damit ihr Text markiert werden kann.
+
+Jeder kopierte Block bekommt eine eigene Verknüpfung zu seinem Notizblock: `id::` und `source::` am Textblock oder
+Detail, `used-in::` am Notizblock; auch ein Unterpunkt ist damit einzeln verwendet (✓, „Verwendete ausblenden“), und
+„Rückgängig“ nimmt alle Verknüpfungen der Übernahme zurück.
 
 Übernommen wird genau der Bereich, auf eine von drei Arten: **Am Cursor** (in den aktuellen Block an der
 Cursorstelle), **Danach** (neues Element nach dem aktuellen) und **Darunter** (als erstes Unterelement). Bei „ohne

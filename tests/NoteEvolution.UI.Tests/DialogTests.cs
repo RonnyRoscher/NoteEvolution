@@ -1028,6 +1028,8 @@ public class DialogTests : UiTestContext
         OpenAndClose(cut, ".ne-assistant-normalize", ".ne-normalize", ".ne-normalize-close");
         cut.Find(".ne-assistants-toggle").Click();
         OpenAndClose(cut, ".ne-assistant-deleted", ".ne-deleted", ".ne-deleted-close");
+        cut.Find(".ne-assistants-toggle").Click();
+        OpenAndClose(cut, ".ne-assistant-subpoints", ".ne-subpoints", ".ne-subpoints-close");
     }
 
     [Fact]

@@ -68,7 +68,7 @@
     }
 
     @* The commands next to undo; the indicators (read-only files, AI, language model, system meter) at the right end. *@
-    @if (OnHandledWizard.HasDelegate || OnDraftWizard.HasDelegate || OnNormalizeOutline.HasDelegate || OnDeletedBlocks.HasDelegate)
+    @if (OnHandledWizard.HasDelegate || OnDraftWizard.HasDelegate || OnNormalizeOutline.HasDelegate || OnDeletedBlocks.HasDelegate || OnSubPointLinks.HasDelegate)
     {
         <div class="ne-assistants">
             <button type="button" class="ne-assistants-toggle" disabled="@(State.Session is null)" aria-expanded="@(_assistantsOpen ? "true" : "false")"
@@ -82,6 +82,7 @@
                             @onclick="OpenNormalize">@L["AssistantNormalize"]</button>
                     <button type="button" class="ne-assistant-deleted" disabled="@(State.CurrentBook is null || !OnDeletedBlocks.HasDelegate)"
                             @onclick="OpenDeleted">@L["AssistantDeletedBlocks"]</button>
+                    <button type="button" class="ne-assistant-subpoints" @onclick="OpenSubPoints">@L["AssistantSubPoints"]</button>
                 </div>
             }
         </div>
@@ -218,6 +219,8 @@
 
     /// <summary>Opens the list of the deleted blocks of the current book; its entry is disabled without a book or while unset.</summary>
     [Parameter] public EventCallback OnDeletedBlocks { get; set; }
+
+    [Parameter] public EventCallback OnSubPointLinks { get; set; }
 
     /// <summary>Opens the PDF export dialog; the button is disabled while unset.</summary>
     [Parameter] public EventCallback OnPdfExport { get; set; }
@@ -533,6 +536,12 @@
         await OnDeletedBlocks.InvokeAsync();
     }
 
+    private async Task OpenSubPoints()
+    {
+        _assistantsOpen = false;
+        await OnSubPointLinks.InvokeAsync();
+    }
+
     private async Task Undo()
     {
         if (_session is null)
@@ -562,7 +571,11 @@
 
         // Refused while a conflict is open, or when the action no longer fits (e.g. the editor already brought a
         // deleted block back); the session logs the details, the header says that nothing was undone.
-        _undoError = session.TryUndo(out _) ? null : L[session.HasAnyOpenConflict ? "UndoConflict" : "UndoFailed"].Value;
+        _undoError = session.TryUndo(out var undoFailure)
+            ? null
+            : undoFailure is PagesNotRestoredException notRestored
+                ? SubPointLinkMessages.UndoKept(L, notRestored)
+                : L[session.HasAnyOpenConflict ? "UndoConflict" : "UndoFailed"].Value;
 
         // The undone operation changed (and saved) the book page, or a failed one left the vault with the page as it
         // is on disk; views take it from the vault again. A note whose usage went comes back into the notes tabs, also
