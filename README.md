@@ -383,9 +383,10 @@ verglichen; dadurch weiß jede Überschrift, worum es in ihren Unterabschnitten 
   unter ihre drei besten; von den damals angebotenen Abschnitten wird weniger als die Hälfte noch angeboten; ein
   anderes Chat-Modell oder eine andere Form der Anfrage; oder „Genauer prüfen“ wurde geklickt. Sonst bleibt das
   Ergebnis und gilt als aktuell (grüner Punkt); andere Zusammenfassungen, geänderte oder verschwundene Textstellen,
-  umbenannte Abschnitte und eine andere Reihenfolge der Abschnitte genügen nicht. Verglichen wird mit der letzten
-  echten Prüfung. Gespeichert werden dazu Abschnittspfad, Textstellenanfang und die Grundlage der Prüfung; so bleiben
-  Ergebnisse auch über einen Neustart nutzbar. „Genauer prüfen“ erscheint nur noch, wenn eine Empfehlung fehlt oder
+  umbenannte Abschnitte (das Ergebnis wird dann mit den neuen Namen gespeichert) und eine andere Reihenfolge der
+  Abschnitte genügen nicht; ein gelöschter gewählter Abschnitt wird nicht mit einem gleichnamigen verwechselt, der
+  seinen Platz einnimmt. Verglichen wird mit der letzten echten Prüfung. Gespeichert werden dazu Abschnittspfad,
+  Textstellenanfang und die Grundlage der Prüfung; so bleiben Ergebnisse auch über einen Neustart nutzbar. „Genauer prüfen“ erscheint nur noch, wenn eine Empfehlung fehlt oder
   veraltet ist.
 - **„Relevant“** beschreibt den Abschnitt über seine Zusammenfassung (und zu einem Viertel die seines Oberabschnitts)
   und vergleicht die Notizen über Kernaussage und Text. Oben stehen unter „Hierher eingeordnet“ die Notizen, die das

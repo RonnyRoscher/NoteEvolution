@@ -116,6 +116,104 @@ public sealed class PlacementKeepTests : IDisposable
         Assert.Equal(RecheckReason.None, PlacementKeep.Decide(latest, prompt, book));
     }
 
+    /// <summary>The verdict as an earlier session stored it: its keys are not in this session's book.</summary>
+    private static PlacementVerdict Earlier(PlacementVerdict verdict) => PlacementCheck.Deserialize(PlacementCheck.Serialize(verdict with
+    {
+        SectionKey = Guid.NewGuid(), AfterTextBlockKey = verdict.AfterTextBlockKey is null ? null : Guid.NewGuid(),
+        EmbeddingSectionKey = verdict.EmbeddingSectionKey is null ? null : Guid.NewGuid(),
+        Basis = verdict.Basis! with { OfferedKeys = null, TopChapterKeys = null },
+    }))!;
+
+    [Fact]
+    public void RenamedChapterNotChosen_InTopThree_Kept()
+    {
+        var latest = Latest();
+        Block("# Kapitel B").SetContent("# Kapitel Beta");
+        var book = Book();
+
+        var prompt = Prompt(book, ["Unter A1", "Kapitel Beta", "Unter A2", "Kapitel C", "Kapitel D"]);
+
+        Assert.Contains("Kapitel Beta#0", prompt.Basis!.TopChapters);
+        Assert.Equal(RecheckReason.None, PlacementKeep.Decide(latest, prompt, book));
+    }
+
+    [Fact]
+    public void RenamedSiblingRankedBeforeChosen_Kept()
+    {
+        var book = Book();
+        var latest = Stored(Prompt(book, ["Unter A2", "Unter A1", "Kapitel B", "Kapitel C"]), Node(book, "Unter A1").Key);
+        Block("## Unter A2").SetContent("## Unter Zwei");
+        book = Book();
+
+        Assert.Equal(RecheckReason.None,
+            PlacementKeep.Decide(latest, Prompt(book, ["Unter Zwei", "Unter A1", "Kapitel B", "Kapitel C"]), book));
+    }
+
+    [Fact]
+    public void RenamedChapter_ResultFromEarlierSession_KeptByTheNamesSeenInThisSession()
+    {
+        var names = new SectionNames();
+        var before = Book();
+        var latest = Earlier(Latest());
+        names.Remember(before); // the build before the rename
+        Block("# Kapitel B").SetContent("# Kapitel Beta");
+        var book = Book();
+        var prompt = Prompt(book, ["Unter A1", "Kapitel Beta", "Unter A2", "Kapitel C", "Kapitel D"]);
+
+        Assert.Equal(RecheckReason.None, PlacementKeep.Decide(latest, prompt, book, names));
+
+        // Without a book of this session from before the rename, its old name is not found.
+        Assert.Equal(RecheckReason.NewCandidate, PlacementKeep.Decide(latest, prompt, book, new SectionNames()));
+    }
+
+    [Fact]
+    public void RenamedChosenSection_RewrittenToTodaysNames_KeptAfterRestart()
+    {
+        var names = new SectionNames();
+        var latest = Latest();
+        names.Remember(Book());
+        Assert.Null(PlacementKeep.Renamed(latest, Book(), names)); // nothing renamed: nothing to write
+        Block("# Kapitel A").SetContent("# Kapitel Alpha");
+        Block("## Unter A1").SetContent("## Unter Eins");
+        var book = Book();
+        var prompt = Prompt(book, ["Unter Eins", "Kapitel B", "Unter A2", "Kapitel C", "Kapitel D"]);
+        Assert.Equal(RecheckReason.None, PlacementKeep.Decide(latest, prompt, book, names));
+
+        var renamed = PlacementKeep.Renamed(latest, book, names)!;
+
+        Assert.Equal("Kapitel Alpha#0 › Unter Eins#0", renamed.SectionPath);
+        Assert.Equal(prompt.Basis!.Offered.Order(), renamed.Basis!.Offered.Order());
+        Assert.Equal(["Kapitel Alpha#0", "Kapitel B#0", "Kapitel C#0"], renamed.Basis.TopChapters);
+        Assert.Contains("Kapitel Alpha#0 › Unter Eins#0", renamed.Basis.Ranking);
+        Assert.Equal(latest.Basis!.NoteHash, renamed.Basis.NoteHash);
+
+        // After a restart the keys are new: the rewritten paths find the section and keep the result.
+        var restarted = Earlier(renamed);
+        Assert.Same(Node(book, "Unter Eins"), SectionPath.Find(book, restarted.SectionPath!));
+        Assert.Equal(RecheckReason.None, PlacementKeep.Decide(restarted, prompt, book, new SectionNames()));
+    }
+
+    [Fact]
+    public void ChosenSectionDeleted_SameTitledSiblingLeft_SectionGone()
+    {
+        AddHeading("Kapitel A", "Unter A1"); // "Unter A1#1"
+        var names = new SectionNames();
+        var before = Book();
+        var chosen = All(before.Root).First(n => n.Title == "Unter A1");
+        var latest = Stored(Prompt(before, ["Unter A2", "Kapitel B", "Kapitel C"]), chosen.Key);
+        Assert.Equal("Kapitel A#0 › Unter A1#0", latest.SectionPath);
+        var earlier = Earlier(latest);
+        names.Remember(before);
+
+        _page.RemoveBlock(_page.AllBlocks().First(b => b.Content == "## Unter A1"));
+        var book = Book();
+        var prompt = Prompt(book, ["Unter A2", "Kapitel B", "Kapitel C"]);
+
+        // The sibling now has the path "Unter A1#0", but it is another section.
+        Assert.Equal(RecheckReason.SectionGone, PlacementKeep.Decide(latest, prompt, book, names));
+        Assert.Equal(RecheckReason.SectionGone, PlacementKeep.Decide(earlier, prompt, book, names));
+    }
+
     [Fact]
     public void OtherSummary_Kept()
     {

@@ -33,11 +33,18 @@ public sealed record PlacementVerdict(Guid SectionKey, Guid? AfterTextBlockKey, 
 /// <param name="TopChapters">The paths of the (at most 3) chapters the offered sections came from, best first.</param>
 /// <param name="Ranking">The paths of the topics in the embedding search's order (those in the book).</param>
 /// <param name="Request">
-/// The fingerprint of the request's form: <see cref="UnderstandingItems.PromptVersion"/>, the system prompt and the answer's
-/// schema without its choices (<see cref="PlacementCheck.RequestForm"/>); null for a basis stored without it.
+/// The fingerprint of the request's form: <see cref="UnderstandingItems.PromptVersion"/>, the user prompt's layout, the
+/// system prompt and the answer's schema without its choices (<see cref="PlacementCheck.RequestForm"/>); null for a basis
+/// stored without it.
 /// </param>
+/// <param name="OfferedKeys">
+/// The keys of the offered sections, in <paramref name="Offered"/> order; valid only in the session that wrote them (keys
+/// are new on every start), there they find a renamed section. Null for a basis stored without them.
+/// </param>
+/// <param name="TopChapterKeys">The keys of <paramref name="TopChapters"/>, as <paramref name="OfferedKeys"/>.</param>
 public sealed record PlacementBasis(string NoteHash, IReadOnlyList<string> Offered, IReadOnlyList<string> TopChapters,
-    IReadOnlyList<string> Ranking, string? Request = null);
+    IReadOnlyList<string> Ranking, string? Request = null, IReadOnlyList<Guid>? OfferedKeys = null,
+    IReadOnlyList<Guid>? TopChapterKeys = null);
 
 /// <summary>Why a placement check gave no verdict.</summary>
 public enum PlacementCheckFailure { NoAnswer, Unusable, Cancelled, Unavailable }
@@ -88,11 +95,23 @@ public static class PlacementCheck
         "\"kaum\" heißt: keiner der Abschnitte passt inhaltlich wirklich.";
 
     /// <summary>
-    /// The fingerprint of the request's form, apart from its sections and places: the prompt version, the system prompt and
-    /// the answer's schema without its choices. A result made with another form is not kept (<see cref="PlacementBasis.Request"/>).
+    /// The version of the user prompt's layout: its framing ("Notiz:", "Abschnitte:") and the formats of its section and
+    /// place lines. Bump it whenever they change, so stored results are not kept for a request the model reads otherwise
+    /// (<see cref="RequestForm"/>). Placement checks only; their fingerprints change with the text anyway.
     /// </summary>
-    public static readonly string RequestForm =
-        UnderstandingItems.Hash([UnderstandingItems.PromptVersion.ToString(CultureInfo.InvariantCulture), SystemPrompt, Schema([])]);
+    internal const int LayoutVersion = 1;
+
+    /// <summary>
+    /// The fingerprint of the request's form, apart from its sections and places: the prompt version, the user prompt's
+    /// layout (<see cref="LayoutVersion"/>), the system prompt and the answer's schema without its choices. A result made
+    /// with another form is not kept (<see cref="PlacementBasis.Request"/>).
+    /// </summary>
+    public static readonly string RequestForm = RequestFormOf(LayoutVersion);
+
+    /// <summary><see cref="RequestForm"/> for the user prompt's layout <paramref name="layoutVersion"/>.</summary>
+    internal static string RequestFormOf(int layoutVersion) =>
+        UnderstandingItems.Hash([UnderstandingItems.PromptVersion.ToString(CultureInfo.InvariantCulture),
+            "layout " + layoutVersion.ToString(CultureInfo.InvariantCulture), SystemPrompt, Schema([])]);
 
     /// <summary>The request options of a check: a short answer constrained to <paramref name="prompt"/>'s schema.</summary>
     public static ChatOptions Options(PlacementCheckPrompt prompt) =>
@@ -183,7 +202,7 @@ public static class PlacementCheck
             [.. numbered.Select(topic => topic.Path)],
             [.. chapters.Select(SectionPath.Of)],
             [.. topics.Select(topic => book.FindNode(topic.SectionKey)).OfType<OutlineNode>().Select(SectionPath.Of)],
-            RequestForm);
+            RequestForm, [.. numbered.Select(topic => topic.SectionKey)], [.. chapters.Select(chapter => chapter.Key)]);
         return new PlacementCheckPrompt(SystemPrompt, string.Join("\n", lines), numbered, Schema(choices), embeddingSection?.Key, basis);
     }
 
@@ -240,20 +259,29 @@ public static class PlacementCheck
     {
         var topic = prompt.Topics.FirstOrDefault(t => t.SectionKey == verdict.SectionKey);
         var place = topic is null || verdict.AfterTextBlockKey is not { } after ? -1 : topic.TextBlockKeys.ToList().IndexOf(after);
-        return JsonSerializer.Serialize(new
+        return Serialize(verdict with
         {
-            section = verdict.SectionKey,
-            after = verdict.AfterTextBlockKey,
-            reason = verdict.Reason,
-            summary = verdict.Summary,
-            fit = verdict.Fit.ToString(),
-            embeddingSection = verdict.EmbeddingSectionKey,
-            path = topic?.Path,
-            afterText = place >= 0 ? topic!.PlaceTexts?.ElementAtOrDefault(place) : null,
-            basis = prompt.Basis,
-            embeddingSectionPath = prompt.Topics.FirstOrDefault(t => t.SectionKey == verdict.EmbeddingSectionKey)?.Path,
-        }, WrittenOptions);
+            SectionPath = topic?.Path,
+            AfterText = place >= 0 ? topic!.PlaceTexts?.ElementAtOrDefault(place) : null,
+            Basis = prompt.Basis,
+            EmbeddingSectionPath = prompt.Topics.FirstOrDefault(t => t.SectionKey == verdict.EmbeddingSectionKey)?.Path,
+        });
     }
+
+    /// <summary>The verdict as JSON with the lasting names it carries (as read by <see cref="Deserialize"/>, or renamed).</summary>
+    public static string Serialize(PlacementVerdict verdict) => JsonSerializer.Serialize(new
+    {
+        section = verdict.SectionKey,
+        after = verdict.AfterTextBlockKey,
+        reason = verdict.Reason,
+        summary = verdict.Summary,
+        fit = verdict.Fit.ToString(),
+        embeddingSection = verdict.EmbeddingSectionKey,
+        path = verdict.SectionPath,
+        afterText = verdict.AfterText,
+        basis = verdict.Basis,
+        embeddingSectionPath = verdict.EmbeddingSectionPath,
+    }, WrittenOptions);
 
     /// <summary>
     /// Reads what <see cref="Serialize"/> wrote; fields a result was stored without (older ones) stay null. Null if the
@@ -431,8 +459,8 @@ public static class PlacementCheck
         return line.Length <= PlaceLength ? line : line[..(PlaceLength - 1)] + "…";
     }
 
-    /// <summary>The start of a place's text as stored: its first line, at most 100 characters, without a mark where it was cut.</summary>
-    private static string PlaceText(string content)
+    /// <summary>The start of a place's text as stored: its first line, trimmed, at most 100 characters, without a mark where it was cut.</summary>
+    internal static string PlaceText(string content)
     {
         var line = PlainFirstLine(content);
         return line.Length <= PlaceLength ? line : line[..PlaceLength];

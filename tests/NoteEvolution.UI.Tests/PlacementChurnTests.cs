@@ -131,6 +131,17 @@ public class PlacementChurnTests
         Assert.Contains("New 1", Assert.Single(_logger.Lines));
     }
 
+    private static readonly IReadOnlyDictionary<string, RecheckReason> NoRechecks = new Dictionary<string, RecheckReason>();
+
+    /// <summary>A build checks the fingerprints again by these rules (its keep line is cleared from the log).</summary>
+    private void RecheckedBy(string fingerprint, RecheckReason reason, params (string Fingerprint, RecheckReason Reason)[] more)
+    {
+        var rechecks = more.Prepend((fingerprint, reason)).ToDictionary(r => r.Item1, r => r.Item2);
+        var count = _logger.Lines.Count;
+        _churn.Keep(Book, 0, 0, rechecks.GroupBy(r => r.Value).ToDictionary(g => g.Key, g => g.Count()), rechecks);
+        _logger.Lines.RemoveRange(count, _logger.Lines.Count - count);
+    }
+
     private string Verdict(Guid section, Guid? after = null) =>
         PlacementCheck.Serialize(new PlacementVerdict(section, after, "Grund"), new PlacementCheckPrompt("", "", [], ""));
 
@@ -139,6 +150,7 @@ public class PlacementChurnTests
     {
         _store["a1"] = resultBefore;
         _churn.Checks(Book, [Check("a1", before)]);
+        RecheckedBy("a2", RecheckReason.NewCandidate);
         _churn.Checks(Book, [Check("a2", after)]);
         _logger.Lines.Clear();
         _store["a2"] = resultAfter;
@@ -151,8 +163,8 @@ public class PlacementChurnTests
     {
         var line = Recheck(Standard(), Verdict(_section, _place), Standard(summary: "Neu."), Verdict(_section, _place));
 
-        Assert.Contains("(Summaries): same place", line);
-        Assert.Contains("Summaries: same place 1, same section 0, other section 0, no earlier 0", line);
+        Assert.Contains("(NewCandidate): same place", line);
+        Assert.Contains("NewCandidate: same place 1, same section 0, other section 0, no earlier 0", line);
     }
 
     [Fact]
@@ -160,7 +172,7 @@ public class PlacementChurnTests
     {
         var line = Recheck(Standard(), Verdict(_section, _place), Standard(summary: "Neu."), Verdict(_section));
 
-        Assert.Contains("(Summaries): same section", line);
+        Assert.Contains("(NewCandidate): same section", line);
     }
 
     [Fact]
@@ -172,7 +184,7 @@ public class PlacementChurnTests
         var (a, b) = (Guid.NewGuid(), Guid.NewGuid());
         var after = Prompt("Text", "1. A – Neu.\n2. B", new CheckTopic(1, a, [], Path: "A"), new CheckTopic(2, b, [], Path: "B"));
 
-        Assert.Contains("(Summaries): same place", Recheck(before, Verdict(_section), after, Verdict(a)));
+        Assert.Contains("(NewCandidate): same place", Recheck(before, Verdict(_section), after, Verdict(a)));
         _logger.Lines.Clear();
         _store.Clear();
         var other = new PlacementChurn(() => _store.Keys.ToHashSet(), fingerprint => _store.GetValueOrDefault(fingerprint), _logger);
@@ -183,7 +195,7 @@ public class PlacementChurnTests
         _store["b2"] = Verdict(b);
         other.Stored("b2");
 
-        Assert.Contains("(Summaries): other section", Assert.Single(_logger.Lines));
+        Assert.Contains("(First): other section", Assert.Single(_logger.Lines));
     }
 
     [Fact]
@@ -199,7 +211,7 @@ public class PlacementChurnTests
 
         var line = Recheck(session, resultBefore, today, resultAfter);
 
-        Assert.Contains("(Summaries): same place", line);
+        Assert.Contains("(NewCandidate): same place", line);
     }
 
     private string LegacyVerdict(Guid section, Guid? after) =>
@@ -229,34 +241,94 @@ public class PlacementChurnTests
         var fresh = Standard(summary: "Neu.");
         var newResult = PlacementCheck.Serialize(new PlacementVerdict(_section, _place, "Grund"), fresh);
 
-        Assert.Contains("(Summaries): no earlier result", Recheck(legacy, LegacyVerdict(_section, _place), fresh, newResult));
+        Assert.Contains("(NewCandidate): no earlier result", Recheck(legacy, LegacyVerdict(_section, _place), fresh, newResult));
     }
 
     [Fact]
     public void KeepLine_SameCountsAgain_IsLoggedOnce()
     {
         var reasons = new Dictionary<RecheckReason, int> { [RecheckReason.Model] = 1 };
-        _churn.Keep(Book, 2, reasons);
-        _churn.Keep(Book, 2, reasons);
+        _churn.Keep(Book, 2, 0, reasons, NoRechecks);
+        _churn.Keep(Book, 2, 0, reasons, NoRechecks);
         Assert.Single(_logger.Lines);
 
-        _churn.Keep(Book, 3, reasons);
+        _churn.Keep(Book, 3, 0, reasons, NoRechecks);
         Assert.Equal(2, _logger.Lines.Count);
     }
 
     [Fact]
     public void KeepLine_CountsKeptAndReasons()
     {
-        _churn.Keep(Book, 5, new Dictionary<RecheckReason, int> { [RecheckReason.NoteText] = 2, [RecheckReason.Model] = 1 });
+        _churn.Keep(Book, 5, 0, new Dictionary<RecheckReason, int> { [RecheckReason.NoteText] = 2, [RecheckReason.Model] = 1 }, NoRechecks);
 
         var line = Assert.Single(_logger.Lines);
-        Assert.Equal("Placement keep in Buch - Alpha: 5 kept, 3 rechecked; why: NoteText 2, Model 1", line);
+        Assert.Equal("Placement keep in Buch - Alpha: 5 kept, 0 upgraded, 3 rechecked; why: NoteText 2, Model 1", line);
+    }
+
+    [Fact]
+    public void KeepLine_UpgradedCountedApartFromKept()
+    {
+        _churn.Keep(Book, 0, 4, new Dictionary<RecheckReason, int>(), NoRechecks);
+
+        Assert.Equal("Placement keep in Buch - Alpha: 0 kept, 4 upgraded, 0 rechecked; why: ", Assert.Single(_logger.Lines));
+    }
+
+    [Fact]
+    public void Stored_CountedByTheRuleThatMadeTheCheckAgain()
+    {
+        _store["a1"] = Verdict(_section, _place);
+        _store["b1"] = Verdict(_section, _place);
+        _churn.Checks(Book, [Check("a1", Standard(), "A"), Check("b1", Standard(), "B")]);
+        RecheckedBy("a2", RecheckReason.NoteText, ("b2", RecheckReason.Rebuilt));
+        _churn.Checks(Book, [Check("a2", Standard(summary: "Neu."), "A"), Check("b2", Standard(summary: "Neu."), "B")]);
+        _logger.Lines.Clear();
+
+        _store["a2"] = Verdict(_section, _place);
+        _churn.Stored("a2");
+        _store["b2"] = PlacementCheck.Serialize(new PlacementVerdict(_other, null, "Grund"),
+            Prompt("Text", "1. Anderes", new CheckTopic(1, _other, [], Path: "Anderes")));
+        _churn.Stored("b2");
+
+        Assert.StartsWith("Placement recheck (NoteText): same place", _logger.Lines[0]);
+        Assert.StartsWith("Placement recheck (Rebuilt): other section", _logger.Lines[1]);
+        Assert.Contains("NoteText: same place 1, same section 0, other section 0, no earlier 0; Rebuilt: same place 0, same section 0, other section 1, no earlier 0", _logger.Lines[1]);
+    }
+
+    [Fact]
+    public void Stored_SectionRenamedInThisSession_IsTheSameSection()
+    {
+        using var vault = NoteEvolution.TestSupport.TestVault.Create(("pages/Buch.md", "title:: Buch\ntype:: book\n\n- # Alt\n\t- Text.\n- # Anderes\n\t- Mehr.\n"));
+        var page = vault.Open().Books.Single().Page;
+        var names = new SectionNames();
+        names.Remember(NoteEvolution.Core.Books.Book.Load(page)); // a build before the rename
+        page.AllBlocks().Single(b => b.Content == "# Alt").SetContent("# Neu");
+        var today = NoteEvolution.Core.Books.Book.Load(page);
+        var (renamed, link) = (today.Root.Children.First(), today.LinkName);
+
+        // The earlier result is from the session before (its key is unknown), stored with the old name.
+        string Result(Guid key, string path) => PlacementCheck.Serialize(new PlacementVerdict(key, null, "Grund"),
+            Prompt("Text", "1. " + path, new CheckTopic(1, key, [], Path: path)));
+        string Outcome(PlacementChurn churn)
+        {
+            _store.Clear();
+            _logger.Lines.Clear();
+            _store["r1"] = Result(Guid.NewGuid(), "Alt#0");
+            churn.Checks(link, [Check("r1", Standard())]);
+            churn.Checks(link, [Check("r2", Standard(path: "Neu"))]);
+            _logger.Lines.Clear();
+            _store["r2"] = Result(renamed.Key, "Neu#0");
+            churn.Stored("r2");
+            return Assert.Single(_logger.Lines);
+        }
+
+        Assert.Contains("): same place", Outcome(new PlacementChurn(() => _store.Keys.ToHashSet(), f => _store.GetValueOrDefault(f), _logger, names)));
+        Assert.Contains("): other section", Outcome(new PlacementChurn(() => _store.Keys.ToHashSet(), f => _store.GetValueOrDefault(f), _logger)));
     }
 
     [Fact]
     public void KeepLine_NothingKeptOrRechecked_IsSilent()
     {
-        _churn.Keep(Book, 0, new Dictionary<RecheckReason, int>());
+        _churn.Keep(Book, 0, 0, new Dictionary<RecheckReason, int>(), NoRechecks);
 
         Assert.Empty(_logger.Lines);
     }
@@ -273,7 +345,7 @@ public class PlacementChurnTests
 
         _churn.Stored("a3");
 
-        Assert.Contains("(Places+Summaries): same section", Assert.Single(_logger.Lines));
+        Assert.Contains("(First): same section", Assert.Single(_logger.Lines));
     }
 
     [Fact]
@@ -285,7 +357,7 @@ public class PlacementChurnTests
 
         _churn.Stored("a1");
 
-        Assert.Contains("(New): no earlier result", Assert.Single(_logger.Lines));
+        Assert.Contains("(First): no earlier result", Assert.Single(_logger.Lines));
     }
 
     [Fact]
@@ -329,15 +401,17 @@ public class PlacementChurnTests
         _store["kept"] = "{}";
         _store["a1"] = Verdict(_section, _place);
         _churn.Checks(Book, [kept, Check("a1", Standard())]);
+        RecheckedBy("a2", RecheckReason.NewCandidate);
         _churn.Checks(Book, [kept, Check("a2", Standard(summary: "Neu."))]);
 
         // The note waits for its core statement in one build; its open check comes back unchanged.
+        RecheckedBy("other", RecheckReason.Model);
         _churn.Checks(Book, [kept]);
         _logger.Lines.Clear();
         _store["a2"] = Verdict(_section, _place);
         _churn.Stored("a2");
 
-        Assert.Contains("(Summaries): same place", Assert.Single(_logger.Lines));
+        Assert.Contains("(NewCandidate): same place", Assert.Single(_logger.Lines));
     }
 
     [Fact]

@@ -325,14 +325,32 @@ public sealed class StoreUnderstandingTests : IDisposable
     {
         var book = LoadBook();
         var note = SetUpPlacementNote(book);
-        _store.Put(PlacementEntry("pf", "placement|Buch|note:n", EarlierVerdict("Liebe#0", "Vertrauen")));
+        _store.Put(PlacementEntry("pf", "placement|Buch|note:n", EarlierVerdict("Liebe#0", "Vertrauen Text")));
 
         var placement = _understanding.Placement(book, note);
 
-        // The first text block of the section (sub-headings included, in file order) that starts with the stored text.
+        // The first text block of the section (sub-headings included, in file order) whose first line is the stored text.
         Assert.NotNull(placement);
         Assert.Equal(Section(book, "Liebe").Key, placement.Verdict.SectionKey);
         Assert.Equal(Section(book, "Vertrauen").TextBlocks.Single().Key, placement.Verdict.AfterTextBlockKey);
+    }
+
+    [Fact]
+    public void Placement_AfterKeyGone_TextMatchesTheWholeFirstLine_NotItsStart()
+    {
+        using var vault = TestVault.Create(("pages/Buch.md",
+            "title:: Buch\ntype:: book\n\n- # Liebe\n\t- Liebe Text und mehr\n\t- Liebe Text\n\t- " + new string('x', 120) + "\n"));
+        var book = vault.Open().Books.Single();
+        var note = SetUpPlacementNote(book);
+        var blocks = Section(book, "Liebe").TextBlocks.ToList();
+
+        // "Liebe Text" is the start of the first block's line too, but the whole line of the second only.
+        _store.Put(PlacementEntry("pf", "placement|Buch|note:n", EarlierVerdict("Liebe#0", "Liebe Text")));
+        Assert.Equal(blocks[1].Key, _understanding.Placement(book, note)!.Verdict.AfterTextBlockKey);
+
+        // A long line was stored cut to 100 characters.
+        _store.Put(PlacementEntry("pf", "placement|Buch|note:n", EarlierVerdict("Liebe#0", new string('x', 100))));
+        Assert.Equal(blocks[2].Key, _understanding.Placement(book, note)!.Verdict.AfterTextBlockKey);
     }
 
     [Fact]

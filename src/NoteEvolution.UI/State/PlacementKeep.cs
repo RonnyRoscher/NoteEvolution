@@ -5,7 +5,7 @@ namespace NoteEvolution.UI.State;
 
 /// <summary>
 /// Why a note's stored placement is checked again (spec 4), or <see cref="None"/> when it is kept; <see cref="Model"/>: it
-/// was made by another chat model or with another form of the request (prompt version, system prompt, schema).
+/// was made by another chat model or with another form of the request (prompt version, layout, system prompt, schema).
 /// </summary>
 internal enum RecheckReason { None, NoteText, SectionGone, NewCandidate, Rebuilt, NoBasis, Model }
 
@@ -13,18 +13,18 @@ internal enum RecheckReason { None, NoteText, SectionGone, NewCandidate, Rebuilt
 /// Decides whether a note's latest placement still holds for a changed request (spec 4): only another form of the
 /// request (<see cref="PlacementBasis.Request"/>; the chat model is for the caller to compare), a changed note text, a
 /// chosen section that is gone, a new candidate that may beat the chosen one, or a rebuilt book check it again. Other
-/// summaries, other or vanished places, a renamed section found by its key and another order of the sections do not.
-/// The request is always compared with the basis of the last real check, not with the previous request. Pure.
+/// summaries, other or vanished places, renamed sections found by their key (<see cref="SectionNames"/>) and another
+/// order of the sections do not. The request is always compared with the basis of the last real check, not with the
+/// previous request. Pure, apart from what <see cref="SectionNames"/> remembered.
 /// </summary>
 internal static class PlacementKeep
 {
-    private const string Separator = " › ";
-
     /// <summary>
     /// Whether <paramref name="latest"/> (the note's latest stored result) must be checked again for
-    /// <paramref name="prompt"/> (today's request in <paramref name="book"/>), by the first rule that holds.
+    /// <paramref name="prompt"/> (today's request in <paramref name="book"/>), by the first rule that holds. The stored
+    /// sections are read with today's names (<paramref name="names"/>; none: by their keys and paths only).
     /// </summary>
-    public static RecheckReason Decide(PlacementVerdict latest, PlacementCheckPrompt prompt, Book book)
+    public static RecheckReason Decide(PlacementVerdict latest, PlacementCheckPrompt prompt, Book book, SectionNames? names = null)
     {
         if (latest.Basis is not { } basis || prompt.Basis is not { } today)
         {
@@ -41,19 +41,16 @@ internal static class PlacementKeep
             return RecheckReason.NoteText;
         }
 
-        var section = book.FindNode(latest.SectionKey)
-            ?? (latest.SectionPath is { } stored ? SectionPath.Find(book, stored) : null);
-        if (section is null)
+        names ??= new SectionNames();
+        if (names.Find(book, latest.SectionKey, latest.SectionPath) is not { } section)
         {
             return RecheckReason.SectionGone;
         }
 
-        // A chosen section found by its key may have been renamed (or a heading above it): the basis' paths are read
-        // with today's names along its path, so the rename alone changes nothing.
+        // The basis' sections by today's names, so a rename alone changes nothing; a section gone matches none.
         var chosen = SectionPath.Of(section);
-        var renamed = Renames(latest.SectionPath, chosen);
-        var offered = basis.Offered.Select(renamed).ToHashSet(StringComparer.Ordinal);
-        var chapters = basis.TopChapters.Select(renamed).ToHashSet(StringComparer.Ordinal);
+        var offered = Today(book, names, basis.Offered, basis.OfferedKeys).OfType<string>().ToHashSet(StringComparer.Ordinal);
+        var chapters = Today(book, names, basis.TopChapters, basis.TopChapterKeys).OfType<string>().ToHashSet(StringComparer.Ordinal);
 
         // A path that is not ranked counts as last.
         var ranking = today.Ranking.ToList();
@@ -66,39 +63,141 @@ internal static class PlacementKeep
             return RecheckReason.NewCandidate;
         }
 
-        return today.Offered.Intersect(offered, StringComparer.Ordinal).Count() * 2 < offered.Count
+        return today.Offered.Distinct(StringComparer.Ordinal).Count(offered.Contains) * 2 < basis.Offered.Count
             ? RecheckReason.Rebuilt
             : RecheckReason.None;
     }
 
     /// <summary>
-    /// Reads a basis path with today's names: when the chosen section's stored path <paramref name="before"/> and today's
-    /// <paramref name="now"/> have the same depth, a path starting with one of the former's heads gets the latter's head.
+    /// <paramref name="latest"/> (kept by <see cref="Decide"/>) with today's names and keys when one of its sections was
+    /// renamed: the chosen section's and the embedding's path, and the basis' paths, so they still resolve after a
+    /// restart. A section gone keeps its stored path and key. Null when nothing was renamed (nothing to write).
     /// </summary>
-    private static Func<string, string> Renames(string? before, string now)
+    public static PlacementVerdict? Renamed(PlacementVerdict latest, Book book, SectionNames? names = null)
     {
-        if (before is null || before == now)
+        names ??= new SectionNames();
+        if (latest.Basis is not { } basis || names.Find(book, latest.SectionKey, latest.SectionPath) is not { } section)
         {
-            return path => path;
+            return null;
         }
 
-        var old = before.Split(Separator);
-        var current = now.Split(Separator);
-        if (old.Length != current.Length)
+        var embedding = latest.EmbeddingSectionPath is { } stored ? names.Find(book, latest.EmbeddingSectionKey, stored) : null;
+        var (offered, offeredKeys) = Rename(book, names, basis.Offered, basis.OfferedKeys);
+        var (chapters, chapterKeys) = Rename(book, names, basis.TopChapters, basis.TopChapterKeys);
+        var (ranking, _) = Rename(book, names, basis.Ranking, null);
+        var path = SectionPath.Of(section);
+        var embeddingPath = embedding is null ? latest.EmbeddingSectionPath : SectionPath.Of(embedding);
+        if (path == latest.SectionPath && embeddingPath == latest.EmbeddingSectionPath
+            && offered.SequenceEqual(basis.Offered) && chapters.SequenceEqual(basis.TopChapters) && ranking.SequenceEqual(basis.Ranking))
         {
-            return path => path; // moved, not renamed
+            return null;
         }
 
-        return path =>
+        return latest with
         {
-            var parts = path.Split(Separator);
-            var same = 0;
-            while (same < parts.Length && same < old.Length && parts[same] == old[same])
-            {
-                same++;
-            }
-
-            return same == 0 ? path : string.Join(Separator, current.Take(same).Concat(parts.Skip(same)));
+            SectionKey = section.Key, SectionPath = path,
+            EmbeddingSectionKey = embedding?.Key ?? latest.EmbeddingSectionKey, EmbeddingSectionPath = embeddingPath,
+            Basis = basis with { Offered = offered, TopChapters = chapters, Ranking = ranking, OfferedKeys = offeredKeys, TopChapterKeys = chapterKeys },
         };
     }
+
+    /// <summary>Today's path of each of <paramref name="paths"/> (with their stored <paramref name="keys"/>, if any); null for one gone.</summary>
+    private static IEnumerable<string?> Today(Book book, SectionNames names, IReadOnlyList<string> paths, IReadOnlyList<Guid>? keys) =>
+        paths.Select((path, i) => names.Find(book, Key(keys, i, paths.Count), path) is { } node ? SectionPath.Of(node) : null);
+
+    /// <summary>Today's paths and keys of <paramref name="paths"/>; one gone keeps its stored path (and key, or none).</summary>
+    private static (IReadOnlyList<string> Paths, IReadOnlyList<Guid> Keys) Rename(Book book, SectionNames names,
+        IReadOnlyList<string> paths, IReadOnlyList<Guid>? keys)
+    {
+        var nodes = paths.Select((path, i) => names.Find(book, Key(keys, i, paths.Count), path)).ToList();
+        return ([.. nodes.Select((node, i) => node is null ? paths[i] : SectionPath.Of(node))],
+            [.. nodes.Select((node, i) => node?.Key ?? Key(keys, i, paths.Count) ?? Guid.Empty)]);
+    }
+
+    /// <summary>The stored key of the <paramref name="i"/>-th path; none when the keys were not stored (or do not match the paths).</summary>
+    private static Guid? Key(IReadOnlyList<Guid>? keys, int i, int count) => keys is { } known && known.Count == count ? known[i] : null;
+}
+
+/// <summary>
+/// The sections' names seen in this session (spec 4): a stored result names its sections by key (valid only in the
+/// session that made it, keys are new on every start) and by path (which a rename changes). Every build tells the book it
+/// decided against (<see cref="Remember"/>), so a path stored before a rename in this session still finds its section by
+/// the key it had then, and a section deleted in this session is not mistaken for a sibling that took its path. Safe to
+/// call from several threads.
+/// </summary>
+internal sealed class SectionNames
+{
+    private readonly Lock _gate = new();
+
+    /// <summary>Every section key seen in this session's books.</summary>
+    private readonly HashSet<Guid> _seen = [];
+
+    /// <summary>Per book (link name): each path seen in this session, with the key of the section that had it last.</summary>
+    private readonly Dictionary<string, Dictionary<string, Guid>> _paths = new(StringComparer.Ordinal);
+
+    /// <summary>Remembers the sections of <paramref name="book"/>; call it once a build decided against it, not before.</summary>
+    public void Remember(Book book)
+    {
+        lock (_gate)
+        {
+            if (!_paths.TryGetValue(book.LinkName, out var paths))
+            {
+                _paths[book.LinkName] = paths = new Dictionary<string, Guid>(StringComparer.Ordinal);
+            }
+
+            foreach (var node in Below(book.Root))
+            {
+                _seen.Add(node.Key);
+                paths[SectionPath.Of(node)] = node.Key;
+            }
+        }
+    }
+
+    /// <summary>
+    /// The section of <paramref name="book"/> a stored result names by <paramref name="key"/> and <paramref name="path"/>:
+    /// by its key; else, for a key seen in this session, none (it was deleted); else by the key the path had in this
+    /// session (none if that section is gone); else by the path. Null if there is none.
+    /// </summary>
+    public OutlineNode? Find(Book book, Guid? key, string? path)
+    {
+        if (key is { } known && book.FindNode(known) is { } byKey)
+        {
+            return byKey;
+        }
+
+        Guid? before = null;
+        lock (_gate)
+        {
+            if (key is { } gone && _seen.Contains(gone))
+            {
+                return null;
+            }
+
+            if (path is not null && _paths.TryGetValue(book.LinkName, out var paths) && paths.TryGetValue(path, out var had))
+            {
+                before = had;
+            }
+        }
+
+        return before is { } then ? book.FindNode(then) : path is null ? null : SectionPath.Find(book, path);
+    }
+
+    /// <summary>
+    /// What a stored choice's section is, for comparing two of them across renames: the key, when seen in this session;
+    /// else the key its path had in this session; else the path.
+    /// </summary>
+    public string Identify(string bookLinkName, Guid key, string path)
+    {
+        lock (_gate)
+        {
+            if (_seen.Contains(key))
+            {
+                return key.ToString();
+            }
+
+            return _paths.TryGetValue(bookLinkName, out var paths) && paths.TryGetValue(path, out var had) ? had.ToString() : path;
+        }
+    }
+
+    private static IEnumerable<OutlineNode> Below(OutlineNode node) => node.Children.SelectMany(child => Below(child).Prepend(child));
 }

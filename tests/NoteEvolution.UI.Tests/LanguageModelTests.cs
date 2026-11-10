@@ -1078,11 +1078,14 @@ public class LanguageModelTests : UiTestContext
     /// Changes a text in the book, so "Träume" and "Schlaf" get new summaries: every request changes, nothing that decides
     /// a placement does. Waits until the checks were built again and given to the understanding.
     /// </summary>
-    private async Task ChangeSummariesAsync(VaultSession session)
+    private Task ChangeSummariesAsync(VaultSession session) => ChangeBookAsync(session, DreamText, DreamText + " Auch die schweren.");
+
+    /// <summary>Changes a block of the book from <paramref name="from"/> to <paramref name="to"/>; waits as <see cref="ChangeSummariesAsync"/>.</summary>
+    private async Task ChangeBookAsync(VaultSession session, string from, string to)
     {
         var appliedAtBuild = -1;
         session.PlacementPromptBuilding = (_, _) => Interlocked.CompareExchange(ref appliedAtBuild, session.FeedsApplied, -1);
-        Edit(session, BookPath, DreamText, DreamText + " Auch die schweren.");
+        Edit(session, BookPath, from, to);
         await Eventually(() =>
         {
             Time.Advance(VaultSession.PageIndexDelay);
@@ -1090,6 +1093,103 @@ public class LanguageModelTests : UiTestContext
             return applied >= 0 && session.FeedsApplied > applied && session.Understanding is { Done: 8, Total: 8 };
         }, "The checks were not built again.");
         session.PlacementPromptBuilding = null;
+    }
+
+    [Fact]
+    public async Task Session_ChosenSectionRenamed_KeptAndShown_AlsoAfterReopening()
+    {
+        var tv = Vault();
+        var session = await OpenWithPlacementsAsync(tv);
+        var key = NoteKey(session, NewerNote);
+        var chosen = CurrentBook(session).FindNode(session.Placement(key)!.Verdict.SectionKey)!;
+        var heading = chosen.Block!.Content;
+        var calls = _chat.Calls.Count;
+
+        // The chosen section is renamed: every request that offers it changes, nothing that decides a placement does.
+        await ChangeBookAsync(session, heading, heading + "zeit");
+        var renamed = SectionPath.Of(CurrentBook(session).FindNode(chosen.Key)!);
+        Assert.EndsWith("zeit#0", renamed);
+        await Task.Delay(50);
+        Assert.DoesNotContain(_chat.Calls.Skip(calls), c => c.Options.Schema is not null);
+        var placement = session.Placement(key)!;
+        Assert.False(placement.Stale);
+        Assert.Equal(chosen.Key, placement.Verdict.SectionKey);
+        session.Dispose();
+
+        // Stored with today's names, so a new session (new keys) still finds the section and keeps the result.
+        Assert.Equal(renamed, PlacementCheck.Deserialize(LatestOfNewer(tv).Text)!.SectionPath);
+        var reopened = await ReopenAsync(tv, ready: 5, total: 8);
+        await Task.Delay(50);
+        Assert.DoesNotContain(_chat.Calls.Skip(calls), c => c.Options.Schema is not null);
+        var shown = reopened.Placement(NoteKey(reopened, NewerNote));
+        Assert.NotNull(shown);
+        Assert.False(shown.Stale);
+        Assert.Equal(renamed, SectionPath.Of(CurrentBook(reopened).FindNode(shown.Verdict.SectionKey)!));
+    }
+
+    /// <summary>The number of the section "Schlaf › Träume" in a placement check's prompt.</summary>
+    private static string DreamsNumber(string user)
+    {
+        var line = user.Split('\n').First(l => l.Contains(". Schlaf › Träume", StringComparison.Ordinal));
+        return line[..line.IndexOf('.')];
+    }
+
+    [Fact]
+    public async Task Session_TwoNotesSameFirstLine_OldResultUnderTheOtherIdentity_UpgradedAndShown()
+    {
+        const string journal = "journals/2026_03_03.md";
+        var tv = TestVault.Create(
+            (BookPath, $"title:: Alpha\ntype:: book\n\n- # Schlaf\n\t- Über den Schlaf und seine Phasen.\n\t- ## Träume\n\t\t- {DreamText}\n- # Arbeit\n\t- Konzentration braucht Ruhe.\n"),
+            (journal,
+                "- Gleiche Zeile\n  Der erste Text erzählt davon, wie ein ruhiger Morgen den ganzen Tag ordnet und warum man ihn nicht verschenken sollte, wirklich nicht.\n" +
+                "- Gleiche Zeile\n  Der zweite Text handelt von langen Spaziergängen am Abend, die Gedanken sortieren und dem Kopf Raum geben, auch wenn es regnet.\n"));
+        _vaults.Add(tv);
+
+        // Both go to "Träume", whose summary recognizes the section of a result stored without its path.
+        _chat.Answer = (call, n) => call.Options.Schema is not null
+            ? "{\"begruendung\":\"Passt.\",\"stelle\":\"" + DreamsNumber(call.User) + ".0\",\"passung\":\""
+                + (call.User.Contains("Der erste Text", StringComparison.Ordinal) ? "gut" : "kaum") + "\"}"
+            : $"Antwort {n}.";
+        var session = await ReopenAsync(tv, ready: 5, total: 7);
+        session.Dispose();
+        var first = UnderstandingItems.PlacementIdentity("Buch - Alpha", UnderstandingItems.NoteIdentity("Gleiche Zeile", journal));
+        var second = first + "#2";
+        var calls = _chat.Calls.Count;
+
+        // As stored before the notes were numbered: the second one's result under the first one's identity, as its
+        // latest, without path and basis. (The first one's, no longer the latest of its identity, goes with the first
+        // prune of the new session and is made once more, as it would be then.)
+        using (var store = UnderstandingStore.Open(tv.Root))
+        {
+            var entry = store.LatestByIdentity(UnderstandingKind.Placement, second)!;
+            var verdict = PlacementCheck.Deserialize(entry.Text)!;
+            store.Put(entry with
+            {
+                Identity = first,
+                Text = System.Text.Json.JsonSerializer.Serialize(new
+                {
+                    section = verdict.SectionKey, reason = verdict.Reason, summary = verdict.Summary, fit = verdict.Fit.ToString(),
+                }),
+            });
+            Assert.Null(store.LatestByIdentity(UnderstandingKind.Placement, second));
+        }
+
+        var reopened = await ReopenAsync(tv, ready: 5, total: 7);
+        var notes = reopened.Notes.All().Where(n => n.Block.Content.StartsWith("Gleiche Zeile", StringComparison.Ordinal)).ToList();
+        await Eventually(() => notes.All(n => reopened.Placement(n.Key) is { Stale: false }), "The placements were not shown.");
+        await Task.Delay(50);
+
+        // The second one's result is upgraded under its own identity: shown as current, not asked again.
+        Assert.DoesNotContain(_chat.Calls.Skip(calls),
+            c => c.Options.Schema is not null && c.User.Contains("Der zweite Text", StringComparison.Ordinal));
+        Assert.Equal(PlacementFit.Good, reopened.Placement(notes[0].Key)!.Verdict.Fit);
+        Assert.Equal(PlacementFit.Poor, reopened.Placement(notes[1].Key)!.Verdict.Fit);
+        reopened.Dispose();
+        using var upgraded = UnderstandingStore.Open(tv.Root);
+        var own = PlacementCheck.Deserialize(upgraded.LatestByIdentity(UnderstandingKind.Placement, second)!.Text)!;
+        Assert.Equal(PlacementFit.Poor, own.Fit);
+        Assert.NotNull(own.Basis);
+        Assert.Equal(PlacementFit.Good, PlacementCheck.Deserialize(upgraded.LatestByIdentity(UnderstandingKind.Placement, first)!.Text)!.Fit);
     }
 
     [Fact]

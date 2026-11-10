@@ -152,16 +152,25 @@ public sealed class UnderstandingStore : IDisposable
         }
     }
 
-    /// <summary>The most recently stored placement check of every identity (<see cref="LatestByIdentity"/> for all at once), by identity.</summary>
-    public IReadOnlyDictionary<string, UnderstandingEntry> LatestPlacements()
+    /// <summary>
+    /// The most recently stored placement check of every identity of the book (link name; <see cref="LatestByIdentity"/>
+    /// for all of its notes at once), by identity.
+    /// </summary>
+    public IReadOnlyDictionary<string, UnderstandingEntry> LatestPlacements(string bookLinkName)
     {
+        // The book's identities share the prefix "placement|{book}|": a range on the index, '}' follows '|'.
+        var prefix = UnderstandingItems.PlacementIdentity(bookLinkName, "");
+        var end = prefix[..^1] + (char)(prefix[^1] + 1);
         lock (_gate)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
             using var command = _db.CreateCommand();
             // newest first, so the first row seen per identity is its latest
-            command.CommandText = $"SELECT {Columns} FROM entries WHERE kind = $kind ORDER BY updated DESC";
+            command.CommandText =
+                $"SELECT {Columns} FROM entries WHERE kind = $kind AND identity >= $from AND identity < $to ORDER BY updated DESC";
             command.Parameters.AddWithValue("$kind", (int)UnderstandingKind.Placement);
+            command.Parameters.AddWithValue("$from", prefix);
+            command.Parameters.AddWithValue("$to", end);
             var result = new Dictionary<string, UnderstandingEntry>(StringComparer.Ordinal);
             using var reader = command.ExecuteReader();
             while (reader.Read())
@@ -181,7 +190,7 @@ public sealed class UnderstandingStore : IDisposable
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
             using var tx = _db.BeginTransaction();
-            Write(tx, entry);
+            Write(tx, entry, NextUpdated(tx));
             tx.Commit();
         }
 
@@ -201,22 +210,35 @@ public sealed class UnderstandingStore : IDisposable
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
             using var tx = _db.BeginTransaction();
-            foreach (var entry in entries) Write(tx, entry);
+            var updated = NextUpdated(tx);
+            foreach (var entry in entries) Write(tx, entry, updated++);
             tx.Commit();
         }
 
         EntryChanged?.Invoke(entries[^1].Fingerprint);
     }
 
-    /// <summary>Writes the entry as the newest of its identity and clears its failed attempts, within <paramref name="tx"/>; under the lock.</summary>
-    private void Write(SqliteTransaction tx, UnderstandingEntry entry)
+    /// <summary>The <c>updated</c> value newer than every stored entry, within <paramref name="tx"/>; under the lock.</summary>
+    private long NextUpdated(SqliteTransaction tx)
+    {
+        using var command = _db.CreateCommand();
+        command.Transaction = tx;
+        command.CommandText = "SELECT COALESCE(MAX(updated), 0) + 1 FROM entries";
+        return (long)command.ExecuteScalar()!;
+    }
+
+    /// <summary>
+    /// Writes the entry with <paramref name="updated"/> (newer than every stored entry: the newest of its identity) and clears
+    /// its failed attempts, within <paramref name="tx"/>; under the lock.
+    /// </summary>
+    private void Write(SqliteTransaction tx, UnderstandingEntry entry, long updated)
     {
         using (var command = _db.CreateCommand())
         {
             command.Transaction = tx;
             command.CommandText =
-                $"INSERT OR REPLACE INTO entries({Columns}, updated) VALUES ($kind, $fp, $identity, $text, $chat, $embed, $vector, " +
-                "(SELECT COALESCE(MAX(updated), 0) + 1 FROM entries))";
+                $"INSERT OR REPLACE INTO entries({Columns}, updated) VALUES ($kind, $fp, $identity, $text, $chat, $embed, $vector, $updated)";
+            command.Parameters.AddWithValue("$updated", updated);
             command.Parameters.AddWithValue("$kind", (int)entry.Kind);
             command.Parameters.AddWithValue("$fp", entry.Fingerprint);
             command.Parameters.AddWithValue("$identity", entry.Identity);

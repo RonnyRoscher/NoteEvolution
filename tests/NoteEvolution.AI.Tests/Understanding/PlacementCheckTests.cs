@@ -403,6 +403,34 @@ public class PlacementCheckTests
             basis.Ranking);
         Assert.NotEqual(basis.NoteHash, Build(s, note: "Andere Notiz").Basis!.NoteHash);
         Assert.Equal(PlacementCheck.RequestForm, basis.Request);
+        Assert.Equal(prompt.Topics.Select(t => t.SectionKey), basis.OfferedKeys!);
+        Assert.Equal([s.A.Key, s.C.Key, s.B.Key], basis.TopChapterKeys!);
+    }
+
+    [Fact]
+    public void RequestForm_ChangesWithTheUserPromptsLayoutVersion()
+    {
+        Assert.Equal(1, PlacementCheck.LayoutVersion);
+        Assert.Equal(PlacementCheck.RequestFormOf(PlacementCheck.LayoutVersion), PlacementCheck.RequestForm);
+        Assert.NotEqual(PlacementCheck.RequestFormOf(2), PlacementCheck.RequestForm);
+    }
+
+    [Fact]
+    public void Serialize_VerdictAsItIs_RoundTrips()
+    {
+        var s = Load();
+        var prompt = Build(s);
+        var stored = PlacementCheck.Deserialize(PlacementCheck.Serialize(PlacementCheck.Parse("{\"stelle\":\"2.2\"}", prompt)!, prompt))!;
+        var renamed = stored with { SectionPath = "Kapitel Alpha#0 › Unter A1#0", Basis = stored.Basis! with { Offered = ["x"] } };
+
+        var read = PlacementCheck.Deserialize(PlacementCheck.Serialize(renamed))!;
+
+        Assert.Equal(renamed.SectionPath, read.SectionPath);
+        Assert.Equal(renamed.AfterText, read.AfterText);
+        Assert.Equal(renamed.EmbeddingSectionPath, read.EmbeddingSectionPath);
+        Assert.Equal(["x"], read.Basis!.Offered);
+        Assert.Equal(stored.Basis!.OfferedKeys!, read.Basis.OfferedKeys!);
+        Assert.Equal(renamed with { Basis = null }, read with { Basis = null });
     }
 
     [Fact]
