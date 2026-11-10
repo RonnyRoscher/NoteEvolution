@@ -132,7 +132,7 @@ public class PlacementChurnTests
     }
 
     private string Verdict(Guid section, Guid? after = null) =>
-        PlacementCheck.Serialize(new PlacementVerdict(section, after, "Grund"));
+        PlacementCheck.Serialize(new PlacementVerdict(section, after, "Grund"), new PlacementCheckPrompt("", "", [], ""));
 
     /// <summary>A first check with a stored result, then a changed check that waits for the model, whose result arrives.</summary>
     private string Recheck(PlacementCheckPrompt before, string resultBefore, PlacementCheckPrompt after, string resultAfter)

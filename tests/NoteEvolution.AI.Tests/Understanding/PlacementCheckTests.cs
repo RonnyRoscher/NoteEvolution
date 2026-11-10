@@ -320,9 +320,98 @@ public class PlacementCheckTests
     public void Serialize_RoundTrips()
     {
         var verdict = new PlacementVerdict(Guid.NewGuid(), Guid.NewGuid(), "Weil.", "Zusammenfassung.", PlacementFit.Poor, Guid.NewGuid());
+        var noPrompt = new PlacementCheckPrompt("", "", [], "");
 
-        Assert.Equal(verdict, PlacementCheck.Deserialize(PlacementCheck.Serialize(verdict)));
-        Assert.Contains("\"fit\":\"Poor\"", PlacementCheck.Serialize(verdict));
+        Assert.Equal(verdict, PlacementCheck.Deserialize(PlacementCheck.Serialize(verdict, noPrompt)));
+        Assert.Contains("\"fit\":\"Poor\"", PlacementCheck.Serialize(verdict, noPrompt));
+    }
+
+    [Fact]
+    public void Serialize_WritesPathAfterTextAndBasis_DeserializeReadsThem()
+    {
+        var s = Load();
+        var prompt = Build(s);
+        var verdict = PlacementCheck.Parse("{\"stelle\":\"2.2\"}", prompt)!;
+
+        var stored = PlacementCheck.Deserialize(PlacementCheck.Serialize(verdict, prompt))!;
+
+        Assert.Equal(s.A1.Key, stored.SectionKey);
+        Assert.Equal(s.Block("Mehr unter A1."), stored.AfterTextBlockKey);
+        Assert.Equal("Kapitel A#0 › Unter A1#0", stored.SectionPath);
+        Assert.Equal("Mehr unter A1.", stored.AfterText);
+        Assert.NotNull(stored.Basis);
+        Assert.Equal(prompt.Basis!.NoteHash, stored.Basis.NoteHash);
+        Assert.Equal(prompt.Basis.Offered, stored.Basis.Offered);
+        Assert.Equal(prompt.Basis.TopChapters, stored.Basis.TopChapters);
+        Assert.Equal(prompt.Basis.Ranking, stored.Basis.Ranking);
+
+        // A new place at the end has no place text.
+        var atEnd = PlacementCheck.Deserialize(PlacementCheck.Serialize(PlacementCheck.Parse("{\"stelle\":\"2.0\"}", prompt)!, prompt))!;
+        Assert.Equal("Kapitel A#0 › Unter A1#0", atEnd.SectionPath);
+        Assert.Null(atEnd.AfterText);
+    }
+
+    [Fact]
+    public void Serialize_AfterText_FirstLineAtMost100Characters()
+    {
+        var line = new string('x', 120);
+        var tv = TestVault.Create(("pages/Buch.md", $"title:: Buch\ntype:: book\n\n- # Kapitel\n\t- {line}\n\t  zweite Zeile\n"));
+        var book = tv.Open().Books.Single();
+        var chapter = book.Root.Children.Single();
+        var block = chapter.TextBlocks.Single();
+        var prompt = PlacementCheck.Prompt(book, "x", [new TopicHit(chapter.Key, 0.9, null)],
+            new Dictionary<Guid, IReadOnlyList<PlacementHit>> { [chapter.Key] = [new PlacementHit(block.Key, 0.9, chapter.Key)] });
+        var verdict = PlacementCheck.Parse("{\"stelle\":\"1.1\"}", prompt)!;
+
+        var stored = PlacementCheck.Deserialize(PlacementCheck.Serialize(verdict, prompt))!;
+
+        Assert.Equal(line[..100], stored.AfterText);
+        Assert.Contains("1.1 nach: " + line[..99] + "…", prompt.User); // the prompt itself is unchanged
+    }
+
+    [Fact]
+    public void Deserialize_OldJsonWithoutPath_StillReads()
+    {
+        var section = Guid.NewGuid();
+        var after = Guid.NewGuid();
+        var json = $"{{\"section\":\"{section}\",\"after\":\"{after}\",\"reason\":\"Weil.\",\"summary\":\"Satz.\",\"fit\":\"Good\",\"embeddingSection\":null}}";
+
+        var verdict = PlacementCheck.Deserialize(json);
+
+        Assert.Equal(new PlacementVerdict(section, after, "Weil.", "Satz.", PlacementFit.Good), verdict);
+        Assert.Null(verdict!.SectionPath);
+        Assert.Null(verdict.AfterText);
+        Assert.Null(verdict.Basis);
+    }
+
+    [Fact]
+    public void Prompt_Basis_HoldsOfferedTopChaptersRankingAndNoteHash()
+    {
+        var s = Load();
+        var prompt = Build(s, note: "Meine Notiz");
+
+        var basis = prompt.Basis!;
+        Assert.Equal(UnderstandingItems.NoteFingerprint("Meine Notiz", ""), basis.NoteHash);
+        Assert.Equal(["Kapitel A#0", "Kapitel A#0 › Unter A1#0", "Kapitel A#0 › Unter A2#0", "Kapitel C#0", "Kapitel B#0 › Unter B#0"],
+            basis.Offered);
+        Assert.Equal(prompt.Topics.Select(t => t.Path), basis.Offered);
+        Assert.Equal(["Kapitel A#0", "Kapitel C#0", "Kapitel B#0"], basis.TopChapters);
+        Assert.Equal(["Kapitel A#0 › Unter A1#0", "Kapitel C#0", "Kapitel A#0 › Unter A2#0", "Kapitel B#0", "Kapitel D#0"],
+            basis.Ranking);
+        Assert.NotEqual(basis.NoteHash, Build(s, note: "Andere Notiz").Basis!.NoteHash);
+    }
+
+    [Fact]
+    public void Prompt_Basis_NotInTheFingerprint()
+    {
+        var s = Load();
+        var prompt = Build(s);
+
+        var item = UnderstandingItems.ForPlacement(Guid.NewGuid(), "note:n", "Buch", prompt, "m");
+        var withoutBasis = UnderstandingItems.ForPlacement(Guid.NewGuid(), "note:n", "Buch",
+            prompt with { Basis = null, Topics = [.. prompt.Topics.Select(t => t with { Path = "", PlaceTexts = null })] }, "m");
+
+        Assert.Equal(withoutBasis.Fingerprint, item.Fingerprint);
     }
 
     [Theory]

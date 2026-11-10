@@ -680,8 +680,10 @@ public class LanguageModelTests : UiTestContext
         await Task.Delay(50);
         Assert.Single(PlacementCalls(OlderNote));
         Assert.Equal(8, _chat.Calls.Count);
-        Assert.Equal(verdict, session.Placement(NoteKey(session, OlderNote))?.Verdict);
-        Assert.False(session.Placement(NoteKey(session, OlderNote))!.Stale);
+        var stored = session.Placement(NoteKey(session, OlderNote))!;
+        Assert.Equal(verdict, stored.Verdict with { SectionPath = null, AfterText = null, Basis = null });
+        Assert.Equal(SectionPath.Of(CurrentBook(session).FindNode(verdict.SectionKey)!), stored.Verdict.SectionPath);
+        Assert.False(stored.Stale);
     }
 
     [Fact]
@@ -707,6 +709,31 @@ public class LanguageModelTests : UiTestContext
             return session.Placement(key) is { Stale: false };
         }, "The new placement did not arrive.");
         Assert.Single(PlacementCalls(edited));
+    }
+
+    [Fact]
+    public async Task Session_Reopened_StoredPlacementStillShown()
+    {
+        var tv = Vault();
+        var session = await OpenWithPlacementsAsync(tv);
+        var before = Assert.IsType<NotePlacement>(session.Placement(NoteKey(session, NewerNote)));
+        var path = SectionPath.Of(CurrentBook(session).FindNode(before.Verdict.SectionKey)!);
+        session.Dispose();
+        var calls = _chat.Calls.Count;
+
+        // The new session gives every block a new key; the stored result is still found, by its section's path.
+        var reopened = await OpenReadyAsync(tv);
+        Time.Advance(VaultSession.PageIndexDelay);
+        await AllDone(reopened, 8);
+        var key = NoteKey(reopened, NewerNote);
+        await Eventually(() => reopened.Placement(key) is not null, "The stored placement was not shown after reopening.");
+        var placement = reopened.Placement(key)!;
+        var section = CurrentBook(reopened).FindNode(placement.Verdict.SectionKey);
+        Assert.NotNull(section);
+        Assert.Equal(path, SectionPath.Of(section));
+        Assert.False(placement.Stale);
+        await Task.Delay(50);
+        Assert.DoesNotContain(_chat.Calls.Skip(calls), c => c.Options.Schema is not null);
     }
 
     [Fact]

@@ -195,7 +195,17 @@ public sealed class StoreUnderstandingTests : IDisposable
         new(UnderstandingKind.Placement, fingerprint, identity, json, Chat, null, null);
 
     private static string Verdict(Guid section, Guid? after = null) =>
-        PlacementCheck.Serialize(new PlacementVerdict(section, after, "Passt.", "Zusammenfassung", PlacementFit.Good, section));
+        PlacementCheck.Serialize(new PlacementVerdict(section, after, "Passt.", "Zusammenfassung", PlacementFit.Good, section),
+            new PlacementCheckPrompt("", "", [], ""));
+
+    /// <summary>A verdict as stored in an earlier session: keys that are gone, with the path and place text it was stored with.</summary>
+    private static string EarlierVerdict(string path, string? afterText)
+    {
+        var section = Guid.NewGuid();
+        Guid? after = afterText is null ? null : Guid.NewGuid();
+        var topic = new CheckTopic(1, section, after is { } a ? [a] : [], null, path, afterText is null ? [] : [afterText]);
+        return PlacementCheck.Serialize(new PlacementVerdict(section, after, "Passt."), new PlacementCheckPrompt("", "", [topic], ""));
+    }
 
     private Guid SetUpPlacementNote(Book book, string fingerprint = "pf", string identity = "placement|Buch|note:n")
     {
@@ -264,18 +274,61 @@ public sealed class StoreUnderstandingTests : IDisposable
         var book = LoadBook();
         var note = SetUpPlacementNote(book);
         _store.Put(PlacementEntry("pf", "placement|Buch|note:n", Verdict(Guid.NewGuid())));
+        Assert.Null(_understanding.Placement(book, note));
 
+        // Neither its key nor its path is in the book.
+        _store.Put(PlacementEntry("pf", "placement|Buch|note:n", EarlierVerdict("Liebe#0 › Hass#0", "Vertrauen Text")));
         Assert.Null(_understanding.Placement(book, note));
     }
 
     [Fact]
-    public void Placement_AfterBlockGone_Null()
+    public void Placement_KeyGone_FoundByPath()
     {
         var book = LoadBook();
         var note = SetUpPlacementNote(book);
-        _store.Put(PlacementEntry("pf", "placement|Buch|note:n", Verdict(Section(book, "Liebe").Key, Guid.NewGuid())));
+        _store.Put(PlacementEntry("pf", "placement|Buch|note:n", EarlierVerdict("Liebe#0 › Vertrauen#0", null)));
 
-        Assert.Null(_understanding.Placement(book, note));
+        var placement = _understanding.Placement(book, note);
+
+        Assert.NotNull(placement);
+        Assert.False(placement.Stale);
+        Assert.Equal(Section(book, "Vertrauen").Key, placement.Verdict.SectionKey);
+        Assert.Null(placement.Verdict.AfterTextBlockKey);
+    }
+
+    [Fact]
+    public void Placement_AfterKeyGone_FoundByText()
+    {
+        var book = LoadBook();
+        var note = SetUpPlacementNote(book);
+        _store.Put(PlacementEntry("pf", "placement|Buch|note:n", EarlierVerdict("Liebe#0", "Vertrauen")));
+
+        var placement = _understanding.Placement(book, note);
+
+        // The first text block of the section (sub-headings included, in file order) that starts with the stored text.
+        Assert.NotNull(placement);
+        Assert.Equal(Section(book, "Liebe").Key, placement.Verdict.SectionKey);
+        Assert.Equal(Section(book, "Vertrauen").TextBlocks.Single().Key, placement.Verdict.AfterTextBlockKey);
+    }
+
+    [Fact]
+    public void Placement_AfterTextGone_EndOfSection()
+    {
+        var book = LoadBook();
+        var note = SetUpPlacementNote(book);
+        _store.Put(PlacementEntry("pf", "placement|Buch|note:n", EarlierVerdict("Liebe#0", "Nicht mehr da")));
+
+        var placement = _understanding.Placement(book, note);
+
+        Assert.NotNull(placement);
+        Assert.Equal(Section(book, "Liebe").Key, placement.Verdict.SectionKey);
+        Assert.Null(placement.Verdict.AfterTextBlockKey);
+
+        // The same for a result stored without the place's text whose place's key is gone.
+        _store.Put(PlacementEntry("pf", "placement|Buch|note:n", Verdict(Section(book, "Liebe").Key, Guid.NewGuid())));
+        placement = _understanding.Placement(book, note);
+        Assert.NotNull(placement);
+        Assert.Null(placement.Verdict.AfterTextBlockKey);
     }
 
     [Fact]

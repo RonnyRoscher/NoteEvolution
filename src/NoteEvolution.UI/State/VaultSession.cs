@@ -1141,7 +1141,7 @@ public sealed class VaultSession : IDisposable
         try
         {
             parts.Store.Put(new UnderstandingEntry(UnderstandingKind.Placement, item.Fingerprint, item.Identity,
-                PlacementCheck.Serialize(verdict), parts.ChatModel, null, null));
+                PlacementCheck.Serialize(verdict, item.Check!), parts.ChatModel, null, null));
         }
         catch (Exception ex) when (ex is ObjectDisposedException or DbException)
         {
