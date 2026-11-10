@@ -50,6 +50,33 @@ public static partial class ManuscriptEditor
     }
 
     /// <summary>
+    /// Splits the section of the text block or detail <paramref name="current"/> right after its text block: a new empty
+    /// heading of the section's level (H1 in the prologue) follows the text block, and what came after it in the section
+    /// (text blocks and deeper headings) goes along under the new heading, so the reading order stays (Einordnen spec 2).
+    /// </summary>
+    /// <returns>The <see cref="Block.Key"/> of the new heading.</returns>
+    /// <exception cref="ArgumentException">The element is a heading or not in the book.</exception>
+    public static Guid InsertHeadingAfter(Book book, BookElement current)
+    {
+        if (current.Kind == ElementKind.Heading)
+        {
+            throw new ArgumentException("A heading has „Neuer Abschnitt danach“ instead.", nameof(current));
+        }
+
+        BlockOf(book, current); // throws for an element that is not in the book
+        var textBlock = BookElements.TextBlockOf(book, current)!;
+        var level = Math.Max(textBlock.Section.Level, 1);
+        var page = book.Page;
+        var block = textBlock.Block;
+        var following = (block.Parent?.Children ?? page.Roots).SkipWhile(child => child != block).Skip(1).ToList();
+        var heading = Block.CreateDetached(EmptyHeading(level));
+        page.InsertBlock(block.Parent, IndexOf(page, block) + 1, heading);
+        TakeAlong(Book.Load(page), heading, level, following);
+        Place(book, Book.Load(page).FindNode(heading.Key)!);
+        return heading.Key;
+    }
+
+    /// <summary>
     /// Adds a new empty element as the first child of <paramref name="current"/>: for a heading of level n a level-(n+1)
     /// heading after its own text blocks and before its existing sub-sections, for a text block a detail of depth 1,
     /// for a detail a detail one level deeper.

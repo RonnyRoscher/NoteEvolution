@@ -44,7 +44,8 @@
             <span class="ne-range-label" title="@(ownOnly ? head + L["RangeOwnOnly"] : head)"><span class="ne-range-head">@head</span>@if (ownOnly) {<span class="ne-range-own">@L["RangeOwnOnly"]</span>}</span>
             @foreach (var (css, command, key, headingOnly) in Commands)
             {
-                if (headingOnly && element.Kind != ElementKind.Heading)
+                if ((headingOnly && element.Kind != ElementKind.Heading)
+                    || (command == SectionCommand.InsertHeadingAfter && element.Kind == ElementKind.Heading))
                 {
                     continue;
                 }
@@ -129,7 +130,7 @@
                             @onclick="() => _findingSources = !_findingSources">@L["SectionFindSources"]</button>
                     @if (_findingSources && State.CursorTextBlockKey is { } sourceBlock)
                     {
-                        <SourceFinder Book="book" TextBlockKey="sourceBlock" OnLink="OnSource" />
+                        <SourceFinder Book="book" TextBlockKey="sourceBlock" OnLink="LinkSourceAsync" />
                     }
                 </span>
             }
@@ -200,6 +201,7 @@
     private static readonly (string Css, SectionCommand Command, string Key, bool HeadingOnly)[] Commands =
     [
         ("ne-sec-after", SectionCommand.InsertAfter, "SectionInsertAfter", false),
+        ("ne-sec-heading-after", SectionCommand.InsertHeadingAfter, "SectionInsertHeadingAfter", false),
         ("ne-sec-child", SectionCommand.InsertChild, "SectionInsertChild", false),
         ("ne-sec-remove-heading", SectionCommand.RemoveHeading, "SectionRemoveHeading", true),
         ("ne-sec-delete", SectionCommand.Delete, "SectionDelete", false),
@@ -532,6 +534,13 @@
     }
 
     /// <summary>A jump to the referring element, in the back/forward history.</summary>
+    /// <summary>A note chosen in „Quellen suchen“ is linked; the search closes, as the other lists of the bar do after a choice.</summary>
+    private async Task LinkSourceAsync(Guid noteBlockKey)
+    {
+        _findingSources = false;
+        await OnSource.InvokeAsync(noteBlockKey);
+    }
+
     private void RevealBackRef(CrossRefSource source)
     {
         State.JumpTo(source.ElementKey);
@@ -544,6 +553,7 @@
     /// </summary>
     private void RevealSource(Guid noteId)
     {
+        _expanded = false;
         if (State.Position is { } here)
         {
             State.RecordJump(here);

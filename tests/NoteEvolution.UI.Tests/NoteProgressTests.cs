@@ -52,6 +52,25 @@ public class NoteProgressTests : UiTestContext
     }
 
     [Fact]
+    public void Fit_ColoursCurrentAndStale_OnlyThose()
+    {
+        var current = Plain with { Placement = PlacementState.Current, Fit = PlacementFit.Poor };
+        Assert.Equal(PlacementFit.Poor, NoteProgress.FitOf(current, Of(current).Dot));
+        var stale = Plain with { Placement = PlacementState.Stale, Fit = PlacementFit.Good };
+        Assert.Equal(PlacementFit.Good, NoteProgress.FitOf(stale, Of(stale).Dot));
+        var running = stale with { Running = UnderstandingKind.Placement };
+        Assert.Null(NoteProgress.FitOf(running, Of(running).Dot));
+        Assert.Null(NoteProgress.FitOf(Plain, Of(Plain).Dot));
+    }
+
+    [Fact]
+    public void Tooltip_Stale_NamesTheLastFit()
+    {
+        var stale = Plain with { Placement = PlacementState.Stale, Fit = PlacementFit.Partial };
+        Assert.Equal("Zuordnung veraltet (Notiz oder Buch geändert) · wird neu berechnet · Passung teilweise", Of(stale).Tooltip);
+    }
+
+    [Fact]
     public void Tooltip_Current_WithFit()
     {
         var current = Plain with { Placement = PlacementState.Current, Fit = PlacementFit.Good };

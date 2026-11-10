@@ -112,7 +112,7 @@ public class SourceFinderTests : UiTestContext
     }
 
     [Fact]
-    public async Task FindSources_Link_SetsSourceAndUsedIn_AndTheNoteLeavesTheList()
+    public async Task FindSources_Link_SetsSourceAndUsedIn_AndTheSearchCloses()
     {
         var (cut, session, _) = await RenderAsync();
         await MoveToAsync(cut, "Erster Text");
@@ -121,7 +121,9 @@ public class SourceFinderTests : UiTestContext
 
         cut.FindAll(".ne-source-link")[1].Click();
 
-        cut.WaitForAssertion(() => Assert.Equal(["Anderswo"], cut.FindAll(".ne-source-text").Select(e => e.TextContent.Trim())));
+        cut.WaitForAssertion(() => Assert.Empty(cut.FindAll(".ne-source-candidate")));
+        Assert.Equal("false", cut.Find(".ne-sec-find-sources").GetAttribute("aria-expanded"));
+        cut.WaitForAssertion(() => Assert.Contains(NoteKey(session, "Frei"), Book.FindTextBlock(KeyOf("Erster Text"))!.Sources.Select(id => session.Vault.FindBlockById(id)?.Block.Key ?? Guid.Empty)));
         var note = session.Notes.Get(NoteKey(session, "Frei"))!;
         var noteId = note.Block.Id!.Value;
         var blockId = Book.FindTextBlock(KeyOf("Erster Text"))!.Block.Id!.Value;

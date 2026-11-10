@@ -967,7 +967,8 @@ public static class ManuscriptCommands
             SectionCommand.Indent => element.Kind == ElementKind.Heading && ManuscriptEditor.CanIndent(book, element.Key),
             SectionCommand.Outdent => element.Kind == ElementKind.Heading && ManuscriptEditor.CanOutdent(book, element.Key),
             SectionCommand.RemoveHeading => element.Kind == ElementKind.Heading,
-            SectionCommand.ToggleRemark or SectionCommand.AddRemark or SectionCommand.Split => element.Kind != ElementKind.Heading,
+            SectionCommand.ToggleRemark or SectionCommand.AddRemark or SectionCommand.Split or SectionCommand.InsertHeadingAfter =>
+                element.Kind != ElementKind.Heading,
             _ => false,
         };
 
@@ -1004,6 +1005,9 @@ public static class ManuscriptCommands
                     break;
                 case SectionCommand.InsertChild:
                     reveal = ManuscriptEditor.InsertChild(book, element, session.Clock.Now);
+                    break;
+                case SectionCommand.InsertHeadingAfter:
+                    reveal = ManuscriptEditor.InsertHeadingAfter(book, element);
                     break;
                 case SectionCommand.Indent:
                     ManuscriptEditor.Indent(book, element.Key);

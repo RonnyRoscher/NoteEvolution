@@ -99,6 +99,91 @@ public class ManuscriptEditorTests
     }
 
     [Fact]
+    public void InsertHeadingAfter_TextBlock_SplitsTheSectionThere()
+    {
+        var book = Load(Text);
+
+        var key = ManuscriptEditor.InsertHeadingAfter(book, ElementOf(book, "Text eins"));
+
+        Assert.Equal(
+            Text.Replace("\t- ## Eins-A\n", "- # \n\t- ## Eins-A\n"),
+            Serialize(book));
+        var reloaded = Book.Load(book.Page);
+        var heading = reloaded.FindNode(key)!;
+        Assert.Equal(1, heading.Level);
+        Assert.Equal("", heading.Title);
+        Assert.Equal(reloaded.Root.Key, heading.Parent!.Key);
+        Assert.Equal(["Text nach A"], heading.TextBlocks.Select(t => t.Text));
+        Assert.Equal(["Eins-A", "Eins-B"], heading.Children.Select(c => c.Title));
+        var eins = reloaded.FindNode(KeyOf(book, "# Eins"))!;
+        Assert.Equal(["Text eins"], eins.TextBlocks.Select(t => t.Text));
+        Assert.Empty(eins.Children);
+    }
+
+    [Fact]
+    public void InsertHeadingAfter_Detail_AfterItsTextBlock()
+    {
+        var book = Load(Text);
+
+        var key = ManuscriptEditor.InsertHeadingAfter(book, ElementOf(book, "Detail 1"));
+
+        Assert.Equal(Text.Replace("\t- ## Eins-A\n", "- # \n\t- ## Eins-A\n"), Serialize(book));
+        Assert.Equal(1, Book.Load(book.Page).FindNode(key)!.Level);
+    }
+
+    [Fact]
+    public void InsertHeadingAfter_SubSection_SameLevel_DeeperHeadingsGoAlong()
+    {
+        var book = Load(Text);
+
+        var key = ManuscriptEditor.InsertHeadingAfter(book, ElementOf(book, "Text A"));
+
+        var reloaded = Book.Load(book.Page);
+        var heading = reloaded.FindNode(key)!;
+        Assert.Equal(2, heading.Level);
+        Assert.Equal(KeyOf(book, "# Eins"), heading.Parent!.Key);
+        Assert.Equal(["Eins-A-i"], heading.Children.Select(c => c.Title));
+        var einsA = reloaded.FindNode(KeyOf(book, "## Eins-A"))!;
+        Assert.Equal(["Text A"], einsA.TextBlocks.Select(t => t.Text));
+        Assert.Empty(einsA.Children);
+        Assert.Equal(["Eins-A", "", "Eins-B"], reloaded.FindNode(KeyOf(book, "# Eins"))!.Children.Select(c => c.Title));
+    }
+
+    [Fact]
+    public void InsertHeadingAfter_Prologue_TopLevelHeading_FollowingChaptersStay()
+    {
+        var book = Load(Text);
+
+        var key = ManuscriptEditor.InsertHeadingAfter(book, ElementOf(book, "Vorspann"));
+
+        Assert.Equal(Text.Replace("- Vorspann\n", "- Vorspann\n- # \n"), Serialize(book));
+        var reloaded = Book.Load(book.Page);
+        Assert.Equal(1, reloaded.FindNode(key)!.Level);
+        Assert.Equal(["", "Eins", "Zwei"], reloaded.Root.Children.Select(c => c.Title));
+    }
+
+    [Fact]
+    public void InsertHeadingAfter_Undo_RestoresTheSection()
+    {
+        var book = Load(Text);
+        var before = PageStructureSnapshot.Capture(book.Page);
+
+        ManuscriptEditor.InsertHeadingAfter(book, ElementOf(book, "Text eins"));
+        before.RestoreInto(book.Page);
+
+        Assert.Equal(Text, Serialize(book));
+    }
+
+    [Fact]
+    public void InsertHeadingAfter_Heading_Refused()
+    {
+        var book = Load(Text);
+
+        Assert.Throws<ArgumentException>(() => ManuscriptEditor.InsertHeadingAfter(book, ElementOf(book, "# Eins")));
+        Assert.Equal(Text, Serialize(book));
+    }
+
+    [Fact]
     public void InsertChild_Heading_FirstSubsectionAfterOwnTextBlocks()
     {
         var book = Load(Text);

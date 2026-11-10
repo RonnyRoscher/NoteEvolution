@@ -1,0 +1,44 @@
+@using NoteEvolution.AI.Understanding
+@inject IStringLocalizer<Strings> L
+
+@* „?“ in the head of the notes pane: what the dots on the notes mean (ProgressDot). *@
+<span class="ne-dot-legend" @onkeydown="OnKeyDown">
+    <button type="button" class="ne-dot-legend-toggle" title="@L["DotLegendTitle"]" aria-label="@L["DotLegendTitle"]"
+            aria-expanded="@(_open ? "true" : "false")" @onclick="() => _open = !_open">?</button>
+    @if (_open)
+    {
+        @* A click anywhere else closes the legend (the backdrop lies under it, over the rest of the page). *@
+        <div class="ne-dot-legend-backdrop" @onclick="() => _open = false"></div>
+        <ul class="ne-dot-legend-list" role="list" aria-label="@L["DotLegendTitle"]">
+            @foreach (var (dot, fit, key) in Entries)
+            {
+                <li><span class="@ProgressDot.Css(dot, fit)"></span>@L[key]</li>
+            }
+        </ul>
+    }
+</span>
+
+@code {
+    private bool _open;
+
+    /// <summary>Escape closes the legend.</summary>
+    private void OnKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape")
+        {
+            _open = false;
+        }
+    }
+
+    /// <summary>The dots in the legend's order: the fit colours first, then the states shown by shape.</summary>
+    private static readonly (NoteDot Dot, PlacementFit? Fit, string Key)[] Entries =
+    [
+        (NoteDot.Current, PlacementFit.Good, "DotLegendGood"),
+        (NoteDot.Current, PlacementFit.Partial, "DotLegendPartial"),
+        (NoteDot.Current, PlacementFit.Poor, "DotLegendPoor"),
+        (NoteDot.Stale, PlacementFit.Good, "DotLegendStale"),
+        (NoteDot.Running, null, "DotLegendRunning"),
+        (NoteDot.Pending, null, "DotLegendPending"),
+        (NoteDot.Failed, null, "DotLegendFailed"),
+    ];
+}

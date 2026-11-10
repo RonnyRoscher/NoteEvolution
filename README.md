@@ -77,6 +77,7 @@ Am unteren Rand der Markierung stehen die Abschnittsknöpfe und die Quellen:
 | --- | --- |
 | Neuer Abschnitt danach (gleiche Ebene) | Alt+Enter |
 | Neuer Unterabschnitt (als erstes Element) | Alt+Umschalt+Enter |
+| Neue Überschrift danach (an Textblock oder Detail: teilt den Abschnitt dort, was danach kommt, gehört zur neuen Überschrift) | nur Knopf |
 | Element ein-/ausrücken („Einrücken ⇥“ / „⇤ Ausrücken“) | Tab / Umschalt+Tab |
 | Überschrift entfernen (der Titel wird ein Textblock, der Inhalt bleibt) | Rücktaste am Anfang des Titels |
 | Abschnitt löschen | nur Knopf |
@@ -398,9 +399,10 @@ verglichen; dadurch weiß jede Überschrift, worum es in ihren Unterabschnitten 
   sind. Der Reiter „Abdeckung“ im Notizbereich zeigt Kennzahlen (geprüft, leere Abschnitte, ohne passenden Ort,
   unsicher), alle untersten Abschnitte (Buchreihenfolge oder „Wenigste zuerst“), die Notizen ohne passenden Ort
   (Passung „kaum“) und eingeklappt die unsicheren Zuordnungen.
-- **Status je Notiz:** Ein Punkt im Kopf jeder unverwendeten Notizkarte zeigt den Stand: blau pulsierend = wird
-  berechnet, rot = fehlgeschlagen, grün = Zuordnung aktuell, gelb = veraltet, grau = steht noch aus (Tooltip mit allen
-  Stufen).
+- **Status je Notiz:** Ein Punkt im Kopf jeder unverwendeten Notizkarte zeigt mit seiner Farbe, wie gut die Notiz ins
+  Buch passt (grün = gut, gelb = teilweise, rot = kein passender Ort), und mit seiner Form den Stand: gestrichelter
+  Rand = veraltet, blauer pulsierender Ring = wird berechnet, grauer Ring = wartet noch, rot mit „!“ = fehlgeschlagen
+  (Tooltip mit allen Stufen). „?“ oben im Notizbereich erklärt die Punkte.
 - **Hintergrund:** immer nur eine Anfrage; zuerst das aktuelle Kapitel, dann das übrige Buch, dann die Notizen
   (neueste zuerst). Beim Tippen wartet die Berechnung 10 s Ruhe ab, im Akkubetrieb pausiert sie, der Schalter ⏸/▶ in
   der Kopfzeile hält sie an. Auf dem Testrechner braucht eine Zusammenfassung etwa 45 s, eine Kernaussage etwa 18 s je
