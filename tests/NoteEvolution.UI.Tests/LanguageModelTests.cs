@@ -1081,11 +1081,15 @@ public class LanguageModelTests : UiTestContext
     private Task ChangeSummariesAsync(VaultSession session) => ChangeBookAsync(session, DreamText, DreamText + " Auch die schweren.");
 
     /// <summary>Changes a block of the book from <paramref name="from"/> to <paramref name="to"/>; waits as <see cref="ChangeSummariesAsync"/>.</summary>
-    private async Task ChangeBookAsync(VaultSession session, string from, string to)
+    private Task ChangeBookAsync(VaultSession session, string from, string to) =>
+        ChangeBookAsync(session, () => Edit(session, BookPath, from, to));
+
+    /// <summary>Changes the book by <paramref name="change"/>; waits as <see cref="ChangeSummariesAsync"/>.</summary>
+    private async Task ChangeBookAsync(VaultSession session, Action change)
     {
         var appliedAtBuild = -1;
         session.PlacementPromptBuilding = (_, _) => Interlocked.CompareExchange(ref appliedAtBuild, session.FeedsApplied, -1);
-        Edit(session, BookPath, from, to);
+        change();
         await Eventually(() =>
         {
             Time.Advance(VaultSession.PageIndexDelay);
@@ -1093,6 +1097,37 @@ public class LanguageModelTests : UiTestContext
             return applied >= 0 && session.FeedsApplied > applied && session.Understanding is { Done: 8, Total: 8 };
         }, "The checks were not built again.");
         session.PlacementPromptBuilding = null;
+    }
+
+    [Fact]
+    public async Task Session_HeadingsChangedOutsideTheApp_NewKeysSameTitles_Kept()
+    {
+        var tv = Vault();
+        var session = await OpenWithPlacementsAsync(tv);
+        var key = NoteKey(session, NewerNote);
+        var chosen = CurrentBook(session).FindNode(session.Placement(key)!.Verdict.SectionKey)!;
+        var path = SectionPath.Of(chosen);
+        var calls = _chat.Calls.Count;
+
+        // Logseq folds every heading (its own lines change, so it is read again with a new key) and a text changes, so
+        // every request changes; the titles stay.
+        var file = Path.Combine(tv.Root, BookPath);
+        await ChangeBookAsync(session, () =>
+        {
+            File.WriteAllText(file, File.ReadAllText(file)
+                .Replace("- # Schlaf\n", "- # Schlaf\n  collapsed:: true\n", StringComparison.Ordinal)
+                .Replace("\t- ## Träume\n", "\t- ## Träume\n\t  collapsed:: true\n", StringComparison.Ordinal)
+                .Replace("- # Arbeit\n", "- # Arbeit\n  collapsed:: true\n", StringComparison.Ordinal)
+                .Replace(DreamText, DreamText + " Auch die schweren.", StringComparison.Ordinal));
+            session.HandleExternalChange(file);
+        });
+        Assert.Null(CurrentBook(session).FindNode(chosen.Key)); // a new key
+        await Task.Delay(50);
+
+        Assert.DoesNotContain(_chat.Calls.Skip(calls), c => c.Options.Schema is not null);
+        var placement = session.Placement(key)!;
+        Assert.False(placement.Stale);
+        Assert.Equal(path, SectionPath.Of(CurrentBook(session).FindNode(placement.Verdict.SectionKey)!));
     }
 
     [Fact]

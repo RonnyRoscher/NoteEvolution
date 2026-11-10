@@ -214,6 +214,84 @@ public sealed class PlacementKeepTests : IDisposable
         Assert.Equal(RecheckReason.SectionGone, PlacementKeep.Decide(earlier, prompt, book, names));
     }
 
+    /// <summary>The block (with its subtree) read again with new keys at the same place, as after a change of its own lines outside the app.</summary>
+    private void NewKeys(string content)
+    {
+        var old = Block(content);
+        var parent = old.Parent;
+        var index = parent is null ? _page.AllBlocks().Where(b => b.Parent is null).ToList().IndexOf(old) : parent.Children.ToList().IndexOf(old);
+        var copy = old.CloneDetached(withoutProperties: false);
+        _page.RemoveBlock(old);
+        _page.InsertBlock(parent, index, copy);
+    }
+
+    [Fact]
+    public void ChosenHeadingReadAgainWithNewKey_SameTitle_Kept()
+    {
+        var names = new SectionNames();
+        var before = Book();
+        var latest = Latest();
+        var earlier = Earlier(latest);
+        names.Remember(before);
+        NewKeys("## Unter A1");
+        var book = Book();
+        Assert.NotEqual(Node(before, "Unter A1").Key, Node(book, "Unter A1").Key);
+        var prompt = Prompt(book, Topics);
+
+        Assert.Equal(RecheckReason.None, PlacementKeep.Decide(latest, prompt, book, names));
+        Assert.Equal(RecheckReason.None, PlacementKeep.Decide(earlier, prompt, book, names));
+
+        // Also once this session's builds have seen the new key.
+        names.Remember(book);
+        Assert.Equal(RecheckReason.None, PlacementKeep.Decide(latest, prompt, book, names));
+    }
+
+    [Fact]
+    public void TopChapterReadAgainWithNewKey_Kept()
+    {
+        var names = new SectionNames();
+        var latest = Latest();
+        names.Remember(Book());
+        NewKeys("# Kapitel B");
+        var book = Book();
+
+        Assert.Equal(RecheckReason.None, PlacementKeep.Decide(latest, Prompt(book, Topics), book, names));
+    }
+
+    [Fact]
+    public void NoKey_IsNotTheRoot()
+    {
+        var names = new SectionNames();
+        var book = Book();
+        names.Remember(book);
+
+        Assert.Null(names.Find(book, Guid.Empty, "Gibt es nicht#0"));
+        Assert.Same(book.Root, names.Find(book, Guid.Empty, ""));
+        Assert.Same(Node(book, "Kapitel B"), names.Find(book, Guid.Empty, "Kapitel B#0"));
+    }
+
+    [Fact]
+    public void GoneSectionWithoutStoredKey_RenamedBasisDoesNotPointAtTheRoot()
+    {
+        // A basis without keys (an earlier session's) offered "Kapitel C", which is gone; "Kapitel A" was renamed.
+        var names = new SectionNames();
+        var latest = Earlier(Latest());
+        names.Remember(Book());
+        _page.RemoveBlock(Block("# Kapitel C"));
+        Block("# Kapitel A").SetContent("# Kapitel Alpha");
+        var book = Book();
+
+        var renamed = PlacementKeep.Renamed(latest, book, names)!;
+        var gone = renamed.Basis!.Offered.ToList().IndexOf("Kapitel C#0");
+        Assert.True(gone >= 0);
+        Assert.Equal(Guid.Empty, renamed.Basis.OfferedKeys![gone]);
+
+        // Read back in the next build: the gone entry stays gone, it does not become the root ("").
+        var again = PlacementKeep.Renamed(renamed, book, names);
+        Assert.True(again is null || !again.Basis!.Offered.Contains(""));
+        Assert.DoesNotContain("", renamed.Basis.Offered);
+    }
+
     [Fact]
     public void OtherSummary_Kept()
     {

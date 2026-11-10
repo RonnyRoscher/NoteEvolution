@@ -105,7 +105,7 @@ internal static class PlacementKeep
     private static IEnumerable<string?> Today(Book book, SectionNames names, IReadOnlyList<string> paths, IReadOnlyList<Guid>? keys) =>
         paths.Select((path, i) => names.Find(book, Key(keys, i, paths.Count), path) is { } node ? SectionPath.Of(node) : null);
 
-    /// <summary>Today's paths and keys of <paramref name="paths"/>; one gone keeps its stored path (and key, or none).</summary>
+    /// <summary>Today's paths and keys of <paramref name="paths"/>; one gone keeps its stored path and key, or <see cref="Guid.Empty"/> for none (see <see cref="SectionNames.Find"/>).</summary>
     private static (IReadOnlyList<string> Paths, IReadOnlyList<Guid> Keys) Rename(Book book, SectionNames names,
         IReadOnlyList<string> paths, IReadOnlyList<Guid>? keys)
     {
@@ -122,15 +122,16 @@ internal static class PlacementKeep
 /// The sections' names seen in this session (spec 4): a stored result names its sections by key (valid only in the
 /// session that made it, keys are new on every start) and by path (which a rename changes). Every build tells the book it
 /// decided against (<see cref="Remember"/>), so a path stored before a rename in this session still finds its section by
-/// the key it had then, and a section deleted in this session is not mistaken for a sibling that took its path. Safe to
-/// call from several threads.
+/// the key it had then, and a section deleted in this session is not mistaken for a sibling that took its path. A heading
+/// whose own lines were changed outside the app (e.g. a property added) is read again with a new key at the same path:
+/// it is found by that path. Safe to call from several threads.
 /// </summary>
 internal sealed class SectionNames
 {
     private readonly Lock _gate = new();
 
-    /// <summary>Every section key seen in this session's books.</summary>
-    private readonly HashSet<Guid> _seen = [];
+    /// <summary>Every section key seen in this session's books, with the path it had when it was first seen.</summary>
+    private readonly Dictionary<Guid, string> _firstPaths = [];
 
     /// <summary>Per book (link name): each path seen in this session, with the key of the section that had it last.</summary>
     private readonly Dictionary<string, Dictionary<string, Guid>> _paths = new(StringComparer.Ordinal);
@@ -147,20 +148,23 @@ internal sealed class SectionNames
 
             foreach (var node in Below(book.Root))
             {
-                _seen.Add(node.Key);
-                paths[SectionPath.Of(node)] = node.Key;
+                var path = SectionPath.Of(node);
+                _firstPaths.TryAdd(node.Key, path);
+                paths[path] = node.Key;
             }
         }
     }
 
     /// <summary>
     /// The section of <paramref name="book"/> a stored result names by <paramref name="key"/> and <paramref name="path"/>:
-    /// by its key; else, for a key seen in this session, none (it was deleted); else by the key the path had in this
-    /// session (none if that section is gone); else by the path. Null if there is none.
+    /// by its key; else by the key the path had in this session (a rename since); else by the path, unless the section
+    /// there is one seen in this session at another path (a sibling that took the place of a deleted section): a section
+    /// first seen at that path, or new, is the same heading with a new key. <see cref="Guid.Empty"/> is no key (it would
+    /// be the root's). Null if there is none.
     /// </summary>
     public OutlineNode? Find(Book book, Guid? key, string? path)
     {
-        if (key is { } known && book.FindNode(known) is { } byKey)
+        if (key is { } known && known != Guid.Empty && book.FindNode(known) is { } byKey)
         {
             return byKey;
         }
@@ -168,18 +172,26 @@ internal sealed class SectionNames
         Guid? before = null;
         lock (_gate)
         {
-            if (key is { } gone && _seen.Contains(gone))
-            {
-                return null;
-            }
-
             if (path is not null && _paths.TryGetValue(book.LinkName, out var paths) && paths.TryGetValue(path, out var had))
             {
                 before = had;
             }
         }
 
-        return before is { } then ? book.FindNode(then) : path is null ? null : SectionPath.Find(book, path);
+        if (before is { } then && book.FindNode(then) is { } renamed)
+        {
+            return renamed;
+        }
+
+        if (path is null || SectionPath.Find(book, path) is not { } byPath)
+        {
+            return null;
+        }
+
+        lock (_gate)
+        {
+            return _firstPaths.TryGetValue(byPath.Key, out var first) && first != path ? null : byPath;
+        }
     }
 
     /// <summary>
@@ -190,7 +202,7 @@ internal sealed class SectionNames
     {
         lock (_gate)
         {
-            if (_seen.Contains(key))
+            if (_firstPaths.ContainsKey(key))
             {
                 return key.ToString();
             }
