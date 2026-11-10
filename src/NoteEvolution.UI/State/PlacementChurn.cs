@@ -52,6 +52,7 @@ internal sealed class PlacementChurn(
     private const string SummarySeparator = " – ";
     private const string PlaceIndent = "   ";
     private const string PlaceMarker = "nach: ";
+    private const int PlaceLength = 100;
 
     // Used under the session's feed gate only.
     private string? _book;
@@ -61,6 +62,7 @@ internal sealed class PlacementChurn(
 
     // Also used by the store's writer thread; the store is never read under this lock.
     private readonly Lock _gate = new();
+    private string? _keepLine;
     private Dictionary<string, Pending> _pending = new(StringComparer.Ordinal);
     private readonly Dictionary<PlacementChurnReason, (int SamePlace, int SameSection, int OtherSection, int NoEarlier)> _outcomes = [];
 
@@ -268,14 +270,21 @@ internal sealed class PlacementChurn(
         try
         {
             var rechecked = reasons.Values.Sum();
-            if (kept + rechecked == 0)
+            var why = string.Join(", ", reasons.OrderBy(entry => entry.Key).Select(entry => $"{entry.Key} {entry.Value}"));
+            var line = $"{book}|{kept}|{why}";
+            lock (_gate)
             {
-                return;
+                // A build that cannot be remembered (a note waits for its core) repeats with the same counts.
+                if (kept + rechecked == 0 || line == _keepLine)
+                {
+                    return;
+                }
+
+                _keepLine = line;
             }
 
             logger.LogInformation(
-                "Placement keep in {Book}: {Kept} kept, {Rechecked} rechecked; why: {Reasons}",
-                book, kept, rechecked, string.Join(", ", reasons.OrderBy(entry => entry.Key).Select(entry => $"{entry.Key} {entry.Value}")));
+                "Placement keep in {Book}: {Kept} kept, {Rechecked} rechecked; why: {Reasons}", book, kept, rechecked, why);
         }
         catch (Exception ex)
         {
@@ -317,7 +326,7 @@ internal sealed class PlacementChurn(
 
         if (verdict.SectionPath is { } path)
         {
-            return new Choice(path, verdict.AfterText);
+            return new Choice(path, Place(verdict.AfterText));
         }
 
         if (prompt.Topics.FirstOrDefault(topic => topic.SectionKey == verdict.SectionKey) is not { } topic)
@@ -325,16 +334,18 @@ internal sealed class PlacementChurn(
             return null;
         }
 
-        var sections = Parse(prompt).Sections;
-        if (topic.Number > sections.Count)
+        // The path and place text as stored (the values Serialize writes), so old and new results compare alike.
+        if (topic.Path.Length == 0)
         {
             return null;
         }
 
-        var section = sections[topic.Number - 1];
         var index = verdict.AfterTextBlockKey is { } after ? topic.TextBlockKeys.ToList().IndexOf(after) : -1;
-        return new Choice(section.Path, index >= 0 && index < section.Places.Count ? section.Places[index] : null);
+        return new Choice(topic.Path, index >= 0 ? Place(topic.PlaceTexts?.ElementAtOrDefault(index)) : null);
     }
+
+    /// <summary>A place's text as compared: at most the 100 characters that are stored.</summary>
+    private static string? Place(string? text) => text is { Length: > PlaceLength } ? text[..PlaceLength] : text;
 
     private static PromptParts Parse(PlacementCheckPrompt prompt)
     {

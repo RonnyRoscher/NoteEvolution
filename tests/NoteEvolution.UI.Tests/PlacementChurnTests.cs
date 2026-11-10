@@ -30,7 +30,7 @@ public class PlacementChurnTests
         new(UnderstandingKind.Heading, fingerprint, identity, title, ownText, [], Guid.NewGuid());
 
     private PlacementCheckPrompt Standard(string summary = "Satz.", string place = "Stelle", string path = "Kapitel") =>
-        Prompt("Text", $"1. {path} – {summary}\n   1.1 nach: {place}", new CheckTopic(1, _section, [_place]));
+        Prompt("Text", $"1. {path} – {summary}\n   1.1 nach: {place}", new CheckTopic(1, _section, [_place], Path: path, PlaceTexts: [place]));
 
     [Fact]
     public void Classify_SameText_IsNoReason() =>
@@ -166,11 +166,11 @@ public class PlacementChurnTests
     [Fact]
     public void Stored_OtherSection_IsCounted_AcrossNewKeys()
     {
-        var before = Prompt("Text", "1. A\n2. B", new CheckTopic(1, _section, []), new CheckTopic(2, _other, []));
+        var before = Prompt("Text", "1. A\n2. B", new CheckTopic(1, _section, [], Path: "A"), new CheckTopic(2, _other, [], Path: "B"));
 
         // The book was read again: its keys are new, the sections are the same.
         var (a, b) = (Guid.NewGuid(), Guid.NewGuid());
-        var after = Prompt("Text", "1. A – Neu.\n2. B", new CheckTopic(1, a, []), new CheckTopic(2, b, []));
+        var after = Prompt("Text", "1. A – Neu.\n2. B", new CheckTopic(1, a, [], Path: "A"), new CheckTopic(2, b, [], Path: "B"));
 
         Assert.Contains("(Summaries): same place", Recheck(before, Verdict(_section), after, Verdict(a)));
         _logger.Lines.Clear();
@@ -200,6 +200,48 @@ public class PlacementChurnTests
         var line = Recheck(session, resultBefore, today, resultAfter);
 
         Assert.Contains("(Summaries): same place", line);
+    }
+
+    private string LegacyVerdict(Guid section, Guid? after) =>
+        PlacementCheck.Serialize(new PlacementVerdict(section, after, "Grund"), new PlacementCheckPrompt("", "", [], ""));
+
+    [Theory]
+    [InlineData("Kapitel#0 › Unter#0", "Stelle", "same place")]
+    [InlineData("Kapitel#0 › Unter#0", "Andere", "same section")]
+    [InlineData("Anderes#0", "Stelle", "other section")]
+    public void Stored_LegacyBeforeNewNow_ComparesInOneFormat(string newPath, string newPlace, string expected)
+    {
+        // An old result (no path stored) read through its prompt, a new one by its stored path and place text.
+        var longPlace = new string('x', 100);
+        var legacy = Prompt("Text", "1. Kapitel › Unter\n   1.1 nach: " + new string('x', 99) + "…",
+            new CheckTopic(1, _section, [_place], Path: "Kapitel#0 › Unter#0", PlaceTexts: [longPlace]));
+        var fresh = Prompt("Text", "1. Kapitel › Unter – Neu.\n   1.1 nach: " + newPlace,
+            new CheckTopic(1, _other, [Guid.NewGuid()], Path: newPath, PlaceTexts: [newPlace == "Stelle" ? longPlace : newPlace]));
+        var newResult = PlacementCheck.Serialize(new PlacementVerdict(_other, fresh.Topics[0].TextBlockKeys[0], "Grund"), fresh);
+
+        Assert.Contains($"): {expected}.", Recheck(legacy, LegacyVerdict(_section, _place), fresh, newResult));
+    }
+
+    [Fact]
+    public void Stored_LegacyBeforeWithoutPathInPrompt_SaysNoEarlierResult()
+    {
+        var legacy = Prompt("Text", "1. Kapitel\n   1.1 nach: Stelle", new CheckTopic(1, _section, [_place]));
+        var fresh = Standard(summary: "Neu.");
+        var newResult = PlacementCheck.Serialize(new PlacementVerdict(_section, _place, "Grund"), fresh);
+
+        Assert.Contains("(Summaries): no earlier result", Recheck(legacy, LegacyVerdict(_section, _place), fresh, newResult));
+    }
+
+    [Fact]
+    public void KeepLine_SameCountsAgain_IsLoggedOnce()
+    {
+        var reasons = new Dictionary<RecheckReason, int> { [RecheckReason.Model] = 1 };
+        _churn.Keep(Book, 2, reasons);
+        _churn.Keep(Book, 2, reasons);
+        Assert.Single(_logger.Lines);
+
+        _churn.Keep(Book, 3, reasons);
+        Assert.Equal(2, _logger.Lines.Count);
     }
 
     [Fact]
