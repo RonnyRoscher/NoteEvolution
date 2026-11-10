@@ -262,6 +262,27 @@ internal sealed class PlacementChurn(
         }
     }
 
+    /// <summary>A build kept <paramref name="kept"/> stored results and checks the others again for <paramref name="reasons"/>; never throws.</summary>
+    public void Keep(string book, int kept, IReadOnlyDictionary<RecheckReason, int> reasons)
+    {
+        try
+        {
+            var rechecked = reasons.Values.Sum();
+            if (kept + rechecked == 0)
+            {
+                return;
+            }
+
+            logger.LogInformation(
+                "Placement keep in {Book}: {Kept} kept, {Rechecked} rechecked; why: {Reasons}",
+                book, kept, rechecked, string.Join(", ", reasons.OrderBy(entry => entry.Key).Select(entry => $"{entry.Key} {entry.Value}")));
+        }
+        catch (Exception ex)
+        {
+            logger.LogDebug(ex, "Measuring the kept placements failed");
+        }
+    }
+
     /// <summary>Another book starts the comparison over.</summary>
     private void Use(string book)
     {
@@ -283,11 +304,23 @@ internal sealed class PlacementChurn(
     private Choice? ChoiceOf(UnderstandingItem? check) =>
         check?.Check is { } prompt && storedText(check.Fingerprint) is { } text ? ChoiceIn(prompt, text) : null;
 
-    /// <summary>The section and place of the stored verdict <paramref name="text"/>, as <paramref name="prompt"/> showed them.</summary>
+    /// <summary>
+    /// The section and place of the stored verdict <paramref name="text"/>: by the path and place text it was stored with
+    /// (they hold after a restart, its keys do not), else as <paramref name="prompt"/> showed them.
+    /// </summary>
     private static Choice? ChoiceIn(PlacementCheckPrompt prompt, string text)
     {
-        if (PlacementCheck.Deserialize(text) is not { } verdict
-            || prompt.Topics.FirstOrDefault(topic => topic.SectionKey == verdict.SectionKey) is not { } topic)
+        if (PlacementCheck.Deserialize(text) is not { } verdict)
+        {
+            return null;
+        }
+
+        if (verdict.SectionPath is { } path)
+        {
+            return new Choice(path, verdict.AfterText);
+        }
+
+        if (prompt.Topics.FirstOrDefault(topic => topic.SectionKey == verdict.SectionKey) is not { } topic)
         {
             return null;
         }

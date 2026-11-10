@@ -210,6 +210,7 @@ internal sealed class PlacementWork(
         }
 
         WriteUpgrades(keep);
+        Churn.Keep(book.LinkName, keep.Kept, keep.Reasons);
         if (withoutTopics.Count == 0 && waiting.Count == 0)
         {
             lock (_gate)

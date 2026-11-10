@@ -187,6 +187,39 @@ public class PlacementChurnTests
     }
 
     [Fact]
+    public void Stored_ComparesByPath_AfterRestart_SamePlace()
+    {
+        // The earlier result was stored by the session before the restart: its keys are not in this session's prompt.
+        var before = Prompt("Text", "1. Kapitel – Satz.\n   1.1 nach: Stelle", new CheckTopic(1, Guid.NewGuid(), [Guid.NewGuid()], Path: "Kapitel", PlaceTexts: ["Stelle"]));
+        var old = before.Topics[0];
+        var resultBefore = PlacementCheck.Serialize(new PlacementVerdict(old.SectionKey, old.TextBlockKeys[0], "Grund"), before);
+        var session = Prompt("Text", "1. Kapitel – Satz.\n   1.1 nach: Stelle", new CheckTopic(1, Guid.NewGuid(), [Guid.NewGuid()], Path: "Kapitel", PlaceTexts: ["Stelle"]));
+        var today = Prompt("Text", "1. Kapitel – Neu.\n   1.1 nach: Stelle", new CheckTopic(1, _section, [_place], Path: "Kapitel", PlaceTexts: ["Stelle"]));
+        var resultAfter = PlacementCheck.Serialize(new PlacementVerdict(_section, _place, "Grund"), today);
+
+        var line = Recheck(session, resultBefore, today, resultAfter);
+
+        Assert.Contains("(Summaries): same place", line);
+    }
+
+    [Fact]
+    public void KeepLine_CountsKeptAndReasons()
+    {
+        _churn.Keep(Book, 5, new Dictionary<RecheckReason, int> { [RecheckReason.NoteText] = 2, [RecheckReason.Model] = 1 });
+
+        var line = Assert.Single(_logger.Lines);
+        Assert.Equal("Placement keep in Buch - Alpha: 5 kept, 3 rechecked; why: NoteText 2, Model 1", line);
+    }
+
+    [Fact]
+    public void KeepLine_NothingKeptOrRechecked_IsSilent()
+    {
+        _churn.Keep(Book, 0, new Dictionary<RecheckReason, int>());
+
+        Assert.Empty(_logger.Lines);
+    }
+
+    [Fact]
     public void Stored_TwoChangesBeforeTheModelAnswered_ComparesWithTheLastResult()
     {
         _store["a1"] = Verdict(_section, _place);

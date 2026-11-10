@@ -377,8 +377,16 @@ verglichen; dadurch weiß jede Überschrift, worum es in ihren Unterabschnitten 
 - **Vorberechnete Zuordnung:** Für jede noch nicht verwendete Notiz läuft „Genauer prüfen“ im Hintergrund für das
   aktuelle Buch, sobald alle Zusammenfassungen des Buchs und die Kernaussage der Notiz fertig sind. „Wohin damit?“
   zeigt die Empfehlung dann sofort; „veraltet“ heißt, Notiz oder Buch haben sich seitdem geändert (sie wird neu
-  berechnet). Neu gerechnet wird nur, wenn sich die Anfrage an das Modell ändert. „Genauer prüfen“ erscheint nur noch,
-  wenn eine Empfehlung fehlt oder veraltet ist.
+  berechnet). Ändert sich die Anfrage an das Modell, wird eine vorhandene Zuordnung nur dann neu geprüft, wenn
+  mindestens einer dieser Punkte zutrifft: der Text der Notiz hat sich geändert; ihr gewählter Abschnitt ist nicht mehr
+  im Buch; ein neuer Abschnitt steht in der Rangfolge der Ähnlichkeit vor dem gewählten, oder ein neues Kapitel kommt
+  unter ihre drei besten; von den damals angebotenen Abschnitten wird weniger als die Hälfte noch angeboten; ein
+  anderes Chat-Modell oder eine andere Form der Anfrage; oder „Genauer prüfen“ wurde geklickt. Sonst bleibt das
+  Ergebnis und gilt als aktuell (grüner Punkt); andere Zusammenfassungen, geänderte oder verschwundene Textstellen,
+  umbenannte Abschnitte und eine andere Reihenfolge der Abschnitte genügen nicht. Verglichen wird mit der letzten
+  echten Prüfung. Gespeichert werden dazu Abschnittspfad, Textstellenanfang und die Grundlage der Prüfung; so bleiben
+  Ergebnisse auch über einen Neustart nutzbar. „Genauer prüfen“ erscheint nur noch, wenn eine Empfehlung fehlt oder
+  veraltet ist.
 - **„Relevant“** beschreibt den Abschnitt über seine Zusammenfassung (und zu einem Viertel die seines Oberabschnitts)
   und vergleicht die Notizen über Kernaussage und Text. Oben stehen unter „Hierher eingeordnet“ die Notizen, die das
   Modell diesem Abschnitt (oder einem Unterabschnitt) zugeordnet hat, darunter „Weitere ähnliche“.
@@ -399,7 +407,8 @@ verglichen; dadurch weiß jede Überschrift, worum es in ihren Unterabschnitten 
   Zuordnungen auf (je mit Balken und Restzeit, dazu Pausengrund und übersprungene Einträge).
   Das Log des Vaults (`.noteevolution/logs`) hält fest, was eine Buchänderung kostet: „Heading churn“ (geänderte
   Zusammenfassungen und warum), „Placement churn“ (neue Zuordnungsanfragen und warum) und „Placement recheck“ (ob die neu
-  berechnete Zuordnung anders ausfiel).
+  berechnete Zuordnung anders ausfiel, verglichen über den Abschnittspfad) und „Placement keep“ (wie viele Zuordnungen
+  behalten wurden und aus welchem Grund die übrigen neu geprüft werden).
   Eine Anfrage darf höchstens 5 Minuten dauern; nach 3 Fehlversuchen wird ein Eintrag bis zur nächsten Änderung
   übersprungen; scheitern mehrere Einträge hintereinander am Server, pausiert die Berechnung und versucht es nach 60 s
   erneut.
