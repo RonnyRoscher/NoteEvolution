@@ -73,7 +73,7 @@ public static class BookElements
         var textBlocks = element.Kind == ElementKind.Heading
             ? Heading(book, element).AllTextBlocks()
             : [TextBlock(book, element)];
-        return [.. textBlocks.SelectMany(textBlock => textBlock.Sources).Distinct()];
+        return [.. textBlocks.SelectMany(textBlock => textBlock.AllSources).Distinct()];
     }
 
     /// <summary>The key of the last heading of the book's text in file order; <c>null</c> if the book has none.</summary>

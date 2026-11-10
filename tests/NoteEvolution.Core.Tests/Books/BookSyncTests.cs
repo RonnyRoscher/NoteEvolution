@@ -778,6 +778,41 @@ public class BookSyncTests
     }
 
     [Fact]
+    public void Sync_DeleteParentAfterLiftingChildren_OnlyParentDeleted()
+    {
+        const string d1 = "0199a1c2-1b7e-7c1d-9a0f-2b3c4d5e6f81";
+        const string d2 = "0199a1c2-1b7e-7c1d-9a0f-2b3c4d5e6f82";
+        var bookText = TestBook.Replace(
+            "\t\t\t- Absatz eins\n\t\t\t- Absatz zwei #notiz\n",
+            $"\t\t\t- Absatz eins\n\t\t\t  id:: {d1}\n\t\t\t  source:: (({N1}))\n" +
+            $"\t\t\t- Absatz zwei\n\t\t\t  id:: {d2}\n\t\t\t  source:: (({N2}))\n");
+        var journalText = TestJournal.Replace(
+            $"  id:: {N1}\n  used-in:: [[Buch - Test]] (({B1}))\n",
+            $"  id:: {N1}\n  used-in:: [[Buch - Test]] (({B1})), [[Buch - Test]] (({d1}))\n").Replace(
+            $"  id:: {N2}\n  used-in:: [[Buch - Test]] (({B1}))\n",
+            $"  id:: {N2}\n  used-in:: [[Buch - Test]] (({B1})), [[Buch - Test]] (({d2}))\n");
+        using var s = new LinkSetup(bookText, journalText);
+        var book = s.Book;
+        var snapshot = Section(s, "Abschnitt");
+        var parent = TextNode(snapshot, "Erster Textblock");
+        // The editor lifts the details to top-level text blocks (same keys) and removes the parent.
+        var lifted = parent.Paragraphs
+            .Select((p, i) => new SnapshotTextBlock(
+                p.Key, null, p.Text, [], [new SourceInfo(Guid.Parse(i == 0 ? N1 : N2), "x", false)]))
+            .ToArray<SnapshotNode>();
+
+        var result = BookSync.Apply(book, Replace(snapshot, parent, lifted));
+
+        Assert.True(result.Changed);
+        var deleted = Assert.IsType<BlockDeleted>(Assert.Single(result.Effects));
+        Assert.Equal(Guid.Parse(B1), deleted.BookBlockId);
+        var text = Serialize(book);
+        Assert.Contains($"\t\t- Absatz eins\n\t\t  id:: {d1}\n\t\t  source:: (({N1}))\n", text);
+        Assert.Contains($"\t\t- Absatz zwei\n\t\t  id:: {d2}\n\t\t  source:: (({N2}))\n", text);
+        Assert.DoesNotContain(B1, text);
+    }
+
+    [Fact]
     public void Apply_DuplicateKeys_Throws_NothingChanged()
     {
         using var s = new LinkSetup(TestBook, TestJournal);

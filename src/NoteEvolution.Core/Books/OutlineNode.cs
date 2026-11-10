@@ -54,7 +54,7 @@ public sealed class OutlineNode : BookItem
     });
 
     /// <summary>Number of distinct sources in the whole subtree; for the root without the appendix sections.</summary>
-    public int SourceCount => AllTextBlocks().SelectMany(t => t.Sources).Distinct().Count();
+    public int SourceCount => AllTextBlocks().SelectMany(t => t.AllSources).Distinct().Count();
 
     internal void Add(BookItem item) => _items.Add(item);
 
