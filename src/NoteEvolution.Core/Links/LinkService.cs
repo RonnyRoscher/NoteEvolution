@@ -362,19 +362,18 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
         }
     }
 
-    public void RemoveSource(Book book, Guid textBlockKey, Guid noteBlockId)
+    public void RemoveSource(Book book, Guid blockKey, Guid noteBlockId)
     {
         var page = book.Page;
         EnsureWritable(page);
-        var block = FindTextBlock(book, textBlockKey);
+        var (_, block) = FindElement(book, blockKey, detailOnly: false);
         var sources = SourceValue.Parse(block.GetProperty(SourceKey) ?? "").ToList();
         if (sources.RemoveAll(id => id == noteBlockId) == 0)
         {
             return;
         }
 
-        var lines = block.Lines.ToList();
-        var wasDirty = block.IsDirty;
+        var before = CaptureSubtree(block);
         if (sources.Count == 0)
         {
             block.RemoveProperty(SourceKey);
@@ -384,11 +383,40 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
             block.SetProperty(SourceKey, SourceValue.Format(sources));
         }
 
-        SaveBook(page, () => block.RestoreLines(lines, wasDirty));
+        SaveBook(page, () => RestoreSubtree(before, markDirty: false));
+        var after = CaptureSubtree(block);
 
-        var noteUpdatePending = block.Id is { } bookBlockId
-                                && RemoveUsageOfFound(noteBlockId, book.LinkName, bookBlockId) is { Pending: true };
-        if (!noteUpdatePending)
+        // A missing note (or a block without id::, which no entry can name) only changes the book.
+        var change = block.Id is { } bookBlockId ? RemoveUsageOfFound(noteBlockId, book.LinkName, bookBlockId) : null;
+        var bookPath = page.FilePath;
+        var linkName = book.LinkName;
+        undo.Push(new UndoAction(
+            "Verknüpfung lösen", () => UndoRemoveSource(bookPath, linkName, block.Key, before, after, change)));
+        if (change is not { Pending: true })
+        {
+            RetryPending();
+        }
+    }
+
+    /// <summary>
+    /// Gives the block its lines from before <see cref="RemoveSource"/> back (its <c>source::</c> with the note), then the
+    /// note its usage as in <see cref="RestoreNotes"/>. Refused before anything changes if the block with its subtree is
+    /// no longer exactly as <see cref="RemoveSource"/> left it (<paramref name="after"/>).
+    /// </summary>
+    private void UndoRemoveSource(
+        string bookPath, string linkName, Guid blockKey, IReadOnlyList<SubtreeBlock> before, IReadOnlyList<SubtreeBlock> after,
+        NoteChange? change)
+    {
+        var page = CurrentPage(bookPath);
+        if (page.AllBlocks().FirstOrDefault(b => b.Key == blockKey) is not { } block || !SubtreeIs(block, after))
+        {
+            throw new InvalidOperationException("Der Block wurde seit dem Lösen der Verknüpfung geändert.");
+        }
+
+        RestoreSubtree(before, markDirty: true);
+        SaveBook(page, () => RestoreSubtree(after, markDirty: true));
+
+        if (change is null || RestoreNotes(linkName, [change]))
         {
             RetryPending();
         }
@@ -550,17 +578,17 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
 
             foreach (var detail in merged)
             {
-                // A linked detail: its sources go to the text block (a detail has no source of its own after this), and
-                // the notes' usages of it move to the text block, which needs an id for that.
+                // A linked detail: its sources go to the head, whose text it joins, and the notes' usages of it move to
+                // the head, which needs an id for that.
                 var sources = SourceValue.Parse(detail.GetProperty(SourceKey) ?? "");
                 if (detail.Id is { } removedId && sources.Count > 0)
                 {
-                    moves.Add((textBlock.EnsureId(), removedId, [.. sources.Distinct()]));
+                    moves.Add((head.EnsureId(), removedId, [.. sources.Distinct()]));
                 }
 
                 foreach (var noteId in sources)
                 {
-                    AddSource(textBlock, noteId);
+                    AddSource(head, noteId);
                 }
             }
 
@@ -579,8 +607,8 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
                 page.RemoveBlock(detail);
             }
 
-            // A detail is no reference target, but a reference to a merged one is kept valid: it points to the text block,
-            // which gets an id only for that.
+            // A detail is no reference target (CrossRefIndex), but a reference to a merged one is kept valid: it points to
+            // the text block (not to a detail head, unlike the usages), which gets an id only for that.
             if (ReferencesAny(page, plan.RemovedIds))
             {
                 var textBlockId = textBlock.EnsureId();

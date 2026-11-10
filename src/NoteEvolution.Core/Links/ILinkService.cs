@@ -109,8 +109,18 @@ public interface ILinkService
     /// <exception cref="InvalidOperationException">The note's page is read-only; nothing was changed.</exception>
     void Link(Book book, Guid textBlockKey, Guid noteBlockKey);
 
-    /// <summary>Removes <paramref name="noteBlockId"/> from the text block's <c>source::</c> and the usage from the note.</summary>
-    void RemoveSource(Book book, Guid textBlockKey, Guid noteBlockId);
+    /// <summary>
+    /// Loosens one link of a text block or a detail (<paramref name="blockKey"/>, the block carrying it): removes
+    /// <paramref name="noteBlockId"/> from its <c>source::</c> (the property goes when it is empty; text, <c>id::</c> and
+    /// status stay), then the note's <c>used-in::</c> entry for this block, and sets <c>used-without-children::</c> as the
+    /// other usages require. Without such a note (or without an <c>id::</c> on the block) only the book changes; a
+    /// read-only note page gets the removal in <c>pending.json</c>. Nothing happens if the block does not have the note
+    /// as a source. Records the undo action „Verknüpfung lösen“: it puts back the block's lines and the note's (or adds
+    /// the entry again to a note changed since), refused while the block with its subtree is no longer as this left it.
+    /// </summary>
+    /// <exception cref="ArgumentException">No text block or detail has this key; nothing was changed.</exception>
+    /// <exception cref="ReadOnlyPageException">The book page is read-only.</exception>
+    void RemoveSource(Book book, Guid blockKey, Guid noteBlockId);
 
     /// <summary>Deletes the text block with its paragraphs and removes its usages from the notes. Can be undone („Löschen“).</summary>
     void DeleteTextBlock(Book book, Guid textBlockKey);
@@ -164,8 +174,10 @@ public interface ILinkService
     /// the head's content, joined as in <see cref="MergeTextBlocks"/> (a blank line; blank contents left out), and
     /// these details are removed. The <c>#notiz</c> details stay, with their own sub-details, as the head's children
     /// in file order (one below a merged detail comes up to the head). The merged details' <c>source::</c> values go
-    /// to the enclosing text block's <c>source::</c> (union), and every note whose <c>used-in::</c> referenced a merged
-    /// detail references the text block instead (which gets an <c>id::</c> if needed). Other properties of the merged
+    /// to the head's <c>source::</c> (union), and every note whose <c>used-in::</c> referenced a merged detail references
+    /// the head instead (which gets an <c>id::</c> if needed). A reference <c>((id))</c> in the book to a merged detail
+    /// points to the enclosing text block afterwards (a detail is no reference target; the text block gets an
+    /// <c>id::</c> only for that). Other properties of the merged
     /// details are carried over where the head lacks the key, except <c>collapsed::</c> (the view state of a detail
     /// that goes; the head keeps its own) and the dates (a text block head gets the earliest readable
     /// <c>created::</c>; the text block gets a new <c>updated::</c>). Can be undone („Zusammenfügen“) as
