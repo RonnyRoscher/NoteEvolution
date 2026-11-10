@@ -287,13 +287,12 @@ public class WhereToTests : UiTestContext
                 break;
         }
 
-        // The list stays open; the hit the note went into is marked at once (a new text block is not in the list). For
-        // now the mark reads the text block's own sources only, so a note below it (its new detail's source) is not
-        // marked yet (spec 4.1 counts the details' sources too).
+        // The list stays open; the hit the note went into is marked at once (a new text block is not in the list), also
+        // when the note went below it as a detail (the mark counts the details' sources, spec 4.1).
         var items = cut.FindAll(".ne-note-whereto-item");
         Assert.Equal(5, items.Count);
         Assert.Equal(
-            variant == AdoptVariant.AtCursor ? [hitExcerpt] : [],
+            variant == AdoptVariant.After ? [] : [hitExcerpt],
             items.Where(item => item.QuerySelector(".ne-note-whereto-used") is not null).Select(Excerpt).ToList());
     }
 

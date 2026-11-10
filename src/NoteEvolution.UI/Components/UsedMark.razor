@@ -81,10 +81,7 @@
             .Select(entry => entry.BookBlockId is { } id ? book.FindTextBlockById(id)?.Section : null)
             .FirstOrDefault(section => section?.Block is not null)?.Key;
 
-    /// <summary>
-    /// The key of the heading or text block with the id <paramref name="blockId"/>; for a paragraph (detail) the key of
-    /// its text block.
-    /// </summary>
+    /// <summary>The key of the heading, text block or detail with the id <paramref name="blockId"/>.</summary>
     private static Guid? TargetOf(OutlineNode node, Guid blockId)
     {
         if (node.Block?.Id == blockId)
@@ -92,9 +89,17 @@
             return node.Key;
         }
 
-        if (node.TextBlocks.FirstOrDefault(text => text.Block.Id == blockId || text.Paragraphs.Any(p => p.Block.Id == blockId)) is { } textBlock)
+        foreach (var textBlock in node.TextBlocks)
         {
-            return textBlock.Key;
+            if (textBlock.Block.Id == blockId)
+            {
+                return textBlock.Key;
+            }
+
+            if (textBlock.Paragraphs.FirstOrDefault(p => p.Block.Id == blockId) is { } detail)
+            {
+                return detail.Block.Key;
+            }
         }
 
         return node.Children.Select(child => TargetOf(child, blockId)).FirstOrDefault(key => key is not null);

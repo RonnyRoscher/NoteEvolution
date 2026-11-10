@@ -477,6 +477,25 @@ public class EditorPaneTests : UiTestContext
     }
 
     [Fact]
+    public async Task ChipRemove_CanBeUndone()
+    {
+        using var tv = Alpha();
+        var bookBefore = tv.Read(BookPath);
+        var notesBefore = tv.Read(NotesPath);
+        var (session, cut) = await RenderAsync(tv);
+
+        await cut.InvokeAsync(() => Editor.Callbacks!.OnChipRemoved(Section("Eins").TextBlocks.First().Key, Guid.Parse(NoteId)));
+        Assert.DoesNotContain("source::", tv.Read(BookPath));
+
+        // The chip's × takes the same way as the bar's: an undo action "Verknüpfung lösen" (spec 4.1).
+        Assert.Equal("Verknüpfung lösen", session.Undo.NextDescription);
+        await cut.InvokeAsync(() => Assert.True(session.TryUndo(out _)));
+
+        Assert.Equal(bookBefore, tv.Read(BookPath));
+        Assert.Equal(notesBefore, tv.Read(NotesPath));
+    }
+
+    [Fact]
     public async Task Pane_SplitFromJs_AddsUsageToNote()
     {
         using var tv = Alpha();

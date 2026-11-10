@@ -1873,6 +1873,33 @@ html, body {
     color: var(--danger);
 }
 
+/* A row of the list of sources: the note, then its small × „Verknüpfung lösen“ (spec 4.1). */
+.ne-sec-source-row {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+}
+
+.ne-sec-source-row > .ne-sec-source,
+.ne-sec-source-row > .ne-sec-source-broken {
+    flex: 1;
+    min-width: 0;
+}
+
+.ne-shell .ne-sec-source-loosen {
+    flex-shrink: 0;
+    padding: 0 6px;
+    border: none;
+    background: transparent;
+    color: var(--fg-muted);
+    line-height: 1.4;
+}
+
+.ne-shell .ne-sec-source-loosen:hover:not(:disabled) {
+    background: var(--hint-bg);
+    color: var(--danger);
+}
+
 /* The search for a cross reference target opens upwards above its button, like the list of sources. */
 .ne-sec-ref-area {
     position: relative;

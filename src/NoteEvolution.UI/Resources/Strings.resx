@@ -243,6 +243,12 @@
   <data name="SectionSourceMissing" xml:space="preserve">
     <value>Quelle fehlt</value>
   </data>
+  <data name="SectionSourceLoosen" xml:space="preserve">
+    <value>Verknüpfung lösen</value>
+  </data>
+  <data name="SectionSourceLoosenTitle" xml:space="preserve">
+    <value>Verknüpfung mit „{0}“ lösen</value>
+  </data>
   <data name="SectionMerge" xml:space="preserve">
     <value>Zusammenfügen</value>
   </data>

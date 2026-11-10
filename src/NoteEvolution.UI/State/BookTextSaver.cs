@@ -271,10 +271,11 @@ public sealed class BookTextSaver(AppState state, ILogger logger)
     }
 
     /// <summary>
-    /// Removes the note from the text block's sources and the usage from the note (after <see cref="Save"/>). Refused
-    /// while the text could not be saved, and while a conflict is open for the book or the note page (R26).
+    /// Removes the note from the sources of the block (a text block or a detail) and the usage from the note (after
+    /// <see cref="Save"/>); the link service pushes the undo action „Verknüpfung lösen“. Refused while the text could
+    /// not be saved, and while a conflict is open for the book or the note page (R26).
     /// </summary>
-    public void RemoveSource(Guid textBlockKey, Guid noteId)
+    public void RemoveSource(Guid blockKey, Guid noteId)
     {
         if (Pending is not null)
         {
@@ -303,7 +304,7 @@ public sealed class BookTextSaver(AppState state, ILogger logger)
 
         try
         {
-            session.Links.RemoveSource(book, textBlockKey, noteId);
+            session.Links.RemoveSource(book, blockKey, noteId);
         }
         catch (FileChangedExternallyException)
         {

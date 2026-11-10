@@ -28,7 +28,8 @@
     @if (State.CurrentBook is { } book && Element is { } element && BookElements.Find(book, element.Key) == element
          && State.CurrentRange is { } range)
     {
-        var sources = SourcesOf(book, range);
+        var links = LinksOf(book, range);
+        var noteCount = links.Select(row => row.Link.NoteId).Distinct().Count();
         var backRefs = BackRefsOf(book, element);
         <div class="ne-sec-buttons">
             @* Moving the range changes no file, so it stays possible while the book is locked. *@
@@ -167,27 +168,33 @@
                     }
                 </span>
             }
-            @if (sources.Count == 0)
+            @if (links.Count == 0)
             {
                 <span class="ne-sec-no-sources">@L["SectionNoSources"]</span>
             }
             else
             {
                 <button type="button" class="ne-sec-sources" aria-expanded="@(_expanded ? "true" : "false")"
-                        @onclick="() => _expanded = !_expanded">@SourcesText(sources.Count)</button>
+                        @onclick="() => _expanded = !_expanded">@SourcesText(noteCount)</button>
                 @if (_expanded)
                 {
+                    @* One row per linked block (spec 4.1); the list stays open after „Verknüpfung lösen“. *@
                     <div class="ne-sec-source-list">
-                        @foreach (var source in Sorted(sources))
+                        @foreach (var row in Sorted(links))
                         {
-                            if (source.IsBroken)
-                            {
-                                <span class="ne-sec-source-broken">@L["SectionSourceMissing"]</span>
-                            }
-                            else
-                            {
-                                <button type="button" class="ne-sec-source" @onclick="() => RevealSource(source.NoteId)">@source.Label</button>
-                            }
+                            <div class="ne-sec-source-row">
+                                @if (row.Source.IsBroken)
+                                {
+                                    <span class="ne-sec-source-broken">@L["SectionSourceMissing"]</span>
+                                }
+                                else
+                                {
+                                    <button type="button" class="ne-sec-source" @onclick="() => RevealSource(row.Link.NoteId)">@row.Source.Label</button>
+                                }
+                                <button type="button" class="ne-sec-source-loosen" disabled="@Locked"
+                                        title="@L["SectionSourceLoosenTitle", row.BlockLine]" aria-label="@L["SectionSourceLoosen"]"
+                                        @onclick="() => OnLoosen.InvokeAsync(row.Link)">×</button>
+                            </div>
                         }
                     </div>
                 }
@@ -290,6 +297,13 @@
     /// <summary>A note was chosen in „Quellen suchen“: link it as a source of the text block at the cursor.</summary>
     [Parameter]
     public EventCallback<Guid> OnSource { get; set; }
+
+    /// <summary>
+    /// „Verknüpfung lösen“ on a row of the list of sources: removes the note from the <c>source::</c> of the block
+    /// carrying the link (text block or detail) and the usage from the note (spec 4.1).
+    /// </summary>
+    [Parameter]
+    public EventCallback<SourceLink> OnLoosen { get; set; }
 
     /// <summary>A person or source (or „Neu anlegen …“) was chosen in „Mensch einfügen“ or „Quelle einfügen“.</summary>
     [Parameter]
@@ -478,9 +492,26 @@
         _statusChanges++;
     }
 
-    /// <summary>The distinct notes (their <c>id::</c>) the text blocks of <paramref name="range"/> refer to, in order.</summary>
-    private static IReadOnlyList<Guid> SourcesOf(Book book, RangeInfo range) =>
-        [.. range.TextBlockKeys.Select(book.FindTextBlock).OfType<TextBlock>().SelectMany(textBlock => textBlock.Sources).Distinct()];
+    /// <summary>A row of the list of sources: the link, its note and the first line of the block carrying it.</summary>
+    private sealed record SourceRow(SourceLink Link, SourceInfo Source, string BlockLine);
+
+    /// <summary>
+    /// The links of the text blocks of <paramref name="range"/> and their details (<see cref="TextBlock.Links"/>), in
+    /// book order, each with the first line of its block (without the <c>#notiz</c> tag, at most 60 characters).
+    /// </summary>
+    private static List<(SourceLink Link, string BlockLine)> LinksOf(Book book, RangeInfo range) =>
+    [
+        .. range.TextBlockKeys.Select(book.FindTextBlock).OfType<TextBlock>().SelectMany(textBlock =>
+            textBlock.Links.Select(link => (link, FirstLine(textBlock, link.BlockKey)))),
+    ];
+
+    private static string FirstLine(TextBlock textBlock, Guid blockKey)
+    {
+        var content = textBlock.Block.Key == blockKey
+            ? textBlock.Block.Content
+            : textBlock.Paragraphs.FirstOrDefault(p => p.Block.Key == blockKey)?.Block.Content ?? "";
+        return RefLabels.Excerpt(NoteTag.Remove(content).Split('\n', 2)[0], RefLabels.TitleExcerptLength);
+    }
 
     /// <summary>
     /// The range head as the label names it: a heading with its level marks and title (or that it has none), e.g.
@@ -580,23 +611,23 @@
     };
 
     /// <summary>
-    /// The sources (<see cref="BookSnapshot.SourceOf"/>) by the date of their note's journal day, then by label; notes
-    /// without a date, and missing ones, come last by label.
+    /// The rows with their sources (<see cref="BookSnapshot.SourceOf"/>) by the date of their note's journal day, then
+    /// by label; notes without a date, and missing ones, come last by label. The rows of one note stay in book order.
     /// </summary>
-    private IEnumerable<SourceInfo> Sorted(IReadOnlyList<Guid> noteIds)
+    private IEnumerable<SourceRow> Sorted(IReadOnlyList<(SourceLink Link, string BlockLine)> links)
     {
         if (State.Session?.Vault is not { } vault)
         {
             return [];
         }
 
-        return noteIds
-            .Select(id => (
-                Source: BookSnapshot.SourceOf(id, vault),
-                Date: vault.FindBlockById(id) is { } found ? NoteRepository.DateOf(found.Page) : null))
+        return links
+            .Select(entry => (
+                Row: new SourceRow(entry.Link, BookSnapshot.SourceOf(entry.Link.NoteId, vault), entry.BlockLine),
+                Date: vault.FindBlockById(entry.Link.NoteId) is { } found ? NoteRepository.DateOf(found.Page) : null))
             .OrderBy(entry => entry.Date is null)
             .ThenBy(entry => entry.Date)
-            .ThenBy(entry => entry.Source.Label, StringComparer.CurrentCulture)
-            .Select(entry => entry.Source);
+            .ThenBy(entry => entry.Row.Source.Label, StringComparer.CurrentCulture)
+            .Select(entry => entry.Row);
     }
 }

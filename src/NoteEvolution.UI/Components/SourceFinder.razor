@@ -76,7 +76,7 @@
     protected override async Task OnParametersSetAsync()
     {
         var textBlock = Book.FindTextBlock(TextBlockKey);
-        var key = (Book, TextBlockKey, string.Join(",", textBlock?.Sources ?? []));
+        var key = (Book, TextBlockKey, string.Join(",", textBlock?.AllSources ?? []));
         if (_searched is { } searched && searched.TextBlockKey == key.TextBlockKey && searched.Sources == key.Item3
             && searched.Book.LinkName == Book.LinkName)
         {
@@ -93,7 +93,8 @@
         }
 
         // The vault model belongs to the UI thread: the allowed notes are read here, the search runs in the background.
-        var sources = textBlock.Sources.ToHashSet();
+        // A note linked to the text block or to one of its details is left out (spec 4.1).
+        var sources = textBlock.AllSources.ToHashSet();
         var allowed = session.Notes.All().Where(note => note.Block.Id is not { } id || !sources.Contains(id))
             .Select(note => note.Key).ToHashSet();
         var relevance = session.Relevance;
