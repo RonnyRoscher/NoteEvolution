@@ -74,9 +74,30 @@ Schon heute vorhanden und weiter genutzt:
   - Das wird durch einen Test festgeschrieben (Abschnitt 8). Weicht `BookSync` heute davon ab, wird es behoben.
 - **Ausrücken, Einrücken, Verschieben, „Als Überschrift“, „Neue Überschrift danach“:** Die Blöcke behalten `id::` und `source::`, wie heute schon. Keine Änderung nötig.
 - **Teilen** (`BlockSplit`): unverändert. Der abgeteilte Block bekommt die Quellen des geteilten und die Notizen einen Eintrag für ihn.
-- **Eine Verknüpfung entfernen** (×-Knopf an einer Quelle der Leiste):
-  - Sie entfernt die Quelle an dem Block, der sie trägt. Das kann jetzt auch ein Detail des Textblocks sein.
-  - `RemoveSource` nimmt dafür den Schlüssel des tragenden Blocks statt immer den des Textblocks.
+### 4.1 Quellen korrigieren
+
+Eine falsch gesetzte Verknüpfung lässt sich in der Leiste wieder lösen. Heute geht das nur über das × eines Quellen-Chips im Editor, nur bei eingeschalteten Chips, nur für die Quellen eines Textblocks und ohne „Rückgängig“.
+
+- **Liste „Quellen“ der Leiste:**
+  - Sie zeigt die Verknüpfungen des Bereichs: die des Textblocks und die seiner Details (bei einer Überschrift die ihres ganzen Abschnitts).
+  - Für jede Verknüpfung gibt es eine Zeile: die Notiz wie heute, dahinter ein ×-Knopf „Verknüpfung lösen“.
+  - Hängt dieselbe Notiz an mehreren Blöcken, steht sie einmal je Block. Der Tooltip des × nennt den Block mit seiner ersten Zeile (höchstens 60 Zeichen).
+  - Eine Quelle, deren Notiz fehlt („Quelle nicht gefunden“), bekommt ebenfalls ein ×.
+  - Die Liste bleibt nach dem Lösen offen, damit mehrere Korrekturen nacheinander gehen. Ist die letzte Verknüpfung gelöst, steht wieder „Keine Quellen“.
+- **Was „Lösen“ tut:**
+  - Es entfernt die Notiz aus der `source::` des tragenden Blocks (Textblock oder Detail).
+  - Es entfernt den passenden Eintrag `used-in:: [[Buch]] ((Block))` an der Notiz und setzt die Markierung `used-without-children` so, wie die übrigen Verwendungen es verlangen. Bei einer fehlenden Notiz entfällt dieser Schritt.
+  - Text, `id::` und Status des Blocks bleiben.
+  - `RemoveSource` nimmt dafür den Schlüssel des tragenden Blocks, Textblock oder Detail.
+- **Rückgängig:** neu eine Undo-Aktion „Verknüpfung lösen“. Sie setzt Quelle und Eintrag zurück, wenn der Block noch so ist, wie das Lösen ihn ließ. Das gilt auch für das × der Chips im Editor, das denselben Weg nimmt.
+- **Sperren:** wie beim Chip heute. Ungespeicherter Text wird erst gespeichert. Bei einem offenen Konflikt für das Buch oder die Notizseite wird nichts geändert, mit derselben Meldung. Eine schreibgeschützte Notizseite bekommt ihren Eintrag in `pending.json`.
+
+Die Zählungen, die Quellen eines Textblocks lesen, zählen künftig auch die Quellen seiner Details:
+- die Zahl der Quellen in der Gliederung;
+- „Quellen suchen“, das schon verknüpfte Notizen auslässt;
+- „Wohin damit?“, das eine Notiz als schon hier verwendet zeigt.
+
+Die Chips im Editor bleiben an den Textblöcken und zeigen wie heute nur deren eigene Quellen.
 
 ## 5. Zusammenführen
 
@@ -150,8 +171,11 @@ Der Assistent ändert keinen Text und keine Reihenfolge, nur Eigenschaftszeilen.
   - schreibgeschützte Notizseite.
 - **UI:**
   - Das ✓ und „Verwendete ausblenden“ je Unterpunkt nach einer Übernahme.
-  - Die Quellenliste der Leiste zeigt die Quellen der Details.
-  - × an einer Detailquelle entfernt sie dort.
+  - Die Quellenliste der Leiste zeigt die Quellen der Details, je Block eine Zeile.
+  - × an einer Detailquelle löst sie dort, × an einer fehlenden Quelle entfernt nur die `source::`.
+  - Die Liste bleibt offen, und Undo stellt Quelle und Eintrag wieder her. Das gilt auch für das × eines Chips.
+  - Bei einem offenen Konflikt wird nichts gelöst.
+  - Die Zahl in der Gliederung zählt Detailquellen mit.
 - **Prüfung der Verknüpfungen** (`LinkChecker`): Verknüpfte Details gelten als gültig. Ein `used-in::` auf ein Detail ist kein Fehler.
 - **Sprung** von einer Verwendung in der Notiz zum Buchblock findet auch ein Detail.
 
