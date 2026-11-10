@@ -1,6 +1,8 @@
+using System.Runtime.ExceptionServices;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
+using NoteEvolution.Core.Assistants;
 using NoteEvolution.Core.Books;
 using NoteEvolution.Core.Format;
 using NoteEvolution.Core.Model;
@@ -421,6 +423,215 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
             RetryPending();
         }
     }
+
+    public void LinkSubPoints(IReadOnlyList<SubPointMatch> matches)
+    {
+        var resolved = matches.Select(ResolveSubPointMatch).ToList();
+        if (resolved.GroupBy(r => r.Detail).Any(same => same.Count() > 1))
+        {
+            throw new ArgumentException("A detail is given twice.", nameof(matches));
+        }
+
+        if (resolved.Count == 0)
+        {
+            return;
+        }
+
+        var bookGroups = resolved.GroupBy(r => r.BookPage).ToList();
+        bookGroups.ForEach(group => EnsureWritable(group.Key));
+
+        // Each sub-point's id: its own, else a new one it gets with its entry (a read-only page never gets it).
+        var noteIds = resolved.Select(r => r.Note).Distinct().ToDictionary(note => note, note => note.Id ?? Guid.CreateVersion7());
+
+        // The books first, each written once; one that cannot be written stops the books, but the notes of those
+        // written get their entries.
+        var books = new List<(string Path, PageStructureSnapshot Before, PageStructureSnapshot After)>();
+        var saved = new List<SubPointLink>();
+        ExceptionDispatchInfo? failure = null;
+        foreach (var group in bookGroups)
+        {
+            var page = group.Key;
+            var before = PageStructureSnapshot.Capture(page);
+            foreach (var link in group)
+            {
+                link.Detail.EnsureId();
+                AddSource(link.Detail, noteIds[link.Note]);
+            }
+
+            try
+            {
+                SaveBook(page, () => before.RestoreInto(page));
+            }
+            catch (Exception ex)
+            {
+                failure = ExceptionDispatchInfo.Capture(ex);
+                break;
+            }
+
+            books.Add((page.FilePath, before, PageStructureSnapshot.Capture(page)));
+            saved.AddRange(group);
+        }
+
+        var notePages = new List<LinkedNotePage>();
+        var anyPending = false;
+        foreach (var group in saved.GroupBy(link => link.NotePage))
+        {
+            var page = group.Key;
+            var linkedNotes = group.Select(link => link.Note).ToHashSet();
+            bool OwnsEntryAfter(Block block) =>
+                linkedNotes.Contains(block) || !string.IsNullOrWhiteSpace(block.GetProperty(UsedInKey));
+            bool AllBelowOwnEntry(Block block) => block.Children.Count > 0 && Subtree(block).Skip(1).All(OwnsEntryAfter);
+
+            List<(Block Note, string LinkName, Guid BookBlockId, bool OwnOnly)> entries =
+                [.. group.Select(link => (link.Note, link.LinkName, link.Detail.Id!.Value, AllBelowOwnEntry(link.Note)))];
+            List<(Guid NoteId, string LinkName, Guid BookBlockId)> added =
+                [.. entries.Select(entry => (noteIds[entry.Note], entry.LinkName, entry.BookBlockId))];
+            if (page.IsReadOnly)
+            {
+                foreach (var (note, linkName, bookBlockId, ownOnly) in entries)
+                {
+                    Queue(new PendingNoteUpdate(noteIds[note], Locate(page, note), linkName, bookBlockId, Remove: false, ownOnly));
+                }
+
+                notePages.Add(new LinkedNotePage(page.FilePath, null, null, added));
+                anyPending = true;
+                continue;
+            }
+
+            var before = PageStructureSnapshot.Capture(page);
+            foreach (var note in linkedNotes.Where(note => note.Id is null))
+            {
+                note.SetProperty(IdKey, noteIds[note].ToString("D"));
+            }
+
+            // A note block that has a usage already gets the mark now when every block below it will own an entry: the
+            // main point of the old adoption, whose usage then passes nothing on, and a linked sub-point used before
+            // (its entry is added keeping the mark). A linked sub-point without usage gets it with its entry (OwnOnly).
+            var marked = linkedNotes
+                .SelectMany(note => AncestorsOf(note).Prepend(note))
+                .Distinct()
+                .Where(block => !string.IsNullOrWhiteSpace(block.GetProperty(UsedInKey))
+                                && block.GetProperty(UsedInValue.WithoutChildrenKey) is null
+                                && AllBelowOwnEntry(block))
+                .ToList();
+            marked.ForEach(block => SetWithoutChildren(block, true));
+
+            var changes = UpdateNotes(page, entries);
+            anyPending |= changes.Any(change => change.Pending);
+            notePages.Add(new LinkedNotePage(page.FilePath, before, PageStructureSnapshot.Capture(page), added));
+        }
+
+        if (books.Count > 0)
+        {
+            undo.Push(new UndoAction("Verknüpfungen nachtragen", () => UndoLinkSubPoints(books, notePages)));
+        }
+
+        failure?.Throw();
+        if (!anyPending)
+        {
+            RetryPending();
+        }
+    }
+
+    /// <summary>
+    /// The current book page, detail and note block of a match, found by the book's link name and the blocks' keys.
+    /// </summary>
+    /// <exception cref="ArgumentException">One of them is unknown, or the detail has a <c>source::</c> already.</exception>
+    private SubPointLink ResolveSubPointMatch(SubPointMatch match)
+    {
+        var book = vault.FindBook(match.Book.LinkName)
+                   ?? throw new ArgumentException($"No book is named '{match.Book.LinkName}'.", nameof(match));
+        var detail = book.Page.AllBlocks().FirstOrDefault(block => block.Key == match.DetailKey)
+                     ?? throw new ArgumentException("No block of the book has this key.", nameof(match));
+        if (SourceValue.Parse(detail.GetProperty(SourceKey) ?? "").Count > 0)
+        {
+            throw new ArgumentException("The detail is linked already.", nameof(match));
+        }
+
+        if (vault.FindBlockByKey(match.NoteBlockKey) is not { } note || Book.IsBook(note.Page))
+        {
+            throw new ArgumentException("No note block has this key.", nameof(match));
+        }
+
+        return new SubPointLink(book.Page, book.LinkName, detail, note.Page, note.Block);
+    }
+
+    /// <summary>
+    /// Gives every book and note page that <see cref="LinkSubPoints"/> wrote and that is still as it left it its former
+    /// bytes back, and drops the entries it queued in <c>pending.json</c>. A page changed since (or gone, or read-only now)
+    /// stays as it is; afterwards <see cref="PagesNotRestoredException"/> names these pages.
+    /// </summary>
+    private void UndoLinkSubPoints(
+        IReadOnlyList<(string Path, PageStructureSnapshot Before, PageStructureSnapshot After)> books,
+        IReadOnlyList<LinkedNotePage> notePages)
+    {
+        var kept = new List<string>();
+        foreach (var (path, before, after) in books)
+        {
+            if (vault.FindPageByPath(path) is { IsReadOnly: false } page && after.Matches(page))
+            {
+                before.RestoreInto(page);
+                SaveBook(page, () => after.RestoreInto(page));
+            }
+            else
+            {
+                kept.Add(path);
+            }
+        }
+
+        foreach (var notePage in notePages)
+        {
+            foreach (var (noteId, linkName, bookBlockId) in notePage.Added)
+            {
+                ClearPending(noteId, linkName, bookBlockId);
+            }
+
+            if (notePage.Before is null || notePage.After is null)
+            {
+                // A read-only page: it was never changed, its entries only waited.
+                continue;
+            }
+
+            if (vault.FindPageByPath(notePage.Path) is { IsReadOnly: false } page && notePage.After.Matches(page))
+            {
+                notePage.Before.RestoreInto(page);
+                if (page.IsDirty)
+                {
+                    writer.Save(page);
+                }
+            }
+            else
+            {
+                kept.Add(notePage.Path);
+            }
+        }
+
+        if (kept.Count > 0)
+        {
+            throw new PagesNotRestoredException(kept);
+        }
+
+        RetryPending();
+    }
+
+    private static IEnumerable<Block> AncestorsOf(Block block)
+    {
+        for (var parent = block.Parent; parent is not null; parent = parent.Parent)
+        {
+            yield return parent;
+        }
+    }
+
+    /// <summary>One match of <see cref="LinkSubPoints"/> resolved to the current pages and blocks.</summary>
+    private sealed record SubPointLink(Page BookPage, string LinkName, Block Detail, Page NotePage, Block Note);
+
+    /// <summary>
+    /// A note page <see cref="LinkSubPoints"/> changed: the page before and after (both <c>null</c> for a read-only page,
+    /// which is never changed), and the entries it added or queued.
+    /// </summary>
+    private sealed record LinkedNotePage(
+        string Path, PageStructureSnapshot? Before, PageStructureSnapshot? After,
+        IReadOnlyList<(Guid NoteId, string LinkName, Guid BookBlockId)> Added);
 
     public void DeleteTextBlock(Book book, Guid textBlockKey)
     {
@@ -1349,10 +1560,15 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
     /// </summary>
     /// <returns>One change per entry, in the order of <paramref name="updates"/>.</returns>
     private List<NoteChange> UpdateNotes(
-        Page page, string linkName, IReadOnlyList<(Block Note, Guid BookBlockId, bool OwnOnly)> updates)
+        Page page, string linkName, IReadOnlyList<(Block Note, Guid BookBlockId, bool OwnOnly)> updates) =>
+        UpdateNotes(page, [.. updates.Select(update => (update.Note, linkName, update.BookBlockId, update.OwnOnly))]);
+
+    /// <summary>As <see cref="UpdateNotes(Page, string, IReadOnlyList{ValueTuple{Block, Guid, bool}})"/>, each entry for its own book.</summary>
+    private List<NoteChange> UpdateNotes(
+        Page page, IReadOnlyList<(Block Note, string LinkName, Guid BookBlockId, bool OwnOnly)> updates)
     {
-        var applied = new List<(Block Note, Guid NoteId, Guid BookBlockId, bool OwnOnly, List<RawLine> Before, bool AloneBefore)>();
-        foreach (var (note, bookBlockId, ownOnly) in updates)
+        var applied = new List<(Block Note, Guid NoteId, string LinkName, Guid BookBlockId, bool OwnOnly, List<RawLine> Before, bool AloneBefore)>();
+        foreach (var (note, linkName, bookBlockId, ownOnly) in updates)
         {
             var noteId = note.Id ?? throw new InvalidOperationException("The note block has no id.");
             var before = note.Lines.ToList();
@@ -1362,7 +1578,7 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
                 AddEntry(note, linkName, bookBlockId, ownOnly);
             }
 
-            applied.Add((note, noteId, bookBlockId, ownOnly, before, aloneBefore));
+            applied.Add((note, noteId, linkName, bookBlockId, ownOnly, before, aloneBefore));
         }
 
         var pendingNow = page.IsReadOnly;
@@ -1381,7 +1597,7 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
             }
         }
 
-        foreach (var (note, noteId, bookBlockId, ownOnly, _, _) in applied)
+        foreach (var (note, noteId, linkName, bookBlockId, ownOnly, _, _) in applied)
         {
             if (pendingNow)
             {
