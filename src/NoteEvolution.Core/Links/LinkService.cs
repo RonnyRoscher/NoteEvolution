@@ -823,10 +823,17 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
                     }
 
                     break;
-                case BlockDeleted deleted:
-                    RemoveUsagesOfDeleted(book.Page.FilePath, book.LinkName, [(deleted.BookBlockId, deleted.Sources)], null);
+                case BlockDeleted:
+                    // Without the removed block: all of them together below, deeper note blocks first.
                     break;
             }
+        }
+
+        List<(Guid, IReadOnlyList<Guid>)> loose =
+            [.. effects.OfType<BlockDeleted>().Where(e => e.Removed is null).Select(e => (e.BookBlockId, e.Sources))];
+        if (loose.Count > 0)
+        {
+            RemoveUsagesOfDeleted(book.Page.FilePath, book.LinkName, loose, null);
         }
     }
 
@@ -839,7 +846,7 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
     public int RetryPending()
     {
         var done = 0;
-        foreach (var update in pending.Load())
+        foreach (var update in RemovalsDeepestFirst(pending.Load()))
         {
             if (TryComplete(update))
             {
@@ -849,6 +856,36 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
         }
 
         return done;
+    }
+
+    /// <summary>
+    /// <paramref name="updates"/> with the removals among them reordered deeper note blocks first (by the locator's tree
+    /// path), each add keeping its place: a main point's mark is recomputed (<see cref="SetMarkAfterRemoval"/>) only after
+    /// its sub-points lost their entries, whatever order they were queued in.
+    /// </summary>
+    private static List<PendingNoteUpdate> RemovalsDeepestFirst(IEnumerable<PendingNoteUpdate> updates)
+    {
+        var ordered = updates.ToList();
+        var slots = Enumerable.Range(0, ordered.Count).Where(i => ordered[i].Remove).ToList();
+        var removals = slots.Select(i => ordered[i]).OrderByDescending(update => update.Locator.TreePath.Length).ToList();
+        foreach (var (slot, removal) in slots.Zip(removals))
+        {
+            ordered[slot] = removal;
+        }
+
+        return ordered;
+    }
+
+    /// <summary>The number of ancestors of <paramref name="block"/>.</summary>
+    private static int Depth(Block block)
+    {
+        var depth = 0;
+        for (var parent = block.Parent; parent is not null; parent = parent.Parent)
+        {
+            depth++;
+        }
+
+        return depth;
     }
 
     /// <summary>
@@ -933,15 +970,18 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
     private void RemoveUsagesOfDeleted(
         string bookPath, string linkName, IEnumerable<(Guid Id, IReadOnlyList<Guid> Sources)> linked, DeletedBlock? removed)
     {
+        // Deeper note blocks first: a main point's mark is recomputed (SetMarkAfterRemoval) only after its sub-points lost
+        // the entries of the same delete, so they do not count as used on their own.
+        var removals = linked
+            .SelectMany(link => link.Sources.Distinct().Select(noteId => (link.Id, NoteId: noteId)))
+            .OrderByDescending(removal => FindNote(removal.NoteId) is { } note ? Depth(note.Block) : 0)
+            .ToList();
         var changes = new List<NoteChange>();
-        foreach (var (id, sources) in linked)
+        foreach (var (id, noteId) in removals)
         {
-            foreach (var noteId in sources.Distinct())
+            if (RemoveUsageOfFound(noteId, linkName, id) is { } change)
             {
-                if (RemoveUsageOfFound(noteId, linkName, id) is { } change)
-                {
-                    changes.Add(change);
-                }
+                changes.Add(change);
             }
         }
 

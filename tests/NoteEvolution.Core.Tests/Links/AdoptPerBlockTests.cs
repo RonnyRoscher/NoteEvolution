@@ -189,6 +189,78 @@ public class AdoptPerBlockTests
         Assert.True(NoteBlock.IsUsedBlock(s.Note("Unter A")));
     }
 
+    private static readonly string JournalWithOldUsage = Journal.Replace("- Kern\n", "- Kern\n  used-in:: [[Andere]]\n");
+
+    /// <summary>The old usage still passes on to the sub-points: no mark, every sub-point used, no entry of this book.</summary>
+    private static void AssertOnlyTheOldUsageLeft(LinkSetup s)
+    {
+        Assert.Equal("[[Andere]]", s.Note("Kern").GetProperty(UsedInValue.Key));
+        Assert.Null(s.Note("Kern").GetProperty(UsedInValue.WithoutChildrenKey));
+        Assert.DoesNotContain("used-without-children::", s.ReadJournal());
+        Assert.DoesNotContain("[[Buch - Test]]", s.ReadJournal());
+        Assert.All(NoteBlocks.Skip(1), content => Assert.True(NoteBlock.IsUsedBlock(s.Note(content))));
+    }
+
+    [Fact]
+    public void DeleteTextBlock_OldInheritingUsage_KeepsNoMark_UndoRestores()
+    {
+        using var s = new LinkSetup(journal: JournalWithOldUsage);
+        var r = s.Links.Adopt(s.Book, s.Note("Kern").Key, new InsertPosition.SectionEnd(s.SectionKey("Abschnitt")));
+        var journalAfterAdopt = s.ReadJournal();
+
+        s.Links.DeleteTextBlock(s.Book, r.TextBlockKey);
+
+        AssertOnlyTheOldUsageLeft(s);
+
+        s.Undo.Undo();
+
+        Assert.Equal(journalAfterAdopt, s.ReadJournal());
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void SyncDeleted_OldInheritingUsage_KeepsNoMark(bool withRemovedBlock)
+    {
+        using var s = new LinkSetup(journal: JournalWithOldUsage);
+        s.Links.Adopt(s.Book, s.Note("Kern").Key, new InsertPosition.SectionEnd(s.SectionKey("Abschnitt")));
+        var text = BookBlock(s, "Kern");
+
+        // As BookSync reports a removed subtree: one effect per linked block, top block first.
+        List<SyncEffect> effects =
+        [
+            .. SourceValue.LinkedBlocksIn(text).Select(linked => withRemovedBlock
+                ? new BlockDeleted(linked.Id, linked.Sources) { Removed = text, ParentKey = text.Parent?.Key, Index = 0 }
+                : new BlockDeleted(linked.Id, linked.Sources)),
+        ];
+        s.Links.ApplySyncEffects(s.Book, effects);
+
+        AssertOnlyTheOldUsageLeft(s);
+    }
+
+    [Fact]
+    public void PendingRemovals_ReplayedInAnyOrder_KeepNoMark()
+    {
+        using var s = new LinkSetup(journal: JournalWithOldUsage);
+        var r = s.Links.Adopt(s.Book, s.Note("Kern").Key, new InsertPosition.SectionEnd(s.SectionKey("Abschnitt")));
+        s.Writer.FailNext(s.JournalPath, times: 4);
+        s.Links.DeleteTextBlock(s.Book, r.TextBlockKey);
+        Assert.Equal(4, s.Pending.Load().Count);
+
+        // The removals wait with the main point's first (as a delete in an older version queued them).
+        var queued = s.Pending.Load().ToList();
+        queued.ForEach(s.Pending.Remove);
+        foreach (var update in queued.OrderBy(u => u.Locator.TreePath.Length))
+        {
+            s.Pending.Add(update);
+        }
+
+        s.Reopen();
+
+        Assert.Equal(4, s.Links.RetryPending());
+        AssertOnlyTheOldUsageLeft(s);
+    }
+
     [Fact]
     public void RemovingAnEntry_LeafKeepsNoMark()
     {
