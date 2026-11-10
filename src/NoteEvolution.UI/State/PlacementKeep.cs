@@ -157,9 +157,9 @@ internal sealed class SectionNames
 
     /// <summary>
     /// The section of <paramref name="book"/> a stored result names by <paramref name="key"/> and <paramref name="path"/>:
-    /// by its key; else by the key the path had in this session (a rename since); else by the path, unless the section
-    /// there is one seen in this session at another path (a sibling that took the place of a deleted section): a section
-    /// first seen at that path, or new, is the same heading with a new key. <see cref="Guid.Empty"/> is no key (it would
+    /// by its key; else by the key the path had last in this session (a rename since); else by the path. A section found
+    /// by the path is taken only if it is new in this session or was first seen at that path (renamed, or the same heading
+    /// read again with a new key), never one first seen elsewhere (a sibling that took the place of a deleted section). <see cref="Guid.Empty"/> is no key (it would
     /// be the root's). Null if there is none.
     /// </summary>
     public OutlineNode? Find(Book book, Guid? key, string? path)
@@ -180,17 +180,21 @@ internal sealed class SectionNames
 
         if (before is { } then && book.FindNode(then) is { } renamed)
         {
-            return renamed;
+            return FirstSeenAt(renamed, path!) ? renamed : null;
         }
 
-        if (path is null || SectionPath.Find(book, path) is not { } byPath)
-        {
-            return null;
-        }
+        return path is not null && SectionPath.Find(book, path) is { } byPath && FirstSeenAt(byPath, path) ? byPath : null;
+    }
 
+    /// <summary>
+    /// Whether <paramref name="node"/> is the section a stored <paramref name="path"/> named: new in this session, or first
+    /// seen at that path (renamed since, or read again with a new key); not a section seen elsewhere that took its place.
+    /// </summary>
+    private bool FirstSeenAt(OutlineNode node, string path)
+    {
         lock (_gate)
         {
-            return _firstPaths.TryGetValue(byPath.Key, out var first) && first != path ? null : byPath;
+            return !_firstPaths.TryGetValue(node.Key, out var first) || first == path;
         }
     }
 

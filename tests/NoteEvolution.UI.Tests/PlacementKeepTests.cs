@@ -212,6 +212,12 @@ public sealed class PlacementKeepTests : IDisposable
         // The sibling now has the path "Unter A1#0", but it is another section.
         Assert.Equal(RecheckReason.SectionGone, PlacementKeep.Decide(latest, prompt, book, names));
         Assert.Equal(RecheckReason.SectionGone, PlacementKeep.Decide(earlier, prompt, book, names));
+
+        // The next build, before the recheck is done: the path now belongs to the sibling in this session's names.
+        names.Remember(book);
+        Assert.Equal(RecheckReason.SectionGone, PlacementKeep.Decide(latest, prompt, book, names));
+        Assert.Equal(RecheckReason.SectionGone, PlacementKeep.Decide(earlier, prompt, book, names));
+        Assert.Null(PlacementKeep.Renamed(latest, book, names));
     }
 
     /// <summary>The block (with its subtree) read again with new keys at the same place, as after a change of its own lines outside the app.</summary>
