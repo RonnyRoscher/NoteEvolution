@@ -24,18 +24,23 @@ public class AdoptAsHeadingTests
 
         var r = s.Links.AdoptAsHeading(s.Book, s.Note("Thema **fett** #notiz").Key, s.SectionKey("Abschnitt"), asSubheading: false, Untitled);
 
-        var (one, two) = (BookId(s, "Punkt eins"), BookId(s, "Punkt zwei"));
+        var (one, two, deep) = (BookId(s, "Punkt eins"), BookId(s, "Punkt zwei"), BookId(s, "Tiefer"));
         var (noteId, oneId, twoId) = (s.Note("Thema **fett** #notiz").Id, s.Note("Punkt eins").Id, s.Note("Punkt zwei").Id);
+        var deepId = s.Note("Tiefer").Id;
         Assert.Equal(
             "title:: Buch: Test\ntype:: book\n\n- Vorspann\n- # Kapitel\n\t- ## Abschnitt\n" +
             "\t\t- Erster Textblock\n\t\t- Zweiter Textblock\n\t\t- ### Unterabschnitt\n\t\t\t- Text im Unterabschnitt\n" +
             "\t- ## Thema **fett**\n" +
-            $"\t\t- Punkt eins\n\t\t  id:: {one}\n\t\t  source:: (({oneId}))\n\t\t  status:: relevant\n\t\t\t- Tiefer\n" +
+            $"\t\t- Punkt eins\n\t\t  id:: {one}\n\t\t  source:: (({oneId}))\n\t\t  status:: relevant\n" +
+            $"\t\t\t- Tiefer\n\t\t\t  id:: {deep}\n\t\t\t  source:: (({deepId}))\n" +
             $"\t\t- Punkt zwei\n\t\t  id:: {two}\n\t\t  source:: (({twoId}))\n\t\t  status:: relevant\n",
             s.ReadBook());
+
+        // Every sub-point at every depth has an entry of its own, so each usage with sub-points takes its block alone.
         Assert.Equal(
-            $"- Thema **fett** #notiz\n  id:: {noteId}\n  used-in:: [[Buch - Test]]\n" +
-            $"\t- Punkt eins\n\t  collapsed:: true\n\t  id:: {oneId}\n\t  used-in:: [[Buch - Test]] (({one}))\n\t\t- Tiefer\n" +
+            $"- Thema **fett** #notiz\n  id:: {noteId}\n  used-in:: [[Buch - Test]]\n  used-without-children:: true\n" +
+            $"\t- Punkt eins\n\t  collapsed:: true\n\t  id:: {oneId}\n\t  used-in:: [[Buch - Test]] (({one}))\n\t  used-without-children:: true\n" +
+            $"\t\t- Tiefer\n\t\t  id:: {deepId}\n\t\t  used-in:: [[Buch - Test]] (({deep}))\n" +
             $"\t- Punkt zwei\n\t  id:: {twoId}\n\t  used-in:: [[Buch - Test]] (({two}))\n" +
             "- Zweite Notiz\n",
             s.ReadJournal());
@@ -56,7 +61,7 @@ public class AdoptAsHeadingTests
 
         Assert.Contains(
             "\t\t- Zweiter Textblock\n\t\t- ### Thema **fett**\n\t\t\t- Punkt eins\n", s.ReadBook());
-        Assert.Contains("\t\t\t\t- Tiefer\n\t\t\t- Punkt zwei\n", s.ReadBook());
+        Assert.Contains("\t\t\t\t- Tiefer\n\t\t\t- Punkt zwei\n", WithoutProperties(s.ReadBook()));
         Assert.EndsWith("\t\t- ### Unterabschnitt\n\t\t\t- Text im Unterabschnitt\n", s.ReadBook());
         var heading = s.Book.FindNode(r.HeadingKey)!;
         Assert.Equal((3, "Abschnitt"), (heading.Level, heading.Parent!.Title));
@@ -130,7 +135,8 @@ public class AdoptAsHeadingTests
         Assert.Equal([noteId], extra.Sources);
         Assert.Equal(BlockStatus.Relevant, extra.Status);
         Assert.Equal(
-            $"- Titelzeile  \n  id:: {noteId}\n  used-in:: [[Buch - Test]] (({extra.Block.Id}))\n  weiterer Text\n  noch mehr\n" +
+            $"- Titelzeile  \n  id:: {noteId}\n  used-in:: [[Buch - Test]] (({extra.Block.Id}))\n  used-without-children:: true\n" +
+            "  weiterer Text\n  noch mehr\n" +
             $"\t- Punkt\n\t  id:: {s.Note("Punkt").Id}\n\t  used-in:: [[Buch - Test]] (({point.Block.Id}))\n",
             s.ReadJournal());
     }
@@ -159,7 +165,8 @@ public class AdoptAsHeadingTests
         var textBlocks = s.Book.FindNode(r.HeadingKey)!.TextBlocks.ToList();
         Assert.Equal(2, textBlocks.Count);
         Assert.All(textBlocks, t => Assert.Equal((now.DateTime, now.DateTime), (t.Created, t.Updated)));
-        Assert.Equal(2, s.ReadBook().Split("created:: 2026-10-19T14:32").Length - 1);
+        // The detail from the deeper sub-point is new as well.
+        Assert.Equal(3, s.ReadBook().Split("created:: 2026-10-19T14:32").Length - 1);
     }
 
     [Fact]
@@ -192,7 +199,7 @@ public class AdoptAsHeadingTests
         Assert.Contains("- # Thema **fett**\n", s.ReadBook());
         Assert.Equal(Journal, s.ReadJournal());
         Assert.Equal(
-            new[] { BookId(s, "Punkt eins"), BookId(s, "Punkt zwei") }.Order(),
+            new[] { BookId(s, "Punkt eins"), BookId(s, "Tiefer"), BookId(s, "Punkt zwei") }.Order(),
             s.Pending.Load().Select(p => p.BookBlockId).Order());
     }
 
@@ -202,13 +209,14 @@ public class AdoptAsHeadingTests
         using var s = new LinkSetup(journal: Journal);
         s.Links.AdoptAsHeading(s.Book, s.Note("Thema **fett** #notiz").Key, s.SectionKey("Abschnitt"), asSubheading: true, Untitled);
         var (noteId, oneId, twoId) = (s.Note("Thema **fett** #notiz").Id, s.Note("Punkt eins").Id, s.Note("Punkt zwei").Id);
+        var deepId = s.Note("Tiefer").Id;
 
         s.Undo.Undo();
 
         Assert.Equal(LinkSetup.DefaultBook, s.ReadBook());
         Assert.Equal(
             $"- Thema **fett** #notiz\n  id:: {noteId}\n" +
-            $"\t- Punkt eins\n\t  collapsed:: true\n\t  id:: {oneId}\n\t\t- Tiefer\n" +
+            $"\t- Punkt eins\n\t  collapsed:: true\n\t  id:: {oneId}\n\t\t- Tiefer\n\t\t  id:: {deepId}\n" +
             $"\t- Punkt zwei\n\t  id:: {twoId}\n- Zweite Notiz\n",
             s.ReadJournal());
         Assert.False(s.Undo.CanUndo);

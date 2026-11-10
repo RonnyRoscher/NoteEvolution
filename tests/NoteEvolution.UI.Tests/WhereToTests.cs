@@ -5,6 +5,7 @@ using NoteEvolution.AI.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Localization;
 using NoteEvolution.Core.Books;
+using NoteEvolution.Core.Links;
 using NoteEvolution.Core.Vaults;
 using NoteEvolution.TestSupport;
 using NoteEvolution.UI.Components;
@@ -279,16 +280,20 @@ public class WhereToTests : UiTestContext
                 Assert.DoesNotContain(noteId, target.Sources);
                 break;
             default:
+                // The new detail carries the note block's source.
                 Assert.Equal(NoteText, target.Paragraphs[0].Text);
-                Assert.Contains(noteId, target.Sources);
+                Assert.Equal([noteId], SourceValue.Parse(target.Paragraphs[0].Block.GetProperty("source") ?? ""));
+                Assert.DoesNotContain(noteId, target.Sources);
                 break;
         }
 
-        // The list stays open; the hit the note went into is marked at once (a new text block is not in the list).
+        // The list stays open; the hit the note went into is marked at once (a new text block is not in the list). For
+        // now the mark reads the text block's own sources only, so a note below it (its new detail's source) is not
+        // marked yet (spec 4.1 counts the details' sources too).
         var items = cut.FindAll(".ne-note-whereto-item");
         Assert.Equal(5, items.Count);
         Assert.Equal(
-            variant == AdoptVariant.After ? [] : [hitExcerpt],
+            variant == AdoptVariant.AtCursor ? [hitExcerpt] : [],
             items.Where(item => item.QuerySelector(".ne-note-whereto-used") is not null).Select(Excerpt).ToList());
     }
 

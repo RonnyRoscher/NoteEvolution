@@ -52,11 +52,7 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
         catch
         {
             // The book does not reference the notes, so new id:: lines must not reach the note file later.
-            foreach (var (block, blockLines, wasDirty) in notesBefore)
-            {
-                block.RestoreLines(blockLines, wasDirty);
-            }
-
+            RestoreNoteLines(notesBefore);
             throw;
         }
 
@@ -91,16 +87,8 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
             IntoPosition.FirstChild first => FindElement(book, first.ElementKey, detailOnly: false),
             _ => throw new ArgumentException("Unknown position.", nameof(position)),
         };
-        var copy = CopyOf(note, includeChildren, hideUsed);
-        var ownOnly = LeavesOutSubPoints(note, includeChildren, hideUsed);
-
-        // The new top-level details are relevant: at the cursor the note's sub-bullets, else the copy. Set while they
-        // are detached, so that one without a place for it (an unclosed code fence) throws before anything changed.
-        IReadOnlyList<Block> tops = position is IntoPosition.AtCursor ? copy.Children : [copy];
-        foreach (var top in tops)
-        {
-            top.SetProperty(BlockStatuses.Key, Relevant);
-        }
+        var (copy, pairs) = CopyWithPairs(note, includeChildren, hideUsed);
+        var atCursor = position is IntoPosition.AtCursor;
 
         string? content = null;
         if (position is IntoPosition.AtCursor cursor)
@@ -109,9 +97,34 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
             Block.ValidateContent(content);
         }
 
+        // At the cursor the note block's text goes into the element, which carries its source; the inserted blocks are
+        // the copies of its sub-points.
+        var copied = atCursor ? pairs.Skip(1).ToList() : pairs;
+        List<(Block Block, List<RawLine> Lines, bool WasDirty)> notesBefore =
+            [.. pairs.Select(pair => (pair.Note, pair.Note.Lines.ToList(), pair.Note.IsDirty))];
+        try
+        {
+            // The new top-level details (at the cursor the note's sub-bullets, else the copy) in the usual order of a
+            // top block (id::, source::, status::, then the dates LinkPairs adds). Set while they are detached, so that
+            // one without a place for them (an unclosed code fence) throws before the book changed.
+            IReadOnlyList<Block> tops = atCursor ? copy.Children : [copy];
+            foreach (var (block, source) in copied.Where(pair => tops.Contains(pair.Copied)))
+            {
+                var sourceId = source.EnsureId();
+                block.EnsureId();
+                AddSource(block, sourceId);
+                block.SetProperty(BlockStatuses.Key, Relevant);
+            }
+
+            LinkPairs(copied, clock?.Now);
+        }
+        catch
+        {
+            RestoreNoteLines(notesBefore);
+            throw;
+        }
+
         var linesBefore = CaptureSubtree(textBlock);
-        var noteLines = note.Lines.ToList();
-        var noteWasDirty = note.IsDirty;
         var noteId = note.EnsureId();
         List<Block> inserted;
         switch (position)
@@ -136,8 +149,16 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
                 break;
         }
 
+        // The result names the enclosing text block (callers show it), which therefore needs an id::.
         var textBlockId = textBlock.EnsureId();
-        var sourceAdded = AddSource(textBlock, noteId);
+        var sourceAdded = true;
+        if (atCursor)
+        {
+            element.EnsureId();
+            sourceAdded = AddSource(element, noteId);
+            pairs[0] = (element, note);
+        }
+
         StampChanged(textBlock);
         try
         {
@@ -149,19 +170,26 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
         }
         catch
         {
-            // The book does not reference the note, so a new id:: must not reach the note file later.
-            note.RestoreLines(noteLines, noteWasDirty);
+            // The book does not reference the notes, so new id:: lines must not reach the note file later.
+            RestoreNoteLines(notesBefore);
             throw;
         }
 
         var adopted = new AdoptedInto(inserted, linesBefore, CaptureSubtree(textBlock));
-        var change = UpdateNote(notePage, note, book.LinkName, textBlockId, remove: false, withoutChildren: ownOnly);
-        var noteUpdatePending = change.Pending;
 
+        // Each usage takes its note block's own text: its sub-points have entries of their own (spec 3.3).
+        var changes = UpdateNotes(
+            notePage, book.LinkName,
+            [.. pairs.Select(pair => (pair.Note, pair.Copied.Id!.Value, NoteBlock.ShownChildren(pair.Note, hideUsed).Any()))]);
+        var noteUpdatePending = changes.Any(change => change.Pending);
+
+        // Only the element at the cursor may have had the note as a source before; its usage then stays on undo.
+        List<(NoteChange Change, bool RemoveOtherwise)> undoChanges =
+            [.. changes.Select((change, i) => (change, i > 0 || sourceAdded))];
         var bookPath = bookPage.FilePath;
         var linkName = book.LinkName;
         undo.Push(new UndoAction(
-            "Übernehmen", () => UndoAdoptInto(bookPath, linkName, textBlockId, change, sourceAdded, adopted)));
+            "Übernehmen", () => UndoAdoptInto(bookPath, linkName, textBlockId, undoChanges, adopted)));
         if (!noteUpdatePending)
         {
             RetryPending();
@@ -178,7 +206,6 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
         EnsureWritable(bookPage);
         var (notePage, note) = FindWritableNote(noteBlockKey);
         List<Block> subPoints = includeChildren ? [.. NoteBlock.ShownChildren(note, hideUsed)] : [];
-        var ownOnly = LeavesOutSubPoints(note, includeChildren, hideUsed);
         if (includeChildren && subPoints.Count == 0)
         {
             throw new ArgumentException("The note block has no sub-points.", nameof(noteBlockKey));
@@ -213,7 +240,7 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
         var text = NoteTag.Has(note.Content) ? NoteTag.Remove(note.Content) : note.Content;
         var (title, further) = HeadingText.Split(text);
         var heading = Block.CreateDetached(HeadingText.WithTitle("", level, title.Length > 0 ? title : untitledTitle));
-        var adopted = new List<(Block Note, Block Copy)>();
+        var adopted = new List<(Block Copy, List<(Block Copied, Block Note)> Pairs)>();
         if (further is not null)
         {
             if (HeadingText.StartsAsHeading(further))
@@ -222,29 +249,27 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
                 throw new ArgumentException("The note block's further text would start with a heading.", nameof(noteBlockKey));
             }
 
-            adopted.Add((note, Block.CreateDetached(further)));
+            var furtherBlock = Block.CreateDetached(further);
+            adopted.Add((furtherBlock, [(furtherBlock, note)]));
         }
 
-        adopted.AddRange(subPoints.Select(child => (child, CopyOf(child, true, hideUsed))));
+        // Each sub-point's text block with its deeper sub-points as details, each linked to its own note block.
+        adopted.AddRange(subPoints.Select(child => CopyWithPairs(child, true, hideUsed)));
+        List<(Block Copied, Block Note)> pairs = [.. adopted.SelectMany(a => a.Pairs)];
 
         List<(Block Block, List<RawLine> Lines, bool WasDirty)> notesBefore =
-            [.. subPoints.Prepend(note).Select(block => (block, block.Lines.ToList(), block.IsDirty))];
+            [.. pairs.Select(pair => pair.Note).Prepend(note).Distinct().Select(block => (block, block.Lines.ToList(), block.IsDirty))];
         var noteId = note.EnsureId();
         bookPage.InsertBlock(parent, index, heading);
-        var links = new List<(Block Note, Guid NoteId, Guid TextBlockId)>();
-        foreach (var (source, copy) in adopted)
+        foreach (var (copy, copyPairs) in adopted)
         {
-            var sourceId = source.EnsureId();
+            // The text block's lines in the usual order (id::, source::, status::, then the dates LinkPairs adds).
+            var sourceId = copyPairs[0].Note.EnsureId();
             bookPage.InsertBlock(heading, heading.Children.Count, copy);
-            var textBlockId = copy.EnsureId();
+            copy.EnsureId();
             copy.SetProperty(SourceKey, SourceValue.Format([sourceId]));
             copy.SetProperty(BlockStatuses.Key, Relevant);
-            if (clock is not null)
-            {
-                BlockDates.StampNew(copy, clock.Now);
-            }
-
-            links.Add((source, sourceId, textBlockId));
+            LinkPairs(copyPairs, clock?.Now);
         }
 
         try
@@ -254,11 +279,7 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
         catch
         {
             // The book does not reference the notes, so new id:: lines must not reach the note file later.
-            foreach (var (block, blockLines, wasDirty) in notesBefore)
-            {
-                block.RestoreLines(blockLines, wasDirty);
-            }
-
+            RestoreNoteLines(notesBefore);
             throw;
         }
 
@@ -266,34 +287,32 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
 
         // A note block without a text block of its own counts as used by the book. The entry is written with the
         // sub-points' entries (they are on the same page); without a block reference it cannot wait in pending.json.
+        // Like every usage of this adoption it takes the block's own text: its (copied) sub-points have entries of
+        // their own, and left-out ones stay unused (spec 3.3).
         var linkName = book.LinkName;
         var bookUsageAdded = false;
         NoteChange? bookUsage = null;
-        if (links.All(link => link.Note != note))
+        if (pairs.All(pair => pair.Note != note))
         {
             bookUsageAdded = !UsedInValue.Parse(note.GetProperty(UsedInKey) ?? "")
                 .Any(e => e.BookBlockId is null && string.Equals(e.PageName, linkName, StringComparison.OrdinalIgnoreCase));
             var before = note.Lines.ToList();
             var aloneBefore = UsedAloneOnly(note);
-            AddEntry(note, linkName, null, ownOnly);
+            AddEntry(note, linkName, null, NoteBlock.ShownChildren(note, hideUsed).Any());
             bookUsage = new NoteChange(noteId, null, before, note.Lines.ToList(), Pending: false, aloneBefore);
-            if (links.Count == 0)
+            if (pairs.Count == 0)
             {
                 // No sub-point's entry follows to write the page (a heading without sub-points).
                 SaveNote(notePage, note, noteId, linkName, null, remove: false);
             }
         }
 
-        var noteUpdatePending = false;
-        var changes = new List<NoteChange>();
-        foreach (var (source, _, textBlockId) in links)
-        {
-            // The note's own further text carries its usage; the sub-points stay unused when they were left out. A
-            // sub-point goes with its (shown) sub-points.
-            var change = UpdateNote(notePage, source, linkName, textBlockId, remove: false, withoutChildren: source == note && ownOnly);
-            noteUpdatePending |= change.Pending;
-            changes.Add(change);
-        }
+        var changes = pairs.Count == 0
+            ? []
+            : UpdateNotes(
+                notePage, linkName,
+                [.. pairs.Select(pair => (pair.Note, pair.Copied.Id!.Value, NoteBlock.ShownChildren(pair.Note, hideUsed).Any()))]);
+        var noteUpdatePending = changes.Any(change => change.Pending);
 
         var bookPath = bookPage.FilePath;
         var headingKey = heading.Key;
@@ -1083,8 +1102,9 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
         page.RemoveBlock(heading);
         SaveBook(page, () => page.RestoreBlock(parent, index, heading));
 
+        // Newest first, so sub-points before their main point: its mark is recomputed after they lost their entries.
         var noteUpdatePending = false;
-        foreach (var change in changes)
+        foreach (var change in changes.Reverse())
         {
             noteUpdatePending |= UndoUsage(linkName, change, removeOtherwise: true);
         }
@@ -1102,12 +1122,14 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
 
     /// <summary>
     /// Puts the text block with its details back as it was before <see cref="AdoptInto"/> (lines, without the inserted
-    /// blocks), then takes the note's usage back (<see cref="UndoUsage"/>; from a changed note it is removed only if
-    /// <see cref="AdoptInto"/> added the note as a source, <paramref name="sourceAdded"/>). Refused before anything
-    /// changes if the text block's subtree is no longer exactly as <see cref="AdoptInto"/> left it.
+    /// blocks), then takes back the usage of each linked block (<paramref name="changes"/>, newest first,
+    /// <see cref="UndoUsage"/>; from a changed note a usage is removed only with its <c>RemoveOtherwise</c>, which is
+    /// false for the element at the cursor if it had the note as a source before). Refused before anything changes if
+    /// the text block's subtree is no longer exactly as <see cref="AdoptInto"/> left it.
     /// </summary>
     private void UndoAdoptInto(
-        string bookPath, string linkName, Guid textBlockId, NoteChange change, bool sourceAdded, AdoptedInto adopted)
+        string bookPath, string linkName, Guid textBlockId, IReadOnlyList<(NoteChange Change, bool RemoveOtherwise)> changes,
+        AdoptedInto adopted)
     {
         var page = CurrentPage(bookPath);
         if (page.AllBlocks().FirstOrDefault(b => b.Id == textBlockId) is not { } textBlock || !SubtreeIs(textBlock, adopted.After))
@@ -1128,7 +1150,13 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
             RestoreSubtree(adopted.After, markDirty: true);
         });
 
-        var noteUpdatePending = UndoUsage(linkName, change, removeOtherwise: sourceAdded);
+        // Newest first, so sub-points before their main point: its mark is recomputed after they lost their entries.
+        var noteUpdatePending = false;
+        foreach (var (change, removeOtherwise) in changes.Reverse())
+        {
+            noteUpdatePending |= UndoUsage(linkName, change, removeOtherwise);
+        }
+
         if (!noteUpdatePending)
         {
             RetryPending();
@@ -1535,14 +1563,6 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
         string.IsNullOrWhiteSpace(note.GetProperty(UsedInKey)) || note.GetProperty(UsedInValue.WithoutChildrenKey) is not null;
 
     /// <summary>
-    /// Whether an adoption of <paramref name="note"/> leaves sub-points out: it is without <paramref name="includeChildren"/>
-    /// and the note has a (shown, see <see cref="NoteBlock.ShownChildren"/>) sub-point. A block without one adopted alone is
-    /// the same as with its subtree and gets no mark.
-    /// </summary>
-    private static bool LeavesOutSubPoints(Block note, bool includeChildren, bool hideUsed) =>
-        !includeChildren && NoteBlock.ShownChildren(note, hideUsed).Any();
-
-    /// <summary>
     /// Adds the <c>used-in::</c> entry of an adoption (see <see cref="ApplyEntry"/>) with <c>used-without-children::
     /// true</c> right after it while every usage takes the block alone (<paramref name="ownOnly"/>, and no earlier usage
     /// took its sub-points along); an adoption with sub-points removes it.
@@ -1707,6 +1727,15 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
             {
                 BlockDates.StampNew(copied, time);
             }
+        }
+    }
+
+    /// <summary>Gives each note block its captured lines and dirty flag back (an adoption whose book write failed).</summary>
+    private static void RestoreNoteLines(IEnumerable<(Block Block, List<RawLine> Lines, bool WasDirty)> notesBefore)
+    {
+        foreach (var (block, lines, wasDirty) in notesBefore)
+        {
+            block.RestoreLines(lines, wasDirty);
         }
     }
 

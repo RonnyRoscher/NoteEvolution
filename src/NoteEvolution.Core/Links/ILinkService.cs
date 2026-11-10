@@ -21,15 +21,15 @@ public sealed record HeadingAdoptResult(Guid HeadingKey, bool NoteUpdatePending)
 /// written (or is read-only) gets its update recorded in <c>pending.json</c> instead.
 /// <para>
 /// Usages are kept per block: a copied block that carries a note block's text is linked to that note block itself, and
-/// the note block's <c>used-in::</c> entry stands for its own text; its sub-points have entries of their own (where
-/// <see cref="Adopt"/> copied them). A note block's usage passes on to its sub-points only while it lacks
+/// the note block's <c>used-in::</c> entry stands for its own text; its sub-points have entries of their own (where an
+/// adoption copied them). A note block's usage passes on to its sub-points only while it lacks
 /// <c>used-without-children:: true</c> (<see cref="UsedInValue.WithoutChildrenKey"/>, see
 /// <see cref="Vaults.NoteBlock.IsUsedBlock"/>), as older adoptions left it.
 /// </para>
 /// <para>
 /// The adopt methods take the note block with its sub-points, or without <c>includeChildren</c> its own text alone; then
 /// the note gets <c>used-without-children:: true</c> while every usage takes it alone, unless it has no sub-point to
-/// leave out. <see cref="Adopt"/> takes each copied block with sub-points alone in this sense. When a usage is removed,
+/// leave out. Every adopt method takes each linked note block with sub-points alone in this sense. When a usage is removed,
 /// the mark is also set once every sub-point at every depth has a <c>used-in::</c> of its own. With <c>hideUsed</c>
 /// ("Verwendete ausblenden") the sub-points the notes pane hides (<see cref="Vaults.NoteBlock.ShownChildren"/>) are
 /// left out of the copy, so a used sub-point does not go into the book again. Undoing an adoption gives a note still as
@@ -57,10 +57,14 @@ public interface ILinkService
     /// Copies the note block's text and sub-bullets (without property lines, and without a <c>#notiz</c> tag in the
     /// note block's own text) into an existing text block or detail (<paramref name="position"/>): each new top-level
     /// detail (the copy, or at the cursor each of the note's sub-bullets) gets <c>status:: relevant</c>, the element at
-    /// the cursor keeps its status. It adds the note's id to the enclosing text block's <c>source::</c> unless it is
-    /// there (the text block gets an <c>id::</c> if needed; a detail never gets a source of its own), then adds the
-    /// usage to the note's <c>used-in::</c>. The result names the enclosing text block. Can be undone („Übernehmen“)
-    /// as long as the text block with its details is still as this left it.
+    /// the cursor keeps its status. Each block that carries a note block's text is linked to that note block like a
+    /// block of <see cref="Adopt"/>: at the cursor the element (text block or detail; it gets an <c>id::</c> if needed)
+    /// gets the note block's id in its <c>source::</c> unless it is there, else the new detail; each inserted detail from
+    /// a sub-point gets its own (with the dates of a new block). The note blocks get their <c>used-in::</c> entries
+    /// (with <c>used-without-children:: true</c> as for <see cref="Adopt"/>) on their page, written once. The result names
+    /// the enclosing text block (it gets an <c>id::</c> if needed). Can be undone („Übernehmen“) as long as the text
+    /// block with its details is still as this left it; the usage of an element that had the note as a source before
+    /// stays.
     /// </summary>
     /// <exception cref="ArgumentException">Unknown note block or position, or the text would not stay one block.</exception>
     /// <exception cref="ArgumentOutOfRangeException">The offset of <see cref="IntoPosition.AtCursor"/> is outside the element's text.</exception>
@@ -77,10 +81,12 @@ public interface ILinkService
     /// <c>#notiz</c> tag and leading <c>#</c> heading marks, trimmed; <paramref name="untitledTitle"/> if that is
     /// blank). Below it the further lines of the note block's text (if any) become the first text block, then each
     /// direct sub-point becomes a text block with its
-    /// deeper sub-points as details; each of them is linked to its note block like a block of <see cref="Adopt"/>
-    /// (<c>id::</c>, <c>source::</c>, <c>status:: relevant</c>, the dates, <c>used-in::</c> on the note). Without a text
-    /// block of its own the note block gets a <c>used-in::</c> entry for the book without block reference. Can be undone
-    /// („Übernehmen“) as long as the heading with everything below it is still as this left it.
+    /// deeper sub-points as details. Each of these text blocks and details is linked to its own note block like a block
+    /// of <see cref="Adopt"/> (<c>id::</c>, <c>source::</c>, the dates, <c>used-in::</c> on the note with
+    /// <c>used-without-children:: true</c> as for <see cref="Adopt"/>); the text blocks get <c>status:: relevant</c>.
+    /// Without a text block of its own the note block gets a <c>used-in::</c> entry for the book without block reference,
+    /// likewise taking its own text alone. The note page is written once. Can be undone („Übernehmen“) as long as the
+    /// heading with everything below it is still as this left it.
     /// </summary>
     /// <exception cref="ArgumentException">
     /// Unknown note block or section, a section in the appendix, a note block without sub-points, a heading deeper than level 6, further text that

@@ -168,10 +168,15 @@ public class AdoptWithoutChildrenTests
         var r = s.Links.AdoptInto(s.Book, s.Note("Kern #notiz").Key, new IntoPosition.AfterDetail(detailKey), includeChildren: false);
 
         var book = s.ReadBook();
-        Assert.Contains("\t\t- Erstes Detail\n\t\t- Kern\n\t\t  status:: relevant\n\t- Nächster Textblock\n", book);
+        var detailId = s.Book.Page.AllBlocks().Single(b => b.Content == "Kern").Id;
+        Assert.Contains(
+            $"\t\t- Erstes Detail\n\t\t- Kern\n\t\t  id:: {detailId}\n\t\t  source:: (({s.Note("Kern #notiz").Id}))\n" +
+            "\t\t  status:: relevant\n\t- Nächster Textblock\n",
+            book);
         Assert.DoesNotContain("Unter A", book);
         Assert.DoesNotContain("Tiefer", book);
-        Assert.Contains($"used-in:: [[Buch - Test]] (({r.TextBlockId}))", s.ReadJournal());
+        Assert.Contains($"\t  id:: {r.TextBlockId}\n", book);
+        Assert.Contains($"used-in:: [[Buch - Test]] (({detailId}))", s.ReadJournal());
         Assert.Equal(1, CountOf(s.ReadJournal(), "used-in::"));
 
         s.Undo.Undo();
@@ -371,21 +376,24 @@ public class AdoptWithoutChildrenTests
 
         s.Undo.Undo();
 
+        // The own-only usage is the new detail's (the only "Kern" left in the book).
         var journal = s.ReadJournal();
-        Assert.Contains($"  used-in:: [[Buch - Test]] (({ownOnly.TextBlockId}))\n  used-without-children:: true\n", journal);
+        var detailId = s.Book.Page.AllBlocks().Single(b => b.Content == "Kern").Id;
+        Assert.Contains($"  used-in:: [[Buch - Test]] (({detailId}))\n  used-without-children:: true\n", journal);
         Assert.False(NoteEvolution.Core.Vaults.NoteBlock.IsUsedBlock(s.Note("Unter B")));
     }
 
     [Fact]
-    public void Undo_SubPointAloneThenNoteAsHeading_TheSubPointGetsItsMarkBack()
+    public void Undo_SubPointAloneThenNoteAsHeading_TheSubPointKeepsItsMark()
     {
         using var s = new LinkSetup(Book, Journal);
         s.Links.Adopt(s.Book, s.Note("Unter A").Key, new InsertPosition.After(s.Text("Hallo Welt").Key), includeChildren: false);
         Assert.False(NoteEvolution.Core.Vaults.NoteBlock.IsUsedBlock(s.Note("Tiefer")));
 
-        // As a heading the sub-point goes with its own sub-points: the mark goes.
+        // As a heading the sub-point's own sub-points get entries of their own: the mark stays, and they are used.
         s.Links.AdoptAsHeading(s.Book, s.Note("Kern #notiz").Key, Guid.Empty, asSubheading: false, "(ohne Titel)");
-        Assert.DoesNotContain("used-without-children::", s.ReadJournal());
+        Assert.Equal("true", s.Note("Unter A").GetProperty("used-without-children"));
+        Assert.NotNull(s.Note("Tiefer").GetProperty("used-in"));
         Assert.True(NoteEvolution.Core.Vaults.NoteBlock.IsUsedBlock(s.Note("Tiefer")));
 
         s.Undo.Undo();
