@@ -14,23 +14,38 @@ public class PendingTests
         var r = s.Links.Adopt(s.Book, s.Note("Kern").Key, new InsertPosition.After(s.Text("Erster Textblock").Key));
 
         var noteId = s.Note("Kern").Id!.Value;
+        var detailNoteId = s.Note("Detail").Id!.Value;
+        var detailId = s.Book.Page.AllBlocks().Single(b => b.Content == "Detail").Id!.Value;
         Assert.True(r.NoteUpdatePending);
         Assert.Contains($"source:: (({noteId}))", s.ReadBook());
         Assert.Equal(LinkSetup.DefaultJournal, s.ReadJournal());
-        var entry = Assert.Single(s.Pending.Load());
-        Assert.Equal(new PendingNoteUpdate(
-            noteId,
-            new NoteLocator(LinkSetup.JournalFile, [0], Sha256Hex("Kern")),
-            "Buch - Test",
-            r.TextBlockId,
-            Remove: false,
-            WithoutChildren: false), entry);
+
+        // One entry per copied block: the main point (its own text, it has a sub-point) and its sub-point.
+        Assert.Equal(
+            [
+                new PendingNoteUpdate(
+                    noteId,
+                    new NoteLocator(LinkSetup.JournalFile, [0], Sha256Hex("Kern")),
+                    "Buch - Test",
+                    r.TextBlockId,
+                    Remove: false,
+                    WithoutChildren: true),
+                new PendingNoteUpdate(
+                    detailNoteId,
+                    new NoteLocator(LinkSetup.JournalFile, [0, 0], Sha256Hex("Detail")),
+                    "Buch - Test",
+                    detailId,
+                    Remove: false,
+                    WithoutChildren: false),
+            ],
+            s.Pending.Load());
         Assert.True(File.Exists(Path.Combine(s.Tv.Root, ".noteevolution", "pending.json")));
 
-        Assert.Equal(1, s.Links.RetryPending());
+        Assert.Equal(2, s.Links.RetryPending());
 
         Assert.Equal(
-            $"- Kern\n  collapsed:: true\n  id:: {noteId}\n  used-in:: [[Buch - Test]] (({r.TextBlockId}))\n\t- Detail\n- Zweite Notiz\n",
+            $"- Kern\n  collapsed:: true\n  id:: {noteId}\n  used-in:: [[Buch - Test]] (({r.TextBlockId}))\n  used-without-children:: true\n" +
+            $"\t- Detail\n\t  id:: {detailNoteId}\n\t  used-in:: [[Buch - Test]] (({detailId}))\n- Zweite Notiz\n",
             s.ReadJournal());
         Assert.Empty(s.Pending.Load());
         Assert.Empty(new PendingStore(s.Tv.Root).Load());
@@ -91,11 +106,12 @@ public class PendingTests
         s.Writer.FailNext(s.JournalPath);
         s.Links.Adopt(s.Book, s.Note("Kern").Key, new InsertPosition.After(s.Text("Erster Textblock").Key));
         var noteId = s.Note("Kern").Id;
+        var detailNoteId = s.Note("Detail").Id;
 
         s.Undo.Undo();
 
         Assert.Equal(LinkSetup.DefaultBook, s.ReadBook());
-        Assert.Equal($"- Kern\n  collapsed:: true\n  id:: {noteId}\n\t- Detail\n- Zweite Notiz\n", s.ReadJournal());
+        Assert.Equal($"- Kern\n  collapsed:: true\n  id:: {noteId}\n\t- Detail\n\t  id:: {detailNoteId}\n- Zweite Notiz\n", s.ReadJournal());
         Assert.Empty(s.Pending.Load());
     }
 
@@ -119,7 +135,8 @@ public class PendingTests
     {
         using var s = new LinkSetup();
         s.Writer.FailNext(s.JournalPath);
-        var r = s.Links.Adopt(s.Book, s.Note("Kern").Key, new InsertPosition.After(s.Text("Erster Textblock").Key));
+        // The main point alone: its usage is the only pending add (a copied sub-point would have one of its own).
+        var r = s.Links.Adopt(s.Book, s.Note("Kern").Key, new InsertPosition.After(s.Text("Erster Textblock").Key), includeChildren: false);
         var noteId = s.Note("Kern").Id!.Value;
         s.Reopen();
 
@@ -135,7 +152,8 @@ public class PendingTests
     {
         using var s = new LinkSetup();
         s.Writer.FailNext(s.JournalPath);
-        var r = s.Links.Adopt(s.Book, s.Note("Kern").Key, new InsertPosition.After(s.Text("Erster Textblock").Key));
+        // The main point alone: its usage is the only pending add (a copied sub-point would have one of its own).
+        var r = s.Links.Adopt(s.Book, s.Note("Kern").Key, new InsertPosition.After(s.Text("Erster Textblock").Key), includeChildren: false);
         var noteId = s.Note("Kern").Id!.Value;
         s.Reopen();
 

@@ -20,21 +20,33 @@ public sealed record HeadingAdoptResult(Guid HeadingKey, bool NoteUpdatePending)
 /// book page as it is on disk again (take it from <see cref="Vaults.IVault.FindBook"/>). A note that cannot be
 /// written (or is read-only) gets its update recorded in <c>pending.json</c> instead.
 /// <para>
+/// Usages are kept per block: a copied block that carries a note block's text is linked to that note block itself, and
+/// the note block's <c>used-in::</c> entry stands for its own text; its sub-points have entries of their own (where
+/// <see cref="Adopt"/> copied them). A note block's usage passes on to its sub-points only while it lacks
+/// <c>used-without-children:: true</c> (<see cref="UsedInValue.WithoutChildrenKey"/>, see
+/// <see cref="Vaults.NoteBlock.IsUsedBlock"/>), as older adoptions left it.
+/// </para>
+/// <para>
 /// The adopt methods take the note block with its sub-points, or without <c>includeChildren</c> its own text alone; then
-/// the note gets <c>used-without-children:: true</c> (<see cref="UsedInValue.WithoutChildrenKey"/>) while every usage
-/// takes it alone, unless it has no sub-point to leave out. With <c>hideUsed</c> ("Verwendete ausblenden") the
-/// sub-points the notes pane hides (<see cref="Vaults.NoteBlock.ShownChildren"/>) are left out of the copy, so a used
-/// sub-point does not go into the book again. Undoing an adoption gives a note still as the adoption left it its lines
-/// back (with its mark); any other note loses the usage, and the mark of its remaining usages is set as it was before.
+/// the note gets <c>used-without-children:: true</c> while every usage takes it alone, unless it has no sub-point to
+/// leave out. <see cref="Adopt"/> takes each copied block with sub-points alone in this sense. When a usage is removed,
+/// the mark is also set once every sub-point at every depth has a <c>used-in::</c> of its own. With <c>hideUsed</c>
+/// ("Verwendete ausblenden") the sub-points the notes pane hides (<see cref="Vaults.NoteBlock.ShownChildren"/>) are
+/// left out of the copy, so a used sub-point does not go into the book again. Undoing an adoption gives a note still as
+/// the adoption left it its lines back (with its mark); any other note loses the usage, and the mark of its remaining
+/// usages is set as it was before.
 /// </para>
 /// </summary>
 public interface ILinkService
 {
     /// <summary>
     /// Copies the note block with its subtree (without property lines, and without a <c>#notiz</c> tag in the note
-    /// block's own text) into the book at <paramref name="position"/>, gives the copy an <c>id::</c>,
-    /// <c>source:: ((note id))</c> and <c>status:: relevant</c>, then adds the usage to the note's <c>used-in::</c>.
-    /// Can be undone („Übernehmen“).
+    /// block's own text) into the book at <paramref name="position"/>, gives the copy <c>status:: relevant</c>, and links
+    /// each copied block to the note block whose text it carries: the copied block gets an <c>id::</c> and
+    /// <c>source:: ((note block id))</c> (and the dates of a new block), the note block an <c>id::</c> if needed and its
+    /// own <c>used-in::</c> entry for that block, with <c>used-without-children:: true</c> while every usage takes it
+    /// alone, if it has (shown) sub-points. All note blocks are on one page, which is written once; if it cannot be
+    /// written, each entry waits in <c>pending.json</c>. Can be undone („Übernehmen“): every entry and mark goes again.
     /// </summary>
     /// <exception cref="ArgumentException">Unknown note block or position.</exception>
     /// <exception cref="ReadOnlyPageException">The book page is read-only.</exception>

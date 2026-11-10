@@ -140,13 +140,14 @@ public class RemoveAndDeleteTests
         using var s = new LinkSetup();
         var r = s.Links.Adopt(s.Book, s.Note("Kern").Key, new InsertPosition.After(s.Text("Erster Textblock").Key));
         var noteId = s.Note("Kern").Id;
+        var detailNoteId = s.Note("Detail").Id;
         var bookAfterAdopt = s.ReadBook();
         var journalAfterAdopt = s.ReadJournal();
 
         s.Links.DeleteTextBlock(s.Book, r.TextBlockKey);
 
         Assert.Equal(LinkSetup.DefaultBook, s.ReadBook());
-        Assert.Equal($"- Kern\n  collapsed:: true\n  id:: {noteId}\n\t- Detail\n- Zweite Notiz\n", s.ReadJournal());
+        Assert.Equal($"- Kern\n  collapsed:: true\n  id:: {noteId}\n\t- Detail\n\t  id:: {detailNoteId}\n- Zweite Notiz\n", s.ReadJournal());
 
         s.Undo.Undo();
 

@@ -287,8 +287,11 @@ public class NoteBarTests : UiTestContext
         cut.Find(".ne-note-adopt-after").Click();
 
         cut.WaitForAssertion(() => Assert.Equal(["Haupt", "Unter B", "Andere"], Blocks(cut)));
+        // "Tiefer" is used through its own entry; "Unter A"'s usage takes its own text (marked), and it is hidden
+        // because its only sub-point is used as well.
         Assert.True(Note(session, "Tiefer").IsUsed);
-        Assert.DoesNotContain("used-without-children", _vault.Read(JournalPath));
+        Assert.NotEmpty(Note(session, "Tiefer").Usages);
+        Assert.Single(_vault.Read(JournalPath).Split('\n'), line => line.Contains("used-without-children:: true", StringComparison.Ordinal));
     }
 
     [Theory]
