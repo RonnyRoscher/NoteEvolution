@@ -824,7 +824,7 @@ public class LanguageModelTests : UiTestContext
         Assert.Single(PlacementCalls(OlderNote));
         Assert.Equal(8, _chat.Calls.Count);
         var stored = session.Placement(NoteKey(session, OlderNote))!;
-        Assert.Equal(verdict, stored.Verdict with { SectionPath = null, AfterText = null, Basis = null });
+        Assert.Equal(verdict, stored.Verdict with { SectionPath = null, AfterText = null, Basis = null, EmbeddingSectionPath = null });
         Assert.Equal(SectionPath.Of(CurrentBook(session).FindNode(verdict.SectionKey)!), stored.Verdict.SectionPath);
         Assert.False(stored.Stale);
     }
@@ -944,6 +944,65 @@ public class LanguageModelTests : UiTestContext
         Assert.False(after.Stale);
         Assert.Equal(before.Verdict.SectionPath, after.Verdict.SectionPath);
         Assert.DoesNotContain("Arbeit#0 › Pause#0", after.Verdict.Basis!.Offered); // the basis of the last real check
+    }
+
+    [Fact]
+    public async Task Session_ChatModelSwitched_PlacementsRechecked()
+    {
+        var tv = Vault();
+        var session = await OpenWithPlacementsAsync(tv);
+        session.Dispose();
+
+        // Another chat model: its summaries are new, nothing else in the book is; its own check is asked all the same.
+        Settings.LanguageModelName = "llama3:8b";
+        _chat.Models.Add(new ChatModelInfo("llama3:8b", 4_700_000_000));
+        var reopened = await ReopenAsync(tv, ready: 5, total: 8);
+
+        foreach (var content in new[] { NewerNote, OlderNote, ShortNote })
+        {
+            Assert.Equal(2, PlacementCalls(content).Count);
+        }
+
+        Assert.Equal("llama3:8b", PlacementCalls(NewerNote)[^1].Model);
+        Assert.False(reopened.Placement(NoteKey(reopened, NewerNote))!.Stale);
+    }
+
+    [Fact]
+    public async Task Session_Reopened_KeptPlacement_EmbeddingStillAgrees()
+    {
+        var tv = Vault();
+        AnswerPlacements();
+        var answer = _chat.Answer;
+        _chat.Answer = (call, n) =>
+        {
+            // The newer note goes to "Träume", the section its embedding ranks best: the two agree.
+            var dreams = call.User.Split('\n').FirstOrDefault(line => line.Contains(". Schlaf › Träume", StringComparison.Ordinal));
+            return call.Options.Schema is not null && call.User.Contains(NewerNote, StringComparison.Ordinal) && dreams is not null
+                ? "{\"begruendung\":\"Passt.\",\"stelle\":\"" + dreams[..dreams.IndexOf('.')] + ".0\",\"passung\":\"gut\"}"
+                : answer(call, n);
+        };
+        var session = await OpenReadyAsync(tv);
+        Time.Advance(VaultSession.PageIndexDelay);
+        await AllDone(session, 8);
+        var before = session.Placement(NoteKey(session, NewerNote))!;
+        var book = CurrentBook(session);
+        Assert.Equal("Schlaf#0 › Träume#0", before.Verdict.SectionPath);
+        Assert.False(PlacementCheck.IsUncertain(book, before.Verdict));
+        var embeddingPath = SectionPath.Of(book.FindNode(before.Verdict.EmbeddingSectionKey!.Value)!);
+        session.Dispose();
+        var calls = _chat.Calls.Count;
+
+        // New summaries for "Träume" and "Schlaf": the placement is kept, and read in a session with new keys.
+        File.WriteAllText(Path.Combine(tv.Root, BookPath), File.ReadAllText(Path.Combine(tv.Root, BookPath))
+            .Replace(DreamText, DreamText + " Auch die schweren.", StringComparison.Ordinal));
+        var reopened = await ReopenAsync(tv, ready: 5, total: 8);
+        await Task.Delay(50);
+
+        Assert.DoesNotContain(_chat.Calls.Skip(calls), c => c.Options.Schema is not null);
+        var after = reopened.Placement(NoteKey(reopened, NewerNote))!;
+        var reopenedBook = CurrentBook(reopened);
+        Assert.Equal(embeddingPath, SectionPath.Of(reopenedBook.FindNode(after.Verdict.EmbeddingSectionKey!.Value)!));
+        Assert.False(PlacementCheck.IsUncertain(reopenedBook, after.Verdict));
     }
 
     [Fact]

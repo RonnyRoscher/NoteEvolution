@@ -3,11 +3,15 @@ using NoteEvolution.Core.Books;
 
 namespace NoteEvolution.UI.State;
 
-/// <summary>Why a note's stored placement is checked again (spec 4), or <see cref="None"/> when it is kept.</summary>
-internal enum RecheckReason { None, NoteText, SectionGone, NewCandidate, Rebuilt, NoBasis }
+/// <summary>
+/// Why a note's stored placement is checked again (spec 4), or <see cref="None"/> when it is kept; <see cref="Model"/>: it
+/// was made by another chat model or with another form of the request (prompt version, system prompt, schema).
+/// </summary>
+internal enum RecheckReason { None, NoteText, SectionGone, NewCandidate, Rebuilt, NoBasis, Model }
 
 /// <summary>
-/// Decides whether a note's latest placement still holds for a changed request (spec 4): only a changed note text, a
+/// Decides whether a note's latest placement still holds for a changed request (spec 4): only another form of the
+/// request (<see cref="PlacementBasis.Request"/>; the chat model is for the caller to compare), a changed note text, a
 /// chosen section that is gone, a new candidate that may beat the chosen one, or a rebuilt book check it again. Other
 /// summaries, other or vanished places, a renamed section found by its key and another order of the sections do not.
 /// The request is always compared with the basis of the last real check, not with the previous request. Pure.
@@ -25,6 +29,11 @@ internal static class PlacementKeep
         if (latest.Basis is not { } basis || prompt.Basis is not { } today)
         {
             return RecheckReason.NoBasis;
+        }
+
+        if (basis.Request is null || basis.Request != today.Request)
+        {
+            return RecheckReason.Model; // made with another form of the request
         }
 
         if (basis.NoteHash != today.NoteHash)

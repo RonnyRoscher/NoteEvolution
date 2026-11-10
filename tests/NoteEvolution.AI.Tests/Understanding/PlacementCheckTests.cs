@@ -344,6 +344,9 @@ public class PlacementCheckTests
         Assert.Equal(prompt.Basis.Offered, stored.Basis.Offered);
         Assert.Equal(prompt.Basis.TopChapters, stored.Basis.TopChapters);
         Assert.Equal(prompt.Basis.Ranking, stored.Basis.Ranking);
+        Assert.Equal(PlacementCheck.RequestForm, stored.Basis.Request);
+        Assert.Equal(prompt.EmbeddingSectionKey, stored.EmbeddingSectionKey);
+        Assert.Equal(prompt.Topics.Single(t => t.SectionKey == prompt.EmbeddingSectionKey).Path, stored.EmbeddingSectionPath);
 
         // A new place at the end has no place text.
         var atEnd = PlacementCheck.Deserialize(PlacementCheck.Serialize(PlacementCheck.Parse("{\"stelle\":\"2.0\"}", prompt)!, prompt))!;
@@ -399,6 +402,7 @@ public class PlacementCheckTests
         Assert.Equal(["Kapitel A#0 › Unter A1#0", "Kapitel C#0", "Kapitel A#0 › Unter A2#0", "Kapitel B#0", "Kapitel D#0"],
             basis.Ranking);
         Assert.NotEqual(basis.NoteHash, Build(s, note: "Andere Notiz").Basis!.NoteHash);
+        Assert.Equal(PlacementCheck.RequestForm, basis.Request);
     }
 
     [Fact]

@@ -297,6 +297,30 @@ public sealed class StoreUnderstandingTests : IDisposable
     }
 
     [Fact]
+    public void Placement_EmbeddingKeyGone_FoundByPath_ElseUnknown()
+    {
+        var book = LoadBook();
+        var note = SetUpPlacementNote(book);
+        var (section, embedding) = (Guid.NewGuid(), Guid.NewGuid());
+        string Stored(string embeddingPath) => PlacementCheck.Serialize(
+            new PlacementVerdict(section, null, "Passt.", EmbeddingSectionKey: embedding),
+            new PlacementCheckPrompt("", "", [new CheckTopic(1, section, [], null, "Liebe#0 › Vertrauen#0"), new CheckTopic(2, embedding, [], null, embeddingPath)], ""));
+        _store.Put(PlacementEntry("pf", "placement|Buch|note:n", Stored("Liebe#0")));
+
+        var placement = _understanding.Placement(book, note)!;
+
+        // The embedding's section by today's key: the chosen one lies in it, so the two agree.
+        Assert.Equal(Section(book, "Liebe").Key, placement.Verdict.EmbeddingSectionKey);
+        Assert.False(PlacementCheck.IsUncertain(book, placement.Verdict));
+
+        // Not in the book any more: unknown, which is not a disagreement either.
+        _store.Put(PlacementEntry("pf", "placement|Buch|note:n", Stored("Liebe#0 › Gibt es nicht#0")));
+        placement = _understanding.Placement(book, note)!;
+        Assert.Null(placement.Verdict.EmbeddingSectionKey);
+        Assert.False(PlacementCheck.IsUncertain(book, placement.Verdict));
+    }
+
+    [Fact]
     public void Placement_AfterKeyGone_FoundByText()
     {
         var book = LoadBook();

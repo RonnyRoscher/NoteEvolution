@@ -68,6 +68,24 @@ public sealed class UnderstandingStoreTests
     }
 
     [Fact]
+    public void PutAll_StoresEveryEntry_OneChangeReported()
+    {
+        using var dir = new TempDir();
+        using var store = UnderstandingStore.Open(dir.Path);
+        store.Put(Entry("a", "p1", "old", UnderstandingKind.Placement));
+        store.RecordFailure("b");
+        var changes = new List<string>();
+        store.EntryChanged += changes.Add;
+
+        store.PutAll([Entry("a", "p1", "upgraded", UnderstandingKind.Placement), Entry("b", "p2", "new", UnderstandingKind.Placement)]);
+
+        Assert.Equal("upgraded", store.Get("a")!.Text);
+        Assert.Equal("new", store.Get("b")!.Text);
+        Assert.Equal(0, store.Attempts("b"));
+        Assert.Equal(["b"], changes);
+    }
+
+    [Fact]
     public void SetVector_OtherEmbedModel_ListedInWithoutVector()
     {
         using var dir = new TempDir();

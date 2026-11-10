@@ -33,7 +33,7 @@ public sealed class UnderstandingStore : IDisposable
 
     /// <summary>
     /// Raised with the fingerprint after <see cref="Put"/> or <see cref="SetVector"/> stored it (on the writer's thread,
-    /// outside the store's lock), so readers that remembered a miss can look again.
+    /// outside the store's lock), so readers that remembered a miss can look again; once for all entries of <see cref="PutAll"/>.
     /// </summary>
     public event Action<string>? EntryChanged;
 
@@ -181,34 +181,57 @@ public sealed class UnderstandingStore : IDisposable
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
             using var tx = _db.BeginTransaction();
-            using (var command = _db.CreateCommand())
-            {
-                command.Transaction = tx;
-                command.CommandText =
-                    $"INSERT OR REPLACE INTO entries({Columns}, updated) VALUES ($kind, $fp, $identity, $text, $chat, $embed, $vector, " +
-                    "(SELECT COALESCE(MAX(updated), 0) + 1 FROM entries))";
-                command.Parameters.AddWithValue("$kind", (int)entry.Kind);
-                command.Parameters.AddWithValue("$fp", entry.Fingerprint);
-                command.Parameters.AddWithValue("$identity", entry.Identity);
-                command.Parameters.AddWithValue("$text", entry.Text);
-                command.Parameters.AddWithValue("$chat", entry.ChatModel);
-                command.Parameters.AddWithValue("$embed", (object?)entry.EmbedModel ?? DBNull.Value);
-                command.Parameters.Add("$vector", SqliteType.Blob).Value = entry.Vector is null ? DBNull.Value : ToBlob(entry.Vector);
-                command.ExecuteNonQuery();
-            }
-
-            using (var clear = _db.CreateCommand())
-            {
-                clear.Transaction = tx;
-                clear.CommandText = "DELETE FROM attempts WHERE fingerprint = $fp";
-                clear.Parameters.AddWithValue("$fp", entry.Fingerprint);
-                clear.ExecuteNonQuery();
-            }
-
+            Write(tx, entry);
             tx.Commit();
         }
 
         EntryChanged?.Invoke(entry.Fingerprint);
+    }
+
+    /// <summary>
+    /// Stores the entries as <see cref="Put"/> does, in one transaction, and reports one change: <see cref="EntryChanged"/>
+    /// is raised once, with the last entry's fingerprint. Meant for placement checks, whose readers drop everything they
+    /// remembered on any placement change.
+    /// </summary>
+    public void PutAll(IReadOnlyList<UnderstandingEntry> entries)
+    {
+        if (entries.Count == 0) return;
+
+        lock (_gate)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            using var tx = _db.BeginTransaction();
+            foreach (var entry in entries) Write(tx, entry);
+            tx.Commit();
+        }
+
+        EntryChanged?.Invoke(entries[^1].Fingerprint);
+    }
+
+    /// <summary>Writes the entry as the newest of its identity and clears its failed attempts, within <paramref name="tx"/>; under the lock.</summary>
+    private void Write(SqliteTransaction tx, UnderstandingEntry entry)
+    {
+        using (var command = _db.CreateCommand())
+        {
+            command.Transaction = tx;
+            command.CommandText =
+                $"INSERT OR REPLACE INTO entries({Columns}, updated) VALUES ($kind, $fp, $identity, $text, $chat, $embed, $vector, " +
+                "(SELECT COALESCE(MAX(updated), 0) + 1 FROM entries))";
+            command.Parameters.AddWithValue("$kind", (int)entry.Kind);
+            command.Parameters.AddWithValue("$fp", entry.Fingerprint);
+            command.Parameters.AddWithValue("$identity", entry.Identity);
+            command.Parameters.AddWithValue("$text", entry.Text);
+            command.Parameters.AddWithValue("$chat", entry.ChatModel);
+            command.Parameters.AddWithValue("$embed", (object?)entry.EmbedModel ?? DBNull.Value);
+            command.Parameters.Add("$vector", SqliteType.Blob).Value = entry.Vector is null ? DBNull.Value : ToBlob(entry.Vector);
+            command.ExecuteNonQuery();
+        }
+
+        using var clear = _db.CreateCommand();
+        clear.Transaction = tx;
+        clear.CommandText = "DELETE FROM attempts WHERE fingerprint = $fp";
+        clear.Parameters.AddWithValue("$fp", entry.Fingerprint);
+        clear.ExecuteNonQuery();
     }
 
     /// <summary>Sets the meaning vector (and the model that made it) of an existing entry; does nothing for an unknown fingerprint.</summary>

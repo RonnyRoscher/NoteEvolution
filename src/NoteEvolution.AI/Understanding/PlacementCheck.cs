@@ -19,9 +19,10 @@ public enum PlacementFit { Good, Partial, Poor }
 /// <param name="SectionPath">The chosen section's <see cref="Understanding.SectionPath"/>, as stored; null for a result stored without it.</param>
 /// <param name="AfterText">The start of the chosen place's text (first line, at most 100 characters), as stored; null for a new place at the end or a result stored without it.</param>
 /// <param name="Basis">What the check was made from, as stored; null for a result stored without it.</param>
+/// <param name="EmbeddingSectionPath">The embedding's section's <see cref="Understanding.SectionPath"/>, as stored; null for a result stored without it.</param>
 public sealed record PlacementVerdict(Guid SectionKey, Guid? AfterTextBlockKey, string Reason, string? Summary = null,
     PlacementFit Fit = PlacementFit.Partial, Guid? EmbeddingSectionKey = null, string? SectionPath = null,
-    string? AfterText = null, PlacementBasis? Basis = null);
+    string? AfterText = null, PlacementBasis? Basis = null, string? EmbeddingSectionPath = null);
 
 /// <summary>
 /// What a placement check was made from, by lasting names (<see cref="Understanding.SectionPath"/>), so a later book state
@@ -31,8 +32,12 @@ public sealed record PlacementVerdict(Guid SectionKey, Guid? AfterTextBlockKey, 
 /// <param name="Offered">The paths of the offered sections, in the prompt's order.</param>
 /// <param name="TopChapters">The paths of the (at most 3) chapters the offered sections came from, best first.</param>
 /// <param name="Ranking">The paths of the topics in the embedding search's order (those in the book).</param>
+/// <param name="Request">
+/// The fingerprint of the request's form: <see cref="UnderstandingItems.PromptVersion"/>, the system prompt and the answer's
+/// schema without its choices (<see cref="PlacementCheck.RequestForm"/>); null for a basis stored without it.
+/// </param>
 public sealed record PlacementBasis(string NoteHash, IReadOnlyList<string> Offered, IReadOnlyList<string> TopChapters,
-    IReadOnlyList<string> Ranking);
+    IReadOnlyList<string> Ranking, string? Request = null);
 
 /// <summary>Why a placement check gave no verdict.</summary>
 public enum PlacementCheckFailure { NoAnswer, Unusable, Cancelled, Unavailable }
@@ -81,6 +86,13 @@ public static class PlacementCheck
         "\"N.0\" heißt: neu am Ende von Abschnitt N. Antworte nur mit JSON: " +
         "{\"begruendung\": ein kurzer Satz auf Deutsch (höchstens 20 Wörter), \"stelle\": \"N.M\", \"passung\": \"gut\", \"teilweise\" oder \"kaum\"}. " +
         "\"kaum\" heißt: keiner der Abschnitte passt inhaltlich wirklich.";
+
+    /// <summary>
+    /// The fingerprint of the request's form, apart from its sections and places: the prompt version, the system prompt and
+    /// the answer's schema without its choices. A result made with another form is not kept (<see cref="PlacementBasis.Request"/>).
+    /// </summary>
+    public static readonly string RequestForm =
+        UnderstandingItems.Hash([UnderstandingItems.PromptVersion.ToString(CultureInfo.InvariantCulture), SystemPrompt, Schema([])]);
 
     /// <summary>The request options of a check: a short answer constrained to <paramref name="prompt"/>'s schema.</summary>
     public static ChatOptions Options(PlacementCheckPrompt prompt) =>
@@ -170,7 +182,8 @@ public static class PlacementCheck
         var basis = new PlacementBasis(UnderstandingItems.NoteFingerprint(noteText, ""),
             [.. numbered.Select(topic => topic.Path)],
             [.. chapters.Select(SectionPath.Of)],
-            [.. topics.Select(topic => book.FindNode(topic.SectionKey)).OfType<OutlineNode>().Select(SectionPath.Of)]);
+            [.. topics.Select(topic => book.FindNode(topic.SectionKey)).OfType<OutlineNode>().Select(SectionPath.Of)],
+            RequestForm);
         return new PlacementCheckPrompt(SystemPrompt, string.Join("\n", lines), numbered, Schema(choices), embeddingSection?.Key, basis);
     }
 
@@ -220,7 +233,8 @@ public static class PlacementCheck
 
     /// <summary>
     /// The verdict as JSON, for storing a precomputed check, with lasting names from <paramref name="prompt"/> (the prompt
-    /// it was read from): the chosen section's path, the start of the chosen place's text and the check's basis.
+    /// it was read from): the chosen section's path, the start of the chosen place's text, the check's basis and the
+    /// embedding's section's path.
     /// </summary>
     public static string Serialize(PlacementVerdict verdict, PlacementCheckPrompt prompt)
     {
@@ -237,6 +251,7 @@ public static class PlacementCheck
             path = topic?.Path,
             afterText = place >= 0 ? topic!.PlaceTexts?.ElementAtOrDefault(place) : null,
             basis = prompt.Basis,
+            embeddingSectionPath = prompt.Topics.FirstOrDefault(t => t.SectionKey == verdict.EmbeddingSectionKey)?.Path,
         }, WrittenOptions);
     }
 
@@ -252,7 +267,7 @@ public static class PlacementCheck
             return stored is { Section: { } section } && section != Guid.Empty
                 ? new PlacementVerdict(section, stored.After, stored.Reason ?? "", stored.Summary,
                     Enum.TryParse<PlacementFit>(stored.Fit, out var fit) ? fit : PlacementFit.Partial, stored.EmbeddingSection,
-                    stored.Path, stored.AfterText, stored.Basis)
+                    stored.Path, stored.AfterText, stored.Basis, stored.EmbeddingSectionPath)
                 : null;
         }
         catch (JsonException)
@@ -290,7 +305,7 @@ public static class PlacementCheck
     }
 
     private sealed record StoredVerdict(Guid? Section, Guid? After, string? Reason, string? Summary, string? Fit, Guid? EmbeddingSection,
-        string? Path, string? AfterText, PlacementBasis? Basis);
+        string? Path, string? AfterText, PlacementBasis? Basis, string? EmbeddingSectionPath);
 
     private static readonly JsonSerializerOptions StoredOptions = new() { PropertyNameCaseInsensitive = true };
 

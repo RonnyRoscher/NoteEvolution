@@ -179,6 +179,7 @@ public static class UnderstandingItems
         return segments.Length >= 2 ? segments[^2] + "/" + segments[^1] : segments[^1];
     }
 
-    private static string Hash(IEnumerable<string> fields) =>
+    /// <summary>The fingerprint of the fields (SHA-256 of them joined, lower-case hex).</summary>
+    internal static string Hash(IEnumerable<string> fields) =>
         Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(string.Join(FieldSeparator, fields))));
 }

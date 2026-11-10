@@ -209,6 +209,7 @@ internal sealed class PlacementWork(
             }
         }
 
+        WriteUpgrades(keep);
         if (withoutTopics.Count == 0 && waiting.Count == 0)
         {
             lock (_gate)
@@ -240,8 +241,9 @@ internal sealed class PlacementWork(
     /// The check the worker gets for a note (spec 3, 4). A check whose fingerprint is stored stays as it is, unless its
     /// result was stored without path and basis by an older version: then the section is recognized by its summary (the
     /// request is the same as then) and path and basis are written to it, or, if that is not unique, it is made once more
-    /// (<see cref="RepathSuffix"/>). A check not stored yet takes the fingerprint of the note's latest result when
-    /// <see cref="PlacementKeep.Decide"/> keeps that result, so the worker sees it done and the understanding as current.
+    /// (<see cref="RepathSuffix"/>); the upgrades are written at the end of the build. A check not stored yet takes the
+    /// fingerprint of the note's latest result when it was made by today's chat model and
+    /// <see cref="PlacementKeep.Decide"/> keeps it, so the worker sees it done and the understanding as current.
     /// </summary>
     private UnderstandingItem Keep(Book book, UnderstandingItem item, IReadOnlySet<string> stored,
         IReadOnlyDictionary<string, UnderstandingEntry> latest, KeepCount count)
@@ -261,9 +263,9 @@ internal sealed class PlacementWork(
                 return item;
             }
 
-            if (Upgrade(item, entry, verdict))
+            if (Upgrade(item, entry, verdict) is { } upgraded)
             {
-                count.Kept++;
+                count.Upgrades.Add(upgraded); // written after the loop (WriteUpgrades), all at once
                 return item;
             }
 
@@ -276,6 +278,12 @@ internal sealed class PlacementWork(
             return item; // never checked (or unreadable): checked as before
         }
 
+        if (entry!.ChatModel != chatModel)
+        {
+            count.Add(RecheckReason.Model);
+            return item;
+        }
+
         var reason = PlacementKeep.Decide(verdict, item.Check!, book);
         if (reason != RecheckReason.None)
         {
@@ -284,21 +292,21 @@ internal sealed class PlacementWork(
         }
 
         count.Kept++;
-        return item with { Fingerprint = entry!.Fingerprint };
+        return item with { Fingerprint = entry.Fingerprint };
     }
 
     /// <summary>
-    /// Writes path and basis from the item's request to an older result stored for it (same fingerprint) when its summary
-    /// is that of exactly one offered section; its place is not known any more, so it becomes a new place at the end of
-    /// the section. False if the section is not recognized.
+    /// An older result stored for the item (same fingerprint) with path and basis from the item's request, when its
+    /// summary is that of exactly one offered section; its place is not known any more, so it becomes a new place at the
+    /// end of the section. Null if the section is not recognized.
     /// </summary>
-    private bool Upgrade(UnderstandingItem item, UnderstandingEntry entry, PlacementVerdict verdict)
+    private static UnderstandingEntry? Upgrade(UnderstandingItem item, UnderstandingEntry entry, PlacementVerdict verdict)
     {
         var prompt = item.Check!;
         var topics = prompt.Topics.Where(topic => verdict.Summary is not null && topic.Summary == verdict.Summary).ToList();
         if (topics.Count != 1)
         {
-            return false;
+            return null;
         }
 
         // Today's keys: the stored ones are from the session that made the result.
@@ -306,8 +314,29 @@ internal sealed class PlacementWork(
         {
             SectionKey = topics[0].SectionKey, AfterTextBlockKey = null, EmbeddingSectionKey = prompt.EmbeddingSectionKey,
         };
-        store.Put(entry with { Text = PlacementCheck.Serialize(upgraded, prompt) });
-        return true;
+        return entry with { Text = PlacementCheck.Serialize(upgraded, prompt) };
+    }
+
+    /// <summary>
+    /// Stores the build's upgraded older results in one transaction (one change reported). A closed or failing store keeps
+    /// them as they were: their checks keep the stored fingerprint, as before.
+    /// </summary>
+    private void WriteUpgrades(KeepCount count)
+    {
+        if (count.Upgrades.Count == 0)
+        {
+            return;
+        }
+
+        try
+        {
+            store.PutAll(count.Upgrades);
+            count.Kept += count.Upgrades.Count;
+        }
+        catch (Exception ex) when (ex is ObjectDisposedException or DbException)
+        {
+            logger.LogWarning(ex, "Storing the placements upgraded with their section path failed");
+        }
     }
 
     /// <summary>
@@ -324,6 +353,9 @@ internal sealed class PlacementWork(
     private sealed class KeepCount
     {
         public Dictionary<RecheckReason, int> Reasons { get; } = [];
+
+        /// <summary>Older results with path and basis added, to be written at the end of the build.</summary>
+        public List<UnderstandingEntry> Upgrades { get; } = [];
 
         public int Kept { get; set; }
 

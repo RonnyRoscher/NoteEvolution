@@ -173,6 +173,51 @@ public sealed class PlacementKeepTests : IDisposable
     }
 
     [Fact]
+    public void ExactlyHalfOffered_Kept()
+    {
+        // The basis offered A, A1, A2 and B; A and A1 are still offered: half, not less.
+        var book = Book();
+        var latest = Stored(Prompt(book, ["Unter A1", "Kapitel B"]), Node(book, "Unter A1").Key);
+        Assert.Equal(4, latest.Basis!.Offered.Count);
+        _page.RemoveBlock(Block("## Unter A2"));
+        _page.RemoveBlock(Block("# Kapitel B"));
+        book = Book();
+
+        var prompt = Prompt(book, ["Unter A1"]);
+
+        Assert.Equal(2, prompt.Basis!.Offered.Count);
+        Assert.Equal(RecheckReason.None, PlacementKeep.Decide(latest, prompt, book));
+    }
+
+    [Fact]
+    public void ChosenSectionNotRanked_AnyNewRankedSectionComesBefore()
+    {
+        // "Kapitel A" itself is offered (it has own text) but is no topic of the ranking: it counts as last.
+        var book = Book();
+        var latest = Stored(Prompt(book, Topics), Node(book, "Kapitel A").Key);
+        Assert.DoesNotContain("Kapitel A#0", latest.Basis!.Ranking);
+        Assert.Equal(RecheckReason.None, PlacementKeep.Decide(latest, Prompt(book, Topics), book));
+
+        AddHeading("Kapitel A", "Unter A3");
+        book = Book();
+        var prompt = Prompt(book, ["Unter A1", "Kapitel B", "Unter A2", "Kapitel C", "Kapitel D", "Unter A3"]);
+
+        Assert.Equal(RecheckReason.NewCandidate, PlacementKeep.Decide(latest, prompt, book));
+    }
+
+    [Fact]
+    public void OtherRequestForm_Model()
+    {
+        var latest = Latest();
+        var book = Book();
+        var prompt = Prompt(book, Topics);
+
+        Assert.Equal(RecheckReason.None, PlacementKeep.Decide(latest, prompt, book));
+        Assert.Equal(RecheckReason.Model, PlacementKeep.Decide(latest with { Basis = latest.Basis! with { Request = "anders" } }, prompt, book));
+        Assert.Equal(RecheckReason.Model, PlacementKeep.Decide(latest with { Basis = latest.Basis! with { Request = null } }, prompt, book));
+    }
+
+    [Fact]
     public void NoteTextChanged_NoteText()
     {
         var latest = Latest();
