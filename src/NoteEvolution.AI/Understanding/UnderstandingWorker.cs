@@ -405,7 +405,7 @@ public sealed class UnderstandingWorker : IDisposable
 
         // Like the other kinds: stored under the fingerprint it was requested for.
         Write(ct, () => _store.Put(new UnderstandingEntry(item.Kind, item.Fingerprint, item.Identity,
-            PlacementCheck.Serialize(verdict), _chatModel, null, null)));
+            PlacementCheck.Serialize(verdict, item.Check!), _chatModel, null, null)));
         _retryLater.Remove(item.Fingerprint);
         _planStale = true;
     }

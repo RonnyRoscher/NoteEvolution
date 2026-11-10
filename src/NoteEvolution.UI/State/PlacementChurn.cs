@@ -29,19 +29,28 @@ internal enum PlacementChurnReason
 /// <summary>
 /// Measures how much a change of the book costs, for the log only; it changes no computation. Writes which headings got a
 /// new fingerprint and why, which notes' placement checks got a new prompt and why, how many of them need the model, and
-/// whether a repeated check then came to another result. Everything is compared as text, as the keys of a book read again
-/// are new. The comparison starts with the session; another book starts it over.
+/// whether a repeated check then came to another result, counted by the rule that made it again
+/// (<see cref="RecheckReason"/>). Everything is compared as text, as the keys of a book read again are new; a section is
+/// compared across renames by the names seen in this session (<see cref="SectionNames"/>). The comparison starts with the
+/// session; another book starts it over.
 /// </summary>
 /// <param name="storedFingerprints">The fingerprints the store has results for.</param>
 /// <param name="storedText">The stored result of a fingerprint, if any.</param>
+/// <param name="names">The sections' names seen in this session; none: compared by path.</param>
 internal sealed class PlacementChurn(
-    Func<IReadOnlySet<string>> storedFingerprints, Func<string, string?> storedText, ILogger logger)
+    Func<IReadOnlySet<string>> storedFingerprints, Func<string, string?> storedText, ILogger logger, SectionNames? names = null)
 {
-    /// <summary>The section and place a verdict chose, as the prompt showed them.</summary>
-    private sealed record Choice(string Section, string? Place);
+    /// <summary>The sections' names the comparison reads stored results with.</summary>
+    public SectionNames Names { get; } = names ?? new SectionNames();
 
-    /// <summary>A check that needs the model: why it does, what the note had before, and its prompt.</summary>
-    private sealed record Pending(PlacementChurnReason Reason, Choice? Before, PlacementCheckPrompt Prompt);
+    /// <summary>The section (its key and path) and place a verdict chose.</summary>
+    private sealed record Choice(Guid Key, string Section, string? Place);
+
+    /// <summary>
+    /// A check that needs the model: the rule that made it again (null: the note's first check), what the note had before,
+    /// its prompt and its book.
+    /// </summary>
+    private sealed record Pending(RecheckReason? Reason, Choice? Before, PlacementCheckPrompt Prompt, string Book);
 
     /// <summary>A prompt read back: the note's text, and each section's path, summary sentence and places.</summary>
     private sealed record PromptParts(string Note, IReadOnlyList<PromptSection> Sections);
@@ -52,6 +61,7 @@ internal sealed class PlacementChurn(
     private const string SummarySeparator = " – ";
     private const string PlaceIndent = "   ";
     private const string PlaceMarker = "nach: ";
+    private const int PlaceLength = 100;
 
     // Used under the session's feed gate only.
     private string? _book;
@@ -61,8 +71,11 @@ internal sealed class PlacementChurn(
 
     // Also used by the store's writer thread; the store is never read under this lock.
     private readonly Lock _gate = new();
+    private string? _keepLine;
+    private IReadOnlyDictionary<string, RecheckReason> _rechecks = new Dictionary<string, RecheckReason>();
     private Dictionary<string, Pending> _pending = new(StringComparer.Ordinal);
-    private readonly Dictionary<PlacementChurnReason, (int SamePlace, int SameSection, int OtherSection, int NoEarlier)> _outcomes = [];
+    private readonly Dictionary<RecheckReason, (int SamePlace, int SameSection, int OtherSection, int NoEarlier)> _outcomes = [];
+    private (int SamePlace, int SameSection, int OtherSection, int NoEarlier) _firstOutcomes;
 
     /// <summary>Why <paramref name="current"/> differs from <paramref name="previous"/>, read from the text the model sees.</summary>
     internal static PlacementChurnReason Classify(PlacementCheckPrompt previous, PlacementCheckPrompt current)
@@ -102,9 +115,11 @@ internal sealed class PlacementChurn(
 
             var stored = storedFingerprints();
             Dictionary<string, Pending> earlier;
+            IReadOnlyDictionary<string, RecheckReason> rechecks;
             lock (_gate)
             {
                 earlier = _pending;
+                rechecks = _rechecks;
             }
 
             // A note without a check in this build (waiting for its core statement) keeps its open comparison.
@@ -132,9 +147,9 @@ internal sealed class PlacementChurn(
                 if (!stored.Contains(item.Fingerprint))
                 {
                     pending[item.Fingerprint] = new Pending(
-                        reason | (carried?.Reason ?? PlacementChurnReason.Other),
+                        rechecks.TryGetValue(item.Fingerprint, out var why) ? why : carried?.Reason,
                         carried is not null ? carried.Before : ChoiceOf(previous),
-                        item.Check!);
+                        item.Check!, book);
                 }
             }
 
@@ -236,22 +251,34 @@ internal sealed class PlacementChurn(
 
             var now = storedText(fingerprint) is { } text ? ChoiceIn(done.Prompt, text) : null;
             var outcome = done.Before is null || now is null ? "no earlier result"
-                : done.Before == now ? "same place"
-                : done.Before.Section == now.Section ? "same section"
-                : "other section";
+                : !SameSection(done.Book, done.Before, now) ? "other section"
+                : done.Before.Place == now.Place ? "same place"
+                : "same section";
             string totals;
             lock (_gate)
             {
-                var counts = _outcomes.GetValueOrDefault(done.Reason);
-                _outcomes[done.Reason] = outcome switch
+                var counts = done.Reason is { } why ? _outcomes.GetValueOrDefault(why) : _firstOutcomes;
+                counts = outcome switch
                 {
                     "same place" => counts with { SamePlace = counts.SamePlace + 1 },
                     "same section" => counts with { SameSection = counts.SameSection + 1 },
                     "other section" => counts with { OtherSection = counts.OtherSection + 1 },
                     _ => counts with { NoEarlier = counts.NoEarlier + 1 },
                 };
-                totals = string.Join("; ", _outcomes.OrderBy(entry => entry.Key).Select(entry =>
-                    $"{Name(entry.Key)}: same place {entry.Value.SamePlace}, same section {entry.Value.SameSection}, other section {entry.Value.OtherSection}, no earlier {entry.Value.NoEarlier}"));
+                if (done.Reason is { } reason)
+                {
+                    _outcomes[reason] = counts;
+                }
+                else
+                {
+                    _firstOutcomes = counts;
+                }
+
+                totals = string.Join("; ", _outcomes.OrderBy(entry => entry.Key)
+                    .Select(entry => (Name: Name(entry.Key), Counts: entry.Value))
+                    .Concat(_firstOutcomes == default ? [] : [(Name: Name(null), Counts: _firstOutcomes)])
+                    .Select(entry =>
+                        $"{entry.Name}: same place {entry.Counts.SamePlace}, same section {entry.Counts.SameSection}, other section {entry.Counts.OtherSection}, no earlier {entry.Counts.NoEarlier}"));
             }
 
             logger.LogInformation("Placement recheck ({Reason}): {Outcome}. So far, {Totals}", Name(done.Reason), outcome, totals);
@@ -259,6 +286,42 @@ internal sealed class PlacementChurn(
         catch (Exception ex)
         {
             logger.LogDebug(ex, "Measuring a placement's result failed");
+        }
+    }
+
+    /// <summary>
+    /// A build kept <paramref name="kept"/> stored results, upgraded <paramref name="upgraded"/> older ones (once) and
+    /// checks the others again for <paramref name="reasons"/>; <paramref name="rechecks"/> tells the rule per fingerprint,
+    /// for the comparison of their results. Never throws.
+    /// </summary>
+    public void Keep(string book, int kept, int upgraded, IReadOnlyDictionary<RecheckReason, int> reasons,
+        IReadOnlyDictionary<string, RecheckReason> rechecks)
+    {
+        try
+        {
+            var rechecked = reasons.Values.Sum();
+            var why = string.Join(", ", reasons.OrderBy(entry => entry.Key).Select(entry => $"{entry.Key} {entry.Value}"));
+            var line = $"{book}|{kept}|{upgraded}|{why}";
+            lock (_gate)
+            {
+                _rechecks = rechecks;
+
+                // A build that cannot be remembered (a note waits for its core) repeats with the same counts.
+                if (kept + upgraded + rechecked == 0 || line == _keepLine)
+                {
+                    return;
+                }
+
+                _keepLine = line;
+            }
+
+            logger.LogInformation(
+                "Placement keep in {Book}: {Kept} kept, {Upgraded} upgraded, {Rechecked} rechecked; why: {Reasons}",
+                book, kept, upgraded, rechecked, why);
+        }
+        catch (Exception ex)
+        {
+            logger.LogDebug(ex, "Measuring the kept placements failed");
         }
     }
 
@@ -283,25 +346,43 @@ internal sealed class PlacementChurn(
     private Choice? ChoiceOf(UnderstandingItem? check) =>
         check?.Check is { } prompt && storedText(check.Fingerprint) is { } text ? ChoiceIn(prompt, text) : null;
 
-    /// <summary>The section and place of the stored verdict <paramref name="text"/>, as <paramref name="prompt"/> showed them.</summary>
+    /// <summary>Whether two choices name the same section, also when it was renamed in between (see <see cref="SectionNames.Identify"/>).</summary>
+    private bool SameSection(string book, Choice before, Choice now) =>
+        Names.Identify(book, before.Key, before.Section) == Names.Identify(book, now.Key, now.Section);
+
+    /// <summary>
+    /// The section and place of the stored verdict <paramref name="text"/>: by the path and place text it was stored with
+    /// (they hold after a restart, its keys do not), else as <paramref name="prompt"/> showed them.
+    /// </summary>
     private static Choice? ChoiceIn(PlacementCheckPrompt prompt, string text)
     {
-        if (PlacementCheck.Deserialize(text) is not { } verdict
-            || prompt.Topics.FirstOrDefault(topic => topic.SectionKey == verdict.SectionKey) is not { } topic)
+        if (PlacementCheck.Deserialize(text) is not { } verdict)
         {
             return null;
         }
 
-        var sections = Parse(prompt).Sections;
-        if (topic.Number > sections.Count)
+        if (verdict.SectionPath is { } path)
+        {
+            return new Choice(verdict.SectionKey, path, Place(verdict.AfterText));
+        }
+
+        if (prompt.Topics.FirstOrDefault(topic => topic.SectionKey == verdict.SectionKey) is not { } topic)
         {
             return null;
         }
 
-        var section = sections[topic.Number - 1];
+        // The path and place text as stored (the values Serialize writes), so old and new results compare alike.
+        if (topic.Path.Length == 0)
+        {
+            return null;
+        }
+
         var index = verdict.AfterTextBlockKey is { } after ? topic.TextBlockKeys.ToList().IndexOf(after) : -1;
-        return new Choice(section.Path, index >= 0 && index < section.Places.Count ? section.Places[index] : null);
+        return new Choice(verdict.SectionKey, topic.Path, index >= 0 ? Place(topic.PlaceTexts?.ElementAtOrDefault(index)) : null);
     }
+
+    /// <summary>A place's text as compared: at most the 100 characters that are stored.</summary>
+    private static string? Place(string? text) => text is { Length: > PlaceLength } ? text[..PlaceLength] : text;
 
     private static PromptParts Parse(PlacementCheckPrompt prompt)
     {
@@ -336,4 +417,7 @@ internal sealed class PlacementChurn(
         string.Join(", ", reasons.Select(entry => $"{Name(entry.Key)} {entry.Value}"));
 
     private static string Name(PlacementChurnReason reason) => reason.ToString().Replace(", ", "+", StringComparison.Ordinal);
+
+    /// <summary>The rule a check was made again by; "First" for a note's first check.</summary>
+    private static string Name(RecheckReason? reason) => reason?.ToString() ?? "First";
 }

@@ -195,7 +195,17 @@ public sealed class StoreUnderstandingTests : IDisposable
         new(UnderstandingKind.Placement, fingerprint, identity, json, Chat, null, null);
 
     private static string Verdict(Guid section, Guid? after = null) =>
-        PlacementCheck.Serialize(new PlacementVerdict(section, after, "Passt.", "Zusammenfassung", PlacementFit.Good, section));
+        PlacementCheck.Serialize(new PlacementVerdict(section, after, "Passt.", "Zusammenfassung", PlacementFit.Good, section),
+            new PlacementCheckPrompt("", "", [], ""));
+
+    /// <summary>A verdict as stored in an earlier session: keys that are gone, with the path and place text it was stored with.</summary>
+    private static string EarlierVerdict(string path, string? afterText)
+    {
+        var section = Guid.NewGuid();
+        Guid? after = afterText is null ? null : Guid.NewGuid();
+        var topic = new CheckTopic(1, section, after is { } a ? [a] : [], null, path, afterText is null ? [] : [afterText]);
+        return PlacementCheck.Serialize(new PlacementVerdict(section, after, "Passt."), new PlacementCheckPrompt("", "", [topic], ""));
+    }
 
     private Guid SetUpPlacementNote(Book book, string fingerprint = "pf", string identity = "placement|Buch|note:n")
     {
@@ -264,18 +274,103 @@ public sealed class StoreUnderstandingTests : IDisposable
         var book = LoadBook();
         var note = SetUpPlacementNote(book);
         _store.Put(PlacementEntry("pf", "placement|Buch|note:n", Verdict(Guid.NewGuid())));
+        Assert.Null(_understanding.Placement(book, note));
 
+        // Neither its key nor its path is in the book.
+        _store.Put(PlacementEntry("pf", "placement|Buch|note:n", EarlierVerdict("Liebe#0 › Hass#0", "Vertrauen Text")));
         Assert.Null(_understanding.Placement(book, note));
     }
 
     [Fact]
-    public void Placement_AfterBlockGone_Null()
+    public void Placement_KeyGone_FoundByPath()
     {
         var book = LoadBook();
         var note = SetUpPlacementNote(book);
-        _store.Put(PlacementEntry("pf", "placement|Buch|note:n", Verdict(Section(book, "Liebe").Key, Guid.NewGuid())));
+        _store.Put(PlacementEntry("pf", "placement|Buch|note:n", EarlierVerdict("Liebe#0 › Vertrauen#0", null)));
 
-        Assert.Null(_understanding.Placement(book, note));
+        var placement = _understanding.Placement(book, note);
+
+        Assert.NotNull(placement);
+        Assert.False(placement.Stale);
+        Assert.Equal(Section(book, "Vertrauen").Key, placement.Verdict.SectionKey);
+        Assert.Null(placement.Verdict.AfterTextBlockKey);
+    }
+
+    [Fact]
+    public void Placement_EmbeddingKeyGone_FoundByPath_ElseUnknown()
+    {
+        var book = LoadBook();
+        var note = SetUpPlacementNote(book);
+        var (section, embedding) = (Guid.NewGuid(), Guid.NewGuid());
+        string Stored(string embeddingPath) => PlacementCheck.Serialize(
+            new PlacementVerdict(section, null, "Passt.", EmbeddingSectionKey: embedding),
+            new PlacementCheckPrompt("", "", [new CheckTopic(1, section, [], null, "Liebe#0 › Vertrauen#0"), new CheckTopic(2, embedding, [], null, embeddingPath)], ""));
+        _store.Put(PlacementEntry("pf", "placement|Buch|note:n", Stored("Liebe#0")));
+
+        var placement = _understanding.Placement(book, note)!;
+
+        // The embedding's section by today's key: the chosen one lies in it, so the two agree.
+        Assert.Equal(Section(book, "Liebe").Key, placement.Verdict.EmbeddingSectionKey);
+        Assert.False(PlacementCheck.IsUncertain(book, placement.Verdict));
+
+        // Not in the book any more: unknown, which is not a disagreement either.
+        _store.Put(PlacementEntry("pf", "placement|Buch|note:n", Stored("Liebe#0 › Gibt es nicht#0")));
+        placement = _understanding.Placement(book, note)!;
+        Assert.Null(placement.Verdict.EmbeddingSectionKey);
+        Assert.False(PlacementCheck.IsUncertain(book, placement.Verdict));
+    }
+
+    [Fact]
+    public void Placement_AfterKeyGone_FoundByText()
+    {
+        var book = LoadBook();
+        var note = SetUpPlacementNote(book);
+        _store.Put(PlacementEntry("pf", "placement|Buch|note:n", EarlierVerdict("Liebe#0", "Vertrauen Text")));
+
+        var placement = _understanding.Placement(book, note);
+
+        // The first text block of the section (sub-headings included, in file order) whose first line is the stored text.
+        Assert.NotNull(placement);
+        Assert.Equal(Section(book, "Liebe").Key, placement.Verdict.SectionKey);
+        Assert.Equal(Section(book, "Vertrauen").TextBlocks.Single().Key, placement.Verdict.AfterTextBlockKey);
+    }
+
+    [Fact]
+    public void Placement_AfterKeyGone_TextMatchesTheWholeFirstLine_NotItsStart()
+    {
+        using var vault = TestVault.Create(("pages/Buch.md",
+            "title:: Buch\ntype:: book\n\n- # Liebe\n\t- Liebe Text und mehr\n\t- Liebe Text\n\t- " + new string('x', 120) + "\n"));
+        var book = vault.Open().Books.Single();
+        var note = SetUpPlacementNote(book);
+        var blocks = Section(book, "Liebe").TextBlocks.ToList();
+
+        // "Liebe Text" is the start of the first block's line too, but the whole line of the second only.
+        _store.Put(PlacementEntry("pf", "placement|Buch|note:n", EarlierVerdict("Liebe#0", "Liebe Text")));
+        Assert.Equal(blocks[1].Key, _understanding.Placement(book, note)!.Verdict.AfterTextBlockKey);
+
+        // A long line was stored cut to 100 characters.
+        _store.Put(PlacementEntry("pf", "placement|Buch|note:n", EarlierVerdict("Liebe#0", new string('x', 100))));
+        Assert.Equal(blocks[2].Key, _understanding.Placement(book, note)!.Verdict.AfterTextBlockKey);
+    }
+
+    [Fact]
+    public void Placement_AfterTextGone_EndOfSection()
+    {
+        var book = LoadBook();
+        var note = SetUpPlacementNote(book);
+        _store.Put(PlacementEntry("pf", "placement|Buch|note:n", EarlierVerdict("Liebe#0", "Nicht mehr da")));
+
+        var placement = _understanding.Placement(book, note);
+
+        Assert.NotNull(placement);
+        Assert.Equal(Section(book, "Liebe").Key, placement.Verdict.SectionKey);
+        Assert.Null(placement.Verdict.AfterTextBlockKey);
+
+        // The same for a result stored without the place's text whose place's key is gone.
+        _store.Put(PlacementEntry("pf", "placement|Buch|note:n", Verdict(Section(book, "Liebe").Key, Guid.NewGuid())));
+        placement = _understanding.Placement(book, note);
+        Assert.NotNull(placement);
+        Assert.Null(placement.Verdict.AfterTextBlockKey);
     }
 
     [Fact]

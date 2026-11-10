@@ -28,7 +28,10 @@ internal sealed class PlacementWork(
     public IReadOnlyList<UnderstandingItem>? PlacementItems { get; private set; }
 
     /// <summary>Measures in the log what a change of the book costs.</summary>
-    public PlacementChurn Churn { get; } = new(store.Fingerprints, fingerprint => store.Get(fingerprint)?.Text, logger);
+    public PlacementChurn Churn { get; } = new(store.Fingerprints, fingerprint => store.Get(fingerprint)?.Text, logger, new SectionNames());
+
+    /// <summary>The sections' names seen in this session's builds, to read stored results across renames (shared with <see cref="Churn"/>).</summary>
+    public SectionNames Names => Churn.Names;
 
     /// <summary>
     /// The unused notes of the placement map's book that got no check as there was no topic to offer them; read by the
@@ -151,7 +154,8 @@ internal sealed class PlacementWork(
     /// is not settled yet (see <see cref="CoresSettled"/>) gets no check either, as its prompt would rank the topics
     /// without the core: it is listed as waiting instead (its stored placement shows as stale meanwhile). The checks are
     /// remembered for the snapshots unless a note had no topics (the embedder may have failed) or waits for its core: the
-    /// next feed looks for them again.
+    /// next feed looks for them again. A note whose stored result still holds for its changed request keeps it (see
+    /// <see cref="Keep"/>).
     /// </summary>
     /// <param name="noteItems">The notes' core statement items of the snapshot.</param>
     /// <param name="building">Called before a note's check is built (the book and the note's key); for tests.</param>
@@ -163,6 +167,8 @@ internal sealed class PlacementWork(
         var withoutTopics = new HashSet<Guid>();
         var cores = noteItems.ToDictionary(item => item.Key);
         var coreSettled = CoresSettled();
+        var keep = new KeepCount();
+        var (stored, latest) = StoredPlacements(book.LinkName);
         foreach (var note in notes)
         {
             if (note.Used)
@@ -175,7 +181,7 @@ internal sealed class PlacementWork(
                 return null; // nobody would take them (newer snapshots, the vault closed, the model's parts replaced)
             }
 
-            var identity = UnderstandingItems.NoteIdentity(note.Content, note.FilePath);
+            var identity = note.Identity;
             if (!coreSettled(cores.GetValueOrDefault(note.Key)))
             {
                 waiting[note.Key] = identity;
@@ -192,7 +198,8 @@ internal sealed class PlacementWork(
                     continue; // nothing to choose from, as for "Genauer prüfen"
                 }
 
-                items.Add(UnderstandingItems.ForPlacement(note.Key, identity, book.LinkName, prompt, chatModel));
+                items.Add(Keep(book, UnderstandingItems.ForPlacement(note.Key, identity, book.LinkName, prompt, chatModel),
+                    stored, latest, keep));
             }
             catch (Exception ex)
             {
@@ -205,6 +212,9 @@ internal sealed class PlacementWork(
             }
         }
 
+        WriteKept(keep);
+        Names.Remember(book); // after deciding against it: a path it took over from a deleted section is not the latter's
+        Churn.Keep(book.LinkName, keep.Kept, keep.Upgraded, keep.Reasons, keep.Rechecks);
         if (withoutTopics.Count == 0 && waiting.Count == 0)
         {
             lock (_gate)
@@ -213,7 +223,205 @@ internal sealed class PlacementWork(
             }
         }
 
-        return new PlacementBuild(items, waiting, withoutTopics);
+        return new PlacementBuild(items, waiting, withoutTopics, keep.Reasons, keep.Kept, keep.Upgraded, keep.Rechecks);
+    }
+
+    /// <summary>The fingerprint suffix of a check made once more for an older result whose section cannot be recognized (spec 3).</summary>
+    private const string RepathSuffix = "|repath";
+
+    /// <summary>
+    /// Fingerprints whose stored result has a basis (or cannot be read): an older result is upgraded once, so later builds
+    /// of the session need not read it again. A result never loses its basis.
+    /// </summary>
+    private readonly ConcurrentDictionary<string, byte> _withBasis = new(StringComparer.Ordinal);
+
+    /// <summary>The stored fingerprints and the latest placement check of every identity of the book; none from a closed or failing store.</summary>
+    private (IReadOnlySet<string> Stored, IReadOnlyDictionary<string, UnderstandingEntry> Latest) StoredPlacements(string book)
+    {
+        try
+        {
+            return (store.Fingerprints(), store.LatestPlacements(book));
+        }
+        catch (Exception ex) when (ex is ObjectDisposedException or DbException)
+        {
+            return (new HashSet<string>(), new Dictionary<string, UnderstandingEntry>());
+        }
+    }
+
+    /// <summary>
+    /// The check the worker gets for a note (spec 3, 4). A check whose fingerprint is stored stays as it is, unless its
+    /// result was stored without path and basis by an older version (also when it is not the identity's latest, e.g. a
+    /// reverted edit, or a note that shared its identity with another before they were numbered): then the section is
+    /// recognized by its summary (the request is the same as then) and path and basis are written to it under the
+    /// check's identity, or, if that is not unique, it is made once more (<see cref="RepathSuffix"/>). A check not stored
+    /// yet takes the fingerprint of the note's latest result when it was made by today's chat model and
+    /// <see cref="PlacementKeep.Decide"/> keeps it, so the worker sees it done and the understanding as current; a kept
+    /// result whose sections were renamed is written with today's names (<see cref="PlacementKeep.Renamed"/>). What is
+    /// written is written at the end of the build (<see cref="WriteKept"/>). A stored result is read only when needed.
+    /// </summary>
+    private UnderstandingItem Keep(Book book, UnderstandingItem item, IReadOnlySet<string> stored,
+        IReadOnlyDictionary<string, UnderstandingEntry> latest, KeepCount count)
+    {
+        var repath = item.Fingerprint + RepathSuffix;
+        if (stored.Contains(repath))
+        {
+            return item with { Fingerprint = repath };
+        }
+
+        var entry = latest.GetValueOrDefault(item.Identity);
+        if (stored.Contains(item.Fingerprint))
+        {
+            if (_withBasis.ContainsKey(item.Fingerprint))
+            {
+                return item;
+            }
+
+            var own = entry?.Fingerprint == item.Fingerprint ? entry : StoredEntry(item.Fingerprint);
+            if (own is null)
+            {
+                return item; // not readable now: looked at again by the next build
+            }
+
+            if (PlacementCheck.Deserialize(own.Text) is not { Basis: null } old)
+            {
+                _withBasis.TryAdd(item.Fingerprint, 0);
+                return item;
+            }
+
+            if (Upgrade(item, own, old) is { } upgraded)
+            {
+                count.Upgrades.Add(upgraded);
+                return item;
+            }
+
+            count.Recheck(repath, RecheckReason.NoBasis);
+            return item with { Fingerprint = repath };
+        }
+
+        if (entry is null || PlacementCheck.Deserialize(entry.Text) is not { } verdict)
+        {
+            return item; // never checked (or unreadable): checked as before
+        }
+
+        if (entry.ChatModel != chatModel)
+        {
+            count.Recheck(item.Fingerprint, RecheckReason.Model);
+            return item;
+        }
+
+        var reason = PlacementKeep.Decide(verdict, item.Check!, book, Names);
+        if (reason != RecheckReason.None)
+        {
+            count.Recheck(item.Fingerprint, reason);
+            return item;
+        }
+
+        count.Kept++;
+        if (PlacementKeep.Renamed(verdict, book, Names) is { } renamed)
+        {
+            count.Renames.Add(entry with { Text = PlacementCheck.Serialize(renamed) });
+        }
+
+        return item with { Fingerprint = entry.Fingerprint };
+    }
+
+    /// <summary>The entry stored under <paramref name="fingerprint"/>; none from a closed or failing store.</summary>
+    private UnderstandingEntry? StoredEntry(string fingerprint)
+    {
+        try
+        {
+            return store.Get(fingerprint);
+        }
+        catch (Exception ex) when (ex is ObjectDisposedException or DbException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// An older result stored for the item (same fingerprint) with path and basis from the item's request and the item's
+    /// identity, when its summary is that of exactly one offered section; its place is not known any more, so it becomes a
+    /// new place at the end of the section. Null if the section is not recognized.
+    /// </summary>
+    private static UnderstandingEntry? Upgrade(UnderstandingItem item, UnderstandingEntry entry, PlacementVerdict verdict)
+    {
+        var prompt = item.Check!;
+        var topics = prompt.Topics.Where(topic => verdict.Summary is not null && topic.Summary == verdict.Summary).ToList();
+        if (topics.Count != 1)
+        {
+            return null;
+        }
+
+        // Today's keys: the stored ones are from the session that made the result.
+        var upgraded = verdict with
+        {
+            SectionKey = topics[0].SectionKey, AfterTextBlockKey = null, EmbeddingSectionKey = prompt.EmbeddingSectionKey,
+        };
+        return entry with { Identity = item.Identity, Text = PlacementCheck.Serialize(upgraded, prompt) };
+    }
+
+    /// <summary>
+    /// Stores the build's upgraded older results and its kept results with renamed sections in one transaction (one change
+    /// reported). A closed or failing store keeps them as they were: the upgraded ones are looked at again by the next
+    /// build, the renamed ones are still found by their keys in this session.
+    /// </summary>
+    private void WriteKept(KeepCount count)
+    {
+        if (count.Upgrades.Count + count.Renames.Count == 0)
+        {
+            return;
+        }
+
+        try
+        {
+            store.PutAll([.. count.Upgrades, .. count.Renames]);
+            count.Upgraded = count.Upgrades.Count;
+            foreach (var upgraded in count.Upgrades)
+            {
+                _withBasis.TryAdd(upgraded.Fingerprint, 0);
+            }
+        }
+        catch (Exception ex) when (ex is ObjectDisposedException or DbException)
+        {
+            logger.LogWarning(ex, "Storing the placements upgraded with their section path or renamed failed");
+        }
+    }
+
+    /// <summary>
+    /// The fingerprint the placement map gives the note of <paramref name="item"/> for the same request when it differs
+    /// (a kept result, see <see cref="Keep"/>), else null: "Genauer prüfen" stores its verdict under it, so it replaces
+    /// the one shown.
+    /// </summary>
+    public string? MapFingerprint(UnderstandingItem item) =>
+        PlacementItems?.FirstOrDefault(known => known.Key == item.Key && known.Identity == item.Identity
+            && known.Fingerprint != item.Fingerprint && known.Check is { } check && item.Check is { } asked
+            && check.System == asked.System && check.User == asked.User && check.Schema == asked.Schema)?.Fingerprint;
+
+    /// <summary>How many results a build kept and upgraded, and why the others are checked again.</summary>
+    private sealed class KeepCount
+    {
+        public Dictionary<RecheckReason, int> Reasons { get; } = [];
+
+        /// <summary>The checks made again, by fingerprint, with why.</summary>
+        public Dictionary<string, RecheckReason> Rechecks { get; } = new(StringComparer.Ordinal);
+
+        /// <summary>Older results with path and basis added, to be written at the end of the build.</summary>
+        public List<UnderstandingEntry> Upgrades { get; } = [];
+
+        /// <summary>Kept results with today's names of their renamed sections, to be written at the end of the build.</summary>
+        public List<UnderstandingEntry> Renames { get; } = [];
+
+        /// <summary>Results kept for a changed request (the upgraded ones not counted).</summary>
+        public int Kept { get; set; }
+
+        /// <summary>Older results upgraded and stored.</summary>
+        public int Upgraded { get; set; }
+
+        public void Recheck(string fingerprint, RecheckReason reason)
+        {
+            Reasons[reason] = Reasons.GetValueOrDefault(reason) + 1;
+            Rechecks[fingerprint] = reason;
+        }
     }
 
     /// <summary>
@@ -244,6 +452,11 @@ internal sealed class PlacementWork(
     }
 }
 
-/// <summary>The placement checks built for a book's unused notes, the notes waiting for their core statement, and those without topics to offer.</summary>
+/// <summary>
+/// The placement checks built for a book's unused notes, the notes waiting for their core statement, and those without
+/// topics to offer; for the measurement, how many stored results were kept, how many older ones upgraded, and why the
+/// others are checked again (counted, and by the fingerprint of their check).
+/// </summary>
 internal sealed record PlacementBuild(IReadOnlyList<UnderstandingItem> Items, IReadOnlyDictionary<Guid, string> WaitingForCores,
-    IReadOnlySet<Guid> WithoutTopics);
+    IReadOnlySet<Guid> WithoutTopics, IReadOnlyDictionary<RecheckReason, int> Reasons, int Kept, int Upgraded,
+    IReadOnlyDictionary<string, RecheckReason> Rechecks);

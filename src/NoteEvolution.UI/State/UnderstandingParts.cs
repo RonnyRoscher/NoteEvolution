@@ -100,7 +100,7 @@ internal sealed class UnderstandingParts : IDisposable
         IReadOnlyList<UnderstandingItem> items =
         [
             .. snapshot
-                .Select(note => UnderstandingItems.ForNote(note.Key, note.Text, note.Content, note.FilePath, ChatModel))
+                .Select(note => UnderstandingItems.ForNote(note.Key, note.Text, note.Content, note.Identity, ChatModel))
                 .OfType<UnderstandingItem>(),
         ];
         lock (_notesGate)
@@ -152,6 +152,6 @@ internal sealed class UnderstandingParts : IDisposable
     }
 }
 
-/// <summary>What a note's understanding items are computed from (and whether it is used, and where), read on the UI thread.</summary>
-internal sealed record NoteSnapshot(Guid Key, string Text, string Content, string FilePath, bool Used,
+/// <summary>What a note's understanding items are computed from (its identity, whether it is used, and where), read on the UI thread.</summary>
+internal sealed record NoteSnapshot(Guid Key, string Text, string Content, string FilePath, string Identity, bool Used,
     IReadOnlyList<UsedInEntry> Usages);

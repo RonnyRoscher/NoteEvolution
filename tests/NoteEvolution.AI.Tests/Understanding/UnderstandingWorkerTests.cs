@@ -727,7 +727,9 @@ public sealed class UnderstandingWorkerTests
         var entry = f.Store.Get(p.Fingerprint)!;
         Assert.Equal(UnderstandingKind.Placement, entry.Kind);
         Assert.Equal(p.Identity, entry.Identity);
-        Assert.Equal(PlacementCheck.Parse(Verdict, p.Check!), PlacementCheck.Deserialize(entry.Text));
+        // Stored with the lasting names the prompt gives (here none); the model's verdict itself as read.
+        Assert.Equal(PlacementCheck.Parse(Verdict, p.Check!),
+            PlacementCheck.Deserialize(entry.Text)! with { SectionPath = null, AfterText = null, Basis = null });
         Assert.Null(entry.Vector);
         Assert.Empty(f.Embedded);
     }

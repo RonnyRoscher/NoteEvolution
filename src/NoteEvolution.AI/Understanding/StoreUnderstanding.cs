@@ -92,8 +92,11 @@ public sealed class StoreUnderstanding : IUnderstanding
 
     /// <summary>
     /// The note's stored placement: the one for its current fingerprint, else the latest of its identity marked stale.
-    /// Null if there is none, it is unreadable, its section or place is no longer in <paramref name="book"/>, or
-    /// <paramref name="book"/> is not the book given to <see cref="UpdatePlacements"/>.
+    /// Its section is found by key, else by its stored path (keys are new in every session); its place by key, else as the
+    /// first text block in the section whose first line (trimmed, cut as stored) is the stored text, else it becomes a new place at the end of the
+    /// section. The embedding's section is found by key, else by its stored path, else it is unknown (null). The result
+    /// carries today's keys. Null if there is none, it is unreadable, its section is no longer in
+    /// <paramref name="book"/>, or <paramref name="book"/> is not the book given to <see cref="UpdatePlacements"/>.
     /// </summary>
     public NotePlacement? Placement(Book book, Guid noteKey)
     {
@@ -108,9 +111,31 @@ public sealed class StoreUnderstanding : IUnderstanding
             stale = true;
         }
 
-        if (verdict is null || book.FindNode(verdict.SectionKey) is null) return null;
-        if (verdict.AfterTextBlockKey is { } after && book.FindTextBlock(after) is null) return null;
-        return new NotePlacement(verdict, stale);
+        if (verdict is null) return null;
+        var section = book.FindNode(verdict.SectionKey)
+            ?? (verdict.SectionPath is { } path ? SectionPath.Find(book, path) : null);
+        if (section is null) return null;
+
+        var after = verdict.AfterTextBlockKey is { } key && book.FindTextBlock(key) is not null
+            ? key
+            : verdict.AfterText is { Length: > 0 } text
+                ? TextBlocksOf(section).FirstOrDefault(block => PlacementCheck.PlaceText(block.Text) == text)?.Key
+                : null;
+        var embedding = verdict.EmbeddingSectionKey is { } embeddingKey && book.FindNode(embeddingKey) is not null
+            ? embeddingKey
+            : verdict.EmbeddingSectionPath is { } embeddingPath ? SectionPath.Find(book, embeddingPath)?.Key : null;
+        return new NotePlacement(verdict with { SectionKey = section.Key, AfterTextBlockKey = after, EmbeddingSectionKey = embedding }, stale);
+    }
+
+    /// <summary>The text blocks of <paramref name="section"/> and its sub-headings, in file order.</summary>
+    private static IEnumerable<TextBlock> TextBlocksOf(OutlineNode section)
+    {
+        foreach (var item in section.Items)
+        {
+            if (item is TextBlock block) yield return block;
+            else if (item is OutlineNode child)
+                foreach (var inner in TextBlocksOf(child)) yield return inner;
+        }
     }
 
     /// <summary>

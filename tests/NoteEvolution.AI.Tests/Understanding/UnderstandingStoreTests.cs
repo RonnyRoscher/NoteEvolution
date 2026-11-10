@@ -49,6 +49,53 @@ public sealed class UnderstandingStoreTests
     }
 
     [Fact]
+    public void LatestPlacements_NewestPlacementOfEachIdentity()
+    {
+        using var dir = new TempDir();
+        using var store = UnderstandingStore.Open(dir.Path);
+        var (p1, p2) = (UnderstandingItems.PlacementIdentity("Buch", "n1"), UnderstandingItems.PlacementIdentity("Buch", "n2"));
+        store.Put(Entry("a", p1, "old", UnderstandingKind.Placement));
+        store.Put(Entry("b", p1, "new", UnderstandingKind.Placement));
+        store.Put(Entry("c", p2, "only", UnderstandingKind.Placement));
+        store.Put(Entry("d", p1, "heading"));
+        store.Put(Entry("e", UnderstandingItems.PlacementIdentity("Buch 2", "n1"), "another book", UnderstandingKind.Placement));
+        store.Put(Entry("f", UnderstandingItems.PlacementIdentity("Buc", "h|n1"), "another book too", UnderstandingKind.Placement));
+
+        var latest = store.LatestPlacements("Buch");
+
+        Assert.Equal([p1, p2], latest.Keys.Order());
+        Assert.Equal("new", latest[p1].Text);
+        Assert.Equal("only", latest[p2].Text);
+        store.Put(Entry("a", p1, "old again", UnderstandingKind.Placement)); // re-put counts as newest
+        Assert.Equal("a", store.LatestPlacements("Buch")[p1].Fingerprint);
+        Assert.Equal(["e"], store.LatestPlacements("Buch 2").Values.Select(entry => entry.Fingerprint));
+    }
+
+    [Fact]
+    public void PutAll_StoresEveryEntry_OneChangeReported()
+    {
+        using var dir = new TempDir();
+        using var store = UnderstandingStore.Open(dir.Path);
+        store.Put(Entry("a", "p1", "old", UnderstandingKind.Placement));
+        store.RecordFailure("b");
+        var changes = new List<string>();
+        store.EntryChanged += changes.Add;
+
+        store.PutAll([Entry("a", "p1", "upgraded", UnderstandingKind.Placement), Entry("b", "p2", "new", UnderstandingKind.Placement)]);
+
+        Assert.Equal("upgraded", store.Get("a")!.Text);
+        Assert.Equal("new", store.Get("b")!.Text);
+        Assert.Equal(0, store.Attempts("b"));
+        Assert.Equal(["b"], changes);
+
+        // Later entries of the batch are newer, also within one identity.
+        store.PutAll([Entry("c", "p3", "first", UnderstandingKind.Placement), Entry("d", "p3", "second", UnderstandingKind.Placement)]);
+        Assert.Equal("second", store.LatestByIdentity(UnderstandingKind.Placement, "p3")!.Text);
+        store.Put(Entry("e", "p3", "third", UnderstandingKind.Placement));
+        Assert.Equal("third", store.LatestByIdentity(UnderstandingKind.Placement, "p3")!.Text);
+    }
+
+    [Fact]
     public void SetVector_OtherEmbedModel_ListedInWithoutVector()
     {
         using var dir = new TempDir();

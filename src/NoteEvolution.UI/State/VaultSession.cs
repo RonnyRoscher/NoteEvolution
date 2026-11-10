@@ -1060,8 +1060,14 @@ public sealed class VaultSession : IDisposable
         // Read here, on the UI thread: the identity the verdict is stored under (none for a note not in the vault), and
         // the note's core statement item (none for a short note).
         var note = Notes.Get(noteKey);
-        var identity = note is null ? null : UnderstandingItems.NoteIdentity(note.Block.Content, note.Page.FilePath);
-        var core = note is null ? null : UnderstandingItems.ForNote(note, understanding.ChatModel);
+        // Numbered again here (not taken from the last snapshot), so an edited first line or a note added since counts.
+        var identity = note is null
+            ? null
+            : UnderstandingItems.NoteIdentities(
+                    Notes.All().Where(n => n.Block.Parent is null).Select(n => (n.Key, n.Block.Content, n.Page.FilePath)))
+                .GetValueOrDefault(noteKey) // nested notes are not numbered
+                ?? UnderstandingItems.NoteIdentity(note.Block.Content, note.Page.FilePath);
+        var core = note is null ? null : UnderstandingItems.ForNote(note, understanding.ChatModel, identity);
         PlacementCheckPrompt prompt;
         try
         {
@@ -1092,6 +1098,10 @@ public sealed class VaultSession : IDisposable
         var item = identity is null
             ? null
             : UnderstandingItems.ForPlacement(noteKey, identity, book.LinkName, prompt, understanding.ChatModel);
+        if (item is not null && understanding.Placements.MapFingerprint(item) is { } mapped)
+        {
+            item = item with { Fingerprint = mapped }; // a kept result: the verdict replaces the one shown
+        }
 
         using var timeout = new CancellationTokenSource(UnderstandingWorker.RequestTimeout, _time);
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, timeout.Token);
@@ -1141,7 +1151,7 @@ public sealed class VaultSession : IDisposable
         try
         {
             parts.Store.Put(new UnderstandingEntry(UnderstandingKind.Placement, item.Fingerprint, item.Identity,
-                PlacementCheck.Serialize(verdict), parts.ChatModel, null, null));
+                PlacementCheck.Serialize(verdict, item.Check!), parts.ChatModel, null, null));
         }
         catch (Exception ex) when (ex is ObjectDisposedException or DbException)
         {
@@ -1362,14 +1372,17 @@ public sealed class VaultSession : IDisposable
             if (notesChanged || _noteSnapshot is null)
             {
                 // Only the texts are read here (the vault model belongs to the UI thread); the items are computed later.
+                // The identities are numbered in file order (Notes.All()), before the notes are sorted newest first.
+                var roots = Notes.All().Where(note => note.Block.Parent is null).ToList();
+                var identities = UnderstandingItems.NoteIdentities(
+                    roots.Select(note => (note.Key, note.Block.Content, note.Page.FilePath)));
                 _noteSnapshot =
                 [
-                    .. Notes.All()
-                        .Where(note => note.Block.Parent is null)
+                    .. roots
                         .OrderByDescending(note => note.Date ?? DateOnly.MinValue)
                         .Select(note => new NoteSnapshot(
                             note.Key, UnderstandingItems.NoteText(note), note.Block.Content, note.Page.FilePath,
-                            note.IsUsed, note.Usages)),
+                            identities[note.Key], note.IsUsed, note.Usages)),
                 ];
             }
 
