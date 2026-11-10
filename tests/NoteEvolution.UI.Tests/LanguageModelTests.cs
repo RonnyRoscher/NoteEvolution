@@ -532,6 +532,81 @@ public class LanguageModelTests : UiTestContext
     }
 
     [Fact]
+    public void NoteIdentities_SameFirstLineOnOnePage_Numbered_FirstUnchanged()
+    {
+        var (a, b, c, other) = (Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
+        const string path = "journals/2026_03_03.md";
+
+        var identities = UnderstandingItems.NoteIdentities(
+        [
+            (a, "Gleiche Zeile\nerster Text", path),
+            (other, "Andere Zeile", path),
+            (b, "Gleiche Zeile\nzweiter Text", path),
+            (c, "Gleiche Zeile", path),
+        ]);
+
+        Assert.Equal(UnderstandingItems.NoteIdentity("Gleiche Zeile", path), identities[a]);
+        Assert.Equal(identities[a] + "#2", identities[b]);
+        Assert.Equal(identities[a] + "#3", identities[c]);
+        Assert.Equal(UnderstandingItems.NoteIdentity("Andere Zeile", path), identities[other]);
+    }
+
+    [Fact]
+    public void NoteIdentities_SameFirstLineOnTwoPages_Unchanged()
+    {
+        var (a, b) = (Guid.NewGuid(), Guid.NewGuid());
+
+        var identities = UnderstandingItems.NoteIdentities(
+        [
+            (a, "Gleiche Zeile", "journals/2026_03_03.md"),
+            (b, "Gleiche Zeile", "journals/2026_03_04.md"),
+        ]);
+
+        Assert.Equal(UnderstandingItems.NoteIdentity("Gleiche Zeile", "journals/2026_03_03.md"), identities[a]);
+        Assert.Equal(UnderstandingItems.NoteIdentity("Gleiche Zeile", "journals/2026_03_04.md"), identities[b]);
+    }
+
+    [Fact]
+    public async Task Session_TwoNotesSameFirstLine_EachShowsOwnPlacement()
+    {
+        var tv = TestVault.Create(
+            (BookPath, $"title:: Alpha\ntype:: book\n\n- # Schlaf\n\t- Über den Schlaf und seine Phasen.\n\t- ## Träume\n\t\t- {DreamText}\n- # Arbeit\n\t- Konzentration braucht Ruhe.\n"),
+            ("journals/2026_03_03.md",
+                "- Gleiche Zeile\n  Der erste Text erzählt davon, wie ein ruhiger Morgen den ganzen Tag ordnet und warum man ihn nicht verschenken sollte, wirklich nicht.\n" +
+                "- Gleiche Zeile\n  Der zweite Text handelt von langen Spaziergängen am Abend, die Gedanken sortieren und dem Kopf Raum geben, auch wenn es regnet.\n"));
+        _vaults.Add(tv);
+        _chat.Answer = (call, n) => call.Options.Schema is not null
+            ? "{\"begruendung\":\"Passt.\",\"stelle\":\"1.1\",\"passung\":\"" + (call.User.Contains("Der erste Text", StringComparison.Ordinal) ? "gut" : "kaum") + "\"}"
+            : $"Antwort {n}.";
+        var language = UseLanguageModel(_chat);
+        await language.RefreshAsync(CancellationToken.None);
+        var session = await OpenWithAiAsync(tv);
+        await AllDone(session, 5);
+        Time.Advance(VaultSession.PageIndexDelay);
+        await AllDone(session, 7);
+
+        var notes = session.Notes.All().Where(n => n.Block.Content.StartsWith("Gleiche Zeile", StringComparison.Ordinal)).ToList();
+        Assert.Equal(2, notes.Count);
+        var first = Assert.IsType<NotePlacement>(session.Placement(notes[0].Key));
+        var second = Assert.IsType<NotePlacement>(session.Placement(notes[1].Key));
+        Assert.Equal(PlacementFit.Good, first.Verdict.Fit);
+        Assert.Equal(PlacementFit.Poor, second.Verdict.Fit);
+        Assert.False(first.Stale);
+        Assert.False(second.Stale);
+
+        // An edit of the first note keeps its first line, so its identity: its old result shows as stale, and is its own.
+        using var gate = new SemaphoreSlim(0);
+        _chat.Gate = gate;
+        var content = notes[0].Block.Content;
+        Edit(session, "journals/2026_03_03.md", content, content + " Auch das.");
+        Time.Advance(VaultSession.PageIndexDelay);
+        await Eventually(() => session.Placement(notes[0].Key) is { Stale: true }, "The old placement was not shown as stale.");
+        Assert.Equal(PlacementFit.Good, session.Placement(notes[0].Key)!.Verdict.Fit);
+        Assert.Equal(PlacementFit.Poor, session.Placement(notes[1].Key)!.Verdict.Fit);
+        gate.Release(100);
+    }
+
+    [Fact]
     public async Task Session_Placements_WaitForTheNotesCoreStatements()
     {
         var tv = Vault();

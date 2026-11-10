@@ -175,7 +175,7 @@ internal sealed class PlacementWork(
                 return null; // nobody would take them (newer snapshots, the vault closed, the model's parts replaced)
             }
 
-            var identity = UnderstandingItems.NoteIdentity(note.Content, note.FilePath);
+            var identity = note.Identity;
             if (!coreSettled(cores.GetValueOrDefault(note.Key)))
             {
                 waiting[note.Key] = identity;

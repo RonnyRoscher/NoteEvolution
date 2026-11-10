@@ -35,15 +35,15 @@ public static class UnderstandingItems
         return items;
     }
 
-    /// <summary>The note's item, or <c>null</c> when its text is shorter than <see cref="NoteMinLength"/>.</summary>
-    public static UnderstandingItem? ForNote(NoteBlock note, string chatModel) =>
-        ForNote(note.Key, NoteText(note), note.Block.Content, note.Page.FilePath, chatModel);
+    /// <summary>The note's item, or <c>null</c> when its text is shorter than <see cref="NoteMinLength"/>; <paramref name="identity"/> defaults to <see cref="NoteIdentity"/>.</summary>
+    public static UnderstandingItem? ForNote(NoteBlock note, string chatModel, string? identity = null) =>
+        ForNote(note.Key, NoteText(note), note.Block.Content, identity ?? NoteIdentity(note.Block.Content, note.Page.FilePath), chatModel);
 
     /// <summary>
     /// The same from a snapshot taken on the UI thread (the note's key, its <see cref="NoteText"/>, its block's content and
-    /// its page's file path), so it can be computed on any thread.
+    /// its identity, see <see cref="NoteIdentities"/>), so it can be computed on any thread.
     /// </summary>
-    public static UnderstandingItem? ForNote(Guid key, string noteText, string content, string filePath, string chatModel)
+    public static UnderstandingItem? ForNote(Guid key, string noteText, string content, string identity, string chatModel)
     {
         var text = LimitNote(noteText);
         if (text.Length < NoteMinLength)
@@ -52,12 +52,31 @@ public static class UnderstandingItems
         }
 
         return new UnderstandingItem(UnderstandingKind.Note, NoteFingerprint(text, chatModel),
-            NoteIdentity(content, filePath), FirstLine(content), text, [], key);
+            identity, FirstLine(content), text, [], key);
     }
 
     /// <summary>The note's identity across edits: <c>note:</c>, its page's folder and file, <c>#</c> and the first line of its content (at most 80 characters).</summary>
     public static string NoteIdentity(string content, string filePath) =>
         "note:" + RelativePagePath(filePath) + "#" + FirstLine(content);
+
+    /// <summary>
+    /// The identities of notes in file order: <see cref="NoteIdentity"/>, but the second and every further note with the same
+    /// identity (same page and first line) gets <c>#2</c>, <c>#3</c> … appended. The first keeps its identity, so results stored for it stay valid.
+    /// </summary>
+    public static IReadOnlyDictionary<Guid, string> NoteIdentities(IEnumerable<(Guid Key, string Content, string FilePath)> notes)
+    {
+        var seen = new Dictionary<string, int>();
+        var identities = new Dictionary<Guid, string>();
+        foreach (var (key, content, filePath) in notes)
+        {
+            var identity = NoteIdentity(content, filePath);
+            var count = seen.GetValueOrDefault(identity) + 1;
+            seen[identity] = count;
+            identities[key] = count == 1 ? identity : identity + "#" + count;
+        }
+
+        return identities;
+    }
 
     private static string FirstLine(string content)
     {

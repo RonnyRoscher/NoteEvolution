@@ -108,6 +108,7 @@ public sealed class VaultSession : IDisposable
     private string? _focusBook;
     private Guid _focusSection;
     private IReadOnlyList<NoteSnapshot>? _noteSnapshot;
+    private IReadOnlyDictionary<Guid, string> _noteIdentities = new Dictionary<Guid, string>();
 
     /// <summary>The number of the last feed started; only its result is applied (under <see cref="_feedGate"/>).</summary>
     private int _feedsStarted;
@@ -1060,8 +1061,12 @@ public sealed class VaultSession : IDisposable
         // Read here, on the UI thread: the identity the verdict is stored under (none for a note not in the vault), and
         // the note's core statement item (none for a short note).
         var note = Notes.Get(noteKey);
-        var identity = note is null ? null : UnderstandingItems.NoteIdentity(note.Block.Content, note.Page.FilePath);
-        var core = note is null ? null : UnderstandingItems.ForNote(note, understanding.ChatModel);
+        // The identity is the one of the last snapshot (it tells notes with the same first line apart); a note it does not
+        // know yet (added since) has the plain one.
+        var identity = note is null
+            ? null
+            : _noteIdentities.GetValueOrDefault(noteKey) ?? UnderstandingItems.NoteIdentity(note.Block.Content, note.Page.FilePath);
+        var core = note is null ? null : UnderstandingItems.ForNote(note, understanding.ChatModel, identity);
         PlacementCheckPrompt prompt;
         try
         {
@@ -1362,14 +1367,18 @@ public sealed class VaultSession : IDisposable
             if (notesChanged || _noteSnapshot is null)
             {
                 // Only the texts are read here (the vault model belongs to the UI thread); the items are computed later.
+                // The identities are numbered in file order (Notes.All()), before the notes are sorted newest first.
+                var roots = Notes.All().Where(note => note.Block.Parent is null).ToList();
+                var identities = UnderstandingItems.NoteIdentities(
+                    roots.Select(note => (note.Key, note.Block.Content, note.Page.FilePath)));
+                _noteIdentities = identities;
                 _noteSnapshot =
                 [
-                    .. Notes.All()
-                        .Where(note => note.Block.Parent is null)
+                    .. roots
                         .OrderByDescending(note => note.Date ?? DateOnly.MinValue)
                         .Select(note => new NoteSnapshot(
                             note.Key, UnderstandingItems.NoteText(note), note.Block.Content, note.Page.FilePath,
-                            note.IsUsed, note.Usages)),
+                            identities[note.Key], note.IsUsed, note.Usages)),
                 ];
             }
 
