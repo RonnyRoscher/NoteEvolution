@@ -220,6 +220,42 @@ public class SectionBarTests : UiTestContext
     }
 
     [Fact]
+    public async Task Sources_ChoosingASource_ClosesTheList()
+    {
+        var cut = await RenderAsync();
+        await MoveToAsync(cut, "Erster Text");
+        cut.WaitForAssertion(() => Assert.Single(cut.FindAll(".ne-sec-sources")));
+        cut.Find(".ne-sec-sources").Click();
+        Assert.Single(cut.FindAll(".ne-sec-source-list"));
+
+        cut.FindAll("button.ne-sec-source")[0].Click();
+
+        cut.WaitForAssertion(() => Assert.Empty(cut.FindAll(".ne-sec-source-list")));
+        Assert.Equal(Text("SectionSources", 2), cut.Find(".ne-sec-sources").TextContent.Trim());
+    }
+
+    [Fact]
+    public async Task HeadingAfter_OnTextBlockAndDetail_NotOnHeading_SplitsTheSection()
+    {
+        var cut = await RenderAsync();
+        await MoveToAsync(cut, "# Eins");
+        cut.WaitForAssertion(() => Assert.Single(cut.FindAll(".ne-sec-after")));
+        Assert.Empty(cut.FindAll(".ne-sec-heading-after"));
+
+        await MoveToAsync(cut, "Ein Detail");
+        cut.WaitForAssertion(() => Assert.Single(cut.FindAll(".ne-sec-heading-after")));
+        await MoveToAsync(cut, "Erster Text");
+        cut.WaitForAssertion(() => Assert.Equal(Text("SectionInsertHeadingAfter"), cut.Find(".ne-sec-heading-after").TextContent.Trim()));
+
+        await cut.InvokeAsync(() => cut.Find(".ne-sec-heading-after").Click());
+
+        cut.WaitForAssertion(() => Assert.Contains("\t\t- Ein Detail\n- # \n\t- Zweiter Text\n", _vault.Read(BookPath)));
+        var heading = Book.Root.Children.Single(node => node.Title == "");
+        Assert.Equal(["Zweiter Text"], heading.TextBlocks.Select(t => t.Text));
+        Assert.Equal(["Eins-A"], heading.Children.Select(c => c.Title));
+    }
+
+    [Fact]
     public async Task Sources_ExpandedStateSurvivesCursorMove()
     {
         var cut = await RenderAsync();

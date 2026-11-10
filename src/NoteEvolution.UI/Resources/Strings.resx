@@ -191,6 +191,9 @@
   <data name="SectionInsertAfter" xml:space="preserve">
     <value>Neuer Abschnitt danach</value>
   </data>
+  <data name="SectionInsertHeadingAfter" xml:space="preserve">
+    <value>Neue Überschrift danach</value>
+  </data>
   <data name="SectionInsertChild" xml:space="preserve">
     <value>Neuer Unterabschnitt</value>
   </data>
@@ -1425,6 +1428,30 @@
   <data name="SettingsSystemMeter" xml:space="preserve">
     <value>Systemanzeige in der Kopfzeile (CPU, Arbeitsspeicher, freier Platz)</value>
   </data>
+  <data name="DotLegendTitle" xml:space="preserve">
+    <value>Bedeutung der Punkte an den Notizen</value>
+  </data>
+  <data name="DotLegendGood" xml:space="preserve">
+    <value>Grün: passt gut ins Buch</value>
+  </data>
+  <data name="DotLegendPartial" xml:space="preserve">
+    <value>Gelb: passt teilweise</value>
+  </data>
+  <data name="DotLegendPoor" xml:space="preserve">
+    <value>Rot: kein passender Ort im Buch</value>
+  </data>
+  <data name="DotLegendStale" xml:space="preserve">
+    <value>Gestrichelter Rand: veraltet, wird neu berechnet (die Farbe zeigt die letzte Passung)</value>
+  </data>
+  <data name="DotLegendRunning" xml:space="preserve">
+    <value>Blauer, pulsierender Ring: wird gerade berechnet</value>
+  </data>
+  <data name="DotLegendPending" xml:space="preserve">
+    <value>Grauer Ring: wartet noch auf die Berechnung</value>
+  </data>
+  <data name="DotLegendFailed" xml:space="preserve">
+    <value>Rot mit !: fehlgeschlagen, wird nach der nächsten Änderung erneut versucht</value>
+  </data>
   <data name="NoteDotRunning" xml:space="preserve">
     <value>Wird gerade berechnet: {0}</value>
     <comment>Statuspunkt der Notizkarte: {0} = NoteKindCore oder NoteKindPlacement</comment>
@@ -1941,6 +1968,12 @@
   </data>
   <data name="KeysNotes1" xml:space="preserve">
     <value>Block einer Notiz aktiv machen (nicht beim Markieren von Text)</value>
+  </data>
+  <data name="KeysNotes3Keys" xml:space="preserve">
+    <value>„?“ im Notizbereich</value>
+  </data>
+  <data name="KeysNotes3" xml:space="preserve">
+    <value>Zeigt, was die Farben und Formen der Punkte an den Notizen bedeuten</value>
   </data>
   <data name="KeysNotes2Keys" xml:space="preserve">
     <value>Alt+Pfeil hoch / runter</value>

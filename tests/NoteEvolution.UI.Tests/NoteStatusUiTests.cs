@@ -135,6 +135,35 @@ public class NoteStatusUiTests : UiTestContext
 
         AdvanceUntil(cut, () => Assert.Contains("ne-note-dot-current", Dot(cut).ClassList));
         Assert.Equal("Embedding fertig · Kernaussage fertig · Zuordnung aktuell · Passung gut", Dot(cut).GetAttribute("title"));
+
+        // The colour tells the fit.
+        Assert.Contains("ne-note-fit-good", Dot(cut).ClassList);
+    }
+
+    [Fact]
+    public void Legend_OpensAndExplainsEveryDot()
+    {
+        var cut = Render<DotLegend>();
+        Assert.Empty(cut.FindAll(".ne-dot-legend-list"));
+
+        cut.Find(".ne-dot-legend-toggle").Click();
+
+        var items = cut.FindAll(".ne-dot-legend-list li");
+        Assert.Equal(7, items.Count);
+        Assert.All(items, item => Assert.NotNull(item.QuerySelector(".ne-note-dot")));
+        Assert.Contains(items, item => item.QuerySelector(".ne-note-fit-poor") is not null);
+        Assert.Contains(items, item => item.QuerySelector(".ne-note-dot-pending") is not null);
+
+        cut.Find(".ne-dot-legend-toggle").Click();
+        Assert.Empty(cut.FindAll(".ne-dot-legend-list"));
+
+        // A click elsewhere and Escape close it as well.
+        cut.Find(".ne-dot-legend-toggle").Click();
+        cut.Find(".ne-dot-legend-backdrop").Click();
+        Assert.Empty(cut.FindAll(".ne-dot-legend-list"));
+        cut.Find(".ne-dot-legend-toggle").Click();
+        cut.Find(".ne-dot-legend").KeyDown(new Microsoft.AspNetCore.Components.Web.KeyboardEventArgs { Key = "Escape" });
+        Assert.Empty(cut.FindAll(".ne-dot-legend-list"));
     }
 
     [Fact]

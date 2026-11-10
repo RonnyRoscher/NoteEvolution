@@ -292,7 +292,7 @@ internal sealed class NoteStatusTracker : IDisposable
                 : placement is null ? PlacementState.Missing
                 : placement.Stale ? PlacementState.Stale
                 : PlacementState.Current;
-            var fit = state == PlacementState.Current ? placement!.Verdict.Fit : (PlacementFit?)null;
+            var fit = state is PlacementState.Current or PlacementState.Stale ? placement!.Verdict.Fit : (PlacementFit?)null;
             bool? embedded = semantic is null ? null : semantic.VectorOf(note.Key) is not null;
             inputs[note.Key] = new NoteStatusInput(false, true, embedded, needsCore, coreDone, coreFailed, state, null, fit);
         }

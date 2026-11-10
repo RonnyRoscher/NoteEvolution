@@ -73,17 +73,32 @@ public static class NoteProgress
             }]);
             if (input is { Placement: PlacementState.Current, Fit: { } fit })
             {
-                parts.Add(l[fit switch
-                {
-                    PlacementFit.Good => "NoteFitGood",
-                    PlacementFit.Poor => "NoteFitPoor",
-                    _ => "NoteFitPartial",
-                }]);
+                parts.Add(l[FitKey(fit)]);
             }
+        }
+
+        // A stale placement still names the fit it had, which its colour shows.
+        if (dot == NoteDot.Stale && input.Fit is { } staleFit)
+        {
+            parts.Add(l[FitKey(staleFit)]);
         }
 
         return (dot, string.Join(Separator, parts));
     }
+
+    /// <summary>
+    /// The fit the dot's colour shows: the placement's fit while the dot is current or stale (green good, yellow partial,
+    /// red poor); <c>null</c> otherwise, where the dot's shape tells the state.
+    /// </summary>
+    public static PlacementFit? FitOf(NoteStatusInput input, NoteDot dot) =>
+        dot is NoteDot.Current or NoteDot.Stale ? input.Fit : null;
+
+    private static string FitKey(PlacementFit fit) => fit switch
+    {
+        PlacementFit.Good => "NoteFitGood",
+        PlacementFit.Poor => "NoteFitPoor",
+        _ => "NoteFitPartial",
+    };
 
     /// <summary>The stage the first sentence of the tooltip is about (it is not listed again).</summary>
     private enum Stage { None, Core, Placement }

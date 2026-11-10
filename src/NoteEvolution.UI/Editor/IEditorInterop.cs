@@ -31,6 +31,9 @@ public enum SectionCommand
     /// <summary>Alt+Shift+Enter: a new empty first child of the current element.</summary>
     InsertChild,
 
+    /// <summary>Button only, at a text block or detail: a new heading of the section's level splits the section there.</summary>
+    InsertHeadingAfter,
+
     /// <summary>Tab in a heading: one level deeper.</summary>
     Indent,
 

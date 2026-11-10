@@ -1,10 +1,11 @@
+@using NoteEvolution.AI.Understanding
 @inject IStringLocalizer<Strings> L
 
-@* The status dot of an unused note block while the language model works for the vault (spec 7.2), on the cards and in the bar. *@
+@* The status dot of an unused note block while the language model works for the vault (spec 7.2), on the cards and in
+   the bar: its colour tells the placement's fit, its shape the state (DotLegend explains them). *@
 @if (Status is { } status && NoteProgress.Of(status with { Used = Used }, L) is { Dot: not NoteDot.None } dot)
 {
-    <span class="ne-note-dot ne-note-dot-@dot.Dot.ToString().ToLowerInvariant()" role="img"
-          title="@dot.Tooltip" aria-label="@dot.Tooltip"></span>
+    <span class="@Css(dot.Dot, NoteProgress.FitOf(status, dot.Dot))" role="img" title="@dot.Tooltip" aria-label="@dot.Tooltip"></span>
 }
 
 @code {
@@ -13,4 +14,9 @@
 
     /// <summary>Whether the block is used, read from the shown note, which is newer than the status.</summary>
     [Parameter] public bool Used { get; set; }
+
+    /// <summary>The classes of a dot of <paramref name="dot"/> with the colour of <paramref name="fit"/>; also for the legend.</summary>
+    internal static string Css(NoteDot dot, PlacementFit? fit) =>
+        "ne-note-dot ne-note-dot-" + dot.ToString().ToLowerInvariant()
+        + (fit is { } f ? " ne-note-fit-" + f.ToString().ToLowerInvariant() : "");
 }
