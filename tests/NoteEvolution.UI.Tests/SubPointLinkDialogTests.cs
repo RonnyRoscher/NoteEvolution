@@ -116,6 +116,48 @@ public class SubPointLinkDialogTests : UiTestContext
     }
 
     [Fact]
+    public async Task Apply_VaultChangedSincePreview_NothingWritten_NewPlanShown()
+    {
+        using var vault = TestVault.Create((BookPath, BookText), (JournalPath, JournalText));
+        var session = await OpenSessionAsync(vault);
+        var cut = Render<SubPointLinkDialog>();
+        Assert.Equal(Text("SubPointsSummary", 2, 1, 0), cut.Find(".ne-subpoints-summary").TextContent);
+
+        // A detail is reworded after the preview: it has no unique match any more.
+        var book = session.Vault.FindBook("Buch - Test")!;
+        book.Page.AllBlocks().Single(b => b.Content == "Unter A").SetContent("Umformuliert");
+
+        await cut.InvokeAsync(() => cut.Find(".ne-subpoints-apply").Click());
+
+        Assert.Equal(Text("AssistantStale"), cut.Find(".ne-dialog-error").TextContent);
+        Assert.Equal(Text("SubPointsSummary", 1, 1, 1), cut.Find(".ne-subpoints-summary").TextContent);
+        Assert.Equal(BookText, vault.Read(BookPath));
+        Assert.Equal(JournalText, vault.Read(JournalPath));
+        Assert.False(session.Undo.CanUndo);
+    }
+
+    [Fact]
+    public async Task Apply_NothingLeftSincePreview_ShowsNone_NotClosed()
+    {
+        using var vault = TestVault.Create((BookPath, BookText), (JournalPath, JournalText));
+        var session = await OpenSessionAsync(vault);
+        var closed = 0;
+        var cut = Render<SubPointLinkDialog>(p => p.Add(d => d.OnClose, () => closed++));
+        var book = session.Vault.FindBook("Buch - Test")!;
+        foreach (var detail in book.Page.AllBlocks().Where(b => b.Content.StartsWith("Unter ")))
+        {
+            detail.SetContent("Neu " + detail.Content);
+        }
+
+        await cut.InvokeAsync(() => cut.Find(".ne-subpoints-apply").Click());
+
+        Assert.Equal(0, closed);
+        Assert.Equal(Text("SubPointsNone"), cut.Find(".ne-subpoints-none").TextContent);
+        Assert.Empty(cut.FindAll(".ne-subpoints-summary"));
+        Assert.Equal(BookText, vault.Read(BookPath));
+    }
+
+    [Fact]
     public async Task Apply_UnsavedEditorText_Refused()
     {
         using var vault = TestVault.Create((BookPath, BookText), (JournalPath, JournalText));

@@ -24,9 +24,14 @@
         @if (_plan.Matches.Count == 0)
         {
             <p class="ne-subpoints-none">@L["SubPointsNone"]</p>
-            @if (_plan.Unmatched > 0)
+            @if (_plan.PerBook.Count > 0)
             {
-                <p class="ne-subpoints-unmatched">@L["SubPointsSummary", 0, 0, _plan.Unmatched]</p>
+                <ul class="ne-subpoints-list">
+                    @foreach (var book in _plan.PerBook)
+                    {
+                        <li class="ne-subpoints-book">@L["SubPointsBook", book.BookLinkName, book.Linked, book.Unmatched]</li>
+                    }
+                </ul>
             }
         }
         else
@@ -68,8 +73,8 @@
 
     /// <summary>
     /// Writes the links (spec 7.2): the editor saves first, nothing is written while a page of the run has an open
-    /// conflict, and a failure leaves the pages as their files are. The plan is made anew, since the vault may have
-    /// changed since the preview.
+    /// conflict, and a failure leaves the pages as their files are. The plan is made anew; if it differs from the
+    /// preview the vault changed meanwhile, and nothing is written (the preview then shows the new plan).
     /// </summary>
     private async Task ApplyAsync()
     {
@@ -105,14 +110,22 @@
 
             var linker = new SubPointLinker(session.Vault, session.Links);
             var plan = linker.Find();
-            var pages = plan.Matches
+            var pages = plan.Matches.Concat(_plan.Matches)
                 .Select(match => match.Book.Page)
-                .Concat(plan.Matches.Select(match => session.Vault.FindBlockByKey(match.NoteBlockKey)?.Page).OfType<Page>())
+                .Concat(plan.Matches.Concat(_plan.Matches).Select(match => session.Vault.FindBlockByKey(match.NoteBlockKey)?.Page).OfType<Page>())
                 .Distinct()
                 .ToList();
             if (pages.Any(page => session.HasOpenConflict(page.FilePath)))
             {
                 _error = L["AssistantConflict"];
+                return;
+            }
+
+            if (!SamePlan(plan, _plan))
+            {
+                // The vault changed since the preview: the user confirmed other numbers than would be written.
+                _error = L["AssistantStale"];
+                _plan = plan;
                 return;
             }
 
@@ -156,6 +169,12 @@
             await OnClose.InvokeAsync();
         }
     }
+
+    private static bool SamePlan(SubPointPlan a, SubPointPlan b) =>
+        a.Matches.Select(Identity).ToHashSet().SetEquals(b.Matches.Select(Identity));
+
+    private static (string Book, Guid Detail, Guid Note) Identity(SubPointMatch match) =>
+        (match.Book.LinkName, match.DetailKey, match.NoteBlockKey);
 
     private void UpdateSearch(VaultSession session, IEnumerable<Page> pages)
     {
