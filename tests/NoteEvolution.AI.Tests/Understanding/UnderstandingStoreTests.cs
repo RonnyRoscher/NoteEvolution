@@ -49,6 +49,25 @@ public sealed class UnderstandingStoreTests
     }
 
     [Fact]
+    public void LatestPlacements_NewestPlacementOfEachIdentity()
+    {
+        using var dir = new TempDir();
+        using var store = UnderstandingStore.Open(dir.Path);
+        store.Put(Entry("a", "p1", "old", UnderstandingKind.Placement));
+        store.Put(Entry("b", "p1", "new", UnderstandingKind.Placement));
+        store.Put(Entry("c", "p2", "only", UnderstandingKind.Placement));
+        store.Put(Entry("d", "p1", "heading"));
+
+        var latest = store.LatestPlacements();
+
+        Assert.Equal(["p1", "p2"], latest.Keys.Order());
+        Assert.Equal("new", latest["p1"].Text);
+        Assert.Equal("only", latest["p2"].Text);
+        store.Put(Entry("a", "p1", "old again", UnderstandingKind.Placement)); // re-put counts as newest
+        Assert.Equal("a", store.LatestPlacements()["p1"].Fingerprint);
+    }
+
+    [Fact]
     public void SetVector_OtherEmbedModel_ListedInWithoutVector()
     {
         using var dir = new TempDir();

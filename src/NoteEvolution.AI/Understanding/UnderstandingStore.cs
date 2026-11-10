@@ -152,6 +152,28 @@ public sealed class UnderstandingStore : IDisposable
         }
     }
 
+    /// <summary>The most recently stored placement check of every identity (<see cref="LatestByIdentity"/> for all at once), by identity.</summary>
+    public IReadOnlyDictionary<string, UnderstandingEntry> LatestPlacements()
+    {
+        lock (_gate)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            using var command = _db.CreateCommand();
+            // newest first, so the first row seen per identity is its latest
+            command.CommandText = $"SELECT {Columns} FROM entries WHERE kind = $kind ORDER BY updated DESC";
+            command.Parameters.AddWithValue("$kind", (int)UnderstandingKind.Placement);
+            var result = new Dictionary<string, UnderstandingEntry>(StringComparer.Ordinal);
+            using var reader = command.ExecuteReader();
+            while (reader.Read())
+            {
+                var entry = ReadEntry(reader);
+                result.TryAdd(entry.Identity, entry);
+            }
+
+            return result;
+        }
+    }
+
     /// <summary>Stores the entry (replacing one with the same fingerprint), makes it the newest of its identity and clears its failed attempts.</summary>
     public void Put(UnderstandingEntry entry)
     {

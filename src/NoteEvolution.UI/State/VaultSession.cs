@@ -1098,6 +1098,10 @@ public sealed class VaultSession : IDisposable
         var item = identity is null
             ? null
             : UnderstandingItems.ForPlacement(noteKey, identity, book.LinkName, prompt, understanding.ChatModel);
+        if (item is not null && understanding.Placements.MapFingerprint(item) is { } mapped)
+        {
+            item = item with { Fingerprint = mapped }; // a kept result: the verdict replaces the one shown
+        }
 
         using var timeout = new CancellationTokenSource(UnderstandingWorker.RequestTimeout, _time);
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, timeout.Token);

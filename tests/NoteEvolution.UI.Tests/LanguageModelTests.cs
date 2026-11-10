@@ -96,6 +96,16 @@ public class LanguageModelTests : UiTestContext
         Assert.True(session.TrySave(page, out var error), error?.Message);
     }
 
+    /// <summary>Adds the chapter "Pausen" with one text at the end of the book.</summary>
+    private void AddChapter(VaultSession session)
+    {
+        var page = session.Vault.FindPageByPath(Path.Combine(_vaults[^1].Root, BookPath))!;
+        var chapter = Core.Model.Block.CreateDetached("# Pausen");
+        page.InsertBlock(null, page.AllBlocks().Count(b => b.Parent is null), chapter);
+        page.InsertBlock(chapter, 0, Core.Model.Block.CreateDetached("Pausen geben Kraft für den Tag."));
+        Assert.True(session.TrySave(page, out var error), error?.Message);
+    }
+
     // ---- Runtime ----
 
     [Fact]
@@ -869,6 +879,202 @@ public class LanguageModelTests : UiTestContext
         Assert.DoesNotContain(_chat.Calls.Skip(calls), c => c.Options.Schema is not null);
     }
 
+    /// <summary>Opens the vault again: the <paramref name="ready"/> headings and notes, then (after the debounce) the placement checks, all done.</summary>
+    private async Task<VaultSession> ReopenAsync(TestVault vault, int ready, int total)
+    {
+        var language = UseLanguageModel(_chat);
+        await language.RefreshAsync(CancellationToken.None);
+        var session = await OpenWithAiAsync(vault);
+        await AllDone(session, ready);
+        Time.Advance(VaultSession.PageIndexDelay);
+        await AllDone(session, total);
+        return session;
+    }
+
+    private static string NewerIdentity => UnderstandingItems.PlacementIdentity("Buch - Alpha", UnderstandingItems.NoteIdentity(NewerNote, NewerJournal));
+
+    /// <summary>Rewrites the newer note's latest placement as an older version stored it: without path, place text and basis.</summary>
+    private static void StoreWithoutPath(TestVault vault, Func<PlacementVerdict, string?> summary)
+    {
+        using var store = UnderstandingStore.Open(vault.Root);
+        var entry = store.LatestByIdentity(UnderstandingKind.Placement, NewerIdentity)!;
+        var verdict = PlacementCheck.Deserialize(entry.Text)!;
+        Assert.NotNull(verdict.Basis);
+        store.Put(entry with
+        {
+            Text = System.Text.Json.JsonSerializer.Serialize(new
+            {
+                section = verdict.SectionKey, after = verdict.AfterTextBlockKey, reason = verdict.Reason,
+                summary = summary(verdict), fit = verdict.Fit.ToString(), embeddingSection = verdict.EmbeddingSectionKey,
+            }),
+        });
+    }
+
+    private static UnderstandingEntry LatestOfNewer(TestVault vault)
+    {
+        using var store = UnderstandingStore.Open(vault.Root);
+        return store.LatestByIdentity(UnderstandingKind.Placement, NewerIdentity)!;
+    }
+
+    [Fact]
+    public async Task Session_NewHeadingWithoutBetterRank_NoNewPlacementRequest()
+    {
+        var tv = Vault();
+        var session = await OpenWithPlacementsAsync(tv);
+        var before = session.Placement(NoteKey(session, NewerNote))!;
+        session.Dispose();
+        var calls = _chat.Calls.Count;
+
+        // A new heading in the chapter "Arbeit" (offered to every note), with a summary unlike every note's core statement:
+        // every request changes, but the new section ranks behind the chosen one.
+        const string pause = "Qqq xyz.";
+        File.WriteAllText(Path.Combine(tv.Root, BookPath),
+            $"title:: Alpha\ntype:: book\n\n- # Schlaf\n\t- Über den Schlaf und seine Phasen.\n\t- ## Träume\n\t\t- {DreamText}\n- # Arbeit\n\t- Konzentration braucht Ruhe.\n\t- ## Pause\n\t\t- {pause}\n");
+        var answer = _chat.Answer;
+        _chat.Answer = (call, n) => call.Options.Schema is null && call.User.Contains(pause, StringComparison.Ordinal)
+            ? "Wvvv wvvv."
+            : answer(call, n);
+
+        var reopened = await ReopenAsync(tv, ready: 6, total: 9);
+        await Task.Delay(50);
+
+        Assert.Contains(_chat.Calls.Skip(calls), c => c.User.Contains(pause, StringComparison.Ordinal)); // the summary
+        Assert.DoesNotContain(_chat.Calls.Skip(calls), c => c.Options.Schema is not null);
+        var after = reopened.Placement(NoteKey(reopened, NewerNote))!;
+        Assert.False(after.Stale);
+        Assert.Equal(before.Verdict.SectionPath, after.Verdict.SectionPath);
+        Assert.DoesNotContain("Arbeit#0 › Pause#0", after.Verdict.Basis!.Offered); // the basis of the last real check
+    }
+
+    [Fact]
+    public async Task Session_NoteEdited_RecheckedDespiteBasis()
+    {
+        var tv = Vault();
+        var session = await OpenWithPlacementsAsync(tv);
+        Assert.NotNull(session.Placement(NoteKey(session, OlderNote))!.Verdict.Basis);
+
+        // Same chapters, same sections: only the note's text changed.
+        const string edited = OlderNote + " Und morgens.";
+        Edit(session, OlderJournal, OlderNote, edited);
+        var key = NoteKey(session, edited);
+        await Eventually(() =>
+        {
+            Time.Advance(VaultSession.PageIndexDelay);
+            return PlacementCalls(edited).Count == 1 && session.Placement(key) is { Stale: false };
+        }, "The edited note was not checked again.");
+        Assert.Equal(UnderstandingItems.NoteFingerprint(UnderstandingItems.NoteText(session.Notes.All().Single(n => n.Key == key)), ""),
+            session.Placement(key)!.Verdict.Basis!.NoteHash);
+    }
+
+    [Fact]
+    public async Task Session_OldResultWithoutPath_SummaryUnique_UpgradedWithoutRequest()
+    {
+        var tv = Vault();
+        var session = await OpenWithPlacementsAsync(tv);
+        var path = session.Placement(NoteKey(session, NewerNote))!.Verdict.SectionPath;
+        session.Dispose();
+        StoreWithoutPath(tv, verdict => verdict.Summary);
+        var fingerprint = LatestOfNewer(tv).Fingerprint;
+        var calls = _chat.Calls.Count;
+
+        var reopened = await ReopenAsync(tv, ready: 5, total: 8);
+        await Eventually(() => reopened.Placement(NoteKey(reopened, NewerNote)) is not null, "The upgraded placement was not shown.");
+        await Task.Delay(50);
+
+        Assert.DoesNotContain(_chat.Calls.Skip(calls), c => c.Options.Schema is not null);
+        var placement = reopened.Placement(NoteKey(reopened, NewerNote))!;
+        Assert.False(placement.Stale);
+        Assert.Equal(path, placement.Verdict.SectionPath);
+        reopened.Dispose();
+        var stored = LatestOfNewer(tv);
+        Assert.Equal(fingerprint, stored.Fingerprint);
+        var verdict = PlacementCheck.Deserialize(stored.Text)!;
+        Assert.Equal(path, verdict.SectionPath);
+        Assert.NotNull(verdict.Basis);
+        Assert.Null(verdict.AfterText);
+    }
+
+    [Fact]
+    public async Task Session_OldResultWithoutPath_SummaryAmbiguous_RecomputedOnce()
+    {
+        var tv = Vault();
+        var session = await OpenWithPlacementsAsync(tv);
+        session.Dispose();
+        StoreWithoutPath(tv, _ => null); // no summary to recognize the section by
+
+        var reopened = await ReopenAsync(tv, ready: 5, total: 8);
+        Assert.Equal(2, PlacementCalls(NewerNote).Count);
+        Assert.Single(PlacementCalls(OlderNote));
+        Assert.NotNull(PlacementCheck.Deserialize(LatestOfNewer(tv).Text)!.Basis);
+        await Eventually(() => reopened.Placement(NoteKey(reopened, NewerNote)) is { Stale: false }, "The new placement was not shown.");
+        reopened.Dispose();
+
+        var again = await ReopenAsync(tv, ready: 5, total: 8);
+        await Task.Delay(50);
+        Assert.Equal(2, PlacementCalls(NewerNote).Count);
+        Assert.False(again.Placement(NoteKey(again, NewerNote))!.Stale);
+    }
+
+    /// <summary>
+    /// Changes a text in the book, so "Träume" and "Schlaf" get new summaries: every request changes, nothing that decides
+    /// a placement does. Waits until the checks were built again and given to the understanding.
+    /// </summary>
+    private async Task ChangeSummariesAsync(VaultSession session)
+    {
+        var appliedAtBuild = -1;
+        session.PlacementPromptBuilding = (_, _) => Interlocked.CompareExchange(ref appliedAtBuild, session.FeedsApplied, -1);
+        Edit(session, BookPath, DreamText, DreamText + " Auch die schweren.");
+        await Eventually(() =>
+        {
+            Time.Advance(VaultSession.PageIndexDelay);
+            var applied = Volatile.Read(ref appliedAtBuild);
+            return applied >= 0 && session.FeedsApplied > applied && session.Understanding is { Done: 8, Total: 8 };
+        }, "The checks were not built again.");
+        session.PlacementPromptBuilding = null;
+    }
+
+    [Fact]
+    public async Task Session_KeptPlacement_StatusCurrent_NotStale()
+    {
+        var tv = Vault();
+        var session = await OpenWithPlacementsAsync(tv);
+        var calls = _chat.Calls.Count;
+
+        await ChangeSummariesAsync(session);
+        var key = NoteKey(session, NewerNote);
+        Assert.Equal(2, _chat.Calls.Skip(calls).Count()); // the two summaries
+        await Eventually(() =>
+        {
+            Time.Advance(TimeSpan.FromSeconds(1));
+            return session.NoteStatus(key) is { Placement: PlacementState.Current } && !session.NoteStatusBuilding;
+        }, "The status was not current.");
+        await Task.Delay(50);
+
+        Assert.DoesNotContain(_chat.Calls.Skip(calls), c => c.Options.Schema is not null);
+        Assert.False(session.Placement(key)!.Stale);
+    }
+
+    [Fact]
+    public async Task Session_KeptPlacement_ManualCheck_ReplacesShownVerdict()
+    {
+        var tv = Vault();
+        var session = await OpenWithPlacementsAsync(tv);
+        await ChangeSummariesAsync(session);
+        var key = NoteKey(session, NewerNote);
+        Assert.Equal(PlacementFit.Good, session.Placement(key)!.Verdict.Fit);
+
+        // "Genauer prüfen" of the kept placement: its verdict is the one shown, and the background does not ask again.
+        _chat.Answer = (call, n) => call.Options.Schema is not null
+            ? "{\"begruendung\":\"Passt kaum.\",\"stelle\":\"1.0\",\"passung\":\"kaum\"}"
+            : $"Antwort {n}.";
+        var (verdict, failure) = await session.CheckPlacementAsync(key, NoteText(session, NewerNote), CurrentBook(session), CancellationToken.None);
+        Assert.Null(failure);
+        Assert.Equal(PlacementFit.Poor, verdict!.Fit);
+        await Eventually(() => session.Placement(key) is { Stale: false, Verdict.Fit: PlacementFit.Poor }, "The new verdict was not shown.");
+        await Task.Delay(50);
+        Assert.Equal(2, PlacementCalls(NewerNote).Count);
+    }
+
     [Fact]
     public async Task Session_PromptBuildThrows_LoggedOtherWorkContinues()
     {
@@ -1014,15 +1220,19 @@ public class LanguageModelTests : UiTestContext
         using var gate = new SemaphoreSlim(0);
         _chat.Gate = gate;
 
-        // The edited heading and its parent are summarized again; meanwhile the book waits (the worker keeps its last
-        // checks, all answered) and its plan completes (pruned).
+        // The edited heading and its parent are summarized again, and a new chapter (among every note's best three, so
+        // every placement is checked again); meanwhile the book waits (the worker keeps its last checks, all answered)
+        // and its plan completes (pruned).
         Edit(session, BookPath, DreamText, "Träume ordnen das Erlebte neu.");
+        AddChapter(session);
         Time.Advance(VaultSession.PageIndexDelay);
-        await Eventually(() => _chat.Calls.Count == 9);
-        gate.Release();
-        await Eventually(() => _chat.Calls.Count == 10);
-        gate.Release();
-        await Eventually(() => session.Understanding is { Done: 8, Total: 8 }, "The summaries were not done.");
+        for (var calls = 9; calls <= 11; calls++)
+        {
+            await Eventually(() => _chat.Calls.Count == calls);
+            gate.Release();
+        }
+
+        await Eventually(() => session.Understanding is { Done: 9, Total: 9 }, "The summaries were not done.");
         await Task.Delay(200);
         Assert.NotNull(session.Placement(key));
 
@@ -1055,11 +1265,15 @@ public class LanguageModelTests : UiTestContext
         var headings = logger.Entries.First(e => e.Message.StartsWith("Heading churn", StringComparison.Ordinal)).Message;
         Assert.Contains("2 of 3 headings changed", headings);
         Assert.Contains("1 by their own text, 1 only through a sub-heading, 0 new or renamed", headings);
-
         await Eventually(() => session.Understanding is { Done: 8, Total: 8 }, "The summaries were not done.");
-        await Task.Delay(100);
-        Time.Advance(VaultSession.PageIndexDelay);
-        await Eventually(() => logger.Entries.Any(e => e.Message.StartsWith("Placement recheck", StringComparison.Ordinal)), "The new result was not logged.");
+
+        // The new summaries change no placement; a new chapter (among every note's best three) checks them again.
+        AddChapter(session);
+        await Eventually(() =>
+        {
+            Time.Advance(VaultSession.PageIndexDelay);
+            return logger.Entries.Any(e => e.Message.StartsWith("Placement recheck", StringComparison.Ordinal));
+        }, "The new result was not logged.");
 
         // The three unused notes (also the short one) have a check each.
         Assert.Contains(logger.Entries, e => e.Message.StartsWith("Placement churn", StringComparison.Ordinal) && e.Message.Contains("3 checks", StringComparison.Ordinal));
