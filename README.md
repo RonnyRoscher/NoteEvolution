@@ -92,6 +92,12 @@ stehen mit „verwendet“ dabei (Tooltip: in welchen Büchern), die bisherigen 
 verknüpfen“ verknüpft wie der `[handled]`-Assistent: der Block bekommt `source::`, die Notiz
 `used-in:: [[Buch]] ((id))`; das × am Quellen-Chip nimmt es zurück.
 
+**Quellen der Leiste:** „N Quellen ▸“ zeigt die Verknüpfungen des Bereichs, die des Textblocks und die seiner Details
+(bei einer Überschrift die ihres ganzen Abschnitts), je Verknüpfung eine Zeile; hängt dieselbe Notiz an mehreren Blöcken,
+steht sie einmal je Block (Tooltip des ×: der Block). Das × „Verknüpfung lösen“ entfernt die Quelle am Block und den
+passenden `used-in::`-Eintrag an der Notiz (auch bei „Quelle nicht gefunden“); Text, `id::` und Status bleiben. Die Liste
+bleibt offen, mehrere Korrekturen gehen nacheinander; ein „Rückgängig“ nimmt das Lösen zurück.
+
 Jeder Befehl lässt sich mit „Rückgängig“ in der Kopfzeile zurücknehmen, solange danach nichts an der Buchdatei
 geändert wurde. „N Quellen ▸“ klappt die Quellen des Abschnitts auf; ein Klick springt im Reiter Journal zur Notiz.
 Ist „Verwendete ausblenden“ eingeschaltet, erscheint die Notiz stattdessen als Karte oben im Notizbereich.
@@ -123,6 +129,17 @@ Cursor:
 Ein neuer Textblock bekommt neue Daten und keine Quellen (`source::` bleibt am alten Block, der `updated::` bekommt).
 Verweise auf einen eingerückten Textblock zeigen danach auf den Textblock, der ihn aufnimmt. Was nicht geht, ist
 ausgegraut, und der Tooltip nennt den Grund.
+
+**Verknüpfungen der Unterpunkte nachtragen** (Menü „Assistenten“): ältere Übernahmen haben nur den Hauptpunkt
+verknüpft. Der Assistent sucht die Details ohne `source::` und ohne `id::` (eins mit `id::`, aber ohne `source::` wurde
+bewusst gelöst und bleibt so), deren Text genau einem Unterpunkt der Quellnotiz entspricht,
+und zeigt vorab, wie viele Unterpunkte in wie vielen Büchern verknüpft werden und wie viele Details ohne eindeutigen
+Treffer bleiben (z. B. umformulierte). „Nachtragen“ ergänzt nur Eigenschaftszeilen (`id::`, `source::`, `used-in::`),
+nie Text oder Reihenfolge, wie beim `[handled]`-Assistenten (ungespeicherter Editortext, offener Konflikt: es wird
+nichts geschrieben). Ein „Rückgängig“ gibt den Büchern ihre alten Zeilen zurück; ist ein Buch inzwischen geändert, nimmt
+es nichts zurück. Eine inzwischen geänderte Notizseite behält ihre Änderungen und verliert nur die nachgetragenen
+Einträge, so bleibt keine Verknüpfung einseitig; eine Seite, die sich nicht schreiben lässt, nennt die Meldung. Ein
+zweiter Lauf findet nichts mehr.
 
 **Gliederung nach Ebenen ordnen** (Menü „Assistenten“): zeigt, wie viele und welche Überschriften des Buchs nicht nach
 ihrer Ebene eingerückt sind, und ordnet sie mit „Einordnen“ alle nach ihrer Ebene ein, Überschriften in einem Textblock
@@ -221,11 +238,18 @@ und nennt den Grund im Tooltip (kein Buch gewählt, Buch schreibgeschützt, Noti
 Konflikt). Ins Buch gezogen wird mit dem Griff „⠿“ vorn in der Leiste (der Bereichskopf); die Karte selbst lässt sich
 nicht ziehen, damit ihr Text markiert werden kann.
 
+Jeder kopierte Block bekommt eine eigene Verknüpfung zu seinem Notizblock: `id::` und `source::` am Textblock oder
+Detail, `used-in::` am Notizblock; auch ein Unterpunkt ist damit einzeln verwendet (✓, „Verwendete ausblenden“), und
+„Rückgängig“ nimmt alle Verknüpfungen der Übernahme zurück.
+
 Übernommen wird genau der Bereich, auf eine von drei Arten: **Am Cursor** (in den aktuellen Block an der
 Cursorstelle), **Danach** (neues Element nach dem aktuellen) und **Darunter** (als erstes Unterelement). Bei „ohne
-Unterpunkte“ kommt nur der Block selbst ins Buch; `used-in::` steht dann nur an ihm, dazu `used-without-children:: true`
-(es geht mit seiner letzten Verwendung, „Rückgängig“ stellt es wieder her): seine Unterpunkte bleiben unverwendet, sichtbar und nicht grau. Die Quelle hängt immer am
-umgebenden Textblock. Neue Blöcke und Details aus „Danach“ und „Darunter“ bekommen den Status Relevant; am Cursor
+Unterpunkte“ kommt nur der Block selbst ins Buch; seine Unterpunkte bleiben unverwendet, sichtbar und nicht grau. Ein
+Block mit Unterpunkten (mitgenommen, ausgeblendet oder weggelassen) bekommt zu `used-in::` auch
+`used-without-children:: true`, sofern keine frühere Verwendung die Unterpunkte mitnahm (es geht mit seiner letzten Verwendung, „Rückgängig“ stellt es wieder her): die
+Verwendung gilt nur seinem eigenen Text, mitgenommene Unterpunkte haben eigene Einträge. Die Quelle hängt an dem Block,
+der den Text trägt: am Cursor am Textblock oder Detail an der Cursorstelle, sonst am neuen Textblock bzw. Detail; jedes
+kopierte Detail hat seine eigene. Neue Blöcke und Details aus „Danach“ und „Darunter“ bekommen den Status Relevant; am Cursor
 behält der Block seinen Status, nur die dabei entstehenden Details werden Relevant.
 Hat der Bereichskopf (angezeigte) Unterpunkte (und nimmt der Bereich sie mit), bietet die Leiste zusätzlich **Als Überschrift** (neue Überschrift auf der Ebene des aktuellen
 Abschnitts, an dessen Ende) und **Als Unterüberschrift** (eine Ebene tiefer, nach den Textblöcken des Abschnitts und vor
@@ -500,8 +524,9 @@ Notizen und Übernehmen
       `id::`/`used-in::`-Zeile hinzu.
 - [ ] „Verwendete ausblenden“ blendet verwendete Notizen aus.
 - [ ] Die drei Arten zu übernehmen: am Cursor mitten in einem Absatz (der Rest rückt dahinter), „Danach“ und
-      „Darunter“ bei Textblock, Detail und Überschrift; die Quelle steht jeweils am umgebenden Textblock, der
-      neue Block bzw. das neue Detail ist grau (`status:: relevant`).
+      „Darunter“ bei Textblock, Detail und Überschrift; die Quelle steht jeweils am Block, der den Text trägt (am
+      Cursor am Element an der Cursorstelle, sonst am neuen Block bzw. Detail), jedes kopierte Detail hat seine eigene;
+      der neue Block bzw. das neue Detail ist grau (`status:: relevant`).
 - [ ] Aktiver Block: ein Klick auf einen Unterpunkt rahmt ihn samt Unterpunkten, die Leiste steht unten am Rahmen; Text
       markieren macht nichts aktiv. Bereich ▲/▼ und Alt+Pfeil hoch/runter im Notizbereich ändern den Rahmen; bei „ohne
       Unterpunkte“ kommt beim Übernehmen nur der Block ins Buch. Gesperrte Knöpfe nennen den Grund im Tooltip; die

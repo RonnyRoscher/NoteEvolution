@@ -201,7 +201,7 @@ public class MergeDetailsTests
     }
 
     [Fact]
-    public void MergeDetails_LinkedDetailUnderADetail_TextBlockGetsAnId_UsagesMoveToIt()
+    public void MergeDetails_LinkedDetailUnderADetail_HeadGetsAnId_UsagesMoveToIt()
     {
         var book =
             Head +
@@ -215,10 +215,10 @@ public class MergeDetailsTests
 
         s.Links.MergeDetails(s.Book, KeyOf(s, "Detail"));
 
-        // The detail gets the text, the text block the source (a detail never gets a source of its own) and an id.
-        var id = s.Text("Text A").Block.Id!.Value;
+        // The detail (the head) gets the text, the source and an id; the text block stays as it was.
+        var id = s.Book.Page.AllBlocks().Single(b => b.Content.StartsWith("Detail")).Id!.Value;
         Assert.Equal(
-            Head + $"\t- Text A\n\t  id:: {id}\n\t  source:: (({N2}))\n\t\t- Detail\n\n\t\t  Absatz\n",
+            Head + $"\t- Text A\n\t\t- Detail\n\t\t  id:: {id}\n\t\t  source:: (({N2}))\n\n\t\t  Absatz\n",
             s.ReadBook());
         Assert.Equal(journal.Replace(B2, id.ToString()), s.ReadJournal());
 
@@ -434,6 +434,81 @@ public class MergeDetailsTests
         // The text block as the range around its detail (level 1) is the text block with its details too.
         Assert.True(BookRanges.Of(s.Book, Element("Detail"), 1).MergesDetails);
         Assert.False(BookRanges.Of(s.Book, Element("Text A"), 1).MergesDetails);
+    }
+
+    // A note with sub-points at two depths; adopting "Kern" links every copied block to its own note block, so the book
+    // has text block "Kern" (T) with detail "Unter A" (H) and below it "Tief A1" (X), each with its own source.
+    private const string PerBlockJournal = "- Kern\n\t- Unter A\n\t\t- Tief A1\n\t- Unter B\n- Zweite Notiz\n";
+
+    private static LinkSetup AdoptedPerBlock()
+    {
+        var s = new LinkSetup(journal: PerBlockJournal);
+        s.Links.Adopt(s.Book, s.Note("Kern").Key, new InsertPosition.SectionEnd(s.SectionKey("Abschnitt")));
+        return s;
+    }
+
+    private static Block BookBlock(LinkSetup s, string content) => s.Book.Page.AllBlocks().Single(b => b.Content == content);
+
+    [Fact]
+    public void MergeDetails_IntoDetail_SourcesGoToTheHead()
+    {
+        using var s = AdoptedPerBlock();
+        var bookBefore = s.ReadBook();
+        var journalBefore = s.ReadJournal();
+        var text = BookBlock(s, "Kern");
+        var textLines = text.Lines.ToList();
+        var head = BookBlock(s, "Unter A");
+        var headId = head.Id!.Value;
+        var mergedId = BookBlock(s, "Tief A1").Id!.Value;
+        var unterA = s.Note("Unter A").Id!.Value;
+        var tiefA1 = s.Note("Tief A1").Id!.Value;
+
+        Assert.Equal(head.Key, s.Links.MergeDetails(s.Book, head.Key));
+
+        Assert.Equal("Unter A\n\nTief A1", head.Content);
+        Assert.Equal(headId, head.Id);
+        Assert.Equal(SourceValue.Format([unterA, tiefA1]), head.GetProperty("source"));
+        Assert.Equal(textLines, text.Lines);
+        Assert.Equal($"[[Buch - Test]] (({headId}))", s.Note("Tief A1").GetProperty(UsedInValue.Key));
+        Assert.Equal($"[[Buch - Test]] (({headId}))", s.Note("Unter A").GetProperty(UsedInValue.Key));
+        Assert.DoesNotContain(mergedId.ToString(), s.ReadJournal());
+        Assert.DoesNotContain(mergedId.ToString(), s.ReadBook());
+        Assert.Empty(s.Pending.Load());
+
+        s.Undo.Undo();
+
+        Assert.Equal(bookBefore, s.ReadBook());
+        Assert.Equal(journalBefore, s.ReadJournal());
+    }
+
+    [Fact]
+    public void MergeDetails_LoosenedDetail_NoStaleUsage()
+    {
+        // The deeper detail's link was loosened (it keeps its id::): merging it moves no usage to the head, and the
+        // loosened note does not come back as used.
+        using var s = AdoptedPerBlock();
+        var head = BookBlock(s, "Unter A");
+        var headId = head.Id!.Value;
+        var merged = BookBlock(s, "Tief A1");
+        var mergedId = merged.Id!.Value;
+        var unterA = s.Note("Unter A").Id!.Value;
+        s.Links.RemoveSource(s.Book, merged.Key, s.Note("Tief A1").Id!.Value);
+        var bookBefore = s.ReadBook();
+        var journalBefore = s.ReadJournal();
+
+        s.Links.MergeDetails(s.Book, head.Key);
+
+        Assert.Equal(SourceValue.Format([unterA]), head.GetProperty("source"));
+        Assert.Null(s.Note("Tief A1").GetProperty(UsedInValue.Key));
+        Assert.Equal($"[[Buch - Test]] (({headId}))", s.Note("Unter A").GetProperty(UsedInValue.Key));
+        Assert.Equal(journalBefore, s.ReadJournal());
+        Assert.DoesNotContain(mergedId.ToString(), s.ReadBook());
+        Assert.Empty(s.Pending.Load());
+
+        s.Undo.Undo();
+
+        Assert.Equal(bookBefore, s.ReadBook());
+        Assert.Equal(journalBefore, s.ReadJournal());
     }
 
     private static Guid KeyOf(LinkSetup s, string content) => s.Book.Page.AllBlocks().Single(b => b.Content == content).Key;

@@ -102,6 +102,35 @@ public class OutlinePaneTests : UiTestContext
     }
 
     [Fact]
+    public async Task Outline_SourceCount_IncludesDetails()
+    {
+        // The sources of details count (spec 4.1), each note once per section; the prologue counts them too.
+        const string Other = "22222222-2222-2222-2222-222222222222";
+        using var tv = TestVault.Create(
+            (BookPath,
+                "title:: Alpha\ntype:: book\n\n" +
+                "- Vorspann\n" +
+                "\t- Vorspann-Detail\n" +
+                "\t  source:: ((" + Other + "))\n" +
+                "- # Eins\n" +
+                "\t- Erster Text\n" +
+                "\t  source:: ((" + Source + "))\n" +
+                "\t\t- Ein Detail\n" +
+                "\t\t  source:: ((" + Source + ")), ((" + Other + "))\n" +
+                "- # Zwei\n" +
+                "\t- Zweiter Text\n" +
+                "\t\t- Nur das Detail\n" +
+                "\t\t  source:: ((" + Other + "))\n"));
+        await OpenSessionAsync(tv);
+
+        var cut = Render<OutlinePane>();
+
+        Assert.Equal("1 Q", Row(cut, "Vorspann").QuerySelector(".ne-outline-sources")!.TextContent);
+        Assert.Equal("2 Q", Row(cut, "Eins").QuerySelector(".ne-outline-sources")!.TextContent);
+        Assert.Equal("1 Q", Row(cut, "Zwei").QuerySelector(".ne-outline-sources")!.TextContent);
+    }
+
+    [Fact]
     public async Task NoVorspann_WithoutTextBlocksInTheRoot()
     {
         using var tv = Plain();

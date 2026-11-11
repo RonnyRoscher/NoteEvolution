@@ -155,9 +155,13 @@
                 return;
             }
 
-            if (session.TryUndo(out _))
+            if (session.TryUndo(out var undoFailure))
             {
                 Hide();
+            }
+            else if (undoFailure is PagesNotRestoredException notRestored)
+            {
+                ShowError(SubPointLinkMessages.UndoKept(L, notRestored));
             }
             else
             {

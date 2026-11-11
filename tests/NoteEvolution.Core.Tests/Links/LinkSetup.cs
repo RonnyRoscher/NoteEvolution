@@ -104,6 +104,11 @@ internal sealed class FailingWriter(IPageWriter inner) : IPageWriter
 
     private readonly Dictionary<string, int> _skips = new(StringComparer.OrdinalIgnoreCase);
 
+    private readonly Dictionary<string, int> _saves = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>How many saves of the path succeeded.</summary>
+    public int SavesOf(string path) => _saves.GetValueOrDefault(Path.GetFullPath(path));
+
     /// <summary>Fails the next <paramref name="times"/> saves of the path, after <paramref name="skip"/> saves that succeed.</summary>
     public void FailNext(string path, int times = 1, int skip = 0)
     {
@@ -125,5 +130,6 @@ internal sealed class FailingWriter(IPageWriter inner) : IPageWriter
         }
 
         inner.Save(page);
+        _saves[key] = _saves.GetValueOrDefault(key) + 1;
     }
 }

@@ -112,6 +112,22 @@ public class SourceFinderTests : UiTestContext
     }
 
     [Fact]
+    public async Task FindSources_NoteLinkedOnADetail_LeftOut()
+    {
+        // The note is a source of the text block's detail only: it counts as linked (spec 4.1).
+        File.WriteAllText(
+            Path.Combine(_vault.Root, BookPath),
+            "title:: Alpha\ntype:: book\n\n- # Eins\n\t- Erster Text\n\t\t- Ein Detail\n\t\t  source:: ((" + Linked + "))\n- # Zwei\n");
+        var (cut, _, _) = await RenderAsync();
+        await MoveToAsync(cut, "Erster Text");
+
+        cut.Find(".ne-sec-find-sources").Click();
+
+        cut.WaitForAssertion(() => Assert.Equal(2, cut.FindAll(".ne-source-candidate").Count));
+        Assert.Equal(["Anderswo", "Frei"], cut.FindAll(".ne-source-text").Select(e => e.TextContent.Trim().Split('\n')[0]));
+    }
+
+    [Fact]
     public async Task FindSources_Link_SetsSourceAndUsedIn_AndTheSearchCloses()
     {
         var (cut, session, _) = await RenderAsync();

@@ -13,6 +13,12 @@ public sealed class TextBlock : BookItem
         Paragraphs = paragraphs;
         Text = block.Content;
         Sources = SourceValue.Parse(block.GetProperty("source") ?? "");
+        Links =
+        [
+            .. LinksOf(block),
+            .. paragraphs.SelectMany(paragraph => LinksOf(paragraph.Block)),
+        ];
+        AllSources = [.. Links.Select(link => link.NoteId).Distinct()];
         Status = BlockStatuses.Of(block);
         Created = BlockDates.Created(block);
         Updated = BlockDates.Updated(block);
@@ -28,6 +34,15 @@ public sealed class TextBlock : BookItem
 
     /// <summary>The blocks referenced by the <c>source::</c> property.</summary>
     public IReadOnlyList<Guid> Sources { get; }
+
+    /// <summary>
+    /// The references of the text block itself, then of its paragraphs in file order: one entry per block and distinct
+    /// <c>source::</c> reference.
+    /// </summary>
+    public IReadOnlyList<SourceLink> Links { get; }
+
+    /// <summary>The distinct notes of <see cref="Links"/> (the block and its details) in first-seen order.</summary>
+    public IReadOnlyList<Guid> AllSources { get; }
 
     public OutlineNode Section { get; }
 
@@ -72,6 +87,9 @@ public sealed class TextBlock : BookItem
     internal int WordCount => BlockStatuses.IsExcluded(Status)
         ? 0
         : CountWords(Text) + ExportedParagraphs.Sum(p => CountWords(p.Text));
+
+    private static IEnumerable<SourceLink> LinksOf(Block block) =>
+        SourceValue.Parse(block.GetProperty("source") ?? "").Select(note => new SourceLink(block.Key, block.Id, note));
 
     private static int CountWords(string text) =>
         text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Length;

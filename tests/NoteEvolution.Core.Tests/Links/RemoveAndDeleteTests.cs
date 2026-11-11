@@ -1,4 +1,5 @@
 using NoteEvolution.Core.Links;
+using NoteEvolution.Core.Model;
 using NoteEvolution.Core.Storage;
 
 namespace NoteEvolution.Core.Tests.Links;
@@ -140,13 +141,14 @@ public class RemoveAndDeleteTests
         using var s = new LinkSetup();
         var r = s.Links.Adopt(s.Book, s.Note("Kern").Key, new InsertPosition.After(s.Text("Erster Textblock").Key));
         var noteId = s.Note("Kern").Id;
+        var detailNoteId = s.Note("Detail").Id;
         var bookAfterAdopt = s.ReadBook();
         var journalAfterAdopt = s.ReadJournal();
 
         s.Links.DeleteTextBlock(s.Book, r.TextBlockKey);
 
         Assert.Equal(LinkSetup.DefaultBook, s.ReadBook());
-        Assert.Equal($"- Kern\n  collapsed:: true\n  id:: {noteId}\n\t- Detail\n- Zweite Notiz\n", s.ReadJournal());
+        Assert.Equal($"- Kern\n  collapsed:: true\n  id:: {noteId}\n\t- Detail\n\t  id:: {detailNoteId}\n- Zweite Notiz\n", s.ReadJournal());
 
         s.Undo.Undo();
 
@@ -269,5 +271,133 @@ public class RemoveAndDeleteTests
         Assert.Equal(book, s.ReadBook());
         Assert.Equal(SectionJournal, s.ReadJournal());
         Assert.False(s.Undo.CanUndo);
+    }
+
+    // A note with sub-points at two depths; adopting "Kern" links every copied block to its own note block.
+    private const string PerBlockJournal = "- Kern\n\t- Unter A\n\t\t- Tief A1\n\t- Unter B\n- Zweite Notiz\n";
+
+    private static LinkSetup AdoptedPerBlock()
+    {
+        var s = new LinkSetup(journal: PerBlockJournal);
+        s.Links.Adopt(s.Book, s.Note("Kern").Key, new InsertPosition.SectionEnd(s.SectionKey("Abschnitt")));
+        return s;
+    }
+
+    private static Block BookBlock(LinkSetup s, string content) => s.Book.Page.AllBlocks().Single(b => b.Content == content);
+
+    [Fact]
+    public void RemoveSource_OnDetail_LoosensOnlyThatLink()
+    {
+        using var s = AdoptedPerBlock();
+        var detail = BookBlock(s, "Unter A");
+        var detailId = detail.Id!.Value;
+        var noteId = s.Note("Unter A").Id!.Value;
+        var kernBefore = s.Note("Kern").Lines.ToList();
+
+        s.Links.RemoveSource(s.Book, detail.Key, noteId);
+
+        // The detail keeps its text and id::, only source:: goes.
+        detail = BookBlock(s, "Unter A");
+        Assert.Equal(detailId, detail.Id);
+        Assert.Null(detail.GetProperty("source"));
+        Assert.DoesNotContain($"(({noteId}))", s.ReadBook());
+        Assert.Contains($"- Unter A\n\t\t\t  id:: {detailId}\n", s.ReadBook());
+
+        // Only "Unter A" is unused now; its sub-point and its main point keep their usages.
+        Assert.Null(s.Note("Unter A").GetProperty(UsedInValue.Key));
+        Assert.Null(s.Note("Unter A").GetProperty(UsedInValue.WithoutChildrenKey));
+        Assert.Equal($"[[Buch - Test]] (({BookBlock(s, "Tief A1").Id}))", s.Note("Tief A1").GetProperty(UsedInValue.Key));
+        Assert.Equal(kernBefore, s.Note("Kern").Lines);
+        Assert.DoesNotContain(detailId.ToString(), s.ReadJournal());
+        Assert.Equal("Verknüpfung lösen", s.Undo.NextDescription);
+        Assert.Empty(s.Pending.Load());
+    }
+
+    [Fact]
+    public void RemoveSource_MissingNote_RemovesOnlySource()
+    {
+        var book =
+            "title:: Buch: Test\n" +
+            "type:: book\n" +
+            "\n" +
+            "- # Kapitel\n" +
+            "\t- Text\n" +
+            "\t\t- Detail\n" +
+            $"\t\t  id:: {B2}\n" +
+            $"\t\t  source:: (({N3}))\n";
+        using var s = new LinkSetup(book);
+        var detail = BookBlock(s, "Detail").Key;
+
+        // Only a text block or a detail carries a link.
+        Assert.Throws<ArgumentException>(() => s.Links.RemoveSource(s.Book, s.SectionKey("Kapitel"), Guid.Parse(N3)));
+        Assert.Throws<ArgumentException>(() => s.Links.RemoveSource(s.Book, Guid.NewGuid(), Guid.Parse(N3)));
+
+        s.Links.RemoveSource(s.Book, detail, Guid.Parse(N3));
+
+        Assert.Equal(book.Replace($"\t\t  source:: (({N3}))\n", ""), s.ReadBook());
+        Assert.Equal(LinkSetup.DefaultJournal, s.ReadJournal());
+        Assert.Equal(0, s.Writer.SavesOf(s.JournalPath));
+        Assert.Empty(s.Pending.Load());
+
+        s.Undo.Undo();
+
+        Assert.Equal(book, s.ReadBook());
+        Assert.Equal(0, s.Writer.SavesOf(s.JournalPath));
+    }
+
+    [Fact]
+    public void RemoveSource_Undo_RestoresSourceAndEntry()
+    {
+        using var s = AdoptedPerBlock();
+        var bookAfterAdopt = s.ReadBook();
+        var journalAfterAdopt = s.ReadJournal();
+
+        s.Links.RemoveSource(s.Book, BookBlock(s, "Unter A").Key, s.Note("Unter A").Id!.Value);
+        Assert.NotEqual(journalAfterAdopt, s.ReadJournal());
+
+        s.Undo.Undo();
+
+        Assert.Equal(bookAfterAdopt, s.ReadBook());
+        Assert.Equal(journalAfterAdopt, s.ReadJournal());
+        Assert.NotEqual("Verknüpfung lösen", s.Undo.NextDescription);
+        Assert.Empty(s.Pending.Load());
+    }
+
+    [Fact]
+    public void RemoveSource_Undo_NoteChangedSince_EntryAddedBack()
+    {
+        using var s = AdoptedPerBlock();
+        var noteBefore = s.Note("Unter A").Lines.ToList();
+        s.Links.RemoveSource(s.Book, BookBlock(s, "Unter A").Key, s.Note("Unter A").Id!.Value);
+        s.Links.AddUsage(s.Note("Unter A").Id!.Value, new UsedInEntry("Anderes Buch", null));
+
+        s.Undo.Undo();
+
+        // The usage comes back next to the newer one; that one took the sub-points along, so there is no mark.
+        var usedIn = s.Note("Unter A").GetProperty(UsedInValue.Key)!;
+        Assert.Contains("[[Anderes Buch]]", usedIn);
+        Assert.Contains($"[[Buch - Test]] (({BookBlock(s, "Unter A").Id}))", usedIn);
+        Assert.Null(s.Note("Unter A").GetProperty(UsedInValue.WithoutChildrenKey));
+        Assert.Contains("[[Anderes Buch]]", s.ReadJournal());
+        Assert.Equal(2, s.ReadJournal().Split("[[Buch - Test]] ((" + BookBlock(s, "Unter A").Id).Length);
+        Assert.NotEqual(noteBefore, s.Note("Unter A").Lines);
+    }
+
+    [Fact]
+    public void RemoveSource_Undo_RefusedAfterBlockChanged()
+    {
+        using var s = AdoptedPerBlock();
+        s.Links.RemoveSource(s.Book, BookBlock(s, "Unter A").Key, s.Note("Unter A").Id!.Value);
+        BookBlock(s, "Unter A").SetContent("Unter A, geändert");
+        s.Writer.Save(s.Book.Page);
+        var book = s.ReadBook();
+        var journal = s.ReadJournal();
+
+        Assert.Throws<InvalidOperationException>(() => s.Undo.Undo());
+
+        Assert.Equal(book, s.ReadBook());
+        Assert.Equal(journal, s.ReadJournal());
+        Assert.False(s.Book.Page.IsDirty);
+        Assert.Null(s.Note("Unter A").GetProperty(UsedInValue.Key));
     }
 }

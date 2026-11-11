@@ -1,4 +1,5 @@
 using Bunit;
+using NoteEvolution.Core.Books;
 using NoteEvolution.Core.Storage;
 using NoteEvolution.Core.Vaults;
 using NoteEvolution.TestSupport;
@@ -144,6 +145,40 @@ public class NoteRevealTests : UiTestContext
         Time.Advance(TimeSpan.FromMilliseconds(500));
 
         cut.WaitForAssertion(() => Assert.Empty(cut.FindAll(".ne-note-highlight")));
+    }
+
+    [Fact]
+    public async Task RevealUsage_OfDetail_JumpsToDetail()
+    {
+        const string DetailId = "44444444-dddd-4ddd-8ddd-111111111111";
+        using var tv = TestVault.Create(
+            ("pages/Buch - Alpha.md",
+                "title:: Alpha\ntype:: book\n\n" +
+                "- # Eins\n" +
+                "\t- Erster Text\n" +
+                "- # Zwei\n" +
+                "\t- Zweiter Text\n" +
+                "\t\t- Ein Detail\n" +
+                "\t\t  id:: " + DetailId + "\n" +
+                "\t\t  source:: ((" + PageNoteId + "))\n"),
+            ("pages/Ideen.md",
+                "- Seitennotiz ohne Datum\n" +
+                "  id:: " + PageNoteId + "\n" +
+                "  used-in:: [[Buch - Alpha]] ((" + DetailId + "))\n"));
+        var session = await OpenSessionAsync(tv);
+        var book = session.Vault.FindBook("Buch - Alpha")!;
+        State.CurrentBook = book;
+        State.CurrentSectionKey = book.Root.Children.First().Key;
+        var note = session.Notes.All().Single(n => n.Block.Content == "Seitennotiz ohne Datum");
+        var card = Render<NoteCard>(p => p.Add(c => c.Note, note));
+
+        card.Find(".ne-note-used").Click();
+
+        // The usage names the detail: the jump lands on it, not on its text block.
+        var detail = book.Root.Children.ElementAt(1).TextBlocks.Single().Paragraphs.Single(p => p.Block.Id == Guid.Parse(DetailId));
+        Assert.Equal(detail.Block.Key, State.Cursor?.Key);
+        Assert.Equal(ElementKind.Detail, State.Cursor?.Kind);
+        Assert.Equal(book.Root.Children.ElementAt(1).Key, State.CurrentSectionKey);
     }
 
     [Fact]

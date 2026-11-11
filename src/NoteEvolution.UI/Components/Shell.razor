@@ -20,7 +20,7 @@
     <HeaderBar OnOpenVault="PickVaultAsync" OnPdfExport="() => Show(Dialog.Pdf)" OnLinkCheck="() => Show(Dialog.LinkCheck)"
                OnSettings="() => Show(Dialog.Settings)" OnShortcuts="() => Show(Dialog.Shortcuts)" OnHandledWizard="() => Show(Dialog.Handled)" OnDraftWizard="() => ShowDraft(null)"
                OnNormalizeOutline="() => Show(Dialog.Normalize)"
-               OnDeletedBlocks="() => Show(Dialog.Deleted)"
+               OnDeletedBlocks="() => Show(Dialog.Deleted)" OnSubPointLinks="() => Show(Dialog.SubPointLinks)"
                OnConvertPage="ShowDraft" OnToggleSplit="ToggleSplitAsync" />
 
     @if (_hintVisible)
@@ -133,6 +133,9 @@
         case Dialog.Normalize:
             <NormalizeOutlineDialog OnClose="CloseDialog" />
             break;
+        case Dialog.SubPointLinks:
+            <SubPointLinkDialog OnClose="CloseDialog" />
+            break;
         case Dialog.Deleted:
             <DeletedBlocksDialog OnClose="CloseDialog" />
             break;
@@ -215,6 +218,7 @@
         Appendix,
         Normalize,
         Deleted,
+        SubPointLinks,
         History,
     }
 

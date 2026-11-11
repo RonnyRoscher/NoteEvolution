@@ -20,21 +20,33 @@ public sealed record HeadingAdoptResult(Guid HeadingKey, bool NoteUpdatePending)
 /// book page as it is on disk again (take it from <see cref="Vaults.IVault.FindBook"/>). A note that cannot be
 /// written (or is read-only) gets its update recorded in <c>pending.json</c> instead.
 /// <para>
+/// Usages are kept per block: a copied block that carries a note block's text is linked to that note block itself, and
+/// the note block's <c>used-in::</c> entry stands for its own text; its sub-points have entries of their own (where an
+/// adoption copied them). A note block's usage passes on to its sub-points only while it lacks
+/// <c>used-without-children:: true</c> (<see cref="UsedInValue.WithoutChildrenKey"/>, see
+/// <see cref="Vaults.NoteBlock.IsUsedBlock"/>), as older adoptions left it.
+/// </para>
+/// <para>
 /// The adopt methods take the note block with its sub-points, or without <c>includeChildren</c> its own text alone; then
-/// the note gets <c>used-without-children:: true</c> (<see cref="UsedInValue.WithoutChildrenKey"/>) while every usage
-/// takes it alone, unless it has no sub-point to leave out. With <c>hideUsed</c> ("Verwendete ausblenden") the
-/// sub-points the notes pane hides (<see cref="Vaults.NoteBlock.ShownChildren"/>) are left out of the copy, so a used
-/// sub-point does not go into the book again. Undoing an adoption gives a note still as the adoption left it its lines
-/// back (with its mark); any other note loses the usage, and the mark of its remaining usages is set as it was before.
+/// the note gets <c>used-without-children:: true</c> while every usage takes it alone, unless it has no sub-point to
+/// leave out. Every adopt method takes each linked note block with sub-points alone in this sense. When a usage is removed,
+/// the mark is also set once every sub-point at every depth has a <c>used-in::</c> of its own. With <c>hideUsed</c>
+/// ("Verwendete ausblenden") the sub-points the notes pane hides (<see cref="Vaults.NoteBlock.ShownChildren"/>) are
+/// left out of the copy, so a used sub-point does not go into the book again. Undoing an adoption gives a note still as
+/// the adoption left it its lines back (with its mark); any other note loses the usage, and the mark of its remaining
+/// usages is set as it was before.
 /// </para>
 /// </summary>
 public interface ILinkService
 {
     /// <summary>
     /// Copies the note block with its subtree (without property lines, and without a <c>#notiz</c> tag in the note
-    /// block's own text) into the book at <paramref name="position"/>, gives the copy an <c>id::</c>,
-    /// <c>source:: ((note id))</c> and <c>status:: relevant</c>, then adds the usage to the note's <c>used-in::</c>.
-    /// Can be undone („Übernehmen“).
+    /// block's own text) into the book at <paramref name="position"/>, gives the copy <c>status:: relevant</c>, and links
+    /// each copied block to the note block whose text it carries: the copied block gets an <c>id::</c> and
+    /// <c>source:: ((note block id))</c> (and the dates of a new block), the note block an <c>id::</c> if needed and its
+    /// own <c>used-in::</c> entry for that block, with <c>used-without-children:: true</c> while every usage takes it
+    /// alone, if it has (shown) sub-points. All note blocks are on one page, which is written once; if it cannot be
+    /// written, each entry waits in <c>pending.json</c>. Can be undone („Übernehmen“): every entry and mark goes again.
     /// </summary>
     /// <exception cref="ArgumentException">Unknown note block or position.</exception>
     /// <exception cref="ReadOnlyPageException">The book page is read-only.</exception>
@@ -45,10 +57,14 @@ public interface ILinkService
     /// Copies the note block's text and sub-bullets (without property lines, and without a <c>#notiz</c> tag in the
     /// note block's own text) into an existing text block or detail (<paramref name="position"/>): each new top-level
     /// detail (the copy, or at the cursor each of the note's sub-bullets) gets <c>status:: relevant</c>, the element at
-    /// the cursor keeps its status. It adds the note's id to the enclosing text block's <c>source::</c> unless it is
-    /// there (the text block gets an <c>id::</c> if needed; a detail never gets a source of its own), then adds the
-    /// usage to the note's <c>used-in::</c>. The result names the enclosing text block. Can be undone („Übernehmen“)
-    /// as long as the text block with its details is still as this left it.
+    /// the cursor keeps its status. Each block that carries a note block's text is linked to that note block like a
+    /// block of <see cref="Adopt"/>: at the cursor the element (text block or detail; it gets an <c>id::</c> if needed)
+    /// gets the note block's id in its <c>source::</c> unless it is there, else the new detail; each inserted detail from
+    /// a sub-point gets its own (with the dates of a new block). The note blocks get their <c>used-in::</c> entries
+    /// (with <c>used-without-children:: true</c> as for <see cref="Adopt"/>) on their page, written once. The result names
+    /// the enclosing text block (it gets an <c>id::</c> if needed). Can be undone („Übernehmen“) as long as the text
+    /// block with its details is still as this left it; the usage of an element that had the note as a source before
+    /// stays.
     /// </summary>
     /// <exception cref="ArgumentException">Unknown note block or position, or the text would not stay one block.</exception>
     /// <exception cref="ArgumentOutOfRangeException">The offset of <see cref="IntoPosition.AtCursor"/> is outside the element's text.</exception>
@@ -65,10 +81,12 @@ public interface ILinkService
     /// <c>#notiz</c> tag and leading <c>#</c> heading marks, trimmed; <paramref name="untitledTitle"/> if that is
     /// blank). Below it the further lines of the note block's text (if any) become the first text block, then each
     /// direct sub-point becomes a text block with its
-    /// deeper sub-points as details; each of them is linked to its note block like a block of <see cref="Adopt"/>
-    /// (<c>id::</c>, <c>source::</c>, <c>status:: relevant</c>, the dates, <c>used-in::</c> on the note). Without a text
-    /// block of its own the note block gets a <c>used-in::</c> entry for the book without block reference. Can be undone
-    /// („Übernehmen“) as long as the heading with everything below it is still as this left it.
+    /// deeper sub-points as details. Each of these text blocks and details is linked to its own note block like a block
+    /// of <see cref="Adopt"/> (<c>id::</c>, <c>source::</c>, the dates, <c>used-in::</c> on the note with
+    /// <c>used-without-children:: true</c> as for <see cref="Adopt"/>); the text blocks get <c>status:: relevant</c>.
+    /// Without a text block of its own the note block gets a <c>used-in::</c> entry for the book without block reference,
+    /// likewise taking its own text alone. The note page is written once. Can be undone („Übernehmen“) as long as the
+    /// heading with everything below it is still as this left it.
     /// </summary>
     /// <exception cref="ArgumentException">
     /// Unknown note block or section, a section in the appendix, a note block without sub-points, a heading deeper than level 6, further text that
@@ -91,8 +109,43 @@ public interface ILinkService
     /// <exception cref="InvalidOperationException">The note's page is read-only; nothing was changed.</exception>
     void Link(Book book, Guid textBlockKey, Guid noteBlockKey);
 
-    /// <summary>Removes <paramref name="noteBlockId"/> from the text block's <c>source::</c> and the usage from the note.</summary>
-    void RemoveSource(Book book, Guid textBlockKey, Guid noteBlockId);
+    /// <summary>
+    /// Loosens one link of a text block or a detail (<paramref name="blockKey"/>, the block carrying it): removes
+    /// <paramref name="noteBlockId"/> from its <c>source::</c> (the property goes when it is empty; text, <c>id::</c> and
+    /// status stay), then the note's <c>used-in::</c> entry for this block, and sets <c>used-without-children::</c> as the
+    /// other usages require. Without such a note (or without an <c>id::</c> on the block) only the book changes; a
+    /// read-only note page gets the removal in <c>pending.json</c>. Nothing happens if the block does not have the note
+    /// as a source. Records the undo action „Verknüpfung lösen“: it puts back the block's lines and the note's (or adds
+    /// the entry again to a note changed since), refused while the block with its subtree is no longer as this left it.
+    /// </summary>
+    /// <exception cref="ArgumentException">No text block or detail has this key; nothing was changed.</exception>
+    /// <exception cref="ReadOnlyPageException">The book page is read-only.</exception>
+    void RemoveSource(Book book, Guid blockKey, Guid noteBlockId);
+
+    /// <summary>
+    /// Links the details an older adoption copied from sub-points (<see cref="SubPointMatch"/>, found by
+    /// the assistant <c>SubPointLinker.Find</c>) to these sub-points: each detail gets an <c>id::</c> and
+    /// <c>source:: ((sub-point id))</c>, each sub-point an <c>id::</c> if needed and its own <c>used-in::</c> entry for the
+    /// detail. A note block gets <c>used-without-children:: true</c> only when afterwards every note block below it (at
+    /// every depth) has a <c>used-in::</c> of its own; this holds for the linked sub-points and for the note blocks above
+    /// them that have a usage (such as the adopted main point, whose old usage then passes nothing on). Only property
+    /// lines change. Each book page is written once, then each note page once; a read-only note page is left unchanged
+    /// and its entries wait in <c>pending.json</c>, as do those of a note page whose write fails. If a book page cannot
+    /// be written (for example <see cref="FileChangedExternallyException"/>), nothing is written to it, no later book is
+    /// written, the notes of the books already written get their entries, and the exception is passed on. Records the
+    /// undo action „Verknüpfungen nachtragen“ (when a book was written). It is refused before anything changes
+    /// (<see cref="InvalidOperationException"/>) if a book page is no longer as this left it. Otherwise every book page
+    /// gets its former bytes back, a note page still as this left it too; a note page changed since keeps its changes and
+    /// loses exactly the entries this added (with the marks recomputed), and queued entries are dropped, so no link is
+    /// left one-sided. A page whose write fails does not stop the undo; it then throws
+    /// <see cref="PagesNotRestoredException"/> naming those pages.
+    /// </summary>
+    /// <exception cref="ArgumentException">
+    /// An unknown book, detail or note block, a detail that has a <c>source::</c> already, a detail given twice, or a
+    /// note block without <c>id::</c> on a read-only page; nothing was changed.
+    /// </exception>
+    /// <exception cref="ReadOnlyPageException">A book page is read-only; nothing was changed.</exception>
+    void LinkSubPoints(IReadOnlyList<SubPointMatch> matches);
 
     /// <summary>Deletes the text block with its paragraphs and removes its usages from the notes. Can be undone („Löschen“).</summary>
     void DeleteTextBlock(Book book, Guid textBlockKey);
@@ -146,8 +199,10 @@ public interface ILinkService
     /// the head's content, joined as in <see cref="MergeTextBlocks"/> (a blank line; blank contents left out), and
     /// these details are removed. The <c>#notiz</c> details stay, with their own sub-details, as the head's children
     /// in file order (one below a merged detail comes up to the head). The merged details' <c>source::</c> values go
-    /// to the enclosing text block's <c>source::</c> (union), and every note whose <c>used-in::</c> referenced a merged
-    /// detail references the text block instead (which gets an <c>id::</c> if needed). Other properties of the merged
+    /// to the head's <c>source::</c> (union), and every note whose <c>used-in::</c> referenced a merged detail references
+    /// the head instead (which gets an <c>id::</c> if needed). A reference <c>((id))</c> in the book to a merged detail
+    /// points to the enclosing text block afterwards (a detail is no reference target; the text block gets an
+    /// <c>id::</c> only for that). Other properties of the merged
     /// details are carried over where the head lacks the key, except <c>collapsed::</c> (the view state of a detail
     /// that goes; the head keeps its own) and the dates (a text block head gets the earliest readable
     /// <c>created::</c>; the text block gets a new <c>updated::</c>). Can be undone („Zusammenfügen“) as

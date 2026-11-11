@@ -76,10 +76,10 @@ public class SectionBarTests : UiTestContext
         return new CursorInfo(element.Kind, element.Key, BookElements.TextBlockOf(Book, element)?.Key, 0);
     }
 
-    /// <summary>Opens the vault, renders the editor and lets it report a visible marking box.</summary>
-    private async Task<IRenderedComponent<EditorPane>> RenderAsync()
+    /// <summary>Opens the vault (<see cref="_vault"/> by default), renders the editor and lets it report a visible marking box.</summary>
+    private async Task<IRenderedComponent<EditorPane>> RenderAsync(TestVault? vault = null)
     {
-        await OpenSessionAsync(_vault);
+        await OpenSessionAsync(vault ?? _vault);
         var cut = Render<EditorPane>();
         cut.WaitForAssertion(() => Assert.NotEmpty(Editor.Documents));
         await cut.InvokeAsync(() => Editor.Callbacks!.OnSectionBoxMoved(120.5, true));
@@ -204,12 +204,14 @@ public class SectionBarTests : UiTestContext
         cut.Find(".ne-sec-sources").Click();
 
         Assert.Equal(Text("SectionSourcesOpen", 4), cut.Find(".ne-sec-sources").TextContent.Trim());
-        var entries = cut.Find(".ne-sec-source-list").Children;
+        // One row per linked block: „Frühe Notiz“ is a source of both text blocks of the section.
+        var entries = cut.FindAll(".ne-sec-source-list > .ne-sec-source-row").Select(row => row.FirstElementChild!).ToList();
         Assert.Equal(
-            ["2026-09-15 – Frühe Notiz", "2026-10-01 – Späte Notiz", "0 Archiv – Seitennotiz", Text("SectionSourceMissing")],
+            ["2026-09-15 – Frühe Notiz", "2026-09-15 – Frühe Notiz", "2026-10-01 – Späte Notiz", "0 Archiv – Seitennotiz",
+                Text("SectionSourceMissing")],
             entries.Select(e => e.TextContent.Trim()));
-        Assert.Equal(["BUTTON", "BUTTON", "BUTTON", "SPAN"], entries.Select(e => e.TagName));
-        Assert.Equal(3, cut.FindAll("button.ne-sec-source").Count);
+        Assert.Equal(["BUTTON", "BUTTON", "BUTTON", "BUTTON", "SPAN"], entries.Select(e => e.TagName));
+        Assert.Equal(4, cut.FindAll("button.ne-sec-source").Count);
         Assert.Single(cut.FindAll("span.ne-sec-source-broken"));
         Assert.Empty(cut.FindAll("button.ne-sec-source-broken"));
 
@@ -304,6 +306,156 @@ public class SectionBarTests : UiTestContext
         Assert.Equal("SPAN", cut.Find(".ne-sec-no-sources").TagName);
         Assert.Empty(cut.FindAll(".ne-sec-sources"));
         Assert.Empty(cut.FindAll(".ne-sec-source-list"));
+    }
+
+    private const string LinkedTextId = "44444444-4444-4444-8444-444444444444";
+
+    private const string LinkedDetailId = "55555555-5555-4555-8555-555555555555";
+
+    private const string LongLine = "Ein Textblock mit einer recht langen ersten Zeile, die über sechzig Zeichen hinausgeht";
+
+    /// <summary>„Frühe Notiz“ on a text block and on its detail, the detail also names a missing note.</summary>
+    private const string LinkedBook =
+        "title:: Alpha\ntype:: book\n\n" +
+        "- # Eins\n" +
+        "\t- " + LongLine + "\n" +
+        "\t  id:: " + LinkedTextId + "\n" +
+        $"\t  source:: (({Early}))\n" +
+        "\t\t- Ein Detail\n" +
+        "\t\t  id:: " + LinkedDetailId + "\n" +
+        $"\t\t  source:: (({Early})), (({Gone}))\n" +
+        "- # Leer\n" +
+        "\t- Ohne Quelle\n";
+
+    private const string LinkedJournalPath = "journals/2026_09_15.md";
+
+    private const string LinkedJournal =
+        $"- Frühe Notiz\n  id:: {Early}\n  used-in:: [[Buch - Alpha]] (({LinkedTextId})), [[Buch - Alpha]] (({LinkedDetailId}))\n";
+
+    private static TestVault Linked() => TestVault.Create((BookPath, LinkedBook), (LinkedJournalPath, LinkedJournal));
+
+    /// <summary>Renders the editor on <see cref="Linked"/> with the cursor in the detail and the list of sources open.</summary>
+    private async Task<IRenderedComponent<EditorPane>> RenderLinkedOpenAsync(TestVault vault)
+    {
+        var cut = await RenderAsync(vault);
+        await MoveToAsync(cut, "Ein Detail");
+        cut.WaitForAssertion(() => Assert.Single(cut.FindAll(".ne-sec-sources")));
+        cut.Find(".ne-sec-sources").Click();
+        return cut;
+    }
+
+    private static List<string> RowTexts(IRenderedComponent<EditorPane> cut) =>
+        [.. cut.FindAll(".ne-sec-source-row").Select(row => row.FirstElementChild!.TextContent.Trim())];
+
+    [Fact]
+    public async Task Sources_ListsDetailLinks_OneRowPerBlock()
+    {
+        using var vault = Linked();
+        var cut = await RenderLinkedOpenAsync(vault);
+
+        // The count names the distinct notes (as the outline does); the list has a row per linked block.
+        Assert.Equal(Text("SectionSourcesOpen", 2), cut.Find(".ne-sec-sources").TextContent.Trim());
+        Assert.Equal(["2026-09-15 – Frühe Notiz", "2026-09-15 – Frühe Notiz", Text("SectionSourceMissing")], RowTexts(cut));
+        var loosen = cut.FindAll(".ne-sec-source-row > button.ne-sec-source-loosen");
+        Assert.Equal(3, loosen.Count);
+        var longExcerpt = LongLine[..60].TrimEnd() + "…";
+        Assert.Equal(
+            [Text("SectionSourceLoosenTitle", longExcerpt), Text("SectionSourceLoosenTitle", "Ein Detail"),
+                Text("SectionSourceLoosenTitle", "Ein Detail")],
+            loosen.Select(button => button.GetAttribute("title")));
+        Assert.All(loosen, button => Assert.Equal(Text("SectionSourceLoosen"), button.GetAttribute("aria-label")));
+    }
+
+    [Fact]
+    public async Task Sources_Loosen_RemovesThere_ListStaysOpen()
+    {
+        using var vault = Linked();
+        var cut = await RenderLinkedOpenAsync(vault);
+
+        // The second row: „Frühe Notiz“ on the detail.
+        await cut.InvokeAsync(() => cut.FindAll(".ne-sec-source-loosen")[1].Click());
+
+        cut.WaitForAssertion(() => Assert.Contains($"\t\t  id:: {LinkedDetailId}\n\t\t  source:: (({Gone}))\n", vault.Read(BookPath)));
+        Assert.Contains($"\t  source:: (({Early}))\n", vault.Read(BookPath));
+        Assert.Equal(
+            $"- Frühe Notiz\n  id:: {Early}\n  used-in:: [[Buch - Alpha]] (({LinkedTextId}))\n", vault.Read(LinkedJournalPath));
+        cut.WaitForAssertion(() => Assert.Equal(["2026-09-15 – Frühe Notiz", Text("SectionSourceMissing")], RowTexts(cut)));
+        Assert.Single(cut.FindAll(".ne-sec-source-list"));
+        Assert.Equal(Text("SectionSourcesOpen", 2), cut.Find(".ne-sec-sources").TextContent.Trim());
+    }
+
+    [Fact]
+    public async Task Sources_LoosenLast_ShowsNoSources()
+    {
+        using var vault = Linked();
+        var cut = await RenderLinkedOpenAsync(vault);
+
+        for (var left = 3; left > 0; left--)
+        {
+            cut.WaitForAssertion(() => Assert.Equal(left, cut.FindAll(".ne-sec-source-loosen").Count));
+            await cut.InvokeAsync(() => cut.Find(".ne-sec-source-loosen").Click());
+        }
+
+        cut.WaitForAssertion(() => Assert.Equal(Text("SectionNoSources"), cut.Find(".ne-sec-no-sources").TextContent.Trim()));
+        Assert.Empty(cut.FindAll(".ne-sec-source-list"));
+        Assert.DoesNotContain("source::", vault.Read(BookPath));
+        Assert.DoesNotContain("used-in::", vault.Read(LinkedJournalPath));
+    }
+
+    [Fact]
+    public async Task Sources_BrokenSource_HasLoosen()
+    {
+        using var vault = Linked();
+        var cut = await RenderLinkedOpenAsync(vault);
+        var broken = cut.Find(".ne-sec-source-row:last-child");
+        Assert.Equal(Text("SectionSourceMissing"), broken.QuerySelector(".ne-sec-source-broken")!.TextContent.Trim());
+
+        await cut.InvokeAsync(() => cut.Find(".ne-sec-source-row:last-child .ne-sec-source-loosen").Click());
+
+        cut.WaitForAssertion(() => Assert.Contains($"\t\t  id:: {LinkedDetailId}\n\t\t  source:: (({Early}))\n", vault.Read(BookPath)));
+        Assert.Equal(LinkedJournal, vault.Read(LinkedJournalPath));
+        cut.WaitForAssertion(() => Assert.Equal(["2026-09-15 – Frühe Notiz", "2026-09-15 – Frühe Notiz"], RowTexts(cut)));
+    }
+
+    [Fact]
+    public async Task Loosen_Undo_Restores()
+    {
+        using var vault = Linked();
+        var cut = await RenderLinkedOpenAsync(vault);
+        var session = State.Session!;
+        await cut.InvokeAsync(() => cut.FindAll(".ne-sec-source-loosen")[1].Click());
+        cut.WaitForAssertion(() => Assert.NotEqual(LinkedBook, vault.Read(BookPath)));
+
+        Assert.Equal("Verknüpfung lösen", session.Undo.NextDescription);
+        await cut.InvokeAsync(() => Assert.True(session.TryUndo(out _)));
+
+        Assert.Equal(LinkedBook, vault.Read(BookPath));
+        Assert.Equal(LinkedJournal, vault.Read(LinkedJournalPath));
+    }
+
+    [Fact]
+    public async Task Loosen_OpenConflict_ChangesNothing()
+    {
+        using var vault = Linked();
+        var cut = await RenderLinkedOpenAsync(vault);
+        var session = State.Session!;
+
+        // A local change of the note collides with an external change of the same line: a conflict for the note page.
+        var path = Path.Combine(vault.Root, LinkedJournalPath);
+        await cut.InvokeAsync(() =>
+        {
+            var note = session.Vault.FindBlockById(Guid.Parse(Early))!.Value;
+            note.Block.SetContent("Frühe Notiz, lokal");
+            File.WriteAllText(path, LinkedJournal.Replace("- Frühe Notiz\n", "- Frühe Notiz, extern\n"));
+            session.HandleExternalChange(path);
+        });
+        Assert.True(session.HasOpenConflict(path));
+
+        await cut.InvokeAsync(() => cut.FindAll(".ne-sec-source-loosen")[1].Click());
+
+        cut.WaitForAssertion(() => Assert.Equal(Text("EditorChipConflict"), cut.Find(".ne-editor-error").TextContent.Trim()));
+        Assert.Equal(LinkedBook, vault.Read(BookPath));
+        Assert.Equal(3, cut.FindAll(".ne-sec-source-row").Count);
     }
 
     [Fact]

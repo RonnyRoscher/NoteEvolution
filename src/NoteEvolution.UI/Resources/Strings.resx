@@ -243,6 +243,12 @@
   <data name="SectionSourceMissing" xml:space="preserve">
     <value>Quelle fehlt</value>
   </data>
+  <data name="SectionSourceLoosen" xml:space="preserve">
+    <value>Verknüpfung lösen</value>
+  </data>
+  <data name="SectionSourceLoosenTitle" xml:space="preserve">
+    <value>Verknüpfung mit „{0}“ lösen</value>
+  </data>
   <data name="SectionMerge" xml:space="preserve">
     <value>Zusammenfügen</value>
   </data>
@@ -947,6 +953,43 @@
   </data>
   <data name="AssistantExternalChange" xml:space="preserve">
     <value>Eine Datei wurde gleichzeitig von einem anderen Programm geändert. Bereits geschriebene Dateien bleiben umgewandelt; bitte erneut versuchen.</value>
+  </data>
+  <data name="AssistantSubPoints" xml:space="preserve">
+    <value>Verknüpfungen der Unterpunkte nachtragen …</value>
+  </data>
+  <data name="SubPointsTitle" xml:space="preserve">
+    <value>Verknüpfungen der Unterpunkte nachtragen</value>
+  </data>
+  <data name="SubPointsIntro" xml:space="preserve">
+    <value>Ältere Übernahmen haben nur den Hauptpunkt verknüpft. Hier bekommen die Details, die aus Unterpunkten einer Quellnotiz stammen, ihre eigene Verknüpfung. Text und Reihenfolge bleiben, es ändern sich nur Eigenschaftszeilen in Buch und Notizen.</value>
+  </data>
+  <data name="SubPointsSummary" xml:space="preserve">
+    <value>{0} Unterpunkte in {1} Büchern werden verknüpft, {2} Details bleiben ohne eindeutigen Treffer.</value>
+    <comment>{0} = Anzahl verknüpft, {1} = Anzahl Bücher, {2} = Anzahl ohne Treffer</comment>
+  </data>
+  <data name="SubPointsBook" xml:space="preserve">
+    <value>{0}: {1} verknüpft, {2} ohne eindeutigen Treffer</value>
+    <comment>{0} = Buch, {1} = Anzahl verknüpft, {2} = Anzahl ohne Treffer</comment>
+  </data>
+  <data name="SubPointsNone" xml:space="preserve">
+    <value>Alle Unterpunkte sind schon verknüpft.</value>
+  </data>
+  <data name="SubPointsNoneUnmatched" xml:space="preserve">
+    <value>Keine Unterpunkte lassen sich eindeutig zuordnen; {0} Details bleiben ohne eindeutigen Treffer.</value>
+    <comment>{0} = Anzahl ohne Treffer</comment>
+  </data>
+  <data name="SubPointsApply" xml:space="preserve">
+    <value>Nachtragen</value>
+  </data>
+  <data name="SubPointsFailed" xml:space="preserve">
+    <value>Die Verknüpfungen konnten nicht nachgetragen werden. Bereits geschriebene Bücher bleiben nachgetragen.</value>
+  </data>
+  <data name="UndoSubPoints" xml:space="preserve">
+    <value>Verknüpfungen nachtragen</value>
+  </data>
+  <data name="SubPointsUndoKept" xml:space="preserve">
+    <value>Nicht vollständig zurückgenommen, weil nicht schreibbar: {0}</value>
+    <comment>{0} = Namen der Seiten, durch Komma getrennt</comment>
   </data>
   <data name="HandledTitle" xml:space="preserve">
     <value>[handled] umwandeln</value>

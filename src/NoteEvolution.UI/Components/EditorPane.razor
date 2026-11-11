@@ -39,7 +39,7 @@
     {
         <SectionBar Top="_barTop" Visible="_barVisible" Element="MyView.ElementIn(State.CurrentBook)" Locked="ReadOnlyReason is not null"
                     OnCommand="OnSectionCommand" OnIndent="() => OnShiftAsync(1)" OnOutdent="() => OnShiftAsync(-1)" OnStatus="OnStatusChosen"
-                    OnReference="OnReferenceChosen" OnLevel="OnLevelChosen" OnSource="OnSourceChosen"
+                    OnReference="OnReferenceChosen" OnLevel="OnLevelChosen" OnSource="OnSourceChosen" OnLoosen="OnSourceLoosened"
                     OnAppendixPick="OnAppendixPicked" CitationLocator="@(_citationEdit?.Locator)"
                     OnCitationSave="SaveCitationAsync" OnCitationCancel="CancelCitationEdit" />
     }
@@ -560,7 +560,16 @@
     }
 
     /// <summary>Removes the note from the block's sources and the usage from the note, after saving the pending text.</summary>
-    public async Task OnChipRemoved(Guid textBlockKey, Guid noteId)
+    public Task OnChipRemoved(Guid textBlockKey, Guid noteId) => RemoveSourceAsync(textBlockKey, noteId);
+
+    /// <summary>„Verknüpfung lösen“ in the bar's list of sources: the same way as the chip's × (spec 4.1).</summary>
+    private Task OnSourceLoosened(SourceLink link) => RemoveSourceAsync(link.BlockKey, link.NoteId);
+
+    /// <summary>
+    /// Removes the note from the <c>source::</c> of the block (text block or detail) and the usage from the note, after
+    /// saving the pending text (<see cref="BookTextSaver.RemoveSource"/>, with its undo action and its refusals).
+    /// </summary>
+    private async Task RemoveSourceAsync(Guid blockKey, Guid noteId)
     {
         if (!_ready || _disposed)
         {
@@ -573,7 +582,7 @@
             CancelDebounce();
             _saver.Message = null;
             _saver.Save();
-            _saver.RemoveSource(textBlockKey, noteId);
+            _saver.RemoveSource(blockKey, noteId);
         }
         finally
         {

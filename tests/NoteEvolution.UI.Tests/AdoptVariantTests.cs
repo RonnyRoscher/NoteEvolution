@@ -43,13 +43,47 @@ public class AdoptVariantTests : UiTestContext
         "\t- Unterpunkt, der länger als eine Zeile ist und deshalb eigene Knöpfe zum Übernehmen bekommt\n" +
         $"\t  id:: {ChildId}\n";
 
-    /// <summary>The note's file after it was adopted into the text block with the id <paramref name="textBlockId"/>.</summary>
-    private static string NoteUsedIn(Guid? textBlockId) =>
+    /// <summary>
+    /// The note's file after it was adopted into the book block with the id <paramref name="textBlockId"/>: the note
+    /// block's usage takes its own text, the sub-point has its own entry for its detail (<see cref="NewDetail"/>).
+    /// </summary>
+    private string NoteUsedPerBlock(Guid? textBlockId) =>
         "- Eine Notiz\n" +
         $"  id:: {NoteId}\n" +
         $"  used-in:: [[Buch - Alpha]] (({textBlockId}))\n" +
+        "  used-without-children:: true\n" +
         "\t- Unterpunkt, der länger als eine Zeile ist und deshalb eigene Knöpfe zum Übernehmen bekommt\n" +
-        $"\t  id:: {ChildId}\n";
+        $"\t  id:: {ChildId}\n" +
+        $"\t  used-in:: [[Buch - Alpha]] (({DetailId}))\n";
+
+    /// <summary>The note's sub-point in the book, as a detail of the new text block adopted from the note.</summary>
+    private Guid? DetailId => Book.Page.AllBlocks().Single(b => b.Content.StartsWith("Unterpunkt", StringComparison.Ordinal)).Id;
+
+    private const string SubPoint = "Unterpunkt, der länger als eine Zeile ist und deshalb eigene Knöpfe zum Übernehmen bekommt";
+
+    /// <summary>The lines of the adopted sub-point as a detail of a new text block: linked to its own note block, with the dates of a new block.</summary>
+    private string[] NewDetailLines() => NewBlockLines("\t\t", SubPoint, DetailId, ChildId, relevant: false);
+
+    /// <summary>
+    /// The lines of a block an adoption inserted at <paramref name="indent"/>: linked to the note block
+    /// <paramref name="sourceId"/>, <c>status:: relevant</c> if it is a new top-level detail, with the dates of a new block.
+    /// </summary>
+    private string[] NewBlockLines(string indent, string content, Guid? id, string sourceId, bool relevant) =>
+    [
+        $"{indent}- {content}",
+        $"{indent}  id:: {id}",
+        $"{indent}  source:: (({sourceId}))",
+        .. relevant ? [$"{indent}  status:: relevant"] : Array.Empty<string>(),
+        $"{indent}  created:: {Stamp}",
+        $"{indent}  updated:: {Stamp}",
+    ];
+
+    private static string Joined(IEnumerable<string> lines) => string.Concat(lines.Select(line => line + "\n"));
+
+    private Guid? IdOf(string content) => Book.Page.AllBlocks().Single(b => b.Content == content).Id;
+
+    /// <summary>The text of <see cref="NewDetailLines"/>.</summary>
+    private string NewDetail() => string.Concat(NewDetailLines().Select(line => line + "\n"));
 
     private readonly TestVault _vault = TestVault.Create((BookPath, BookText), (NotePath, NoteText));
 
@@ -126,13 +160,14 @@ public class AdoptVariantTests : UiTestContext
         var message = await AdoptAsync(AdoptVariant.AtCursor);
 
         Assert.Null(message);
+        var subPoint = NewBlockLines("\t\t", SubPoint, DetailId, ChildId, relevant: true);
         AssertBook(
             BookText.Replace(
                 "\t- Erster Text\n" + $"\t  id:: {ErsterId}\n",
-                "\t- Erster Eine NotizText\n" + $"\t  id:: {ErsterId}\n" + $"\t  source:: (({NoteId}))\n\t  updated:: {Stamp}\n" + "\t\t- Unterpunkt, der länger als eine Zeile ist und deshalb eigene Knöpfe zum Übernehmen bekommt\n" + "\t\t  status:: relevant\n"),
+                "\t- Erster Eine NotizText\n" + $"\t  id:: {ErsterId}\n" + $"\t  source:: (({NoteId}))\n\t  updated:: {Stamp}\n" + Joined(subPoint)),
             ["\t- Erster Text"],
-            ["\t- Erster Eine NotizText", $"\t  source:: (({NoteId}))", $"\t  updated:: {Stamp}", "\t\t- Unterpunkt, der länger als eine Zeile ist und deshalb eigene Knöpfe zum Übernehmen bekommt", "\t\t  status:: relevant"]);
-        Assert.Equal(NoteUsedIn(Guid.Parse(ErsterId)), _vault.Read(NotePath));
+            ["\t- Erster Eine NotizText", $"\t  source:: (({NoteId}))", $"\t  updated:: {Stamp}", .. subPoint]);
+        Assert.Equal(NoteUsedPerBlock(Guid.Parse(ErsterId)), _vault.Read(NotePath));
         AssertRevealed("Erster Eine NotizText", ElementKind.TextBlock);
     }
 
@@ -149,10 +184,10 @@ public class AdoptVariantTests : UiTestContext
         AssertBook(
             BookText.Replace(
                 "\t- Zweiter Text\n",
-                "\t- Eine Notiz\n" + $"\t  id:: {id}\n" + $"\t  source:: (({NoteId}))\n" + "\t  status:: relevant\n" + $"\t  created:: {Stamp}\n\t  updated:: {Stamp}\n" + "\t\t- Unterpunkt, der länger als eine Zeile ist und deshalb eigene Knöpfe zum Übernehmen bekommt\n" + "\t- Zweiter Text\n"),
+                "\t- Eine Notiz\n" + $"\t  id:: {id}\n" + $"\t  source:: (({NoteId}))\n" + "\t  status:: relevant\n" + $"\t  created:: {Stamp}\n\t  updated:: {Stamp}\n" + NewDetail() + "\t- Zweiter Text\n"),
             [],
-            ["\t- Eine Notiz", $"\t  id:: {id}", $"\t  source:: (({NoteId}))", "\t  status:: relevant", $"\t  created:: {Stamp}", $"\t  updated:: {Stamp}", "\t\t- Unterpunkt, der länger als eine Zeile ist und deshalb eigene Knöpfe zum Übernehmen bekommt"]);
-        Assert.Equal(NoteUsedIn(id), _vault.Read(NotePath));
+            ["\t- Eine Notiz", $"\t  id:: {id}", $"\t  source:: (({NoteId}))", "\t  status:: relevant", $"\t  created:: {Stamp}", $"\t  updated:: {Stamp}", .. NewDetailLines()]);
+        Assert.Equal(NoteUsedPerBlock(id), _vault.Read(NotePath));
     }
 
     [Fact]
@@ -163,13 +198,17 @@ public class AdoptVariantTests : UiTestContext
 
         Assert.Null(await AdoptAsync(AdoptVariant.Below));
 
+        // The new detail carries the note block's source, the text block none.
+        string[] adopted =
+        [
+            .. NewBlockLines("\t\t", "Eine Notiz", IdOf("Eine Notiz"), NoteId, relevant: true),
+            .. NewBlockLines("\t\t\t", SubPoint, DetailId, ChildId, relevant: false),
+        ];
         AssertBook(
-            BookText.Replace(
-                $"\t  id:: {ErsterId}\n",
-                $"\t  id:: {ErsterId}\n" + $"\t  source:: (({NoteId}))\n\t  updated:: {Stamp}\n" + "\t\t- Eine Notiz\n" + "\t\t  status:: relevant\n" + "\t\t\t- Unterpunkt, der länger als eine Zeile ist und deshalb eigene Knöpfe zum Übernehmen bekommt\n"),
+            BookText.Replace($"\t  id:: {ErsterId}\n", $"\t  id:: {ErsterId}\n" + $"\t  updated:: {Stamp}\n" + Joined(adopted)),
             [],
-            [$"\t  source:: (({NoteId}))", $"\t  updated:: {Stamp}", "\t\t- Eine Notiz", "\t\t  status:: relevant", "\t\t\t- Unterpunkt, der länger als eine Zeile ist und deshalb eigene Knöpfe zum Übernehmen bekommt"]);
-        Assert.Equal(NoteUsedIn(Guid.Parse(ErsterId)), _vault.Read(NotePath));
+            [$"\t  updated:: {Stamp}", .. adopted]);
+        Assert.Equal(NoteUsedPerBlock(IdOf("Eine Notiz")), _vault.Read(NotePath));
         AssertRevealed("Erster Text", ElementKind.TextBlock);
     }
 
@@ -181,13 +220,18 @@ public class AdoptVariantTests : UiTestContext
 
         Assert.Null(await AdoptAsync(AdoptVariant.After));
 
+        string[] adopted =
+        [
+            .. NewBlockLines("\t\t", "Eine Notiz", IdOf("Eine Notiz"), NoteId, relevant: true),
+            .. NewBlockLines("\t\t\t", SubPoint, DetailId, ChildId, relevant: false),
+        ];
         AssertBook(
             BookText
-                .Replace($"\t  id:: {ErsterId}\n", $"\t  id:: {ErsterId}\n" + $"\t  source:: (({NoteId}))\n\t  updated:: {Stamp}\n")
-                .Replace("\t\t- Zweites Detail\n", "\t\t- Eine Notiz\n\t\t  status:: relevant\n\t\t\t- Unterpunkt, der länger als eine Zeile ist und deshalb eigene Knöpfe zum Übernehmen bekommt\n\t\t- Zweites Detail\n"),
+                .Replace($"\t  id:: {ErsterId}\n", $"\t  id:: {ErsterId}\n" + $"\t  updated:: {Stamp}\n")
+                .Replace("\t\t- Zweites Detail\n", Joined(adopted) + "\t\t- Zweites Detail\n"),
             [],
-            [$"\t  source:: (({NoteId}))", $"\t  updated:: {Stamp}", "\t\t- Eine Notiz", "\t\t  status:: relevant", "\t\t\t- Unterpunkt, der länger als eine Zeile ist und deshalb eigene Knöpfe zum Übernehmen bekommt"]);
-        Assert.Equal(NoteUsedIn(Guid.Parse(ErsterId)), _vault.Read(NotePath));
+            [$"\t  updated:: {Stamp}", .. adopted]);
+        Assert.Equal(NoteUsedPerBlock(IdOf("Eine Notiz")), _vault.Read(NotePath));
         AssertRevealed("Ein Detail", ElementKind.Detail);
     }
 
@@ -199,13 +243,18 @@ public class AdoptVariantTests : UiTestContext
 
         Assert.Null(await AdoptAsync(AdoptVariant.Below));
 
+        string[] adopted =
+        [
+            .. NewBlockLines("\t\t\t", "Eine Notiz", IdOf("Eine Notiz"), NoteId, relevant: true),
+            .. NewBlockLines("\t\t\t\t", SubPoint, DetailId, ChildId, relevant: false),
+        ];
         AssertBook(
             BookText
-                .Replace($"\t  id:: {ErsterId}\n", $"\t  id:: {ErsterId}\n" + $"\t  source:: (({NoteId}))\n\t  updated:: {Stamp}\n")
-                .Replace("\t\t\t- Tiefes Detail\n", "\t\t\t- Eine Notiz\n\t\t\t  status:: relevant\n\t\t\t\t- Unterpunkt, der länger als eine Zeile ist und deshalb eigene Knöpfe zum Übernehmen bekommt\n\t\t\t- Tiefes Detail\n"),
+                .Replace($"\t  id:: {ErsterId}\n", $"\t  id:: {ErsterId}\n" + $"\t  updated:: {Stamp}\n")
+                .Replace("\t\t\t- Tiefes Detail\n", Joined(adopted) + "\t\t\t- Tiefes Detail\n"),
             [],
-            [$"\t  source:: (({NoteId}))", $"\t  updated:: {Stamp}", "\t\t\t- Eine Notiz", "\t\t\t  status:: relevant", "\t\t\t\t- Unterpunkt, der länger als eine Zeile ist und deshalb eigene Knöpfe zum Übernehmen bekommt"]);
-        Assert.Equal(NoteUsedIn(Guid.Parse(ErsterId)), _vault.Read(NotePath));
+            [$"\t  updated:: {Stamp}", .. adopted]);
+        Assert.Equal(NoteUsedPerBlock(IdOf("Eine Notiz")), _vault.Read(NotePath));
         AssertRevealed("Ein Detail", ElementKind.Detail);
     }
 
@@ -217,12 +266,17 @@ public class AdoptVariantTests : UiTestContext
 
         Assert.Null(await AdoptAsync(AdoptVariant.AtCursor));
 
+        // The detail at the cursor carries the note block's source, the text block none.
+        var elementId = IdOf("Ein Eine NotizDetail");
+        string[] element = ["\t\t- Ein Eine NotizDetail", $"\t\t  id:: {elementId}", $"\t\t  source:: (({NoteId}))"];
+        var subPoint = NewBlockLines("\t\t\t", SubPoint, DetailId, ChildId, relevant: true);
         AssertBook(
             BookText
-                .Replace($"\t  id:: {ErsterId}\n", $"\t  id:: {ErsterId}\n" + $"\t  source:: (({NoteId}))\n\t  updated:: {Stamp}\n")
-                .Replace("\t\t- Ein Detail\n", "\t\t- Ein Eine NotizDetail\n\t\t\t- Unterpunkt, der länger als eine Zeile ist und deshalb eigene Knöpfe zum Übernehmen bekommt\n\t\t\t  status:: relevant\n"),
+                .Replace($"\t  id:: {ErsterId}\n", $"\t  id:: {ErsterId}\n" + $"\t  updated:: {Stamp}\n")
+                .Replace("\t\t- Ein Detail\n", Joined(element) + Joined(subPoint)),
             ["\t\t- Ein Detail"],
-            [$"\t  source:: (({NoteId}))", $"\t  updated:: {Stamp}", "\t\t- Ein Eine NotizDetail", "\t\t\t- Unterpunkt, der länger als eine Zeile ist und deshalb eigene Knöpfe zum Übernehmen bekommt", "\t\t\t  status:: relevant"]);
+            [$"\t  updated:: {Stamp}", .. element, .. subPoint]);
+        Assert.Equal(NoteUsedPerBlock(elementId), _vault.Read(NotePath));
         AssertRevealed("Ein Eine NotizDetail", ElementKind.Detail);
     }
 
@@ -243,9 +297,9 @@ public class AdoptVariantTests : UiTestContext
         AssertBook(
             BookText.Replace(
                 "- # Zwei\n",
-                "- # Zwei\n" + "\t- Eine Notiz\n" + $"\t  id:: {id}\n" + $"\t  source:: (({NoteId}))\n" + "\t  status:: relevant\n" + $"\t  created:: {Stamp}\n\t  updated:: {Stamp}\n" + "\t\t- Unterpunkt, der länger als eine Zeile ist und deshalb eigene Knöpfe zum Übernehmen bekommt\n"),
+                "- # Zwei\n" + "\t- Eine Notiz\n" + $"\t  id:: {id}\n" + $"\t  source:: (({NoteId}))\n" + "\t  status:: relevant\n" + $"\t  created:: {Stamp}\n\t  updated:: {Stamp}\n" + NewDetail()),
             [],
-            ["\t- Eine Notiz", $"\t  id:: {id}", $"\t  source:: (({NoteId}))", "\t  status:: relevant", $"\t  created:: {Stamp}", $"\t  updated:: {Stamp}", "\t\t- Unterpunkt, der länger als eine Zeile ist und deshalb eigene Knöpfe zum Übernehmen bekommt"]);
+            ["\t- Eine Notiz", $"\t  id:: {id}", $"\t  source:: (({NoteId}))", "\t  status:: relevant", $"\t  created:: {Stamp}", $"\t  updated:: {Stamp}", .. NewDetailLines()]);
     }
 
     [Theory]
@@ -263,9 +317,9 @@ public class AdoptVariantTests : UiTestContext
         var key = AssertRevealedNewTextBlock("Eine Notiz");
         var id = Book.FindTextBlock(key)!.Block.Id;
         AssertBook(
-            BookText + "\t- Eine Notiz\n" + $"\t  id:: {id}\n" + $"\t  source:: (({NoteId}))\n" + "\t  status:: relevant\n" + $"\t  created:: {Stamp}\n\t  updated:: {Stamp}\n" + "\t\t- Unterpunkt, der länger als eine Zeile ist und deshalb eigene Knöpfe zum Übernehmen bekommt\n",
+            BookText + "\t- Eine Notiz\n" + $"\t  id:: {id}\n" + $"\t  source:: (({NoteId}))\n" + "\t  status:: relevant\n" + $"\t  created:: {Stamp}\n\t  updated:: {Stamp}\n" + NewDetail(),
             [],
-            ["\t- Eine Notiz", $"\t  id:: {id}", $"\t  source:: (({NoteId}))", "\t  status:: relevant", $"\t  created:: {Stamp}", $"\t  updated:: {Stamp}", "\t\t- Unterpunkt, der länger als eine Zeile ist und deshalb eigene Knöpfe zum Übernehmen bekommt"]);
+            ["\t- Eine Notiz", $"\t  id:: {id}", $"\t  source:: (({NoteId}))", "\t  status:: relevant", $"\t  created:: {Stamp}", $"\t  updated:: {Stamp}", .. NewDetailLines()]);
     }
 
     [Fact]
@@ -284,9 +338,9 @@ public class AdoptVariantTests : UiTestContext
         AssertBook(
             BookText.Replace(
                 "\t- Zweiter Text\n",
-                "\t- Eine Notiz\n" + $"\t  id:: {id}\n" + $"\t  source:: (({NoteId}))\n" + "\t  status:: relevant\n" + $"\t  created:: {Stamp}\n\t  updated:: {Stamp}\n" + "\t\t- Unterpunkt, der länger als eine Zeile ist und deshalb eigene Knöpfe zum Übernehmen bekommt\n" + "\t- Zweiter Text\n"),
+                "\t- Eine Notiz\n" + $"\t  id:: {id}\n" + $"\t  source:: (({NoteId}))\n" + "\t  status:: relevant\n" + $"\t  created:: {Stamp}\n\t  updated:: {Stamp}\n" + NewDetail() + "\t- Zweiter Text\n"),
             [],
-            ["\t- Eine Notiz", $"\t  id:: {id}", $"\t  source:: (({NoteId}))", "\t  status:: relevant", $"\t  created:: {Stamp}", $"\t  updated:: {Stamp}", "\t\t- Unterpunkt, der länger als eine Zeile ist und deshalb eigene Knöpfe zum Übernehmen bekommt"]);
+            ["\t- Eine Notiz", $"\t  id:: {id}", $"\t  source:: (({NoteId}))", "\t  status:: relevant", $"\t  created:: {Stamp}", $"\t  updated:: {Stamp}", .. NewDetailLines()]);
     }
 
     [Fact]

@@ -121,6 +121,55 @@ public class BookModelTests
         Assert.Equal(["vorher", "nachher"], chapter.TextBlocks.Select(t => t.Text));
     }
 
+    private const string IdC = "92cc13bb-6d3f-4a0c-9e5b-3c4d5e6f7082";
+    private const string TextId = "6650a1c2-1b7e-4c1d-9a0f-2b3c4d5e6f70";
+    private const string DetailId = "6650a1c2-1b7e-4c1d-9a0f-2b3c4d5e6f71";
+
+    private const string BookWithDetails =
+        "type:: book\n\n" +
+        "- # Kapitel\n" +
+        "\t- Text\n" +
+        $"\t  id:: {TextId}\n" +
+        $"\t  source:: (({IdA}))\n" +
+        "\t\t- Detail eins\n" +
+        $"\t\t  id:: {DetailId}\n" +
+        $"\t\t  source:: (({IdB})), (({IdA}))\n" +
+        "\t\t\t- Detail tief\n" +
+        $"\t\t\t  source:: (({IdC}))\n" +
+        "\t\t- Detail ohne\n";
+
+    [Fact]
+    public void TextBlock_Links_IncludeDetails()
+    {
+        var tb = Book.Load(Parse(BookWithDetails)).Root.Children.Single().TextBlocks.Single();
+
+        Assert.Equal([Guid.Parse(IdA)], tb.Sources);
+        Assert.Equal(
+            [
+                (tb.Key, (Guid?)Guid.Parse(TextId), Guid.Parse(IdA)),
+                (tb.Paragraphs[0].Block.Key, Guid.Parse(DetailId), Guid.Parse(IdB)),
+                (tb.Paragraphs[0].Block.Key, Guid.Parse(DetailId), Guid.Parse(IdA)),
+                (tb.Paragraphs[1].Block.Key, null, Guid.Parse(IdC)),
+            ],
+            tb.Links.Select(l => (l.BlockKey, l.BlockId, l.NoteId)));
+    }
+
+    [Fact]
+    public void AllSources_Distinct()
+    {
+        var tb = Book.Load(Parse(BookWithDetails)).Root.Children.Single().TextBlocks.Single();
+
+        Assert.Equal([Guid.Parse(IdA), Guid.Parse(IdB), Guid.Parse(IdC)], tb.AllSources);
+    }
+
+    [Fact]
+    public void OutlineNode_SourceCount_CountsDetailSources()
+    {
+        var b = Book.Load(Parse(BookWithDetails));
+
+        Assert.Equal(3, b.Root.Children.Single().SourceCount);
+    }
+
     [Fact]
     public void WordCount_ExcludesNotes_SourceCountDistinct()
     {

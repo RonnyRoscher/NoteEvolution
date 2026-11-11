@@ -803,15 +803,15 @@
     }
 
     /// <summary>
-    /// Whether the text block <paramref name="textBlockKey"/> of <paramref name="list"/> already names
-    /// <paramref name="block"/> in its <c>source::</c>: read from the block's current id (it gets one on its first
+    /// Whether the text block <paramref name="textBlockKey"/> of <paramref name="list"/> or one of its details already
+    /// names <paramref name="block"/> in its <c>source::</c> (<see cref="TextBlock.AllSources"/>, spec 4.1): read from the block's current id (it gets one on its first
     /// adoption) and the current book, while that is the list's book.
     /// </summary>
     private bool IsUsed(WhereToList list, Block block, Guid textBlockKey) =>
         block.Id is { } id
         && State.CurrentBook is { } book
         && string.Equals(book.LinkName, list.BookName, StringComparison.OrdinalIgnoreCase)
-        && book.FindTextBlock(textBlockKey)?.Sources.Contains(id) == true;
+        && book.FindTextBlock(textBlockKey)?.AllSources.Contains(id) == true;
 
     /// <summary>
     /// The "Wohin damit?" list of <paramref name="block"/>: the busy hint while it searches, then its hits (with topics:

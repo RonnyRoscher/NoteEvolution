@@ -47,7 +47,7 @@ public class AdoptWithoutChildrenTests
     }
 
     [Fact]
-    public void WithoutChildren_SubPointsStayUnused_WithChildrenTheyAreUsed()
+    public void WithoutChildren_SubPointsStayUnused_WithChildrenTheyAreUsedThroughTheirOwnEntries()
     {
         using var s = new LinkSetup(Book, Journal);
         var textKey = s.Text("Hallo Welt").Key;
@@ -67,19 +67,20 @@ public class AdoptWithoutChildrenTests
         Assert.False(Used("Unter B"));
         Assert.False(Used("Tiefer"));
 
-        // Adopted with its sub-points as well, the mark goes: now they are used through it.
+        // Adopted with its sub-points as well, each copied sub-point gets an entry of its own: the main point's usage
+        // still takes its own text alone, so the marks stay (on it and on "Unter A", which has a sub-point).
         s.Links.Adopt(s.Book, s.Note("Kern #notiz").Key, new InsertPosition.After(textKey));
 
-        Assert.Null(s.Note("Kern #notiz").GetProperty("used-without-children"));
+        Assert.Equal("true", s.Note("Kern #notiz").GetProperty("used-without-children"));
         Assert.True(Used("Unter B"));
         Assert.True(Used("Tiefer"));
-        Assert.Equal(1, CountOf(s.ReadJournal(), "used-without-children::"));
+        Assert.Equal(2, CountOf(s.ReadJournal(), "used-without-children::"));
 
-        // Adopting it alone again does not bring the mark back: an earlier usage took its sub-points.
+        // Adopting it alone again keeps the marks; the sub-points stay used through their own entries.
         s.Links.Adopt(s.Book, s.Note("Kern #notiz").Key, new InsertPosition.After(textKey), includeChildren: false);
 
         Assert.True(Used("Unter B"));
-        Assert.Equal(1, CountOf(s.ReadJournal(), "used-without-children::"));
+        Assert.Equal(2, CountOf(s.ReadJournal(), "used-without-children::"));
     }
 
     [Fact]
@@ -131,13 +132,16 @@ public class AdoptWithoutChildrenTests
     }
 
     [Fact]
-    public void WithChildren_NoMark()
+    public void WithChildren_EveryCopiedBlockWithSubPointsIsMarked()
     {
         using var s = new LinkSetup(Book, Journal);
 
         s.Links.Adopt(s.Book, s.Note("Kern #notiz").Key, new InsertPosition.After(s.Text("Hallo Welt").Key));
 
-        Assert.DoesNotContain("used-without-children::", s.ReadJournal());
+        // Each usage takes its block's own text; the sub-points have entries of their own.
+        Assert.Equal("true", s.Note("Kern #notiz").GetProperty("used-without-children"));
+        Assert.Equal("true", s.Note("Unter A").GetProperty("used-without-children"));
+        Assert.Equal(2, CountOf(s.ReadJournal(), "used-without-children::"));
     }
 
     [Fact]
@@ -164,10 +168,15 @@ public class AdoptWithoutChildrenTests
         var r = s.Links.AdoptInto(s.Book, s.Note("Kern #notiz").Key, new IntoPosition.AfterDetail(detailKey), includeChildren: false);
 
         var book = s.ReadBook();
-        Assert.Contains("\t\t- Erstes Detail\n\t\t- Kern\n\t\t  status:: relevant\n\t- Nächster Textblock\n", book);
+        var detailId = s.Book.Page.AllBlocks().Single(b => b.Content == "Kern").Id;
+        Assert.Contains(
+            $"\t\t- Erstes Detail\n\t\t- Kern\n\t\t  id:: {detailId}\n\t\t  source:: (({s.Note("Kern #notiz").Id}))\n" +
+            "\t\t  status:: relevant\n\t- Nächster Textblock\n",
+            book);
         Assert.DoesNotContain("Unter A", book);
         Assert.DoesNotContain("Tiefer", book);
-        Assert.Contains($"used-in:: [[Buch - Test]] (({r.TextBlockId}))", s.ReadJournal());
+        Assert.Contains($"\t  id:: {r.TextBlockId}\n", book);
+        Assert.Contains($"used-in:: [[Buch - Test]] (({detailId}))", s.ReadJournal());
         Assert.Equal(1, CountOf(s.ReadJournal(), "used-in::"));
 
         s.Undo.Undo();
@@ -255,9 +264,12 @@ public class AdoptWithoutChildrenTests
         Assert.Equal(!hideUsed, book.Contains("Unter A"));
         Assert.Equal(!hideUsed, book.Contains("Tiefer"));
 
-        // The main point is used with what it took along: the hidden sub-point keeps its own usage only.
-        Assert.DoesNotContain("used-without-children::", s.ReadJournal());
-        Assert.Equal(1, CountOf(s.ReadJournal(), "used-in:: [[Buch - Anders]]\n\t\t- Tiefer"));
+        // The main point's usage takes its own text (marked); the hidden sub-point keeps its own usage only, a copied
+        // one gets an entry of this book as well (unmarked: its older usage took "Tiefer" along).
+        Assert.Equal(1, CountOf(s.ReadJournal(), "used-without-children::"));
+        Assert.Equal("true", s.Note("Kern #notiz").GetProperty("used-without-children"));
+        Assert.Equal(hideUsed ? 1 : 0, CountOf(s.ReadJournal(), "used-in:: [[Buch - Anders]]\n\t\t- Tiefer"));
+        Assert.Equal(!hideUsed, s.ReadJournal().Contains("used-in:: [[Buch - Anders]], [[Buch - Test]] (("));
     }
 
     [Theory]
@@ -308,22 +320,36 @@ public class AdoptWithoutChildrenTests
         using var s = new LinkSetup(Book, JournalWithUsedSubPoint);
         var textKey = s.Text("Hallo Welt").Key;
 
-        // Without sub-points, and with its only sub-point hidden: alone is the same as with its subtree.
+        // Without sub-points: alone is the same as with its subtree.
         s.Links.Adopt(s.Book, s.Note("Unter B").Key, new InsertPosition.After(textKey), includeChildren: false);
-        s.Links.Adopt(s.Book, s.Note("Zweite Notiz").Key, new InsertPosition.After(textKey), includeChildren: false, hideUsed: true);
 
         Assert.DoesNotContain("used-without-children::", s.ReadJournal());
-        Assert.Equal(2, CountOf(s.ReadJournal(), "[[Buch - Test]]"));
+        Assert.Equal(1, CountOf(s.ReadJournal(), "[[Buch - Test]]"));
     }
 
     [Fact]
-    public void Undo_OwnOnlyThenFull_UndoingTheFullOne_BringsTheMarkBack()
+    public void WithoutChildren_OnlySubPointHidden_GetsTheMark()
+    {
+        using var s = new LinkSetup(Book, JournalWithUsedSubPoint);
+        var textKey = s.Text("Hallo Welt").Key;
+
+        // Its only sub-point is hidden, but it is a sub-point all the same: the usage takes the block alone (spec 3.3),
+        // so the sub-point does not inherit it and is unused once its own usage goes.
+        s.Links.Adopt(s.Book, s.Note("Zweite Notiz").Key, new InsertPosition.After(textKey), hideUsed: true);
+
+        Assert.Equal("true", s.Note("Zweite Notiz").GetProperty("used-without-children"));
+        s.Note("Benutzt").RemoveProperty("used-in");
+        Assert.False(NoteEvolution.Core.Vaults.NoteBlock.IsUsedBlock(s.Note("Benutzt")));
+    }
+
+    [Fact]
+    public void Undo_OwnOnlyThenFull_UndoingTheFullOne_KeepsTheMark()
     {
         using var s = new LinkSetup(Book, Journal);
         var textKey = s.Text("Hallo Welt").Key;
         var first = s.Links.Adopt(s.Book, s.Note("Kern #notiz").Key, new InsertPosition.After(textKey), includeChildren: false);
         s.Links.Adopt(s.Book, s.Note("Kern #notiz").Key, new InsertPosition.After(textKey));
-        Assert.DoesNotContain("used-without-children::", s.ReadJournal());
+        Assert.Equal("true", s.Note("Kern #notiz").GetProperty("used-without-children"));
 
         s.Undo.Undo();
 
@@ -356,7 +382,7 @@ public class AdoptWithoutChildrenTests
         s.Links.Adopt(s.Book, s.Note("Kern #notiz").Key, new InsertPosition.After(s.Text("Hallo Welt").Key));
         var ownOnly = s.Links.AdoptInto(
             s.Book, s.Note("Kern #notiz").Key, new IntoPosition.FirstChild(s.Text("Nächster Textblock").Key), includeChildren: false);
-        Assert.DoesNotContain("used-without-children::", s.ReadJournal());
+        Assert.Equal("true", s.Note("Kern #notiz").GetProperty("used-without-children"));
 
         // The text block changed since: taking back the own-only adoption is refused, its usage stays.
         s.Text("Nächster Textblock").Block.SetContent("Nächster Textblock, geändert");
@@ -364,21 +390,24 @@ public class AdoptWithoutChildrenTests
 
         s.Undo.Undo();
 
+        // The own-only usage is the new detail's (the only "Kern" left in the book).
         var journal = s.ReadJournal();
-        Assert.Contains($"  used-in:: [[Buch - Test]] (({ownOnly.TextBlockId}))\n  used-without-children:: true\n", journal);
+        var detailId = s.Book.Page.AllBlocks().Single(b => b.Content == "Kern").Id;
+        Assert.Contains($"  used-in:: [[Buch - Test]] (({detailId}))\n  used-without-children:: true\n", journal);
         Assert.False(NoteEvolution.Core.Vaults.NoteBlock.IsUsedBlock(s.Note("Unter B")));
     }
 
     [Fact]
-    public void Undo_SubPointAloneThenNoteAsHeading_TheSubPointGetsItsMarkBack()
+    public void Undo_SubPointAloneThenNoteAsHeading_TheSubPointKeepsItsMark()
     {
         using var s = new LinkSetup(Book, Journal);
         s.Links.Adopt(s.Book, s.Note("Unter A").Key, new InsertPosition.After(s.Text("Hallo Welt").Key), includeChildren: false);
         Assert.False(NoteEvolution.Core.Vaults.NoteBlock.IsUsedBlock(s.Note("Tiefer")));
 
-        // As a heading the sub-point goes with its own sub-points: the mark goes.
+        // As a heading the sub-point's own sub-points get entries of their own: the mark stays, and they are used.
         s.Links.AdoptAsHeading(s.Book, s.Note("Kern #notiz").Key, Guid.Empty, asSubheading: false, "(ohne Titel)");
-        Assert.DoesNotContain("used-without-children::", s.ReadJournal());
+        Assert.Equal("true", s.Note("Unter A").GetProperty("used-without-children"));
+        Assert.NotNull(s.Note("Tiefer").GetProperty("used-in"));
         Assert.True(NoteEvolution.Core.Vaults.NoteBlock.IsUsedBlock(s.Note("Tiefer")));
 
         s.Undo.Undo();
@@ -403,11 +432,12 @@ public class AdoptWithoutChildrenTests
     }
 
     [Fact]
-    public void UndoDelete_NoteChangedMeanwhile_AFullUsageComesBackWithoutTheMark()
+    public void UndoDelete_NoteChangedMeanwhile_AFullAdoptionComesBackPerBlock()
     {
         using var s = new LinkSetup(Book, Journal);
         var full = s.Links.Adopt(s.Book, s.Note("Kern #notiz").Key, new InsertPosition.After(s.Text("Hallo Welt").Key));
         s.Links.DeleteTextBlock(s.Book, full.TextBlockKey);
+        Assert.DoesNotContain("used-in::", s.ReadJournal());
 
         // Adopted alone meanwhile (its undo refused, so it stays): it has the mark while it is the only usage.
         s.Links.AdoptInto(s.Book, s.Note("Kern #notiz").Key, new IntoPosition.FirstChild(s.Text("Nächster Textblock").Key), includeChildren: false);
@@ -417,13 +447,15 @@ public class AdoptWithoutChildrenTests
 
         s.Undo.Undo();
 
-        Assert.Equal(2, CountOf(s.ReadJournal(), "[[Buch - Test]]"));
-        Assert.DoesNotContain("used-without-children::", s.ReadJournal());
+        // The main point's usage of its own text comes back with the mark; the sub-points get their own entries back.
+        Assert.Equal(5, CountOf(s.ReadJournal(), "[[Buch - Test]]"));
+        Assert.Equal("true", s.Note("Kern #notiz").GetProperty("used-without-children"));
+        Assert.Equal("true", s.Note("Unter A").GetProperty("used-without-children"));
         Assert.True(NoteEvolution.Core.Vaults.NoteBlock.IsUsedBlock(s.Note("Unter B")));
     }
 
     [Fact]
-    public void Pending_AFullAdoption_IsReplayedWithoutTheOldMark()
+    public void Pending_AFullAdoption_IsReplayedPerBlock_WithTheMarks()
     {
         using var s = new LinkSetup(Book, Journal);
         var textKey = s.Text("Hallo Welt").Key;
@@ -433,15 +465,16 @@ public class AdoptWithoutChildrenTests
 
         var full = s.Links.Adopt(s.Book, s.Note("Kern #notiz").Key, new InsertPosition.After(textKey));
 
+        // One open add per copied block; the blocks with sub-points are taken alone.
         Assert.True(full.NoteUpdatePending);
-        Assert.False(Assert.Single(s.Pending.Load()).WithoutChildren);
+        Assert.Equal([true, true, false, false], s.Pending.Load().Select(update => update.WithoutChildren));
         s.Reopen();
         Assert.Contains("used-without-children:: true", s.ReadJournal());
 
-        Assert.Equal(1, s.Links.RetryPending());
+        Assert.Equal(4, s.Links.RetryPending());
 
-        Assert.Equal(2, CountOf(s.ReadJournal(), "[[Buch - Test]]"));
-        Assert.DoesNotContain("used-without-children::", s.ReadJournal());
+        Assert.Equal(5, CountOf(s.ReadJournal(), "[[Buch - Test]]"));
+        Assert.Equal(2, CountOf(s.ReadJournal(), "used-without-children:: true"));
     }
 
     [Fact]

@@ -56,6 +56,19 @@ public class LinkCheckerTests
     }
 
     [Fact]
+    public void LinkChecker_LinkedDetail_IsValid()
+    {
+        var detail = $"\t\t- Detail\n\t\t  id:: {Block2}\n\t\t  source:: (({Note1}))\n";
+        using var s = new LinkSetup(BookWith("\t- Text\n" + detail), Journal($"[[Buch - Test]] (({Block2}))"));
+
+        var report = Checker(s).Analyze();
+
+        Assert.Empty(report.Missing);
+        Assert.Empty(report.Orphans);
+        Assert.Empty(report.Broken);
+    }
+
+    [Fact]
     public void FixMissing_PageLinkWithoutBlock_IsReplacedByPreciseEntry()
     {
         using var s = new LinkSetup(
