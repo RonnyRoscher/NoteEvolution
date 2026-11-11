@@ -10,6 +10,21 @@ namespace NoteEvolution.UI.State;
 internal enum RecheckReason { None, NoteText, SectionGone, NewCandidate, Rebuilt, NoBasis, Model }
 
 /// <summary>
+/// Why a check is made again, for the log only: the rule, the section the earlier stored result had chosen (null: none
+/// read) and, for <see cref="RecheckReason.NewCandidate"/>, the note and the new paths.
+/// </summary>
+internal sealed record Recheck(RecheckReason Reason, EarlierChoice? Earlier, NewCandidates? Candidates = null);
+
+/// <summary>
+/// The section an earlier stored result had chosen, by the paths it may have: its stored path, or for an older result
+/// without one today's sections with its summary (several, or none when it is not known any more), and its place text.
+/// </summary>
+internal sealed record EarlierChoice(IReadOnlyList<string> Paths, string? Place);
+
+/// <summary>The note (its identity) whose check is made again, and the paths that may beat its chosen section.</summary>
+internal sealed record NewCandidates(string Note, IReadOnlyList<string> Paths);
+
+/// <summary>
 /// Decides whether a note's latest placement still holds for a changed request (spec 4): only another form of the
 /// request (<see cref="PlacementBasis.Request"/>; the chat model is for the caller to compare), a changed note text, a
 /// chosen section that is gone, a new candidate that may beat the chosen one, or a rebuilt book check it again. Other
@@ -24,8 +39,18 @@ internal static class PlacementKeep
     /// <paramref name="prompt"/> (today's request in <paramref name="book"/>), by the first rule that holds. The stored
     /// sections are read with today's names (<paramref name="names"/>; none: by their keys and paths only).
     /// </summary>
-    public static RecheckReason Decide(PlacementVerdict latest, PlacementCheckPrompt prompt, Book book, SectionNames? names = null)
+    public static RecheckReason Decide(PlacementVerdict latest, PlacementCheckPrompt prompt, Book book, SectionNames? names = null) =>
+        Decide(latest, prompt, book, names, out _);
+
+    /// <summary>
+    /// <see cref="Decide(PlacementVerdict, PlacementCheckPrompt, Book, SectionNames?)"/>, with the paths that made it
+    /// <see cref="RecheckReason.NewCandidate"/>: new chapters among the best three, then new offered sections ranked
+    /// before the chosen one (empty for any other reason).
+    /// </summary>
+    public static RecheckReason Decide(PlacementVerdict latest, PlacementCheckPrompt prompt, Book book, SectionNames? names,
+        out IReadOnlyList<string> newCandidates)
     {
+        newCandidates = [];
         if (latest.Basis is not { } basis || prompt.Basis is not { } today)
         {
             return RecheckReason.NoBasis;
@@ -57,9 +82,15 @@ internal static class PlacementKeep
         int Rank(string path) => ranking.IndexOf(path) is >= 0 and var rank ? rank : int.MaxValue;
         var chosenRank = Rank(chosen);
 
-        if (today.TopChapters.Any(chapter => !chapters.Contains(chapter))
-            || today.Offered.Any(path => !offered.Contains(path) && Rank(path) < chosenRank))
+        List<string> candidates =
+        [
+            .. today.TopChapters.Where(chapter => !chapters.Contains(chapter))
+                .Concat(today.Offered.Where(path => !offered.Contains(path) && Rank(path) < chosenRank))
+                .Distinct(StringComparer.Ordinal),
+        ];
+        if (candidates.Count > 0)
         {
+            newCandidates = candidates;
             return RecheckReason.NewCandidate;
         }
 

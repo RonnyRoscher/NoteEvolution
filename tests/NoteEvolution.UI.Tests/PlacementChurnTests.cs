@@ -131,15 +131,87 @@ public class PlacementChurnTests
         Assert.Contains("New 1", Assert.Single(_logger.Lines));
     }
 
-    private static readonly IReadOnlyDictionary<string, RecheckReason> NoRechecks = new Dictionary<string, RecheckReason>();
+    private static readonly IReadOnlyDictionary<string, Recheck> NoRechecks = new Dictionary<string, Recheck>();
 
     /// <summary>A build checks the fingerprints again by these rules (its keep line is cleared from the log).</summary>
     private void RecheckedBy(string fingerprint, RecheckReason reason, params (string Fingerprint, RecheckReason Reason)[] more)
     {
-        var rechecks = more.Prepend((fingerprint, reason)).ToDictionary(r => r.Item1, r => r.Item2);
+        var rechecks = more.Prepend((fingerprint, reason)).ToDictionary(r => r.Item1, r => new Recheck(r.Item2, null));
+        RecheckedBy(rechecks);
+    }
+
+    private void RecheckedBy(IReadOnlyDictionary<string, Recheck> rechecks)
+    {
         var count = _logger.Lines.Count;
-        _churn.Keep(Book, 0, 0, rechecks.GroupBy(r => r.Value).ToDictionary(g => g.Key, g => g.Count()), rechecks);
+        _churn.Keep(Book, 0, 0, rechecks.GroupBy(r => r.Value.Reason).ToDictionary(g => g.Key, g => g.Count()), rechecks);
         _logger.Lines.RemoveRange(count, _logger.Lines.Count - count);
+    }
+
+    /// <summary>
+    /// After a restart (no earlier check in this session) a check is made again; the earlier result is known only by
+    /// what the build read from the store. Returns the log line of its new result.
+    /// </summary>
+    private string RecheckAfterRestart(Recheck recheck, string resultAfter)
+    {
+        RecheckedBy(new Dictionary<string, Recheck> { ["a2"] = recheck });
+        _churn.Checks(Book, [Check("a2", Standard(summary: "Neu."))]);
+        _logger.Lines.Clear();
+        _store["a2"] = resultAfter;
+        _churn.Stored("a2");
+        return Assert.Single(_logger.Lines);
+    }
+
+    private string ResultIn(string path, string? place = null)
+    {
+        var prompt = Prompt("Text", "1. " + path, new CheckTopic(1, _section, [_place], Path: path, PlaceTexts: [place ?? "Stelle"]));
+        return PlacementCheck.Serialize(new PlacementVerdict(_section, place is null ? null : _place, "Grund"), prompt);
+    }
+
+    [Theory]
+    [InlineData("Kapitel", "Stelle", "same place")]
+    [InlineData("Kapitel", "Andere", "same section")]
+    [InlineData("Anderes", "Stelle", "other section")]
+    public void Stored_AfterRestart_ComparedWithTheStoredEarlierResult(string path, string place, string expected)
+    {
+        var line = RecheckAfterRestart(new Recheck(RecheckReason.NoteText, new EarlierChoice(["Kapitel"], "Stelle")), ResultIn(path, place));
+
+        Assert.Contains($"(NoteText): {expected}.", line);
+    }
+
+    [Theory]
+    [InlineData("B", "same section")]
+    [InlineData("C", "other section")]
+    public void Stored_EarlierOnlyKnownBySummary_AnyOfItsSectionsIsTheSame(string path, string expected)
+    {
+        // An older result without a stored path: two of today's sections have its summary.
+        var line = RecheckAfterRestart(new Recheck(RecheckReason.NoBasis, new EarlierChoice(["A", "B"], null)), ResultIn(path));
+
+        Assert.Contains($"(NoBasis): {expected}.", line);
+    }
+
+    [Fact]
+    public void Stored_EarlierSectionNotKnown_IsNotComparable()
+    {
+        var line = RecheckAfterRestart(new Recheck(RecheckReason.NoBasis, new EarlierChoice([], null)), ResultIn("A"));
+
+        Assert.Contains("(NoBasis): not comparable.", line);
+        Assert.Contains("NoBasis: same place 0, same section 0, other section 0, no earlier 0, not comparable 1", line);
+    }
+
+    [Fact]
+    public void KeepLine_NewCandidate_NamesNoteAndPaths_OncePerCheck()
+    {
+        var candidate = new Recheck(RecheckReason.NewCandidate, new EarlierChoice(["Kapitel A#0 › Unter A1#0"], null),
+            new NewCandidates("note:journals/2024_05_07.md#Geste", ["Kapitel D#0", "Kapitel A#0 › Unter A3#0"]));
+        var rechecks = new Dictionary<string, Recheck> { ["a2"] = candidate };
+        var reasons = new Dictionary<RecheckReason, int> { [RecheckReason.NewCandidate] = 1 };
+
+        _churn.Keep(Book, 3, 0, reasons, rechecks);
+        _churn.Keep(Book, 4, 0, reasons, rechecks);
+
+        Assert.Equal(
+            "Placement new candidate in Buch - Alpha for note:journals/2024_05_07.md#Geste: chosen Kapitel A#0 › Unter A1#0; new Kapitel D#0, Kapitel A#0 › Unter A3#0",
+            Assert.Single(_logger.Lines, line => line.StartsWith("Placement new candidate", StringComparison.Ordinal)));
     }
 
     private string Verdict(Guid section, Guid? after = null) =>
@@ -291,7 +363,10 @@ public class PlacementChurnTests
 
         Assert.StartsWith("Placement recheck (NoteText): same place", _logger.Lines[0]);
         Assert.StartsWith("Placement recheck (Rebuilt): other section", _logger.Lines[1]);
-        Assert.Contains("NoteText: same place 1, same section 0, other section 0, no earlier 0; Rebuilt: same place 0, same section 0, other section 1, no earlier 0", _logger.Lines[1]);
+        Assert.Contains(
+            "NoteText: same place 1, same section 0, other section 0, no earlier 0, not comparable 0; " +
+            "Rebuilt: same place 0, same section 0, other section 1, no earlier 0, not comparable 0",
+            _logger.Lines[1]);
     }
 
     [Fact]

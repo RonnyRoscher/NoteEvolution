@@ -294,7 +294,7 @@ internal sealed class PlacementWork(
                 return item;
             }
 
-            count.Recheck(repath, RecheckReason.NoBasis);
+            count.Recheck(repath, new Recheck(RecheckReason.NoBasis, Earlier(item.Check!, old)));
             return item with { Fingerprint = repath };
         }
 
@@ -305,14 +305,15 @@ internal sealed class PlacementWork(
 
         if (entry.ChatModel != chatModel)
         {
-            count.Recheck(item.Fingerprint, RecheckReason.Model);
+            count.Recheck(item.Fingerprint, new Recheck(RecheckReason.Model, Earlier(item.Check!, verdict)));
             return item;
         }
 
-        var reason = PlacementKeep.Decide(verdict, item.Check!, book, Names);
+        var reason = PlacementKeep.Decide(verdict, item.Check!, book, Names, out var newCandidates);
         if (reason != RecheckReason.None)
         {
-            count.Recheck(item.Fingerprint, reason);
+            count.Recheck(item.Fingerprint, new Recheck(reason, Earlier(item.Check!, verdict),
+                newCandidates.Count > 0 ? new NewCandidates(item.Title, newCandidates) : null));
             return item;
         }
 
@@ -324,6 +325,18 @@ internal sealed class PlacementWork(
 
         return item with { Fingerprint = entry.Fingerprint };
     }
+
+    /// <summary>
+    /// For the log: the section <paramref name="verdict"/> had chosen, by its stored path, or for an older result without
+    /// one by today's offered sections with its summary (none when no section has it any more).
+    /// </summary>
+    internal static EarlierChoice Earlier(PlacementCheckPrompt prompt, PlacementVerdict verdict) =>
+        verdict.SectionPath is { } path
+            ? new EarlierChoice([path], verdict.AfterText)
+            : new EarlierChoice(
+                [.. prompt.Topics.Where(topic => verdict.Summary is not null && topic.Summary == verdict.Summary && topic.Path.Length > 0)
+                    .Select(topic => topic.Path).Distinct(StringComparer.Ordinal)],
+                null);
 
     /// <summary>The entry stored under <paramref name="fingerprint"/>; none from a closed or failing store.</summary>
     private UnderstandingEntry? StoredEntry(string fingerprint)
@@ -402,8 +415,8 @@ internal sealed class PlacementWork(
     {
         public Dictionary<RecheckReason, int> Reasons { get; } = [];
 
-        /// <summary>The checks made again, by fingerprint, with why.</summary>
-        public Dictionary<string, RecheckReason> Rechecks { get; } = new(StringComparer.Ordinal);
+        /// <summary>The checks made again, by fingerprint, with why and what the earlier result had chosen.</summary>
+        public Dictionary<string, Recheck> Rechecks { get; } = new(StringComparer.Ordinal);
 
         /// <summary>Older results with path and basis added, to be written at the end of the build.</summary>
         public List<UnderstandingEntry> Upgrades { get; } = [];
@@ -417,10 +430,10 @@ internal sealed class PlacementWork(
         /// <summary>Older results upgraded and stored.</summary>
         public int Upgraded { get; set; }
 
-        public void Recheck(string fingerprint, RecheckReason reason)
+        public void Recheck(string fingerprint, Recheck recheck)
         {
-            Reasons[reason] = Reasons.GetValueOrDefault(reason) + 1;
-            Rechecks[fingerprint] = reason;
+            Reasons[recheck.Reason] = Reasons.GetValueOrDefault(recheck.Reason) + 1;
+            Rechecks[fingerprint] = recheck;
         }
     }
 
@@ -459,4 +472,4 @@ internal sealed class PlacementWork(
 /// </summary>
 internal sealed record PlacementBuild(IReadOnlyList<UnderstandingItem> Items, IReadOnlyDictionary<Guid, string> WaitingForCores,
     IReadOnlySet<Guid> WithoutTopics, IReadOnlyDictionary<RecheckReason, int> Reasons, int Kept, int Upgraded,
-    IReadOnlyDictionary<string, RecheckReason> Rechecks);
+    IReadOnlyDictionary<string, Recheck> Rechecks);
