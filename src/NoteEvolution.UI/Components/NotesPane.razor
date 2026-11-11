@@ -1,6 +1,8 @@
 @using NoteEvolution.Core.Vaults
+@using Microsoft.JSInterop
 @implements IDisposable
 @inject AppState State
+@inject IJSRuntime JS
 @inject UiSettings Settings
 @inject IPlatformServices Platform
 @inject ILoggerFactory LoggerFactory
@@ -13,7 +15,8 @@
 else
 {
     var filter = Filter();
-    @* Alt+Arrow up/down move the range of the active note block while the focus is in the pane. *@
+    @* Alt+Arrow up/down move the range of the active note block while the focus is in the pane; the arrow keys alone and
+       Enter come through index.html (neNotes.registerKeys), which leaves fields and buttons alone. *@
     <div class="ne-notes-pane" @onkeydown="OnKeyDown">
         @* The head stays in place; only what is below it scrolls (with the search field on top). *@
         <div class="ne-notes-head">
@@ -112,6 +115,11 @@ else
 
     private int _revealSequence;
 
+    private DotNetObjectReference<NotesPane>? _self;
+
+    /// <summary>The card to focus after the next rendering (the block a key made active).</summary>
+    private Guid? _focusKey;
+
     protected override void OnInitialized()
     {
         _logger = LoggerFactory.CreateLogger<NotesPane>();
@@ -122,8 +130,68 @@ else
         TrackSession();
     }
 
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        try
+        {
+            if (firstRender)
+            {
+                _self = DotNetObjectReference.Create(this);
+                await JS.InvokeVoidAsync("neNotes.registerKeys", _self);
+            }
+
+            if (_focusKey is { } key)
+            {
+                _focusKey = null;
+                await JS.InvokeVoidAsync("neNotes.focusCard", key.ToString());
+            }
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or InvalidOperationException or TaskCanceledException)
+        {
+            _logger.LogDebug(ex, "The keys of the notes pane could not be set up");
+        }
+    }
+
+    /// <summary>
+    /// Arrow up or down in the notes pane while a block is active: the main point <paramref name="noteKey"/> (the card
+    /// before or after the active one, as index.html found it) becomes the active block and gets the focus.
+    /// </summary>
+    [JSInvokable]
+    public void StepToNote(string noteKey)
+    {
+        if (State.Session is not { } session || !Guid.TryParse(noteKey, out var key) || session.Notes.Get(key) is not { } note)
+        {
+            return;
+        }
+
+        State.SelectNoteBlock(note.Key, note.Block.Key);
+        _focusKey = note.Key;
+        StateHasChanged();
+    }
+
+    /// <summary>
+    /// Enter (<paramref name="below"/>: Shift+Enter) in the notes pane while a block is active: adopts its range with
+    /// "Danach" (or "Darunter") as the bar's button does; after that the next card (<paramref name="nextNoteKey"/>, as
+    /// index.html found it before) is the active block. Nothing happens where the button is missing or greyed out.
+    /// </summary>
+    [JSInvokable]
+    public async Task AdoptActive(bool below, string? nextNoteKey)
+    {
+        if (State.ActiveNote is null || State.AdoptActiveNote is not { } adopt
+            || !await adopt(below ? AdoptVariant.Below : AdoptVariant.After))
+        {
+            return;
+        }
+
+        if (nextNoteKey is not null)
+        {
+            StepToNote(nextNoteKey);
+        }
+    }
+
     public void Dispose()
     {
+        _self?.Dispose();
         State.Changed -= OnStateChanged;
         State.NoteRevealRequested -= OnNoteRevealRequested;
         State.NotesTabRequested -= OnNotesTabRequested;

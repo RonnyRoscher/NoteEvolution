@@ -206,6 +206,7 @@
 
     protected override void OnInitialized()
     {
+        State.AdoptActiveNote = AdoptByKeyAsync;
         _language = Services.GetService<LanguageModelRuntime>();
         if (_language is not null)
         {
@@ -245,6 +246,10 @@
     public void Dispose()
     {
         _disposed = true;
+        if (ReferenceEquals(State.AdoptActiveNote?.Target, this))
+        {
+            State.AdoptActiveNote = null;
+        }
 
         ReleaseSelection();
 
@@ -402,6 +407,22 @@
         {
             await Changed.InvokeAsync();
         }
+    }
+
+    /// <summary>
+    /// Enter or Shift+Enter in the notes pane (<see cref="AppState.AdoptActiveNote"/>): adopts as the button of
+    /// <paramref name="variant"/> would, if it is offered and not greyed out; <c>true</c> if it was adopted without an error.
+    /// </summary>
+    private async Task<bool> AdoptByKeyAsync(AdoptVariant variant)
+    {
+        var head = FindBlock(Note.Block, Range.HeadKey) ?? Note.Block;
+        if (_disposed || AdoptBlocked() is not null || !Offered(head, variant))
+        {
+            return false;
+        }
+
+        await AdoptAsync(variant);
+        return _message is not { IsError: true };
     }
 
     /// <summary>

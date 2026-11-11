@@ -72,6 +72,63 @@ public class NoteBarTests : UiTestContext
         cut.Find(".ne-notes-pane").KeyDown(new KeyboardEventArgs { Key = key, AltKey = true });
 
     [Fact]
+    public async Task Keys_ArrowStep_MakesTheOtherMainPointActive_AndFocusesItsCard()
+    {
+        await OpenAsync();
+        var cut = Render<NotesPane>();
+        cut.ClickBlock("Haupt");
+
+        // Arrow down, as index.html reports it with the key of the next card.
+        await cut.InvokeAsync(() => cut.Instance.StepToNote(Key("Andere").ToString()));
+
+        Assert.Equal(Key("Andere"), State.ActiveNote?.NoteKey);
+        cut.WaitForAssertion(() => Assert.Equal(["Andere"], InRange(cut)));
+        cut.WaitForAssertion(() => Assert.Contains(JSInterop.Invocations, i =>
+            i.Identifier == "neNotes.focusCard" && Equals(i.Arguments[0], Key("Andere").ToString())));
+    }
+
+    [Fact]
+    public async Task Keys_Enter_AdoptsAfterTheCursor_ThenTheNextNoteIsActive()
+    {
+        await OpenAsync();
+        CursorAt("Erster Text");
+        var cut = Render<NotesPane>();
+        cut.ClickBlock("Andere");
+
+        await cut.InvokeAsync(() => cut.Instance.AdoptActive(false, Key("Haupt").ToString()));
+
+        Assert.Equal(["Erster Text", "Andere", "Zweiter Text"], SectionTexts());
+        Assert.Equal(Key("Haupt"), State.ActiveNote?.NoteKey);
+    }
+
+    [Fact]
+    public async Task Keys_ShiftEnter_AdoptsBelow()
+    {
+        await OpenAsync();
+        CursorAt("Erster Text");
+        var cut = Render<NotesPane>();
+        cut.ClickBlock("Andere");
+
+        await cut.InvokeAsync(() => cut.Instance.AdoptActive(true, null));
+
+        // "Darunter": the note is the first detail of the text block at the cursor.
+        Assert.Matches("\t- Erster Text\n(\t  [^\n]*\n)*\t\t- Andere\n", _vault.Read(BookPath));
+    }
+
+    [Fact]
+    public async Task Keys_WithoutAnActiveBlock_OrWithoutABook_DoNothing()
+    {
+        await OpenAsync();
+        var cut = Render<NotesPane>();
+        var before = _vault.Read(BookPath);
+
+        await cut.InvokeAsync(() => cut.Instance.AdoptActive(false, Key("Haupt").ToString()));
+
+        Assert.Equal(before, _vault.Read(BookPath));
+        Assert.Null(State.ActiveNote);
+    }
+
+    [Fact]
     public async Task Click_SelectsBlock_FrameAndBarShown_NoButtonsOnCards()
     {
         await OpenAsync();

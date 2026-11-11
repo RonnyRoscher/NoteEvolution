@@ -5,6 +5,7 @@ import Bold from '@tiptap/extension-bold';
 import Dropcursor from '@tiptap/extension-dropcursor';
 import HardBreak from '@tiptap/extension-hard-break';
 import History from '@tiptap/extension-history';
+import { undoDepth } from '@tiptap/pm/history';
 import Italic from '@tiptap/extension-italic';
 import Text from '@tiptap/extension-text';
 import { Mapping } from '@tiptap/pm/transform';
@@ -828,7 +829,7 @@ const Keys = Extension.create({
     name: 'noteEvolutionKeys',
     priority: 1000,
     addOptions() {
-        return { onSectionCommand: () => {} };
+        return { onSectionCommand: () => {}, onUndoRequested: () => {} };
     },
     addKeyboardShortcuts() {
         const run = command => () => this.editor.commands.command(command);
@@ -858,6 +859,14 @@ const Keys = Extension.create({
             'Mod-Shift-N': section('ToggleRemark'),
             'Alt-ArrowUp': section('RangeUp'),
             'Alt-ArrowDown': section('RangeDown'),
+            // Nothing left to undo here (e.g. the document was loaded again after a command): the undo of the header.
+            'Mod-z': () => {
+                if (undoDepth(this.editor.state) > 0) {
+                    return false;
+                }
+                this.options.onUndoRequested();
+                return true;
+            },
         };
     },
 });
@@ -1160,7 +1169,7 @@ function dropTarget(view, event) {
 /**
  * Creates the editor in host. dotnet receives DocumentChanged(json), CursorChanged(kind, key, textBlockKey, offset),
  * EditorFocused() (whenever the editor gets the focus, before the cursor report that may follow), SectionCommand(name), SectionBoxMoved(barTop, visible), ChipClicked(noteId), ChipRemoved(blockKey, noteId),
- * ReferenceClicked(id), NoteDropped(afterKey), BlocksDragStarted(keysJson), BlocksDragEnded(), BlocksDropped(keysJson, afterKey) (text blocks dragged from the other editor), PersonClicked(id), SourceClicked(id), CitationEdit(id, key, offset) and
+ * ReferenceClicked(id), NoteDropped(afterKey), BlocksDragStarted(keysJson), BlocksDragEnded(), BlocksDropped(keysJson, afterKey) (text blocks dragged from the other editor), UndoRequested() (Ctrl+Z with nothing to undo in the editor), PersonClicked(id), SourceClicked(id), CitationEdit(id, key, offset) and
  * GlossaryClicked(entryKey). options.citeClickDelay is how long a click on a citation waits for a double click (ms). options.barHeight is the height of the section bar C# shows at the marking box's bottom
  * (.ne-section-bar in the .ne-editor-pane) until the bar can be measured; the bar may wrap into more lines, so its
  * actual height is followed (the gap below the marking, --bar-height, and the scroll distance from the bottom).
@@ -1279,7 +1288,7 @@ export function createEditor(host, dotnet, options = {}) {
             }),
             History,
             Dropcursor,
-            Keys.configure({ onSectionCommand: name => call('SectionCommand', name) }),
+            Keys.configure({ onSectionCommand: name => call('SectionCommand', name), onUndoRequested: () => call('UndoRequested') }),
             UniqueKeys,
             FixedHeadings,
             MarkedNodes.configure({ marked: () => marked }),
