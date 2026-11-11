@@ -280,5 +280,11 @@ public class EditorInteropTests
         public Task OnCitationEdit(Guid sourceId, Guid elementKey, int offset) => Task.CompletedTask;
 
         public Task OnGlossaryClicked(Guid entryKey) => Task.CompletedTask;
+
+        public Task<ImageView> OnLoadImage(string path) => Task.FromResult(new ImageView(null, null));
+
+        public Task OnImageEdit(Guid elementKey, int offset) => Task.CompletedTask;
+
+        public Task OnImagePasted(string base64, string mime) => Task.CompletedTask;
     }
 }

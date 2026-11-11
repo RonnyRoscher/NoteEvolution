@@ -1928,6 +1928,30 @@
   <data name="UndoCitationLocator" xml:space="preserve">
     <value>Fundstelle ändern</value>
   </data>
+  <data name="ImageMissing" xml:space="preserve">
+    <value>Bild nicht gefunden: {0}</value>
+  </data>
+  <data name="ImageRemote" xml:space="preserve">
+    <value>Bild aus dem Netz: {0}</value>
+  </data>
+  <data name="ImageTooLargeToShow" xml:space="preserve">
+    <value>Bild zu groß zum Anzeigen: {0}</value>
+  </data>
+  <data name="ImageFormatRefused" xml:space="preserve">
+    <value>Dieses Bildformat wird nicht unterstützt (PNG, JPEG, GIF, WebP, BMP).</value>
+  </data>
+  <data name="ImageTooLarge" xml:space="preserve">
+    <value>Das Bild ist größer als 20 MB.</value>
+  </data>
+  <data name="ImageWriteFailed" xml:space="preserve">
+    <value>Die Bilddatei konnte nicht in den Ordner assets geschrieben werden.</value>
+  </data>
+  <data name="UndoInsertImage" xml:space="preserve">
+    <value>Bild einfügen</value>
+  </data>
+  <data name="UndoImageCaption" xml:space="preserve">
+    <value>Beschriftung ändern</value>
+  </data>
   <data name="SectionIndentTitle" xml:space="preserve">
     <value>Eine Stufe tiefer (Tab): eine Überschrift unter die Überschrift ihrer Ebene davor, ein Textblock als Unterpunkt in den Textblock davor, ein Unterpunkt unter den Unterpunkt davor</value>
   </data>

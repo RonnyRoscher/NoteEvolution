@@ -1,11 +1,14 @@
 using System.Diagnostics;
+using Microsoft.Extensions.Localization;
 using Microsoft.Extensions.Logging;
 using NoteEvolution.Core.Books;
 using NoteEvolution.Core.Links;
 using NoteEvolution.Core.Model;
 using NoteEvolution.Core.Storage;
+using NoteEvolution.Core.Vaults;
 using NoteEvolution.UI.Editor;
 using NoteEvolution.UI.History;
+using NoteEvolution.UI.Resources;
 
 namespace NoteEvolution.UI.State;
 
@@ -228,6 +231,159 @@ public static class ManuscriptCommands
             }
 
             state.Notify();
+        }
+    }
+
+    /// <summary>
+    /// Imports the file <paramref name="fileName"/> with <paramref name="bytes"/> into the vault's <c>assets</c> folder
+    /// (<see cref="VaultAssets.Import"/>) and inserts an image block after the element at the cursor
+    /// (<see cref="ManuscriptEditor.InsertImageBlock"/>; without a cursor element at the start of the current section), in
+    /// the same order as <see cref="RunAsync"/>: the editor saves its text first, and a read-only book or an open conflict
+    /// refuses the command before a file is written. A format that is no image shows <c>ImageFormatRefused</c>, no bytes or
+    /// more than <see cref="VaultAssets.MaxBytes"/> <c>ImageTooLarge</c>, a file that cannot be written
+    /// <c>ImageWriteFailed</c> (nothing changed in the book). The page is saved with one undo action
+    /// (<paramref name="undoDescription"/>); the file stays when the undo is taken or saving the page fails. The new block
+    /// is revealed, the book view is taken from the vault again and <see cref="AppState.Notify"/> is raised.
+    /// </summary>
+    /// <returns>The message to show, or <c>null</c> if the image was inserted without remark.</returns>
+    public static async Task<AdoptMessage?> InsertImageAsync(
+        AppState state, string fileName, byte[] bytes, string undoDescription, ILogger logger)
+    {
+        Guid? reveal = null;
+        try
+        {
+            var (message, session, book) = await PrepareAsync(state, logger);
+            if (session is null || book is null)
+            {
+                return message;
+            }
+
+            string path;
+            try
+            {
+                path = VaultAssets.Import(session.Vault.Root, book.Page.FilePath, fileName, bytes);
+            }
+            catch (AssetRefusedException ex)
+            {
+                return new AdoptMessage(ex.Message == "size" ? "ImageTooLarge" : "ImageFormatRefused", true);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                logger.LogWarning(ex, "The image {Name} could not be written to the assets folder", fileName);
+                return new AdoptMessage("ImageWriteFailed", true);
+            }
+
+            var current = (state.Cursor is { } cursor ? BookElements.Find(book, cursor.Key) : null) ?? state.CurrentElement
+                ?? BookElements.Find(book, book.Root.Key);
+            if (current is null)
+            {
+                return null;
+            }
+
+            (message, reveal) = RunStatus(
+                session, book, () => ManuscriptEditor.InsertImageBlock(book, current, BlockImages.Format("", path), session.Clock.Now),
+                undoDescription, logger);
+            return message;
+        }
+        finally
+        {
+            state.RefreshBook();
+            if (reveal is { } key)
+            {
+                state.RevealElement(key);
+            }
+
+            state.Notify();
+        }
+    }
+
+    /// <summary>
+    /// Gives the image at <paramref name="shownOffset"/> (as the editor shows the text) of the text block or detail
+    /// <paramref name="elementKey"/> the caption <paramref name="caption"/> (<see cref="ManuscriptEditor.SetImageCaption"/>),
+    /// refused like <see cref="SetStatusAsync"/> and saved with one undo action. The same caption changes nothing and
+    /// pushes no undo action; no image there shows <c>SectionCommandFailed</c>. The book view is taken from the vault
+    /// again and <see cref="AppState.Notify"/> is raised.
+    /// </summary>
+    /// <returns>The message to show, or <c>null</c> if the caption was set (or nothing changed) without remark.</returns>
+    public static async Task<AdoptMessage?> SetImageCaptionAsync(
+        AppState state, Guid elementKey, int shownOffset, string caption, string undoDescription, ILogger logger)
+    {
+        Guid? reveal = null;
+        try
+        {
+            var (message, session, book) = await PrepareAsync(state, logger);
+            if (session is null || book is null || BookElements.Find(book, elementKey) is not { Kind: not ElementKind.Heading } element)
+            {
+                return message;
+            }
+
+            var index = ManuscriptEditor.ImageIndexAt(book, element.Key, shownOffset);
+            if (index is null)
+            {
+                return new AdoptMessage("SectionCommandFailed", true);
+            }
+
+            var page = book.Page;
+            var before = PageStructureSnapshot.Capture(page);
+            try
+            {
+                if (!ManuscriptEditor.SetImageCaption(book, element.Key, index.Value, caption, session.Clock.Now))
+                {
+                    return null;
+                }
+            }
+            catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+            {
+                logger.LogWarning(ex, "Changing the image caption was refused");
+                return new AdoptMessage("SectionCommandFailed", true);
+            }
+
+            if (!session.TrySave(page, out var error))
+            {
+                return SaveFailed(session, page, error);
+            }
+
+            session.Undo.Push(new StructureUndo(undoDescription, session, page.FilePath, before, PageStructureSnapshot.Capture(page)));
+            reveal = element.Key;
+            return null;
+        }
+        finally
+        {
+            state.RefreshBook();
+            if (reveal is { } key)
+            {
+                state.RevealElement(key, shownOffset + 1, keepRange: true);
+            }
+
+            state.Notify();
+        }
+    }
+
+    /// <summary>
+    /// The picture of the image a book's Markdown <paramref name="path"/> names, as a data URL
+    /// (<see cref="VaultAssets.Resolve"/> against the vault root and the book's file), or the text to show instead:
+    /// <c>ImageMissing</c> for a path that is remote, outside the vault, not an image or not a readable file,
+    /// <c>ImageTooLargeToShow</c> for a file over <see cref="VaultAssets.MaxBytes"/>. Never throws.
+    /// </summary>
+    public static ImageView LoadImage(VaultSession session, Book book, string path, IStringLocalizer<Strings> texts)
+    {
+        try
+        {
+            if (VaultAssets.Resolve(session.Vault.Root, book.Page.FilePath, path) is not { } full)
+            {
+                return new ImageView(null, texts["ImageMissing", path]);
+            }
+
+            if (new FileInfo(full).Length > VaultAssets.MaxBytes)
+            {
+                return new ImageView(null, texts["ImageTooLargeToShow", path]);
+            }
+
+            return new ImageView($"data:{VaultAssets.MimeOf(full)};base64,{Convert.ToBase64String(File.ReadAllBytes(full))}", null);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        {
+            return new ImageView(null, texts["ImageMissing", path]);
         }
     }
 
