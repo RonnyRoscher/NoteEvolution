@@ -500,6 +500,48 @@ public class AdoptPerBlockTests
         Assert.All(NoteBlocks.Skip(1), content => Assert.True(NoteBlock.IsUsedBlock(s.Note(content))));
     }
 
+    [Fact]
+    public void Undo_AfterDetailMovedOutOfTheTextBlock_Refused()
+    {
+        using var s = new LinkSetup(journal: Journal);
+        s.Links.Adopt(s.Book, s.Note("Kern").Key, new InsertPosition.SectionEnd(s.SectionKey("Abschnitt")));
+
+        // The editor moves a linked detail out of the adopted text block (keys and source:: kept, no undo pushed).
+        ManuscriptEditor.OutdentDetail(Book.Load(s.Book.Page), BookBlock(s, "Unter B").Key, Now);
+        s.Writer.Save(s.Book.Page);
+        var book = s.ReadBook();
+        var journal = s.ReadJournal();
+
+        // Removing the adopted block would leave "Unter B" with its source while its note lost its entry.
+        Assert.Throws<InvalidOperationException>(() => s.Undo.Undo());
+
+        Assert.Equal(book, s.ReadBook());
+        Assert.Equal(journal, s.ReadJournal());
+        Assert.Equal(4, CountOf(s.ReadJournal(), "used-in:: [[Buch - Test]]"));
+    }
+
+    [Fact]
+    public void Adopt_HideUsed_AllSubPointsUsedElsewhere_TakesOnlyItsOwnText()
+    {
+        var journal = Journal
+            .Replace("\t- Unter A\n", "\t- Unter A\n\t  used-in:: [[Andere]]\n")
+            .Replace("\t- Unter B\n", "\t- Unter B\n\t  used-in:: [[Andere]]\n");
+        using var s = new LinkSetup(journal: journal);
+
+        s.Links.Adopt(s.Book, s.Note("Kern").Key, new InsertPosition.SectionEnd(s.SectionKey("Abschnitt")), hideUsed: true);
+
+        // Every sub-point is hidden, so only the main point is copied; its usage does not pass on to them (spec 3.3).
+        Assert.DoesNotContain("Unter A", s.ReadBook());
+        Assert.Equal("true", s.Note("Kern").GetProperty(UsedInValue.WithoutChildrenKey));
+
+        foreach (var content in new[] { "Unter A", "Unter B" })
+        {
+            s.Note(content).RemoveProperty(UsedInValue.Key);
+        }
+
+        Assert.All(NoteBlocks.Skip(1), content => Assert.False(NoteBlock.IsUsedBlock(s.Note(content))));
+    }
+
     private static Block BookBlock(LinkSetup s, string content) => s.Book.Page.AllBlocks().Single(b => b.Content == content);
 
     private static string WithoutIdLinesExcept(string text, Guid keep) =>

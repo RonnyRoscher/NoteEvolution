@@ -1,4 +1,3 @@
-using NoteEvolution.Core.Assistants;
 using NoteEvolution.Core.Books;
 using NoteEvolution.Core.Storage;
 
@@ -125,7 +124,7 @@ public interface ILinkService
 
     /// <summary>
     /// Links the details an older adoption copied from sub-points (<see cref="SubPointMatch"/>, found by
-    /// <see cref="SubPointLinker.Find"/>) to these sub-points: each detail gets an <c>id::</c> and
+    /// the assistant <c>SubPointLinker.Find</c>) to these sub-points: each detail gets an <c>id::</c> and
     /// <c>source:: ((sub-point id))</c>, each sub-point an <c>id::</c> if needed and its own <c>used-in::</c> entry for the
     /// detail. A note block gets <c>used-without-children:: true</c> only when afterwards every note block below it (at
     /// every depth) has a <c>used-in::</c> of its own; this holds for the linked sub-points and for the note blocks above
@@ -134,13 +133,16 @@ public interface ILinkService
     /// and its entries wait in <c>pending.json</c>, as do those of a note page whose write fails. If a book page cannot
     /// be written (for example <see cref="FileChangedExternallyException"/>), nothing is written to it, no later book is
     /// written, the notes of the books already written get their entries, and the exception is passed on. Records the
-    /// undo action „Verknüpfungen nachtragen“ (when a book was written): every book and note page still as this left it
-    /// gets its former bytes back, the queued entries are dropped, and a page changed since stays as it is: the undo then
-    /// throws <see cref="PagesNotRestoredException"/> naming those pages.
+    /// undo action „Verknüpfungen nachtragen“ (when a book was written). It is refused before anything changes
+    /// (<see cref="InvalidOperationException"/>) if a book page is no longer as this left it. Otherwise every book page
+    /// gets its former bytes back, a note page still as this left it too; a note page changed since keeps its changes and
+    /// loses exactly the entries this added (with the marks recomputed), and queued entries are dropped, so no link is
+    /// left one-sided. A page whose write fails does not stop the undo; it then throws
+    /// <see cref="PagesNotRestoredException"/> naming those pages.
     /// </summary>
     /// <exception cref="ArgumentException">
-    /// An unknown book, detail or note block, a detail that has a <c>source::</c> already, or a detail given twice;
-    /// nothing was changed.
+    /// An unknown book, detail or note block, a detail that has a <c>source::</c> already, a detail given twice, or a
+    /// note block without <c>id::</c> on a read-only page; nothing was changed.
     /// </exception>
     /// <exception cref="ReadOnlyPageException">A book page is read-only; nothing was changed.</exception>
     void LinkSubPoints(IReadOnlyList<SubPointMatch> matches);

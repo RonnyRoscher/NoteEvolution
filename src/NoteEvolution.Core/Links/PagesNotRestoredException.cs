@@ -1,12 +1,12 @@
 namespace NoteEvolution.Core.Links;
 
 /// <summary>
-/// Thrown by an undo that restored every page it could but left the <see cref="Paths"/> as they are, because they were
-/// changed since the operation (or are no longer in the vault, or are read-only). The other pages are restored.
+/// Thrown by an undo that went on after pages could not be written (or are read-only now): the <see cref="Paths"/> are
+/// not (fully) taken back yet; what is left waits in <c>pending.json</c> where it can. The other pages are taken back.
 /// </summary>
 public sealed class PagesNotRestoredException(IReadOnlyList<string> paths)
-    : InvalidOperationException($"Nicht zurückgenommen, weil inzwischen geändert: {string.Join(", ", paths)}")
+    : InvalidOperationException($"Nicht vollständig zurückgenommen, weil nicht schreibbar: {string.Join(", ", paths)}")
 {
-    /// <summary>The full paths of the pages that were left as they are.</summary>
+    /// <summary>The full paths of the pages that are not (fully) taken back.</summary>
     public IReadOnlyList<string> Paths { get; } = paths;
 }

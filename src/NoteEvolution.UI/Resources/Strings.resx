@@ -974,6 +974,10 @@
   <data name="SubPointsNone" xml:space="preserve">
     <value>Alle Unterpunkte sind schon verknüpft.</value>
   </data>
+  <data name="SubPointsNoneUnmatched" xml:space="preserve">
+    <value>Keine Unterpunkte lassen sich eindeutig zuordnen; {0} Details bleiben ohne eindeutigen Treffer.</value>
+    <comment>{0} = Anzahl ohne Treffer</comment>
+  </data>
   <data name="SubPointsApply" xml:space="preserve">
     <value>Nachtragen</value>
   </data>
@@ -984,7 +988,7 @@
     <value>Verknüpfungen nachtragen</value>
   </data>
   <data name="SubPointsUndoKept" xml:space="preserve">
-    <value>Nicht zurückgenommen, weil inzwischen geändert: {0}</value>
+    <value>Nicht vollständig zurückgenommen, weil nicht schreibbar: {0}</value>
     <comment>{0} = Namen der Seiten, durch Komma getrennt</comment>
   </data>
   <data name="HandledTitle" xml:space="preserve">

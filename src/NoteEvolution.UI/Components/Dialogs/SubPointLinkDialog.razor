@@ -1,5 +1,6 @@
 @using NoteEvolution.Core.Assistants
 @using NoteEvolution.Core.Books
+@using NoteEvolution.Core.Links
 @using NoteEvolution.Core.Model
 @using NoteEvolution.Core.Storage
 @using NoteEvolution.Core.Vaults
@@ -23,7 +24,7 @@
         }
         @if (_plan.Matches.Count == 0)
         {
-            <p class="ne-subpoints-none">@L["SubPointsNone"]</p>
+            <p class="ne-subpoints-none">@(_plan.Unmatched > 0 ? L["SubPointsNoneUnmatched", _plan.Unmatched] : L["SubPointsNone"])</p>
             @if (_plan.PerBook.Count > 0)
             {
                 <ul class="ne-subpoints-list">

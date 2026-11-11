@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using NoteEvolution.Core.Assistants;
+using NoteEvolution.Core.Format;
 using NoteEvolution.Core.Links;
 using NoteEvolution.Core.Model;
 using NoteEvolution.Core.Storage;
@@ -250,28 +251,198 @@ public class SubPointLinkerTests
     }
 
     [Fact]
-    public void Apply_Undo_ChangedPageStays_AndIsNamed()
+    public void Apply_Undo_NotePageChangedSince_RemovesTheRunsEntries()
     {
         using var s = new LinkSetup(Book, Journal);
         var linker = Linker(s);
         linker.Apply(linker.Find());
         s.Note("Zweite Notiz").SetContent("Zweite Notiz, geändert");
         s.Writer.Save(s.Journal);
-        var journalChanged = s.ReadJournal();
+
+        s.Undo.Undo();
+
+        // The book gets its bytes back; the note page keeps its later change and loses exactly the run's entries and
+        // marks (the new id:: lines of the sub-points may stay).
+        Assert.Equal(Book, s.ReadBook());
+        Assert.Equal(Journal.Replace("- Zweite Notiz\n", "- Zweite Notiz, geändert\n"), WithoutSubPointIdLines(s.ReadJournal()));
+        AssertNoDanglingUsage(s);
+        Assert.Empty(s.Pending.Load());
+        Assert.Equal(3, Linker(s).Find().Matches.Count);
+    }
+
+    [Fact]
+    public void Apply_Undo_BookChangedSince_Refused_NothingChanged()
+    {
+        using var s = new LinkSetup(Book, Journal);
+        var linker = Linker(s);
+        linker.Apply(linker.Find());
+        BookBlock(s, "Vorspann").SetContent("Vorspann, geändert");
+        s.Writer.Save(s.Book.Page);
+        var book = s.ReadBook();
+        var journal = s.ReadJournal();
+
+        var ex = Assert.Throws<InvalidOperationException>(() => s.Undo.Undo());
+
+        Assert.IsNotType<PagesNotRestoredException>(ex);
+        Assert.Equal(book, s.ReadBook());
+        Assert.Equal(journal, s.ReadJournal());
+    }
+
+    [Fact]
+    public void Apply_Undo_NoteSaveFails_GoesOn_NamesThePage_RetryCompletes()
+    {
+        using var s = new LinkSetup(Book, Journal);
+        var linker = Linker(s);
+        linker.Apply(linker.Find());
+        s.Writer.FailNext(s.JournalPath, times: 2);
 
         var ex = Assert.Throws<PagesNotRestoredException>(() => s.Undo.Undo());
 
         Assert.Equal([s.Journal.FilePath], ex.Paths);
-        Assert.Contains(s.Journal.FilePath, ex.Message);
         Assert.Equal(Book, s.ReadBook());
-        Assert.Equal(journalChanged, s.ReadJournal());
+
+        // The removals wait in pending.json and are done once the page can be written.
+        s.Links.RetryPending();
+        Assert.Equal(Journal, WithoutSubPointIdLines(s.ReadJournal()));
+        AssertNoDanglingUsage(s);
+        Assert.Empty(s.Pending.Load());
     }
+
+    [Fact]
+    public void Apply_Undo_ReadOnlyNotePageCompletedMeanwhile_RemovesTheEntries()
+    {
+        var journal = Journal
+            .Replace("\t- Unter A\n", $"\t- Unter A\n\t  id:: {UnterAId}\n")
+            .Replace("\t\t- Tief A1\n", $"\t\t- Tief A1\n\t\t  id:: {TiefA1Id}\n")
+            .Replace("\t- Unter B\n", $"\t- Unter B\n\t  id:: {UnterBId}\n");
+        using var s = new LinkSetup(Book, journal + "- Kaputt\n  ```\n  nie geschlossen\n");
+        var linker = Linker(s);
+        linker.Apply(linker.Find());
+
+        // The user repairs the page; the queued entries are written.
+        File.WriteAllText(s.JournalPath, journal);
+        s.Vault.ReplacePage(LogseqParser.Parse(s.JournalPath, File.ReadAllBytes(s.JournalPath)));
+        Assert.Equal(3, s.Links.RetryPending());
+        Assert.Equal(4, s.ReadJournal().Split("[[Buch - Test]]").Length - 1);
+
+        s.Undo.Undo();
+
+        Assert.Equal(Book, s.ReadBook());
+        Assert.Equal(journal, s.ReadJournal());
+        AssertNoDanglingUsage(s);
+    }
+
+    [Fact]
+    public void Apply_TwoBooks_SecondChangedOnDisk_FirstWrittenWithItsEntries_Undoable()
+    {
+        const string secondId = "6f1c2a3b-0000-4000-8000-000000000020";
+        var second = "title:: Buch: Zwei\ntype:: book\n\n- # Kapitel\n" +
+                     $"\t- Kern\n\t  id:: {secondId}\n\t  source:: (({KernId}))\n\t\t- Unter B\n";
+        var journal = Journal.Replace($"(({TextId}))\n", $"(({TextId})), [[Buch - Zwei]] (({secondId}))\n");
+        using var s = new LinkSetup(Book, journal);
+        var secondPath = Path.Combine(s.Tv.Root, "pages", "Buch - Zwei.md");
+        File.WriteAllText(secondPath, second);
+        s.Reopen();
+        var linker = Linker(s);
+        var plan = linker.Find();
+        Assert.Equal(2, plan.PerBook.Count);
+        var (firstName, laterName) = (plan.PerBook[0].BookLinkName, plan.PerBook[1].BookLinkName);
+        var laterPath = laterName == "Buch - Test" ? s.BookPath : secondPath;
+        var firstPath = laterName == "Buch - Test" ? secondPath : s.BookPath;
+        var firstBefore = File.ReadAllText(firstPath);
+        var external = File.ReadAllText(laterPath) + "- Extern\n";
+        File.WriteAllText(laterPath, external);
+
+        Assert.Throws<FileChangedExternallyException>(() => linker.Apply(plan));
+
+        // The first book and its notes' entries are written; the later book is untouched and its notes get nothing.
+        Assert.Equal(external, File.ReadAllText(laterPath));
+        Assert.NotEqual(firstBefore, File.ReadAllText(firstPath));
+        var written = s.ReadJournal();
+        Assert.True(written.Split($"[[{firstName}]]").Length > journal.Split($"[[{firstName}]]").Length);
+        Assert.Equal(journal.Split($"[[{laterName}]]").Length, written.Split($"[[{laterName}]]").Length);
+        Assert.True(s.Undo.CanUndo);
+
+        s.Undo.Undo();
+
+        Assert.Equal(firstBefore, File.ReadAllText(firstPath));
+        Assert.Equal(external, File.ReadAllText(laterPath));
+        Assert.Equal(journal, s.ReadJournal());
+    }
+
+    /// <summary>Every <c>used-in::</c> entry with a block reference names a book block that has the note as its source.</summary>
+    private static void AssertNoDanglingUsage(LinkSetup s)
+    {
+        foreach (var note in s.Journal.AllBlocks())
+        {
+            foreach (var entry in UsedInValue.Parse(note.GetProperty(UsedInValue.Key) ?? "").Where(e => e.BookBlockId is not null))
+            {
+                var block = s.Vault.FindBook(entry.PageName)!.Page.AllBlocks().SingleOrDefault(b => b.Id == entry.BookBlockId);
+                Assert.NotNull(block);
+                Assert.Contains(note.Id!.Value, SourceValue.Parse(block.GetProperty("source") ?? ""));
+            }
+        }
+    }
+
+    /// <summary>The text without the <c>id::</c> lines of sub-points (indented by a tab), which an undo may leave.</summary>
+    private static string WithoutSubPointIdLines(string text) =>
+        Regex.Replace(text, @"^\t[\t ]*id:: [^\n]*\n", "", RegexOptions.Multiline);
+
+    [Fact]
+    public void Find_ReadOnlyNotePage_SubPointWithoutId_Unmatched()
+    {
+        // A read-only page never gets the id:: a source:: would point to: such a sub-point is not linked.
+        var journal = Journal.Replace("\t- Unter B\n", $"\t- Unter B\n\t  id:: {UnterBId}\n") + "- Kaputt\n  ```\n  nie geschlossen\n";
+        using var s = new LinkSetup(Book, journal);
+        Assert.True(s.Journal.IsReadOnly);
+
+        var plan = Linker(s).Find();
+
+        var match = Assert.Single(plan.Matches);
+        Assert.Equal(s.Note("Unter B").Key, match.NoteBlockKey);
+        Assert.Equal([("Buch - Test", 1, 2)], plan.PerBook);
+    }
+
+    [Fact]
+    public void Find_DetailWithIdButNoSource_Skipped()
+    {
+        // A detail with id:: but no source:: was loosened on purpose (or never linked by a new adoption): not a candidate.
+        var book = Book.Replace("\t\t\t- Unter B\n", "\t\t\t- Unter B\n\t\t\t  id:: 6f1c2a3b-0000-4000-8000-000000000010\n");
+        using var s = new LinkSetup(book, Journal);
+
+        var plan = Linker(s).Find();
+
+        Assert.Equal(2, plan.Matches.Count);
+        Assert.DoesNotContain(plan.Matches, m => m.DetailKey == BookBlock(s, "Unter B").Key);
+        Assert.Equal([("Buch - Test", 2, 0)], plan.PerBook);
+    }
+
+    [Fact]
+    public void Apply_ReadOnlyNotePage_SubPointWithoutId_Refused()
+    {
+        var journal = Journal + "- Kaputt\n  ```\n  nie geschlossen\n";
+        using var s = new LinkSetup(Book, journal);
+
+        Assert.Throws<ArgumentException>(() => s.Links.LinkSubPoints(
+            [new SubPointMatch(s.Book, BookBlock(s, "Unter B").Key, s.Note("Unter B").Key)]));
+
+        Assert.Equal(Book, s.ReadBook());
+        Assert.Empty(s.Pending.Load());
+    }
+
+    private const string UnterAId = "6f1c2a3b-0000-4000-8000-000000000011";
+    private const string TiefA1Id = "6f1c2a3b-0000-4000-8000-000000000012";
+    private const string UnterBId = "6f1c2a3b-0000-4000-8000-000000000013";
 
     [Fact]
     public void Apply_ReadOnlyNotePage_Queued()
     {
-        // An unclosed code fence: the page cannot be parsed safely and is never written.
-        var journal = Journal + "- Kaputt\n  ```\n  nie geschlossen\n";
+        // An unclosed code fence: the page cannot be parsed safely and is never written. The sub-points have an id::.
+        var journal = Journal
+            .Replace("\t- Unter A\n", $"\t- Unter A\n\t  id:: {UnterAId}\n")
+            .Replace("\t\t- Tief A1\n", $"\t\t- Tief A1\n\t\t  id:: {TiefA1Id}\n")
+            .Replace("\t- Unter B\n", $"\t- Unter B\n\t  id:: {UnterBId}\n")
+            + "- Kaputt\n  ```\n  nie geschlossen\n";
         using var s = new LinkSetup(Book, journal);
         Assert.True(s.Journal.IsReadOnly);
         var linker = Linker(s);

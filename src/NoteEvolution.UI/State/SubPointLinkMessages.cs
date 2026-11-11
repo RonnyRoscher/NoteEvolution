@@ -8,7 +8,7 @@ namespace NoteEvolution.UI.State;
 public static class SubPointLinkMessages
 {
     /// <summary>
-    /// „Nicht zurückgenommen, weil inzwischen geändert: …“ for an undo that left pages as they are
+    /// „Nicht vollständig zurückgenommen, weil nicht schreibbar: …“ for an undo that could not write some pages
     /// (<see cref="PagesNotRestoredException"/>); the pages are named by file name, without folders.
     /// </summary>
     public static string UndoKept(IStringLocalizer<Strings> localizer, PagesNotRestoredException error) =>

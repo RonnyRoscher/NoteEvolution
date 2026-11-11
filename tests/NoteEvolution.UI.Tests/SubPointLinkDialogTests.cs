@@ -71,6 +71,19 @@ public class SubPointLinkDialogTests : UiTestContext
     }
 
     [Fact]
+    public async Task Dialog_NoMatchButUnmatched_SaysSo()
+    {
+        using var vault = TestVault.Create((BookPath, BookText.Replace("- Unter", "- Umformuliert")), (JournalPath, JournalText));
+        await OpenSessionAsync(vault);
+
+        var cut = Render<SubPointLinkDialog>();
+
+        Assert.Equal(Text("SubPointsNoneUnmatched", 2), cut.Find(".ne-subpoints-none").TextContent);
+        Assert.Equal([Text("SubPointsBook", "Buch - Test", 0, 2)], cut.FindAll(".ne-subpoints-book").Select(item => item.TextContent));
+        Assert.Empty(cut.FindAll(".ne-subpoints-apply"));
+    }
+
+    [Fact]
     public async Task Apply_LinksAndCloses()
     {
         using var vault = TestVault.Create((BookPath, BookText), (JournalPath, JournalText));
@@ -152,7 +165,7 @@ public class SubPointLinkDialogTests : UiTestContext
         await cut.InvokeAsync(() => cut.Find(".ne-subpoints-apply").Click());
 
         Assert.Equal(0, closed);
-        Assert.Equal(Text("SubPointsNone"), cut.Find(".ne-subpoints-none").TextContent);
+        Assert.Equal(Text("SubPointsNoneUnmatched", 2), cut.Find(".ne-subpoints-none").TextContent);
         Assert.Empty(cut.FindAll(".ne-subpoints-summary"));
         Assert.Equal(BookText, vault.Read(BookPath));
     }
@@ -192,7 +205,7 @@ public class SubPointLinkDialogTests : UiTestContext
     }
 
     [Fact]
-    public async Task Undo_ChangedNotePage_NamesItInTheHeader()
+    public async Task Undo_ChangedNotePage_TakesBackTheEntries_KeepsTheChange()
     {
         using var vault = TestVault.Create((BookPath, BookText), (JournalPath, JournalText));
         var session = await OpenSessionAsync(vault);
@@ -201,13 +214,39 @@ public class SubPointLinkDialogTests : UiTestContext
         await cut.InvokeAsync(() => cut.Find(".ne-subpoints-apply").Click());
         header.WaitForAssertion(() => Assert.False(header.Find(".ne-undo").HasAttribute("disabled")));
 
-        // The note page was changed after the run: undo leaves it as it is and names it.
+        // The note page was changed after the run: it keeps the change and loses only the run's entries.
         var path = Path.Combine(vault.Root, JournalPath);
         File.WriteAllText(path, File.ReadAllText(path) + "- Neu\n");
         session.HandleExternalChange(path);
 
         await header.InvokeAsync(() => header.Find(".ne-undo").Click());
 
-        Assert.Equal(Text("SubPointsUndoKept", "2026_03_01.md"), header.Find(".ne-undo-error").TextContent);
+        Assert.Empty(header.FindAll(".ne-undo-error"));
+        Assert.Equal(BookText, vault.Read(BookPath));
+        Assert.Equal(
+            JournalText + "- Neu\n",
+            Regex.Replace(vault.Read(JournalPath), @"^\t[\t ]*id:: [^\n]*\n", "", RegexOptions.Multiline));
+    }
+
+    [Fact]
+    public async Task Undo_ChangedBook_Refused_NothingChanged()
+    {
+        using var vault = TestVault.Create((BookPath, BookText), (JournalPath, JournalText));
+        var session = await OpenSessionAsync(vault);
+        var header = Render<HeaderBar>();
+        var cut = Render<SubPointLinkDialog>();
+        await cut.InvokeAsync(() => cut.Find(".ne-subpoints-apply").Click());
+        header.WaitForAssertion(() => Assert.False(header.Find(".ne-undo").HasAttribute("disabled")));
+        var path = Path.Combine(vault.Root, BookPath);
+        var changed = File.ReadAllText(path) + "- Neu\n";
+        File.WriteAllText(path, changed);
+        session.HandleExternalChange(path);
+        var journal = vault.Read(JournalPath);
+
+        await header.InvokeAsync(() => header.Find(".ne-undo").Click());
+
+        Assert.Equal(Text("UndoFailed"), header.Find(".ne-undo-error").TextContent);
+        Assert.Equal(changed, vault.Read(BookPath));
+        Assert.Equal(journal, vault.Read(JournalPath));
     }
 }

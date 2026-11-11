@@ -320,12 +320,26 @@ public class AdoptWithoutChildrenTests
         using var s = new LinkSetup(Book, JournalWithUsedSubPoint);
         var textKey = s.Text("Hallo Welt").Key;
 
-        // Without sub-points, and with its only sub-point hidden: alone is the same as with its subtree.
+        // Without sub-points: alone is the same as with its subtree.
         s.Links.Adopt(s.Book, s.Note("Unter B").Key, new InsertPosition.After(textKey), includeChildren: false);
-        s.Links.Adopt(s.Book, s.Note("Zweite Notiz").Key, new InsertPosition.After(textKey), includeChildren: false, hideUsed: true);
 
         Assert.DoesNotContain("used-without-children::", s.ReadJournal());
-        Assert.Equal(2, CountOf(s.ReadJournal(), "[[Buch - Test]]"));
+        Assert.Equal(1, CountOf(s.ReadJournal(), "[[Buch - Test]]"));
+    }
+
+    [Fact]
+    public void WithoutChildren_OnlySubPointHidden_GetsTheMark()
+    {
+        using var s = new LinkSetup(Book, JournalWithUsedSubPoint);
+        var textKey = s.Text("Hallo Welt").Key;
+
+        // Its only sub-point is hidden, but it is a sub-point all the same: the usage takes the block alone (spec 3.3),
+        // so the sub-point does not inherit it and is unused once its own usage goes.
+        s.Links.Adopt(s.Book, s.Note("Zweite Notiz").Key, new InsertPosition.After(textKey), hideUsed: true);
+
+        Assert.Equal("true", s.Note("Zweite Notiz").GetProperty("used-without-children"));
+        s.Note("Benutzt").RemoveProperty("used-in");
+        Assert.False(NoteEvolution.Core.Vaults.NoteBlock.IsUsedBlock(s.Note("Benutzt")));
     }
 
     [Fact]

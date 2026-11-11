@@ -6,12 +6,6 @@ using NoteEvolution.Core.Vaults;
 namespace NoteEvolution.Core.Assistants;
 
 /// <summary>
-/// A detail of a linked book block without <c>source::</c> of its own (<paramref name="DetailKey"/>) and the sub-point of
-/// a source note it was copied from (<paramref name="NoteBlockKey"/>); both are <see cref="Block.Key"/> values.
-/// </summary>
-public sealed record SubPointMatch(Book Book, Guid DetailKey, Guid NoteBlockKey);
-
-/// <summary>
 /// What <see cref="SubPointLinker.Find"/> found: the matches to link, and per book (with at least one match or unmatched
 /// detail) how many details are linked and how many stay without a unique match.
 /// </summary>
@@ -36,7 +30,9 @@ public sealed class SubPointLinker(IVault vault, ILinkService links)
     /// sub-point S when D's text equals S's text, both trimmed (an adoption copies a sub-point's text as it is; only the
     /// adopted note block itself loses its <c>#notiz</c> tag). D is matched only if exactly one sub-point of all those
     /// notes has its text, and S only if no other detail of the same text block matches it as well; every other such
-    /// detail counts as unmatched.
+    /// detail counts as unmatched, as does one whose sub-point is on a read-only note page and has no <c>id::</c> (the page
+    /// never gets the <c>id::</c> the detail's <c>source::</c> would point to). A detail with an <c>id::</c> but no
+    /// <c>source::</c> is no candidate at all: its link was loosened on purpose, or a new adoption never linked it.
     /// </summary>
     public SubPointPlan Find()
     {
@@ -49,7 +45,7 @@ public sealed class SubPointLinker(IVault vault, ILinkService links)
             foreach (var textBlock in TextBlocksOf(book))
             {
                 var found = new List<(Block Detail, Block SubPoint)>();
-                foreach (var detail in textBlock.Paragraphs.Select(paragraph => paragraph.Block).Where(block => !HasSource(block)))
+                foreach (var detail in textBlock.Paragraphs.Select(paragraph => paragraph.Block).Where(IsCandidate))
                 {
                     var sources = SourcesAbove(detail, textBlock.Block);
                     if (sources.Count == 0)
@@ -66,7 +62,7 @@ public sealed class SubPointLinker(IVault vault, ILinkService links)
                         .Where(subPoint => SameText(subPoint, detail))
                         .Take(2)
                         .ToList();
-                    if (candidates.Count == 1)
+                    if (candidates.Count == 1 && CanBeLinked(candidates[0]))
                     {
                         found.Add((detail, candidates[0]));
                     }
@@ -135,6 +131,13 @@ public sealed class SubPointLinker(IVault vault, ILinkService links)
     private static IEnumerable<Block> SubtreeOf(Block block) => block.Children.SelectMany(SubtreeOf).Prepend(block);
 
     private static bool HasSource(Block block) => SourceValue.Parse(block.GetProperty("source") ?? "").Count > 0;
+
+    /// <summary>A detail an older adoption copied and left unlinked: no <c>source::</c> and no <c>id::</c>.</summary>
+    private static bool IsCandidate(Block detail) => !HasSource(detail) && detail.Id is null;
+
+    /// <summary>The sub-point has an <c>id::</c>, or can get one: its page is writable.</summary>
+    private bool CanBeLinked(Block subPoint) =>
+        subPoint.Id is not null || vault.FindBlockByKey(subPoint.Key) is { Page.IsReadOnly: false };
 
     private static bool SameText(Block subPoint, Block detail) =>
         string.Equals(subPoint.Content.Trim(), detail.Content.Trim(), StringComparison.Ordinal);
