@@ -360,7 +360,7 @@ else
         _committing = true;
         try
         {
-            if (await ApplyAsync(book => OutlineEditor.Rename(book, node.Key, title), "OutlineTitleInvalid") != ApplyResult.Invalid)
+            if (await ApplyAsync(book => OutlineEditor.Rename(book, node.Key, title), "OutlineTitleInvalid", L["UndoOutlineRename"]) != ApplyResult.Invalid)
             {
                 // An invalid title stays in the field with the error; otherwise the page is as the file has it now.
                 _renamingKey = null;
@@ -384,7 +384,7 @@ else
         var added = Guid.Empty;
         // The new heading becomes the section of this outline's view, made the active one first.
         if (await ActivateAsync()
-            && await ApplyAsync(book => added = OutlineEditor.AddHeading(book, parentKey, title), "OutlineMoveInvalid") == ApplyResult.Saved)
+            && await ApplyAsync(book => added = OutlineEditor.AddHeading(book, parentKey, title), "OutlineMoveInvalid", L["UndoOutlineAdd"]) == ApplyResult.Saved)
         {
             // Not revealed: the editor would take the focus from the rename field.
             State.CurrentSectionKey = added;
@@ -483,7 +483,7 @@ else
             var siblings = book.FindNode(parentKey)?.Children.Where(child => child.Key != key).ToList() ?? [];
             var index = beforeKey is { } before ? siblings.FindIndex(child => child.Key == before) : siblings.Count;
             OutlineEditor.MoveSection(book, key, parentKey, Math.Max(index, 0));
-        }, "OutlineMoveInvalid");
+        }, "OutlineMoveInvalid", L["UndoOutlineMove"]);
     }
 
     private enum ApplyResult
@@ -502,9 +502,10 @@ else
     /// Runs an outline operation on the book page and saves it (R26: only through <see cref="VaultSession.TrySave"/>).
     /// A refused argument is reported inline and changes nothing. If saving fails the page is read from the file
     /// again, so the outline shows what is on disk; a change by another program was already handled by the session.
-    /// The editor saves its pending text first (it holds the same page).
+    /// The editor saves its pending text first (it holds the same page). A saved change gets an undo action
+    /// (<paramref name="undoDescription"/>, „Rückgängig“ in the header) that is refused once the page changed after it.
     /// </summary>
-    private async Task<ApplyResult> ApplyAsync(Action<Book> edit, string invalidText)
+    private async Task<ApplyResult> ApplyAsync(Action<Book> edit, string invalidText, string undoDescription)
     {
         _error = null;
         try
@@ -530,6 +531,8 @@ else
             return ApplyResult.NotSaved;
         }
 
+        var page = book.Page;
+        var before = PageStructureSnapshot.Capture(page);
         try
         {
             edit(book);
@@ -541,8 +544,14 @@ else
             return ApplyResult.Invalid;
         }
 
-        var page = book.Page;
+        var changed = page.IsDirty;
         var saved = session.TrySave(page, out var error);
+        if (saved && changed)
+        {
+            // Refused once the page changed after this change (as every structure command's undo).
+            session.Undo.Push(new StructureUndo(undoDescription, session, page.FilePath, before, PageStructureSnapshot.Capture(page)));
+        }
+
         if (!saved && error is not FileChangedExternallyException && !session.HasOpenConflict(page.FilePath))
         {
             // A change by another program is merged or reported as a conflict by the session, and an open conflict
