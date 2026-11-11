@@ -81,6 +81,27 @@ public static class EditorDocMapper
         return new JsonObject { ["type"] = "doc", ["content"] = content }.ToJsonString();
     }
 
+    /// <summary>The number of <c>image</c> nodes in the editor document <paramref name="json"/>; 0 for JSON that is none.</summary>
+    public static int ImageCount(string json)
+    {
+        static int Count(JsonNode? node) => node switch
+        {
+            JsonObject item => ((item["type"] as JsonValue)?.TryGetValue<string>(out var type) == true && type == "image" ? 1 : 0)
+                               + Count(item["content"]),
+            JsonArray items => items.Sum(Count),
+            _ => 0,
+        };
+
+        try
+        {
+            return Count(JsonNode.Parse(json));
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return 0;
+        }
+    }
+
     /// <exception cref="ArgumentException">The JSON is not an editor document.</exception>
     public static SectionSnapshot FromJson(string json, Guid scopeKey, bool includeSubsections)
     {

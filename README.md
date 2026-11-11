@@ -172,11 +172,14 @@ auf Notizen außerhalb des Buchs bleiben unverändert. Im PDF steht ein Verweis 
 Seitenzahl sind anklickbar.
 
 **Bilder:** „Bild einfügen“ in der Leiste öffnet einen Dateidialog (PNG, JPEG, GIF, WebP, BMP, höchstens 20 MB);
-ein Bild aus der Zwischenablage (Strg+V, z. B. ein Screenshot) geht ebenso. Das Bild steht als eigener Block nach dem
+ein Bild aus der Zwischenablage (Strg+V, z. B. ein Screenshot) geht ebenso (bietet die Zwischenablage auch Text an,
+etwa aus Word oder einer Tabelle, wird der Text eingefügt und das Bild nicht). Das Bild steht als eigener Block nach dem
 Element am Cursor, in der Datei als Logseq-Bild `![Beschriftung](../assets/name.png)`; die Datei wird in den Ordner
 `assets` des Vaults kopiert (ein Screenshot heißt `bild-Datum-Uhrzeit.png`, derselbe Name mit anderem Inhalt bekommt `-2`, `-3` …).
 Die Beschriftung ändert man mit einem **Doppelklick** auf das Bild („Beschriftung“, Enter oder „Übernehmen“, Escape
-bricht ab). Im PDF stehen Bild und Beschriftung. Löscht man den Block, bleibt die Datei in `assets` liegen; fehlt sie,
+bricht ab). Im PDF stehen Bild und Beschriftung. Ist die Beschriftung nur ein Dateiname (so schreibt Logseq
+eingefügte Bilder, etwa `![image.png](…)`), wird sie weder im Editor noch im PDF angezeigt; im Feld „Beschriftung“
+steht sie trotzdem, die Datei bleibt unverändert. Löscht man den Block, bleibt die Datei in `assets` liegen; fehlt sie,
 zeigt der Editor „Bild nicht gefunden: …“. Nur Dateien im Vault werden angezeigt, Bilder aus dem Netz nicht.
 
 **Anhang: Glossar, Menschen, Quellen:** Am Buchende kann ein Buch ein Glossar, eine Liste der Menschen, die

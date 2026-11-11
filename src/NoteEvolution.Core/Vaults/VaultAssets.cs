@@ -67,19 +67,34 @@ public static class VaultAssets
         for (var n = 1; ; n++)
         {
             var target = Path.Combine(assets, n == 1 ? stem + extension : $"{stem}-{n}{extension}");
+            FileStream stream;
             try
             {
-                using var stream = new FileStream(target, FileMode.CreateNew, FileAccess.Write, FileShare.None);
-                stream.Write(bytes);
+                stream = new FileStream(target, FileMode.CreateNew, FileAccess.Write, FileShare.None);
             }
             catch (IOException) when (File.Exists(target))
             {
+                // Only a taken name moves on: the same picture is reused, another one tries the next number.
                 if (File.ReadAllBytes(target).AsSpan().SequenceEqual(bytes))
                 {
                     return RelativeTo(bookFilePath, target);
                 }
 
                 continue;
+            }
+
+            try
+            {
+                using (stream)
+                {
+                    stream.Write(bytes);
+                }
+            }
+            catch
+            {
+                // A failed write (e.g. disk full) leaves no partial picture behind and is not retried under another name.
+                TryDelete(target);
+                throw;
             }
 
             return RelativeTo(bookFilePath, target);
@@ -144,4 +159,17 @@ public static class VaultAssets
 
     private static string RelativeTo(string bookFilePath, string target) =>
         Path.GetRelativePath(Path.GetDirectoryName(Path.GetFullPath(bookFilePath)) ?? "", target).Replace('\\', '/');
+
+    /// <summary>Deletes <paramref name="file"/> if it can; a failure is ignored.</summary>
+    private static void TryDelete(string file)
+    {
+        try
+        {
+            File.Delete(file);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            // Best effort: the original failure is what the caller needs to see.
+        }
+    }
 }
