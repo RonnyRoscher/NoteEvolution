@@ -1650,6 +1650,34 @@ html, body {
     outline: 1px solid var(--accent);
 }
 
+/* An image in the text: a figure of its own with the picture and its caption; a picture that cannot be shown leaves a
+   muted note in its place. A double click changes the caption. */
+.ne-image {
+    display: block;
+    margin: 6px 0;
+    text-align: center;
+}
+
+.ne-image img {
+    max-width: 100%;
+    max-height: 400px;
+}
+
+.ne-image figcaption {
+    color: var(--fg-muted);
+    font-family: var(--font-ui);
+    font-size: 0.85em;
+}
+
+.ne-image-missing {
+    color: var(--fg-muted);
+    font-style: italic;
+}
+
+.ne-image.ProseMirror-selectednode {
+    outline: 1px solid var(--accent);
+}
+
 /* The first occurrence of a glossary term: a dotted underline; Ctrl+click opens the glossary at the entry. */
 .ne-glossary-mark {
     text-decoration: underline dotted;

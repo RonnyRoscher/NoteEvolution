@@ -323,7 +323,7 @@ public static class InlineMarkdown
         AddMerged(runs, text, bold, italic);
     }
 
-    /// <summary>Length of a backslash escape, link, block ref or code span starting at <paramref name="i"/>, else 0.</summary>
+    /// <summary>Length of a backslash escape, link, block ref, source citation, image or code span starting at <paramref name="i"/>, else 0.</summary>
     private static int PassThroughLength(string text, int i)
     {
         if (text[i] == '\\')

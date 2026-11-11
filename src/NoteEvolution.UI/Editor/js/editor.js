@@ -335,6 +335,140 @@ const SourceCite = Node.create({
     },
 });
 
+// The pictures C# has loaded, by path: path → Promise of { src, error }. A picture is asked for once, however often
+// it is shown (every editor, every new document).
+const imageCache = new Map();
+
+/** Forgets the loaded pictures (for tests; a picture changed on disk is only seen after the app restarts). */
+export function clearImageCache() {
+    imageCache.clear();
+}
+
+/** The picture of path: the cached answer of load(path), or one (error text) for a failed call. */
+function loadImage(path, load) {
+    if (!imageCache.has(path)) {
+        imageCache.set(path, Promise.resolve(load(path)).then(
+            result => result ?? { src: null, error: path },
+            error => ({ src: null, error: String(error?.message ?? error) })));
+    }
+    return imageCache.get(path);
+}
+
+/** The image as the book file holds it (Markdown, as C# writes it back). */
+function imageMarkdown(attrs) {
+    return `![${attrs.alt}](${attrs.path})${attrs.suffix}`;
+}
+
+/**
+ * An image ![alt](path){suffix} in the text of a text block or detail (Logseq syntax): one non-editable inline unit,
+ * a figure with the picture (loaded by options.load(path), a Promise of { src, error }, once per path) and the caption
+ * alt below it; where the picture cannot be shown (or is remote, which is never loaded) the text error stands in its
+ * place, in .ne-image-missing. C# writes it back from path, alt and suffix. A double click calls
+ * options.onEdit(key, offset) with the key of its text block or detail and its offset there, to change the caption.
+ */
+const ImageNode = Node.create({
+    name: 'image',
+    group: 'inline',
+    inline: true,
+    atom: true,
+    selectable: true,
+    draggable: false,
+    addOptions() {
+        return { load: () => Promise.resolve({ src: null, error: null }), onEdit: () => {} };
+    },
+    addAttributes() {
+        return {
+            path: { default: '', parseHTML: el => el.getAttribute('data-image') ?? '', rendered: false },
+            alt: { default: '', parseHTML: el => el.getAttribute('data-alt') ?? '', rendered: false },
+            suffix: { default: '', parseHTML: el => el.getAttribute('data-suffix') ?? '', rendered: false },
+            // Shown only: whether the path is remote, and the text standing in for a picture that is not loaded.
+            remote: { default: false, parseHTML: el => el.hasAttribute('data-remote'), rendered: false },
+            error: { default: null, rendered: false, parseHTML: () => null },
+        };
+    },
+    parseHTML() {
+        return [{ tag: 'span[data-image]' }];
+    },
+    renderHTML({ node }) {
+        const attrs = { 'data-image': node.attrs.path, 'data-alt': node.attrs.alt, 'data-suffix': node.attrs.suffix };
+        if (node.attrs.remote) {
+            attrs['data-remote'] = '';
+        }
+        return ['span', attrs, imageMarkdown(node.attrs)];
+    },
+    renderText: ({ node }) => imageMarkdown(node.attrs),
+    addNodeView() {
+        return ({ node, getPos, editor }) => {
+            const dom = document.createElement('figure');
+            dom.className = 'ne-image';
+            dom.contentEditable = 'false';
+            const missing = text => {
+                const span = document.createElement('span');
+                span.className = 'ne-image-missing';
+                span.textContent = text ?? '';
+                dom.prepend(span);
+            };
+            let alive = true;
+            if (node.attrs.remote) {
+                missing(node.attrs.error);
+            } else {
+                loadImage(node.attrs.path, this.options.load).then(result => {
+                    if (!alive) {
+                        return;
+                    }
+                    if (result.src) {
+                        const img = document.createElement('img');
+                        img.src = result.src;
+                        img.alt = node.attrs.alt;
+                        dom.prepend(img);
+                    } else {
+                        missing(result.error);
+                    }
+                });
+            }
+            if (node.attrs.alt) {
+                const caption = document.createElement('figcaption');
+                caption.textContent = node.attrs.alt;
+                dom.appendChild(caption);
+            }
+            dom.addEventListener('dblclick', event => {
+                event.preventDefault();
+                const at = typeof getPos === 'function' ? elementAt(editor.state.doc, getPos()) : null;
+                if (at) {
+                    this.options.onEdit(at.key, at.offset);
+                }
+            });
+            return {
+                dom,
+                destroy: () => {
+                    alive = false;
+                },
+            };
+        };
+    },
+});
+
+/**
+ * The images in the clipboard of a paste event as [{ file, type }] (an image copied from outside the editor; the
+ * Markdown of a copied image is text and is pasted as such).
+ */
+function clipboardImages(event) {
+    return [...(event.clipboardData?.items ?? [])]
+        .filter(item => item.kind === 'file' && item.type.startsWith('image/'))
+        .map(item => ({ file: item.getAsFile(), type: item.type }))
+        .filter(image => image.file);
+}
+
+/** The base64 of a file's bytes, without a data: prefix. */
+function readBase64(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result).replace(/^data:[^,]*,/, ''));
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(file);
+    });
+}
+
 /** The inline atoms that stand for a reference: one unit of the text, deleted whole. */
 const referenceNodes = new Set(['blockRef', 'personRef', 'sourceCite']);
 
@@ -1169,7 +1303,9 @@ function dropTarget(view, event) {
 /**
  * Creates the editor in host. dotnet receives DocumentChanged(json), CursorChanged(kind, key, textBlockKey, offset),
  * EditorFocused() (whenever the editor gets the focus, before the cursor report that may follow), SectionCommand(name), SectionBoxMoved(barTop, visible), ChipClicked(noteId), ChipRemoved(blockKey, noteId),
- * ReferenceClicked(id), NoteDropped(afterKey), BlocksDragStarted(keysJson), BlocksDragEnded(), BlocksDropped(keysJson, afterKey) (text blocks dragged from the other editor), UndoRequested() (Ctrl+Z with nothing to undo in the editor), PersonClicked(id), SourceClicked(id), CitationEdit(id, key, offset) and
+ * ReferenceClicked(id), NoteDropped(afterKey), BlocksDragStarted(keysJson), BlocksDragEnded(), BlocksDropped(keysJson, afterKey) (text blocks dragged from the other editor), UndoRequested() (Ctrl+Z with nothing to undo in the editor), PersonClicked(id), SourceClicked(id), CitationEdit(id, key, offset),
+ * LoadImage(path) (returns a Promise of { src, error }: a data URL of the picture, or the text to show instead),
+ * ImageEdit(key, offset) (a double click on an image, key and offset of the image's text as CitationEdit has them), ImagePasted(base64, mime) (an image in the clipboard; the paste changes nothing in the document) and
  * GlossaryClicked(entryKey). options.citeClickDelay is how long a click on a citation waits for a double click (ms). options.barHeight is the height of the section bar C# shows at the marking box's bottom
  * (.ne-section-bar in the .ne-editor-pane) until the bar can be measured; the bar may wrap into more lines, so its
  * actual height is followed (the gap below the marking, --bar-height, and the scroll distance from the bottom).
@@ -1279,6 +1415,10 @@ export function createEditor(host, dotnet, options = {}) {
                 onEdit: (id, key, offset) => call('CitationEdit', id, key, offset),
                 clickDelay: options.citeClickDelay ?? 250,
             }),
+            ImageNode.configure({
+                load: path => dotnet.invokeMethodAsync('LoadImage', path),
+                onEdit: (key, offset) => call('ImageEdit', key, offset),
+            }),
             Bold,
             Italic,
             HardBreak.extend({
@@ -1300,6 +1440,17 @@ export function createEditor(host, dotnet, options = {}) {
             // The section bar covers the pane's bottom: the line being typed in or moved to stays above it.
             scrollThreshold,
             scrollMargin,
+            // An image in the clipboard goes to C# (it saves the file and inserts the block); the document is not changed here.
+            handlePaste: (view, event) => {
+                const images = clipboardImages(event);
+                if (images.length === 0) {
+                    return false;
+                }
+                for (const { file, type } of images) {
+                    readBase64(file).then(base64 => call('ImagePasted', base64, type), error => console.error(error));
+                }
+                return true;
+            },
             handleDOMEvents: {
                 // Whole text blocks dragged out of this editor are announced, so the other half's outline can take them.
                 dragstart: view => {

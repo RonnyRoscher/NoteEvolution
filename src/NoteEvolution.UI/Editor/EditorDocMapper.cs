@@ -36,6 +36,12 @@ namespace NoteEvolution.UI.Editor;
 /// (label "[3]" or "[3, S. 12]", see <see cref="AppendixLabels.CitationLabel"/>), written back with
 /// <see cref="SourceCitations.Format"/>. Each is one unit of the shown text; only id and locator go back.
 /// </para>
+/// <para>
+/// An image <c>![alt](path){suffix}</c> is an inline atom <c>image{path, alt, suffix, remote, error}</c>, written back
+/// with <see cref="BlockImages.Format"/>; it is one unit of the shown text and passes through unescaped in both
+/// directions. <c>remote</c> and <c>error</c> (the text shown instead of a remote image, see <see cref="ToJson"/>) are
+/// only shown.
+/// </para>
 /// </summary>
 public static class EditorDocMapper
 {
@@ -45,12 +51,16 @@ public static class EditorDocMapper
     /// <c>null</c> label: no cross reference (a block outside the book, spec 2.1), a foreign node.</param>
     /// <param name="personOf">The label of a person by id; <c>null</c> (or a <c>null</c> label): the reference is no person.</param>
     /// <param name="sourceOf">The label of a cited source by id (<see cref="AppendixLabels.Sources"/>); <c>null</c>: "–".</param>
+    /// <param name="remoteImageText">The text shown instead of a remote image (one with a <c>scheme://</c> path, never
+    /// loaded) by its path; <c>null</c>: the path itself.</param>
     public static string ToJson(
         SectionSnapshot snapshot, Func<Guid, BlockDateLabel?>? datesOf = null, Func<Guid, RefLabel?>? refOf = null,
-        Func<Guid, RefLabel?>? personOf = null, Func<Guid, RefLabel>? sourceOf = null)
+        Func<Guid, RefLabel?>? personOf = null, Func<Guid, RefLabel>? sourceOf = null,
+        Func<string, string>? remoteImageText = null)
     {
         refOf ??= id => new RefLabel(BlockRefs.Format(id), "", false);
-        var labels = new Labels(refOf, personOf ?? (_ => null), sourceOf ?? (_ => new RefLabel("–", "", false)));
+        var labels = new Labels(
+            refOf, personOf ?? (_ => null), sourceOf ?? (_ => new RefLabel("–", "", false)), remoteImageText ?? (path => path));
         var content = new JsonArray();
         foreach (var node in snapshot.Nodes)
         {
@@ -145,7 +155,9 @@ public static class EditorDocMapper
     }
 
     /// <summary>How the shown references and citations are labelled (see <see cref="ToJson"/>).</summary>
-    private sealed record Labels(Func<Guid, RefLabel?> RefOf, Func<Guid, RefLabel?> PersonOf, Func<Guid, RefLabel> SourceOf);
+    private sealed record Labels(
+        Func<Guid, RefLabel?> RefOf, Func<Guid, RefLabel?> PersonOf, Func<Guid, RefLabel> SourceOf,
+        Func<string, string> RemoteImageText);
 
     private static JsonObject Para(Guid? key, string markdown, int depth, bool isNote, BlockStatus status, Labels labels)
     {
@@ -172,6 +184,7 @@ public static class EditorDocMapper
                 RefUnit(var id) when labels.PersonOf(id) is { } person => Atom("personRef", id, person.Text, person),
                 RefUnit(var id) => BlockRef(id, labels.RefOf(id) ?? RefLabel.ForeignOf(id)),
                 CiteUnit(var id, var locator) => Cite(id, locator, labels.SourceOf(id)),
+                ImageUnit(var alt, var path, var suffix) => Image(alt, path, suffix, labels),
                 _ => new JsonObject { ["type"] = "text", ["text"] = run.Text },
             };
 
@@ -232,12 +245,31 @@ public static class EditorDocMapper
         return item;
     }
 
-    /// <summary>A unit of the shown text that is one node: a block reference or a source citation.</summary>
+    private static JsonObject Image(string alt, string path, string suffix, Labels labels)
+    {
+        var remote = BlockImages.IsRemote(path);
+        return new JsonObject
+        {
+            ["type"] = "image",
+            ["attrs"] = new JsonObject
+            {
+                ["path"] = path,
+                ["alt"] = alt,
+                ["suffix"] = suffix,
+                ["remote"] = remote,
+                ["error"] = remote ? labels.RemoteImageText(path) : null,
+            },
+        };
+    }
+
+    /// <summary>A unit of the shown text that is one node: a block reference, a source citation or an image.</summary>
     private abstract record Unit;
 
     private sealed record RefUnit(Guid Id) : Unit;
 
     private sealed record CiteUnit(Guid Id, string? Locator) : Unit;
+
+    private sealed record ImageUnit(string Alt, string Path, string Suffix) : Unit;
 
     /// <summary>
     /// The runs of <see cref="Display"/>, each reference or citation with its unit (<c>null</c> for text; adjacent text
@@ -335,6 +367,10 @@ public static class EditorDocMapper
                 case "sourceCite" when Guid.TryParse(Attr<string?>(item, "id", null), out var id):
                     runs.Add(Marked(item, SourceCitations.Format(id, Attr<string?>(item, "locator", null))));
                     break;
+                case "image":
+                    runs.Add(Marked(item, BlockImages.Format(
+                        Attr(item, "alt", ""), Attr(item, "path", ""), Attr(item, "suffix", ""))));
+                    break;
             }
         }
 
@@ -353,7 +389,7 @@ public static class EditorDocMapper
         return new InlineRun(text, marks.Contains("bold"), marks.Contains("italic"));
     }
 
-    /// <summary>The unit of a run of <see cref="Display"/> that is a block reference or a citation; <c>null</c> for text.</summary>
+    /// <summary>The unit of a run of <see cref="Display"/> that is a block reference, a citation or an image; <c>null</c> for text.</summary>
     private static Unit? UnitOf(InlineRun run)
     {
         if (run.Text.Length == 0)
@@ -365,6 +401,12 @@ public static class EditorDocMapper
         {
             var citation = SourceCitations.Find(run.Text)[0];
             return new CiteUnit(citation.Id, citation.Locator);
+        }
+
+        if (BlockImages.LengthAt(run.Text, 0) == run.Text.Length)
+        {
+            var image = BlockImages.Find(run.Text)[0];
+            return new ImageUnit(image.Alt, image.Path, image.Suffix);
         }
 
         return BlockRefs.LengthAt(run.Text, 0) == run.Text.Length ? new RefUnit(BlockRefs.Find(run.Text)[0].Id) : null;
@@ -404,7 +446,8 @@ public static class EditorDocMapper
     /// line break as a run of its own (<c>"\n"</c>, no emphasis) and each block reference as a run of its own, written
     /// as <see cref="BlockRefs.Format"/> writes it (the editor shows the id, not how its letters were cased; see
     /// <see cref="UnitOf"/>). A source citation is a run of its own too, as <see cref="SourceCitations.Format"/> writes
-    /// it; its locator is taken as it is (no escapes removed).
+    /// it; its locator is taken as it is (no escapes removed). An image is a run of its own too, as
+    /// <see cref="BlockImages.Format"/> writes it (path trimmed), taken as it is as well.
     /// </summary>
     private static List<InlineRun> Display(string markdown)
     {
@@ -412,11 +455,11 @@ public static class EditorDocMapper
         foreach (var run in InlineMarkdown.Parse(markdown))
         {
             var start = 0;
-            foreach (var citation in SourceCitations.Find(run.Text))
+            foreach (var (unitStart, length, shown) in PassThroughs(run.Text))
             {
-                AddDisplayed(result, run, run.Text[start..citation.Start]);
-                result.Add(run with { Text = SourceCitations.Format(citation.Id, citation.Locator) });
-                start = citation.Start + citation.Length;
+                AddDisplayed(result, run, run.Text[start..unitStart]);
+                result.Add(run with { Text = shown });
+                start = unitStart + length;
             }
 
             AddDisplayed(result, run, run.Text[start..]);
@@ -425,7 +468,30 @@ public static class EditorDocMapper
         return result;
     }
 
-    /// <summary>Adds the text of <paramref name="run"/> outside its citations to the runs of <see cref="Display"/>.</summary>
+    /// <summary>
+    /// The source citations and images of <paramref name="text"/> in text order (one that overlaps an earlier one is
+    /// dropped), each with its place and the text the editor shows for it. They are the parts of a text that are taken
+    /// as they are: no marker is unescaped when shown or escaped when written.
+    /// </summary>
+    private static List<(int Start, int Length, string Shown)> PassThroughs(string text)
+    {
+        var units = new List<(int Start, int Length, string Shown)>();
+        units.AddRange(SourceCitations.Find(text).Select(c => (c.Start, c.Length, SourceCitations.Format(c.Id, c.Locator))));
+        units.AddRange(BlockImages.Find(text).Select(i => (i.Start, i.Length, BlockImages.Format(i.Alt, i.Path, i.Suffix))));
+        units.Sort((a, b) => a.Start.CompareTo(b.Start));
+        var result = new List<(int Start, int Length, string Shown)>();
+        foreach (var unit in units)
+        {
+            if (result.Count == 0 || unit.Start >= result[^1].Start + result[^1].Length)
+            {
+                result.Add(unit);
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>Adds the text of <paramref name="run"/> outside its citations and images to the runs of <see cref="Display"/>.</summary>
     private static void AddDisplayed(List<InlineRun> result, InlineRun run, string text)
     {
         if (text.Length == 0)
@@ -498,15 +564,15 @@ public static class EditorDocMapper
         return (text.ToString(), styles);
     }
 
-    /// <summary>Escapes every <c>*</c> and <c>_</c>, except in a source citation (its locator is written as it is).</summary>
+    /// <summary>Escapes every <c>*</c> and <c>_</c>, except in a source citation or an image (written as they are).</summary>
     private static string EscapeMarkers(string text)
     {
         var sb = new StringBuilder();
         var start = 0;
-        foreach (var citation in SourceCitations.Find(text))
+        foreach (var (unitStart, length, _) in PassThroughs(text))
         {
-            sb.Append(Escaped(text[start..citation.Start])).Append(text, citation.Start, citation.Length);
-            start = citation.Start + citation.Length;
+            sb.Append(Escaped(text[start..unitStart])).Append(text, unitStart, length);
+            start = unitStart + length;
         }
 
         return sb.Append(Escaped(text[start..])).ToString();

@@ -40,6 +40,7 @@ public static partial class ManuscriptEditor
     /// </summary>
     /// <returns><c>false</c> (nothing changed) when the caption is already that.</returns>
     /// <exception cref="ArgumentException">The element is a heading or not in the book, or the text has no such image.</exception>
+    /// <exception cref="InvalidOperationException">A block has no place for properties (an open code fence); nothing is changed.</exception>
     public static bool SetImageCaption(Book book, Guid elementKey, int imageIndex, string caption, DateTimeOffset? now = null)
     {
         var element = ReferringElement(book, elementKey);
