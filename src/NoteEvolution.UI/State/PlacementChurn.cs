@@ -48,9 +48,11 @@ internal sealed class PlacementChurn(
 
     /// <summary>
     /// A check that needs the model: the rule that made it again (null: the note's first check), what the note had before,
-    /// its prompt and its book.
+    /// its prompt and its book. Without <paramref name="Before"/>, <paramref name="AnyOf"/> are the paths the earlier
+    /// result's section may have (an older result known by its summary only; empty: not known); null: no earlier result.
     /// </summary>
-    private sealed record Pending(RecheckReason? Reason, Choice? Before, PlacementCheckPrompt Prompt, string Book);
+    private sealed record Pending(RecheckReason? Reason, Choice? Before, PlacementCheckPrompt Prompt, string Book,
+        IReadOnlyList<string>? AnyOf = null);
 
     /// <summary>A prompt read back: the note's text, and each section's path, summary sentence and places.</summary>
     private sealed record PromptParts(string Note, IReadOnlyList<PromptSection> Sections);
@@ -72,10 +74,14 @@ internal sealed class PlacementChurn(
     // Also used by the store's writer thread; the store is never read under this lock.
     private readonly Lock _gate = new();
     private string? _keepLine;
-    private IReadOnlyDictionary<string, RecheckReason> _rechecks = new Dictionary<string, RecheckReason>();
+    private IReadOnlyDictionary<string, Recheck> _rechecks = new Dictionary<string, Recheck>();
     private Dictionary<string, Pending> _pending = new(StringComparer.Ordinal);
-    private readonly Dictionary<RecheckReason, (int SamePlace, int SameSection, int OtherSection, int NoEarlier)> _outcomes = [];
-    private (int SamePlace, int SameSection, int OtherSection, int NoEarlier) _firstOutcomes;
+    private readonly Dictionary<RecheckReason, Outcomes> _outcomes = [];
+    private Outcomes _firstOutcomes;
+    private readonly HashSet<string> _candidatesLogged = new(StringComparer.Ordinal);
+
+    /// <summary>How the repeated checks of one rule came out.</summary>
+    private readonly record struct Outcomes(int SamePlace, int SameSection, int OtherSection, int NoEarlier, int NotComparable);
 
     /// <summary>Why <paramref name="current"/> differs from <paramref name="previous"/>, read from the text the model sees.</summary>
     internal static PlacementChurnReason Classify(PlacementCheckPrompt previous, PlacementCheckPrompt current)
@@ -115,7 +121,7 @@ internal sealed class PlacementChurn(
 
             var stored = storedFingerprints();
             Dictionary<string, Pending> earlier;
-            IReadOnlyDictionary<string, RecheckReason> rechecks;
+            IReadOnlyDictionary<string, Recheck> rechecks;
             lock (_gate)
             {
                 earlier = _pending;
@@ -146,10 +152,24 @@ internal sealed class PlacementChurn(
 
                 if (!stored.Contains(item.Fingerprint))
                 {
-                    pending[item.Fingerprint] = new Pending(
-                        rechecks.TryGetValue(item.Fingerprint, out var why) ? why : carried?.Reason,
-                        carried is not null ? carried.Before : ChoiceOf(previous),
-                        item.Check!, book);
+                    var recheck = rechecks.GetValueOrDefault(item.Fingerprint);
+                    var before = carried is not null ? carried.Before : ChoiceOf(previous);
+                    var anyOf = carried?.AnyOf;
+
+                    // After a restart the note has no earlier check in this session: the result the build compared with.
+                    if (before is null && carried is null && recheck?.Earlier is { } earlierChoice)
+                    {
+                        if (earlierChoice.Paths.Count == 1)
+                        {
+                            before = new Choice(Guid.Empty, earlierChoice.Paths[0], Place(earlierChoice.Place));
+                        }
+                        else
+                        {
+                            anyOf = earlierChoice.Paths;
+                        }
+                    }
+
+                    pending[item.Fingerprint] = new Pending(recheck?.Reason ?? carried?.Reason, before, item.Check!, book, anyOf);
                 }
             }
 
@@ -250,10 +270,15 @@ internal sealed class PlacementChurn(
             }
 
             var now = storedText(fingerprint) is { } text ? ChoiceIn(done.Prompt, text) : null;
-            var outcome = done.Before is null || now is null ? "no earlier result"
-                : !SameSection(done.Book, done.Before, now) ? "other section"
-                : done.Before.Place == now.Place ? "same place"
-                : "same section";
+            var outcome = done.Before is { } before
+                ? now is null ? "no earlier result"
+                    : !SameSection(done.Book, before, now) ? "other section"
+                    : before.Place == now.Place ? "same place"
+                    : "same section"
+                : done.AnyOf is not { } anyOf || now is null ? "no earlier result"
+                : anyOf.Count == 0 ? "not comparable"
+                : anyOf.Any(path => SameSection(done.Book, new Choice(Guid.Empty, path, null), now)) ? "same section"
+                : "other section";
             string totals;
             lock (_gate)
             {
@@ -263,6 +288,7 @@ internal sealed class PlacementChurn(
                     "same place" => counts with { SamePlace = counts.SamePlace + 1 },
                     "same section" => counts with { SameSection = counts.SameSection + 1 },
                     "other section" => counts with { OtherSection = counts.OtherSection + 1 },
+                    "not comparable" => counts with { NotComparable = counts.NotComparable + 1 },
                     _ => counts with { NoEarlier = counts.NoEarlier + 1 },
                 };
                 if (done.Reason is { } reason)
@@ -278,7 +304,7 @@ internal sealed class PlacementChurn(
                     .Select(entry => (Name: Name(entry.Key), Counts: entry.Value))
                     .Concat(_firstOutcomes == default ? [] : [(Name: Name(null), Counts: _firstOutcomes)])
                     .Select(entry =>
-                        $"{entry.Name}: same place {entry.Counts.SamePlace}, same section {entry.Counts.SameSection}, other section {entry.Counts.OtherSection}, no earlier {entry.Counts.NoEarlier}"));
+                        $"{entry.Name}: same place {entry.Counts.SamePlace}, same section {entry.Counts.SameSection}, other section {entry.Counts.OtherSection}, no earlier {entry.Counts.NoEarlier}, not comparable {entry.Counts.NotComparable}"));
             }
 
             logger.LogInformation("Placement recheck ({Reason}): {Outcome}. So far, {Totals}", Name(done.Reason), outcome, totals);
@@ -291,14 +317,16 @@ internal sealed class PlacementChurn(
 
     /// <summary>
     /// A build kept <paramref name="kept"/> stored results, upgraded <paramref name="upgraded"/> older ones (once) and
-    /// checks the others again for <paramref name="reasons"/>; <paramref name="rechecks"/> tells the rule per fingerprint,
-    /// for the comparison of their results. Never throws.
+    /// checks the others again for <paramref name="reasons"/>; <paramref name="rechecks"/> tells the rule and the earlier
+    /// result per fingerprint, for the comparison of their results. A check made again for a new candidate is logged with
+    /// its note and the new paths, once per check. Never throws.
     /// </summary>
     public void Keep(string book, int kept, int upgraded, IReadOnlyDictionary<RecheckReason, int> reasons,
-        IReadOnlyDictionary<string, RecheckReason> rechecks)
+        IReadOnlyDictionary<string, Recheck> rechecks)
     {
         try
         {
+            LogCandidates(book, rechecks);
             var rechecked = reasons.Values.Sum();
             var why = string.Join(", ", reasons.OrderBy(entry => entry.Key).Select(entry => $"{entry.Key} {entry.Value}"));
             var line = $"{book}|{kept}|{upgraded}|{why}";
@@ -322,6 +350,29 @@ internal sealed class PlacementChurn(
         catch (Exception ex)
         {
             logger.LogDebug(ex, "Measuring the kept placements failed");
+        }
+    }
+
+    /// <summary>Each check made again for a new candidate, once: which note, what it had chosen and which paths are new.</summary>
+    private void LogCandidates(string book, IReadOnlyDictionary<string, Recheck> rechecks)
+    {
+        foreach (var (fingerprint, recheck) in rechecks)
+        {
+            if (recheck.Candidates is not { } candidates)
+            {
+                continue;
+            }
+
+            lock (_gate)
+            {
+                if (!_candidatesLogged.Add(fingerprint))
+                {
+                    continue;
+                }
+            }
+
+            logger.LogInformation("Placement new candidate in {Book} for {Note}: chosen {Chosen}; new {Paths}",
+                book, candidates.Note, string.Join(" / ", recheck.Earlier?.Paths ?? []), string.Join(", ", candidates.Paths));
         }
     }
 

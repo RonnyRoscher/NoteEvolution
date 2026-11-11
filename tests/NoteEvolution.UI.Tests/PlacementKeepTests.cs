@@ -90,6 +90,53 @@ public sealed class PlacementKeepTests : IDisposable
     }
 
     [Fact]
+    public void NewCandidate_NamesTheNewPaths()
+    {
+        var latest = Latest();
+        AddHeading("Kapitel A", "Unter A3");
+        var book = Book();
+
+        // A3 is new and ranked before A1; D is a new chapter among the best three (ranked after A1).
+        var prompt = Prompt(book, ["Unter A3", "Unter A1", "Kapitel D", "Kapitel B"]);
+
+        Assert.Equal(RecheckReason.NewCandidate, PlacementKeep.Decide(latest, prompt, book, null, out var candidates));
+        Assert.Equal(["Kapitel D#0", "Kapitel A#0 › Unter A3#0"], candidates);
+    }
+
+    [Fact]
+    public void Earlier_StoredWithPath_IsThatPathAndPlace()
+    {
+        var book = Book();
+        var latest = Latest() with { AfterText = "Text unter A1." };
+
+        var earlier = PlacementWork.Earlier(Prompt(book, Topics), latest);
+
+        Assert.Equal(["Kapitel A#0 › Unter A1#0"], earlier.Paths);
+        Assert.Equal("Text unter A1.", earlier.Place);
+    }
+
+    [Theory]
+    [InlineData("Satz Unter A2.", new[] { "Kapitel A#0 › Unter A2#0" })]
+    [InlineData("Ein Satz, den es nicht mehr gibt.", new string[0])]
+    public void Earlier_OlderResultWithoutPath_ByItsSummary(string summary, string[] expected)
+    {
+        var book = Book();
+        var old = new PlacementVerdict(Guid.NewGuid(), null, "Passt.", Summary: summary);
+
+        Assert.Equal(expected, PlacementWork.Earlier(Prompt(book, Topics, summary: "Satz"), old).Paths);
+    }
+
+    [Fact]
+    public void Kept_NamesNoCandidates()
+    {
+        var latest = Latest();
+        var book = Book();
+
+        Assert.Equal(RecheckReason.None, PlacementKeep.Decide(latest, Prompt(book, Topics), book, null, out var candidates));
+        Assert.Empty(candidates);
+    }
+
+    [Fact]
     public void NewChapterInTopThree_NewCandidate()
     {
         var latest = Latest();
