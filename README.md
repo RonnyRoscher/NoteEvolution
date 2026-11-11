@@ -484,6 +484,9 @@ Editor
 - [ ] Leerzeichen am Ende eines Absatzes tippen und warten: das Leerzeichen bleibt, der Cursor springt nicht,
       Strg+Z im Editor funktioniert weiter.
 - [ ] Strg+Enter mitten in einem verknüpften Block: die Notiz hat danach zwei `used-in`-Einträge.
+- [ ] Enter mitten in einem verknüpften Unterpunkt (oder im Text eines verknüpften Blocks): der neue Unterpunkt hat
+      `id::` und dieselbe `source::`, die Notiz einen weiteren `used-in`-Eintrag; Enter am Anfang eines Unterpunkts
+      setzt eine leere Zeile davor, der Text behält seine Verknüpfung.
 - [ ] Tab, Umschalt+Tab und Strg+Umschalt+N funktionieren (Strg+Umschalt+N wird nicht von WebView2 abgefangen und
       macht das Element am Cursor zur Bemerkung bzw. wieder zum Entwurf).
 - [ ] Status: in der Leiste alle fünf Stati an Textblock und Detail wählen; graue und beige Schrift und die Randstriche stimmen im

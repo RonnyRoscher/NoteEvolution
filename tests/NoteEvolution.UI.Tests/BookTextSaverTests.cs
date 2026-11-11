@@ -53,6 +53,36 @@ public class BookTextSaverTests : UiTestContext
     private static int Usages(TestVault tv) => tv.Read(NotesPath).Split("[[Buch - Alpha]]").Length - 1;
 
     [Fact]
+    public async Task Save_DetailSplitOffLinkedText_LinkedAndNoteGainsUsage()
+    {
+        using var tv = Alpha();
+        var (_, saver) = await OpenAsync(tv);
+        var doc = Doc(saver);
+        var first = Blocks(doc)[0]!;
+        SetText(first, "Erster");
+        // Enter after "Erster" in the block's own text: a new sub-bullet split off the text block.
+        first["content"]!.AsArray().Insert(1, new JsonObject
+        {
+            ["type"] = "para",
+            ["attrs"] = new JsonObject
+            {
+                ["key"] = Guid.CreateVersion7().ToString("D"),
+                ["splitFrom"] = first["attrs"]!["key"]!.GetValue<string>(),
+                ["depth"] = 1,
+            },
+            ["content"] = new JsonArray(new JsonObject { ["type"] = "text", ["text"] = "Text" }),
+        });
+
+        saver.Pending = doc.ToJsonString();
+        saver.Save();
+
+        Assert.Null(saver.Pending);
+        Assert.Null(saver.Message);
+        Assert.Matches(@"\t\t- Text\n\t\t  id:: [0-9a-f-]{36}\n\t\t  source:: ", tv.Read(BookPath));
+        Assert.Equal(2, Usages(tv));
+    }
+
+    [Fact]
     public async Task Save_FileLockedForWriting_KeepsTextAndSavesItOnTheNextTry()
     {
         using var tv = Alpha();

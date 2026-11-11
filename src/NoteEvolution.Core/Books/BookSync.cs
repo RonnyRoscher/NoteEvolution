@@ -27,7 +27,7 @@ public sealed record BlockDeleted(Guid BookBlockId, IReadOnlyList<Guid> Sources)
 }
 
 /// <summary>
-/// A text block got its own id and the sources: split off a linked block in the editor, or a linked block the editor put
+/// A text block or detail got its own id and the sources: split off a linked block in the editor, or a linked block the editor put
 /// back after its deletion was saved (its sources that are still in the vault). Each source note gains the usage.
 /// </summary>
 public sealed record BlockSplit(Guid NewBookBlockId, IReadOnlyList<Guid> Sources) : SyncEffect;
@@ -45,7 +45,7 @@ public static class BookSync
     /// moved blocks are moved, blocks missing from the snapshot are removed. Blocks the user did not change keep
     /// their lines and their place. Headings are only renamed; the outline itself is never changed here.
     /// <para>
-    /// A new text block split off a linked block gets an id and the same <c>source::</c> (<see cref="BlockSplit"/>).
+    /// A new text block or detail split off a linked block gets an id and the same <c>source::</c> (<see cref="BlockSplit"/>).
     /// A new text block without <see cref="SnapshotTextBlock.SplitFrom"/> but with sources (the editor put a deleted
     /// linked block back, e.g. its undo after the deletion was saved) is linked again the same way with those of its
     /// sources that <paramref name="vault"/> finds; without a vault, or if none is found, it stays unlinked.
@@ -395,12 +395,7 @@ public static class BookSync
             List<BlockProperty>? properties = null;
             if (text.SplitFrom is { } from)
             {
-                if (_blocks.TryGetValue(from, out var original)
-                    && original.GetProperty("source") is { } source
-                    && SourceValue.Parse(source) is { Count: > 0 } sources)
-                {
-                    properties = Link(source, [.. sources.Distinct()]);
-                }
+                properties = LinkSplit(from);
             }
             else if (_vault is not null
                      && text.Sources.Select(s => s.NoteId).Distinct().Where(id => _vault.FindBlockById(id) is not null).ToList()
@@ -418,6 +413,18 @@ public static class BookSync
             _blocks[text.Key] = block;
             return block;
         }
+
+        /// <summary>
+        /// The properties of a new block split off <paramref name="from"/> (a text block or a detail): an id and the same
+        /// <c>source::</c> if that block has sources, else <c>null</c>.
+        /// </summary>
+        private List<BlockProperty>? LinkSplit(Guid? from) =>
+            from is { } key
+            && _blocks.TryGetValue(key, out var original)
+            && original.GetProperty("source") is { } source
+            && SourceValue.Parse(source) is { Count: > 0 } sources
+                ? Link(source, [.. sources.Distinct()])
+                : null;
 
         /// <summary>The properties of a new linked block (a new id and <paramref name="source"/>); the notes gain its usage.</summary>
         private List<BlockProperty> Link(string source, IReadOnlyList<Guid> sources)
@@ -521,7 +528,7 @@ public static class BookSync
                 }
                 else
                 {
-                    block = Block.CreateDetached(_contents[paragraph.Key], null, paragraph.Key);
+                    block = Block.CreateDetached(_contents[paragraph.Key], LinkSplit(paragraph.SplitFrom), paragraph.Key);
                     _blocks[paragraph.Key] = block;
                 }
 

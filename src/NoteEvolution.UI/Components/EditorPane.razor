@@ -1138,7 +1138,8 @@
     }
 
     /// <summary>
-    /// Same nodes, texts, paragraphs, statuses and chips (<see cref="SnapshotTextBlock.SplitFrom"/> is left out).
+    /// Same nodes, texts, paragraphs, statuses and chips (<see cref="SnapshotTextBlock.SplitFrom"/> and
+    /// <see cref="SnapshotParagraph.SplitFrom"/> are left out).
     /// </summary>
     private static bool SameContent(SectionSnapshot a, SectionSnapshot b) =>
         a.ScopeKey == b.ScopeKey
@@ -1148,7 +1149,8 @@
         {
             (SnapshotHeading x, SnapshotHeading y) => x == y,
             (SnapshotTextBlock x, SnapshotTextBlock y) =>
-                x.Key == y.Key && x.Text == y.Text && x.Status == y.Status && x.Paragraphs.SequenceEqual(y.Paragraphs)
+                x.Key == y.Key && x.Text == y.Text && x.Status == y.Status
+                && x.Paragraphs.Select(p => p with { SplitFrom = null }).SequenceEqual(y.Paragraphs.Select(p => p with { SplitFrom = null }))
                 && x.Sources.SequenceEqual(y.Sources),
             _ => false,
         });
