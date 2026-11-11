@@ -171,6 +171,14 @@ die Verknüpfungsprüfung listet solche unter „Querverweise ohne Ziel“ und e
 auf Notizen außerhalb des Buchs bleiben unverändert. Im PDF steht ein Verweis als „→ Titel (S. n)“; Titel und
 Seitenzahl sind anklickbar.
 
+**Bilder:** „Bild einfügen“ in der Leiste öffnet einen Dateidialog (PNG, JPEG, GIF, WebP, BMP, höchstens 20 MB);
+ein Bild aus der Zwischenablage (Strg+V, z. B. ein Screenshot) geht ebenso. Das Bild steht als eigener Block nach dem
+Element am Cursor, in der Datei als Logseq-Bild `![Beschriftung](../assets/name.png)`; die Datei wird in den Ordner
+`assets` des Vaults kopiert (ein Screenshot heißt `bild-Datum-Uhrzeit.png`, derselbe Name mit anderem Inhalt bekommt `-2`, `-3` …).
+Die Beschriftung ändert man mit einem **Doppelklick** auf das Bild („Beschriftung“, Enter oder „Übernehmen“, Escape
+bricht ab). Im PDF stehen Bild und Beschriftung. Löscht man den Block, bleibt die Datei in `assets` liegen; fehlt sie,
+zeigt der Editor „Bild nicht gefunden: …“. Nur Dateien im Vault werden angezeigt, Bilder aus dem Netz nicht.
+
 **Anhang: Glossar, Menschen, Quellen:** Am Buchende kann ein Buch ein Glossar, eine Liste der Menschen, die
 inspiriert haben, und ein Quellenverzeichnis führen. Jeder Teil ist eine Überschrift der obersten Ebene, erkannt an
 `anhang:: glossar`, `anhang:: menschen` bzw. `anhang:: quellen` (nicht am Titel; Standardtitel „Glossar“, „Menschen,
@@ -698,6 +706,20 @@ Anhang: Glossar, Menschen, Quellen
       Nummer, Blöcke mit Status Relevant oder Bemerkung zählen nicht.
 - [ ] Teilexport („Aktueller Abschnitt“): der Anhang enthält nur, was in diesem Abschnitt vorkommt; die Quellennummern
       sind dieselben wie im ganzen Buch.
+
+Bilder
+- [ ] „Bild einfügen“: eine Bilddatei wählen; sie steht als eigener Block nach dem Cursor-Element, in `assets` liegt die
+      Kopie, in der Datei `![](../assets/name.png)`. Abbrechen im Dialog ändert nichts. „Rückgängig“ nimmt den Block
+      zurück, die Datei bleibt.
+- [ ] Einen Screenshot mit Strg+V einfügen: Block und Datei `bild-…png`; eine zu große oder keine Bilddatei zeigt den
+      Hinweis, ohne etwas zu ändern.
+- [ ] Doppelklick auf das Bild: das Feld „Beschriftung“ erscheint mit dem Text; Enter speichert (in der Datei
+      `![Text](…)`), Escape verwirft; „Rückgängig“ nimmt die Beschriftung zurück.
+- [ ] Das PDF zeigt Bild und Beschriftung.
+- [ ] Logseq zeigt das Bild aus derselben Datei.
+- [ ] Eine Bilddatei in `assets` umbenennen: der Editor zeigt „Bild nicht gefunden: …“.
+- [ ] Cursor mit den Pfeiltasten vor und hinter ein Bild setzen, davor und dahinter tippen, Bild mit Entf/Rücktaste
+      löschen und mit Strg+Z zurückholen.
 
 PDF
 - [ ] PDF-Export für das ganze Buch in A4 und A5 sowie für „Aktueller Abschnitt“: der native Speichern-Dialog schlägt

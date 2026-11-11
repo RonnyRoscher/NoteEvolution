@@ -1,5 +1,6 @@
 @using NoteEvolution.Core.Books
 @using NoteEvolution.Core.Links
+@using NoteEvolution.Core.Vaults
 @using NoteEvolution.UI.Editor
 @implements IEditorCallbacks
 @implements IAsyncDisposable
@@ -8,6 +9,7 @@
 @inject TimeProvider Time
 @inject IStringLocalizer<Strings> L
 @inject ILogger<EditorPane> Logger
+@inject IPlatformServices Platform
 
 @* The book text (spec 7): the whole book as manuscript in the TipTap editor. Every change is saved 1000 ms after the
    last one by reconciling the editor's document into the book page (BookTextSaver). The cursor element sets the
@@ -41,7 +43,9 @@
                     OnCommand="OnSectionCommand" OnIndent="() => OnShiftAsync(1)" OnOutdent="() => OnShiftAsync(-1)" OnStatus="OnStatusChosen"
                     OnReference="OnReferenceChosen" OnLevel="OnLevelChosen" OnSource="OnSourceChosen" OnLoosen="OnSourceLoosened"
                     OnAppendixPick="OnAppendixPicked" CitationLocator="@(_citationEdit?.Locator)"
-                    OnCitationSave="SaveCitationAsync" OnCitationCancel="CancelCitationEdit" />
+                    OnCitationSave="SaveCitationAsync" OnCitationCancel="CancelCitationEdit"
+                    ImageCaption="@(_imageEdit?.Caption)" OnImageCaptionSave="SaveImageCaptionAsync"
+                    OnImageCaptionCancel="CancelImageEdit" OnInsertImage="InsertImageFromFileAsync" />
     }
 </div>
 
@@ -1167,13 +1171,23 @@
     /// </summary>
     public async Task OnImagePasted(string base64, string mime)
     {
+        // The text is refused by its length before it is decoded (4 characters per 3 bytes, plus padding).
         byte[] bytes;
+        if (base64.Length > VaultAssets.MaxBytes / 3 * 4 + 4)
+        {
+            _saver.Message = new AdoptMessage("ImageTooLarge", true);
+            StateHasChanged();
+            return;
+        }
+
         try
         {
             bytes = Convert.FromBase64String(base64);
         }
         catch (FormatException)
         {
+            _saver.Message = new AdoptMessage("ImageReadFailed", true);
+            StateHasChanged();
             return;
         }
 
@@ -1194,6 +1208,41 @@
         var now = State.Session?.Clock.Now ?? Time.GetLocalNow();
         var name = $"bild-{now.LocalDateTime:yyyyMMdd-HHmmss}{extension}";
         _saver.Message = await ManuscriptCommands.InsertImageAsync(State, name, bytes, L["UndoInsertImage"], Logger);
+        StateHasChanged();
+    }
+
+    /// <summary>
+    /// „Bild einfügen“: the user chooses a file (<see cref="IPlatformServices.PickImageFileAsync"/>), which is read (one
+    /// above <see cref="VaultAssets.MaxBytes"/> is refused by its length first) and inserted like a pasted image.
+    /// </summary>
+    private async Task InsertImageFromFileAsync()
+    {
+        var path = await Platform.PickImageFileAsync();
+        if (path is null)
+        {
+            return;
+        }
+
+        byte[] bytes;
+        try
+        {
+            if (new FileInfo(path).Length > VaultAssets.MaxBytes)
+            {
+                _saver.Message = new AdoptMessage("ImageTooLarge", true);
+                return;
+            }
+
+            bytes = await File.ReadAllBytesAsync(path);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException or ArgumentException)
+        {
+            Logger.LogWarning(ex, "The image file {Path} could not be read", path);
+            _saver.Message = new AdoptMessage("ImageReadFailed", true);
+            return;
+        }
+
+        _saver.Message = await ManuscriptCommands.InsertImageAsync(
+            State, Path.GetFileName(path), bytes, L["UndoInsertImage"], Logger);
         StateHasChanged();
     }
 

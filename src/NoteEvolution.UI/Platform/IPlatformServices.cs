@@ -9,6 +9,9 @@ public interface IPlatformServices
     /// <summary>Lets the user choose where to save a file, proposing <paramref name="suggestedName"/>; <c>null</c> if cancelled.</summary>
     Task<string?> PickSaveFileAsync(string suggestedName);
 
+    /// <summary>Lets the user choose an image file (PNG, JPEG, GIF, WebP, BMP); <c>null</c> if the dialog was cancelled.</summary>
+    Task<string?> PickImageFileAsync();
+
     /// <summary>Opens <paramref name="uri"/> with the program the system has registered for it (e.g. <c>logseq://</c>).</summary>
     void OpenExternal(string uri);
 

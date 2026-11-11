@@ -12,6 +12,9 @@ public sealed class FakePlatformServices : IPlatformServices, IDisposable
 
     public string? SaveFileToPick { get; set; }
 
+    /// <summary>The path the image dialog "picks"; <c>null</c>: cancelled.</summary>
+    public string? ImageFile { get; set; }
+
     /// <summary>The file name the last save dialog proposed.</summary>
     public string? LastSuggestedName { get; private set; }
 
@@ -26,6 +29,8 @@ public sealed class FakePlatformServices : IPlatformServices, IDisposable
         LastSuggestedName = suggestedName;
         return Task.FromResult(SaveFileToPick);
     }
+
+    public Task<string?> PickImageFileAsync() => Task.FromResult(ImageFile);
 
     public void OpenExternal(string uri) => OpenedUris.Add(uri);
 

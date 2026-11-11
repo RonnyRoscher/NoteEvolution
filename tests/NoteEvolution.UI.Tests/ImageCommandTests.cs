@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Bunit;
+using Microsoft.AspNetCore.Components.Web;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Localization;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -42,11 +43,12 @@ public class ImageCommandTests : UiTestContext
 
     private Guid KeyOf(string content) => Book.Page.AllBlocks().Single(b => b.Content == content).Key;
 
-    private async Task<IRenderedComponent<EditorPane>> RenderAsync(string cursorIn = "Erster Text")
+    private async Task<IRenderedComponent<EditorPane>> RenderAsync(string cursorIn = "Erster Text", TestVault? vault = null)
     {
-        await OpenSessionAsync(_vault);
+        await OpenSessionAsync(vault ?? _vault);
         var cut = Render<EditorPane>();
         cut.WaitForAssertion(() => Assert.NotEmpty(Editor.Documents));
+        await cut.InvokeAsync(() => Editor.Callbacks!.OnSectionBoxMoved(120.5, true));
         var element = BookElements.Find(Book, KeyOf(cursorIn))!;
         var cursor = new CursorInfo(element.Kind, element.Key, BookElements.TextBlockOf(Book, element)?.Key, 0);
         await cut.InvokeAsync(() => Editor.Callbacks!.OnCursorChanged(cursor));
@@ -204,6 +206,174 @@ public class ImageCommandTests : UiTestContext
         await cut.InvokeAsync(() => cut.Instance.SaveImageCaptionAsync("Titel"));
         Assert.Contains("![Titel](../assets/foto.png)", _vault.Read(BookPath));
         Assert.Null(cut.Instance.ImageEdit);
+    }
+
+    private string Text(string key) => Services.GetRequiredService<IStringLocalizer<Strings>>()[key].Value;
+
+    private bool AssetsHaveFiles => Directory.Exists(Assets) && Directory.GetFiles(Assets).Length > 0;
+
+    [Fact]
+    public async Task Insert_ReadOnlyBook_WritesNoFile()
+    {
+        using var vault = TestVault.Create((BookPath, BookText + "\t- ```\n\t  offen\n"));
+        var cut = await RenderAsync(vault: vault);
+        Assert.True(Book.Page.IsReadOnly);
+
+        var message = await cut.InvokeAsync(() =>
+            ManuscriptCommands.InsertImageAsync(State, "foto.png", Png, "Bild einfügen", NullLogger.Instance));
+
+        Assert.Equal(new AdoptMessage("EditorReadOnly", true), message);
+        Assert.False(File.Exists(Path.Combine(vault.Root, "assets", "foto.png")));
+    }
+
+    [Fact]
+    public async Task Insert_OneByteOverTheLimit_IsTooLargeAndWritesNoFile()
+    {
+        var cut = await RenderAsync();
+
+        var message = await cut.InvokeAsync(() => ManuscriptCommands.InsertImageAsync(
+            State, "foto.png", new byte[VaultAssetsLimit + 1], "Bild einfügen", NullLogger.Instance));
+
+        Assert.Equal(new AdoptMessage("ImageTooLarge", true), message);
+        Assert.False(AssetsHaveFiles);
+        Assert.Equal(BookText, _vault.Read(BookPath));
+    }
+
+    [Fact]
+    public async Task Paste_Svg_ShowsFormatRefusedAndWritesNoFile()
+    {
+        var cut = await RenderAsync();
+
+        await cut.InvokeAsync(() => Editor.Callbacks!.OnImagePasted(Convert.ToBase64String(Png), "image/svg+xml"));
+
+        Assert.Equal(Text("ImageFormatRefused"), cut.Find(".ne-editor-error").TextContent);
+        Assert.False(AssetsHaveFiles);
+        Assert.Equal(BookText, _vault.Read(BookPath));
+    }
+
+    [Fact]
+    public async Task Paste_TooLongBase64_IsRefusedBeforeDecoding()
+    {
+        var cut = await RenderAsync();
+        var tooLong = new string('A', (int)(VaultAssetsLimit / 3 * 4 + 8));
+
+        await cut.InvokeAsync(() => Editor.Callbacks!.OnImagePasted(tooLong, "image/png"));
+
+        Assert.Equal(Text("ImageTooLarge"), cut.Find(".ne-editor-error").TextContent);
+        Assert.False(AssetsHaveFiles);
+        Assert.Equal(BookText, _vault.Read(BookPath));
+    }
+
+    [Fact]
+    public async Task Paste_InvalidBase64_ShowsReadFailed()
+    {
+        var cut = await RenderAsync();
+
+        await cut.InvokeAsync(() => Editor.Callbacks!.OnImagePasted("das ist kein base64!", "image/png"));
+
+        Assert.Equal(Text("ImageReadFailed"), cut.Find(".ne-editor-error").TextContent);
+        Assert.False(AssetsHaveFiles);
+        Assert.Equal(BookText, _vault.Read(BookPath));
+    }
+
+    private string WritePng(string name = "pick.png")
+    {
+        var path = Path.Combine(_vault.Root, name);
+        File.WriteAllBytes(path, Png);
+        return path;
+    }
+
+    [Fact]
+    public async Task Button_PicksFileAndInsertsBlock()
+    {
+        var cut = await RenderAsync();
+        Platform.ImageFile = WritePng();
+
+        await cut.InvokeAsync(() => cut.Find(".ne-section-image").Click());
+
+        cut.WaitForAssertion(() => Assert.True(File.Exists(Path.Combine(Assets, "pick.png"))));
+        Assert.Equal(Png, File.ReadAllBytes(Path.Combine(Assets, "pick.png")));
+        cut.WaitForAssertion(() => Assert.Contains("\t- ![](../assets/pick.png)", _vault.Read(BookPath)));
+    }
+
+    [Fact]
+    public async Task Button_CancelledDialog_ChangesNothing()
+    {
+        var cut = await RenderAsync();
+        Platform.ImageFile = null;
+
+        await cut.InvokeAsync(() => cut.Find(".ne-section-image").Click());
+
+        Assert.Equal(BookText, _vault.Read(BookPath));
+        Assert.False(Directory.Exists(Assets));
+    }
+
+    [Fact]
+    public async Task Button_UnreadableFile_ShowsReadFailed()
+    {
+        var cut = await RenderAsync();
+        Platform.ImageFile = Path.Combine(_vault.Root, "gibt-es-nicht.png");
+
+        await cut.InvokeAsync(() => cut.Find(".ne-section-image").Click());
+
+        Assert.Equal(Text("ImageReadFailed"), cut.Find(".ne-editor-error").TextContent);
+        Assert.Equal(BookText, _vault.Read(BookPath));
+    }
+
+    [Fact]
+    public async Task Button_FileOverTheLimit_IsRefusedByLength()
+    {
+        var cut = await RenderAsync();
+        var path = Path.Combine(_vault.Root, "gross.png");
+        using (var stream = File.Create(path))
+        {
+            stream.SetLength(VaultAssetsLimit + 1);
+        }
+
+        Platform.ImageFile = path;
+
+        await cut.InvokeAsync(() => cut.Find(".ne-section-image").Click());
+
+        Assert.Equal(Text("ImageTooLarge"), cut.Find(".ne-editor-error").TextContent);
+        Assert.False(Directory.Exists(Assets));
+    }
+
+    [Fact]
+    public async Task CaptionField_ShowsCaption_SavesWithButton_AndHides()
+    {
+        var cut = await RenderAsync();
+        await cut.InvokeAsync(() => ManuscriptCommands.InsertImageAsync(State, "foto.png", Png, "Bild einfügen", NullLogger.Instance));
+        var key = Book.Page.AllBlocks().Single(b => b.Content == "![](../assets/foto.png)").Key;
+        Assert.Empty(cut.FindAll(".ne-image-caption"));
+
+        await cut.InvokeAsync(() => Editor.Callbacks!.OnImageEdit(key, 0));
+        Assert.Equal("", cut.Find(".ne-image-caption").GetAttribute("value"));
+
+        cut.Find(".ne-image-caption").Input("Ein Bild");
+        await cut.InvokeAsync(() => cut.Find(".ne-image-caption-save").Click());
+
+        Assert.Contains("![Ein Bild](../assets/foto.png)", _vault.Read(BookPath));
+        Assert.Empty(cut.FindAll(".ne-image-caption"));
+    }
+
+    [Fact]
+    public async Task CaptionField_EnterSaves_EscapeCancels()
+    {
+        var cut = await RenderAsync();
+        await cut.InvokeAsync(() => ManuscriptCommands.InsertImageAsync(State, "foto.png", Png, "Bild einfügen", NullLogger.Instance));
+        var key = Book.Page.AllBlocks().Single(b => b.Content == "![](../assets/foto.png)").Key;
+
+        await cut.InvokeAsync(() => Editor.Callbacks!.OnImageEdit(key, 0));
+        cut.Find(".ne-image-caption").Input("Verworfen");
+        await cut.InvokeAsync(() => cut.Find(".ne-image-caption").KeyDown(new KeyboardEventArgs { Key = "Escape" }));
+        Assert.Empty(cut.FindAll(".ne-image-caption"));
+        Assert.Contains("![](../assets/foto.png)", _vault.Read(BookPath));
+
+        await cut.InvokeAsync(() => Editor.Callbacks!.OnImageEdit(key, 0));
+        cut.Find(".ne-image-caption").Input("Gespeichert");
+        await cut.InvokeAsync(() => cut.Find(".ne-image-caption").KeyDown(new KeyboardEventArgs { Key = "Enter" }));
+        Assert.Contains("![Gespeichert](../assets/foto.png)", _vault.Read(BookPath));
+        Assert.Empty(cut.FindAll(".ne-image-caption"));
     }
 
     [Fact]

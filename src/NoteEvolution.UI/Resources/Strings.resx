@@ -1946,6 +1946,24 @@
   <data name="ImageWriteFailed" xml:space="preserve">
     <value>Die Bilddatei konnte nicht in den Ordner assets geschrieben werden.</value>
   </data>
+  <data name="ImageReadFailed" xml:space="preserve">
+    <value>Die Bilddatei konnte nicht gelesen werden.</value>
+  </data>
+  <data name="PickImageTitle" xml:space="preserve">
+    <value>Bild auswählen</value>
+  </data>
+  <data name="PickImageFilter" xml:space="preserve">
+    <value>Bilder</value>
+  </data>
+  <data name="SectionImage" xml:space="preserve">
+    <value>Bild einfügen</value>
+  </data>
+  <data name="SectionImageTitle" xml:space="preserve">
+    <value>Fügt ein Bild als eigenen Block nach dem aktuellen Element ein</value>
+  </data>
+  <data name="ImageCaptionLabel" xml:space="preserve">
+    <value>Beschriftung</value>
+  </data>
   <data name="UndoInsertImage" xml:space="preserve">
     <value>Bild einfügen</value>
   </data>

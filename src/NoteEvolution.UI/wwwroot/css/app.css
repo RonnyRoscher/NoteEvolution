@@ -1686,7 +1686,8 @@ html, body {
 }
 
 /* The locator field of a double-clicked citation, above the section bar. */
-.ne-citation-edit {
+.ne-citation-edit,
+.ne-image-caption-field {
     position: absolute;
     left: 0;
     bottom: calc(100% + 6px);
@@ -1701,7 +1702,8 @@ html, body {
     z-index: 3;
 }
 
-.ne-citation-edit label {
+.ne-citation-edit label,
+.ne-image-caption-field label {
     display: flex;
     align-items: center;
     gap: 6px;
