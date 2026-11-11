@@ -8,7 +8,7 @@ namespace NoteEvolution.UI.Editor;
 /// <summary>
 /// Converts between a <see cref="SectionSnapshot"/> and the editor's document (TipTap JSON):
 /// <c>doc → (textBlock | heading)+</c>; <c>heading{key, level}</c> with plain text; <c>textBlock{key, splitFrom,
-/// sources}</c> with <c>para+</c>; <c>para{key, depth, isNote, md}</c> with text (marks <c>bold</c>, <c>italic</c>) and
+/// sources}</c> with <c>para+</c>; <c>para{key, splitFrom, depth, isNote, md}</c> with text (marks <c>bold</c>, <c>italic</c>) and
 /// <c>hardBreak</c> (<c>"\n"</c>). The first <c>para</c> is the block's own text (depth 0, no key of its own).
 /// <para>
 /// Each <c>para</c> carries the Markdown it was loaded with (<c>md</c>). If its runs are unchanged,
@@ -294,7 +294,9 @@ public static class EditorDocMapper
             // Depth 1 … previous depth + 1, as the editor keeps it.
             var depth = Math.Clamp(Attr(para, "depth", 1), 1, previous + 1);
             previous = depth;
-            paragraphs.Add(new SnapshotParagraph(KeyOf(para) ?? Guid.CreateVersion7(), markdown, depth, Attr(para, "isNote", false)));
+            var paraSplitFrom = Guid.TryParse(Attr<string?>(para, "splitFrom", null), out var paraFrom) ? paraFrom : (Guid?)null;
+            paragraphs.Add(new SnapshotParagraph(
+                KeyOf(para) ?? Guid.CreateVersion7(), markdown, depth, Attr(para, "isNote", false), SplitFrom: paraSplitFrom));
         }
 
         var sources = new List<SourceInfo>();

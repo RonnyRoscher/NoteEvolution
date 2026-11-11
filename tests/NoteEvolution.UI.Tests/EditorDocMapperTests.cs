@@ -150,6 +150,27 @@ public class EditorDocMapperTests
     }
 
     [Fact]
+    public void FromJson_DetailSplitOff_ReadsSplitFrom()
+    {
+        var child = Guid.Parse("0199a000-0000-7000-8000-000000000003");
+        var original = new SectionSnapshot(Scope, false,
+            [new SnapshotTextBlock(BlockKey, null, "Text", [new SnapshotParagraph(child, "Detail", 1, false)], [])]);
+        var doc = JsonNode.Parse(EditorDocMapper.ToJson(original))!;
+        var paras = doc["content"]![0]!["content"]!.AsArray();
+        var split = (JsonObject)paras[1]!.DeepClone();
+        var newKey = Guid.Parse("0199a000-0000-7000-8000-000000000004");
+        split["attrs"]!["key"] = newKey.ToString("D");
+        split["attrs"]!["splitFrom"] = child.ToString("D");
+        paras.Add(split);
+
+        var back = (SnapshotTextBlock)EditorDocMapper.FromJson(doc.ToJsonString(), Scope, false).Nodes.Single();
+
+        Assert.Null(back.Paragraphs[0].SplitFrom);
+        Assert.Equal(newKey, back.Paragraphs[1].Key);
+        Assert.Equal(child, back.Paragraphs[1].SplitFrom);
+    }
+
+    [Fact]
     public void ToJson_WritesStatus_TextBlockAndPara()
     {
         var keys = Enumerable.Range(3, 3).Select(i => Guid.Parse($"0199a000-0000-7000-8000-00000000000{i}")).ToArray();

@@ -229,6 +229,128 @@ public class BookSyncTests
         Assert.Equal(BlockStatus.Draft, book.FindTextBlock(original.Key)!.Paragraphs[1].Status);
     }
 
+    private const string D1 = "92cc13bb-6d3f-4a0c-8e5b-3c4d5e6f7a82";
+    private const string N3 = "a3dd24cc-7e4a-4b1d-9f6c-4d5e6f7a8b93";
+
+    /// <summary>TestBook whose first detail „Absatz eins“ is linked to its own note N3.</summary>
+    private static readonly string BookWithLinkedDetail = TestBook.Replace(
+        "\t\t\t- Absatz eins\n",
+        "\t\t\t- Absatz eins\n" +
+        $"\t\t\t  id:: {D1}\n" +
+        $"\t\t\t  source:: (({N3}))\n");
+
+    private static readonly string JournalWithDetailNote = TestJournal +
+        "- Dritte Quelle\n" +
+        $"  id:: {N3}\n" +
+        $"  used-in:: [[Buch - Test]] (({D1}))\n";
+
+    private static Guid? IdOf(Book book, Guid key) => book.Page.AllBlocks().Single(b => b.Key == key).Id;
+
+    [Fact]
+    public void Apply_SplitOfLinkedDetail_NewDetailGetsIdAndSameSource_EffectSplit()
+    {
+        using var s = new LinkSetup(BookWithLinkedDetail, JournalWithDetailNote);
+        var snapshot = Section(s, "Abschnitt");
+        var original = TextNode(snapshot, "Erster Textblock");
+        var detail = original.Paragraphs[0];
+        var newKey = Guid.NewGuid();
+        var split = new SnapshotParagraph(newKey, "eins", 1, false, SplitFrom: detail.Key);
+        var edited = original with { Paragraphs = [detail with { Text = "Absatz" }, split, original.Paragraphs[1]] };
+
+        var result = BookSync.Apply(s.Book, Replace(snapshot, original, edited));
+
+        var newId = IdOf(s.Book, newKey)!.Value;
+        Assert.NotEqual(Guid.Parse(D1), newId);
+        Assert.Equal(
+            BookWithLinkedDetail.Replace(
+                "\t\t\t- Absatz eins\n" +
+                $"\t\t\t  id:: {D1}\n" +
+                $"\t\t\t  source:: (({N3}))\n",
+                "\t\t\t- Absatz\n" +
+                $"\t\t\t  id:: {D1}\n" +
+                $"\t\t\t  source:: (({N3}))\n" +
+                "\t\t\t- eins\n" +
+                $"\t\t\t  id:: {newId}\n" +
+                $"\t\t\t  source:: (({N3}))\n"),
+            Serialize(s.Book));
+        var effect = Assert.IsType<BlockSplit>(Assert.Single(result.Effects));
+        Assert.Equal(newId, effect.NewBookBlockId);
+        Assert.Equal([Guid.Parse(N3)], effect.Sources);
+    }
+
+    [Fact]
+    public void Apply_DetailSplitOffTextBlockText_GetsTheTextBlocksSources()
+    {
+        using var s = new LinkSetup(TestBook, TestJournal);
+        var snapshot = Section(s, "Abschnitt");
+        var original = TextNode(snapshot, "Erster Textblock");
+        var newKey = Guid.NewGuid();
+        var split = new SnapshotParagraph(newKey, "Textblock", 1, false, SplitFrom: original.Key);
+        var edited = original with { Text = "Erster", Paragraphs = [split, .. original.Paragraphs] };
+
+        var result = BookSync.Apply(s.Book, Replace(snapshot, original, edited));
+
+        var newId = IdOf(s.Book, newKey)!.Value;
+        Assert.Equal(
+            TestBook.Replace(
+                ErsterTextblock,
+                "\t\t- Erster\n" +
+                $"\t\t  id:: {B1}\n" +
+                $"\t\t  source:: (({N1})), (({N2}))\n" +
+                "\t\t\t- Textblock\n" +
+                $"\t\t\t  id:: {newId}\n" +
+                $"\t\t\t  source:: (({N1})), (({N2}))\n" +
+                "\t\t\t- Absatz eins\n" +
+                "\t\t\t- Absatz zwei #notiz\n"),
+            Serialize(s.Book));
+        var effect = Assert.IsType<BlockSplit>(Assert.Single(result.Effects));
+        Assert.Equal(newId, effect.NewBookBlockId);
+        Assert.Equal([Guid.Parse(N1), Guid.Parse(N2)], effect.Sources);
+    }
+
+    [Fact]
+    public void Apply_SplitOfUnlinkedDetail_NewDetailWithoutId_NoEffect()
+    {
+        using var s = new LinkSetup(TestBook, TestJournal);
+        var snapshot = Section(s, "Abschnitt");
+        var original = TextNode(snapshot, "Erster Textblock");
+        var detail = original.Paragraphs[0];
+        var newKey = Guid.NewGuid();
+        var split = new SnapshotParagraph(newKey, "eins", 1, false, SplitFrom: detail.Key);
+        var edited = original with { Paragraphs = [detail with { Text = "Absatz" }, split, original.Paragraphs[1]] };
+
+        var result = BookSync.Apply(s.Book, Replace(snapshot, original, edited));
+
+        Assert.Empty(result.Effects);
+        Assert.Null(IdOf(s.Book, newKey));
+        Assert.Equal(TestBook.Replace("\t\t\t- Absatz eins\n", "\t\t\t- Absatz\n\t\t\t- eins\n"), Serialize(s.Book));
+    }
+
+    [Fact]
+    public void ApplySyncEffects_DetailSplit_AddsUsageToTheDetailsNote()
+    {
+        using var s = new LinkSetup(BookWithLinkedDetail, JournalWithDetailNote);
+        var book = s.Book;
+        var snapshot = Section(s, "Abschnitt");
+        var original = TextNode(snapshot, "Erster Textblock");
+        var detail = original.Paragraphs[0];
+        var newKey = Guid.NewGuid();
+        var split = new SnapshotParagraph(newKey, "eins", 1, false, SplitFrom: detail.Key);
+        var result = BookSync.Apply(
+            book, Replace(snapshot, original, original with { Paragraphs = [detail with { Text = "Absatz" }, split, original.Paragraphs[1]] }));
+        var newId = IdOf(book, newKey)!.Value;
+
+        s.Writer.Save(book.Page);
+        s.Links.ApplySyncEffects(book, result.Effects);
+
+        Assert.Equal(
+            JournalWithDetailNote.Replace(
+                $"  used-in:: [[Buch - Test]] (({D1}))\n",
+                $"  used-in:: [[Buch - Test]] (({D1})), [[Buch - Test]] (({newId}))\n"),
+            s.ReadJournal());
+        Assert.Empty(s.Pending.Load());
+    }
+
     [Fact]
     public void ApplySyncEffects_Split_AddsSecondUsageToNote()
     {

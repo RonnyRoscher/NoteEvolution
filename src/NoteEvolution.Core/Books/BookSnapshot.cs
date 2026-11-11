@@ -49,7 +49,12 @@ public sealed record SnapshotTextBlock(
 /// <param name="Depth">Nesting below the text block.</param>
 /// <param name="IsNote">The block carries the <c>#notiz</c> tag.</param>
 /// <param name="Status">The block's status; the sync never changes it.</param>
-public sealed record SnapshotParagraph(Guid Key, string Text, int Depth, bool IsNote, BlockStatus Status = BlockStatus.Draft);
+/// <param name="SplitFrom">
+/// For a new detail split off in the editor: the key of the detail or text block it was split from. If that block has
+/// a <c>source::</c>, the new detail gets an id and the same sources (see <see cref="BookSync.Apply"/>).
+/// </param>
+public sealed record SnapshotParagraph(
+    Guid Key, string Text, int Depth, bool IsNote, BlockStatus Status = BlockStatus.Draft, Guid? SplitFrom = null);
 
 /// <summary>Builds the editor's view of a book; <see cref="BookSync.Apply"/> writes an edited one back.</summary>
 public static class BookSnapshot

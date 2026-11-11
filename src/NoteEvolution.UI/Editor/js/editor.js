@@ -103,6 +103,9 @@ const Para = Node.create({
     addAttributes() {
         return {
             key: keyAttribute,
+            // A sub-bullet split off (Enter inside the text) or pasted: the key of the block it came from. C# links a new
+            // one to the same sources.
+            splitFrom: { default: null, rendered: false, parseHTML: el => el.getAttribute('data-key') },
             depth: {
                 default: 0,
                 parseHTML: el => Number(el.getAttribute('data-depth')) || 0,
@@ -678,7 +681,11 @@ function insertBlockAfterHeading(tr, $from) {
     tr.scrollIntoView();
 }
 
-/** Enter: a new paragraph in the block (a sub-bullet, at least depth 1, without #notiz and status). */
+/**
+ * Enter: a new paragraph in the block (a sub-bullet, at least depth 1, without #notiz and status). Split inside a text,
+ * the new part gets splitFrom (the sub-bullet, or the text block for its own text); at the start of a sub-bullet an
+ * empty one is put before it, so that the text keeps its key and its link.
+ */
 function newParagraph({ tr, dispatch }) {
     const { $from } = tr.selection;
     if ($from.parent.type.name === 'heading') {
@@ -699,8 +706,15 @@ function newParagraph({ tr, dispatch }) {
         if (para.type.name !== 'para') {
             return true;
         }
-        const attrs = { key: null, depth: Math.max(1, para.attrs.depth), isNote: false, status: null, md: null };
-        tr.split($pos.pos, 1, [{ type: para.type, attrs }]);
+        const attrs = { key: null, splitFrom: null, depth: Math.max(1, para.attrs.depth), isNote: false, status: null, md: null };
+        const index = $pos.index(1);
+        if ($pos.parentOffset === 0 && para.content.size > 0 && index > 0) {
+            tr.insert($pos.before(), para.type.create(attrs));
+        } else {
+            const inside = $pos.parentOffset > 0 && $pos.parentOffset < para.content.size;
+            const splitFrom = !inside ? null : index === 0 ? $pos.node(1).attrs.key : para.attrs.key;
+            tr.split($pos.pos, 1, [{ type: para.type, attrs: { ...attrs, splitFrom } }]);
+        }
         tr.scrollIntoView();
     }
     return true;
@@ -866,7 +880,7 @@ function keyedNodes(doc) {
 
 /**
  * Gives every heading, text block and sub-bullet a unique key: a missing or duplicate key is replaced by a new one
- * (a duplicate text block also gets splitFrom = the original key); a text block or sub-bullet with a new key is new
+ * (a duplicate text block or sub-bullet also gets splitFrom = the original key); a text block or sub-bullet with a new key is new
  * content and has no status and no dates. Of duplicates, the node where the old document's node went keeps the key.
  * Also keeps the paragraph shape: the first paragraph is the block's text (no key, depth 0, no #notiz, no status),
  * every other one has depth 1 … previous depth + 1.
@@ -909,12 +923,13 @@ function normalize(transactions, oldState, newState) {
                 : {
                     ...para.attrs,
                     key: paraKey,
+                    splitFrom: paraKey !== para.attrs.key && para.attrs.key ? para.attrs.key : para.attrs.splitFrom,
                     depth: Math.min(Math.max(para.attrs.depth, 1), previous + 1),
                     status: paraKey === para.attrs.key ? para.attrs.status : null,
                 };
             previous = attrs.depth;
             if (attrs.key !== para.attrs.key || attrs.depth !== para.attrs.depth || attrs.isNote !== para.attrs.isNote
-                || attrs.status !== para.attrs.status) {
+                || attrs.status !== para.attrs.status || attrs.splitFrom !== para.attrs.splitFrom) {
                 tr.setNodeMarkup(pos, undefined, attrs);
             }
         });
