@@ -136,6 +136,12 @@ public interface IEditorCallbacks
     /// </summary>
     Task OnBlocksDropped(IReadOnlyList<Guid> textBlockKeys, Guid? afterTextBlockKey);
 
+    /// <summary>
+    /// Ctrl+Z was pressed while the editor had nothing of its own to undo (e.g. its document was loaded again after a
+    /// command): the undo of the header is meant.
+    /// </summary>
+    Task OnUndoRequested();
+
     /// <summary>A reference to a person was clicked; <paramref name="personId"/> is the entry's <c>id::</c>.</summary>
     Task OnPersonClicked(Guid personId);
 

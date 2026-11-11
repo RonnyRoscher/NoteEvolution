@@ -85,6 +85,14 @@
   <data name="Undo" xml:space="preserve">
     <value>Rückgängig</value>
   </data>
+  <data name="UndoNamed" xml:space="preserve">
+    <value>Rückgängig: {0}</value>
+    <comment>Beschriftung des Rückgängig-Knopfs in der Kopfzeile, wenn es etwas zurückzunehmen gibt; {0} = Name der Aktion</comment>
+  </data>
+  <data name="UndoDone" xml:space="preserve">
+    <value>„{0}“ zurückgenommen.</value>
+    <comment>Hinweis neben dem Rückgängig-Knopf nach einem Rückgängig; {0} = Name der Aktion</comment>
+  </data>
   <data name="NavBack" xml:space="preserve">
     <value>Zurück (Alt+←)</value>
   </data>
@@ -1645,7 +1653,7 @@
     <value>Strg+Z / Strg+Y</value>
   </data>
   <data name="KeysText6" xml:space="preserve">
-    <value>Im Editor rückgängig / wiederholen</value>
+    <value>Im Editor rückgängig / wiederholen; hat der Editor nichts mehr zurückzunehmen, nimmt Strg+Z die letzte Aktion der Kopfzeile zurück („Rückgängig: …“)</value>
   </data>
   <data name="KeysText7Keys" xml:space="preserve">
     <value>Strg+Umschalt+N</value>
@@ -2039,6 +2047,18 @@
   </data>
   <data name="KeysNotes2" xml:space="preserve">
     <value>Bereich um den aktiven Block erweitern / verkleinern</value>
+  </data>
+  <data name="KeysNotes4Keys" xml:space="preserve">
+    <value>Pfeil hoch / runter</value>
+  </data>
+  <data name="KeysNotes4" xml:space="preserve">
+    <value>Bei aktivem Block: zum vorigen / nächsten Hauptpunkt der Liste wechseln (Fokus im Notizbereich)</value>
+  </data>
+  <data name="KeysNotes5Keys" xml:space="preserve">
+    <value>Enter / Umschalt+Enter</value>
+  </data>
+  <data name="KeysNotes5" xml:space="preserve">
+    <value>Aktiven Block übernehmen: „Danach“ / „Darunter“; danach ist der nächste Hauptpunkt aktiv</value>
   </data>
   <data name="NoteDragTitle" xml:space="preserve">
     <value>Ins Buch ziehen</value>

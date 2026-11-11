@@ -271,6 +271,8 @@ public class EditorInteropTests
 
         public Task OnBlocksDropped(IReadOnlyList<Guid> textBlockKeys, Guid? afterTextBlockKey) => Task.CompletedTask;
 
+        public Task OnUndoRequested() => Task.CompletedTask;
+
         public Task OnPersonClicked(Guid personId) => Task.CompletedTask;
 
         public Task OnSourceClicked(Guid sourceId) => Task.CompletedTask;

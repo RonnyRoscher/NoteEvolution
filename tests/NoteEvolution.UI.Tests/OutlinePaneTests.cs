@@ -311,6 +311,33 @@ public class OutlinePaneTests : UiTestContext
     }
 
     [Fact]
+    public async Task Header_NamesTheUndo_AndTheEditorsCtrlZRunsIt_WhenItHasNothingToUndo()
+    {
+        using var tv = Plain();
+        await OpenSessionAsync(tv);
+        var original = tv.Read(BookPath);
+        var header = Render<HeaderBar>();
+        var editor = Render<EditorPane>();
+        var cut = Render<OutlinePane>();
+        Assert.Equal("Rückgängig", header.Find(".ne-undo").TextContent.Trim());
+
+        Row(cut, "Drei").DragStart();
+        Row(cut, "Eins").Drop();
+        header.WaitForAssertion(() => Assert.Equal("Rückgängig: Abschnitt verschieben", header.Find(".ne-undo").TextContent.Trim()));
+
+        // Ctrl+Z in the editor with an empty history, as its script reports it.
+        await editor.InvokeAsync(() => Editor.Callbacks!.OnUndoRequested());
+
+        header.WaitForAssertion(() => Assert.Equal(original, tv.Read(BookPath)));
+        header.WaitForAssertion(() => Assert.Equal("„Abschnitt verschieben“ zurückgenommen.", header.Find(".ne-undo-done").TextContent.Trim()));
+        Assert.Equal("Rückgängig", header.Find(".ne-undo").TextContent.Trim());
+
+        // Nothing left: another Ctrl+Z does nothing and says nothing new.
+        await editor.InvokeAsync(() => Editor.Callbacks!.OnUndoRequested());
+        Assert.Empty(header.FindAll(".ne-undo-error"));
+    }
+
+    [Fact]
     public async Task Rename_SameTitle_NoUndo()
     {
         using var tv = Plain();

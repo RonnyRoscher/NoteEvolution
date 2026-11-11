@@ -57,10 +57,14 @@
     <button type="button" class="ne-nav-forward" disabled="@(!State.CanGoForward)" title="@L["NavForward"]" aria-label="@L["NavForward"]"
             @onclick="GoForward">▶</button>
     <button type="button" class="ne-undo" disabled="@(!CanUndo)" title="@_session?.Undo.NextDescription"
-            @onclick="Undo">@L["Undo"]</button>
+            @onclick="Undo">@(CanUndo && _session?.Undo.NextDescription is { Length: > 0 } next ? L["UndoNamed", next] : L["Undo"])</button>
     @if (_undoError is not null)
     {
         <span class="ne-undo-error" role="alert">@_undoError</span>
+    }
+    else if (_undoDone is not null)
+    {
+        <span class="ne-undo-done" role="status">@_undoDone</span>
     }
     @if (_session?.HistoryProblem == true)
     {
@@ -200,6 +204,9 @@
     /// <summary>Why the last undo was refused or failed; shown until the next undoable operation.</summary>
     private string? _undoError;
 
+    /// <summary>What the last undo took back („…“ zurückgenommen.); shown until the next undoable operation or undo.</summary>
+    private string? _undoDone;
+
     /// <summary>The header as index.html calls it for Alt+Left/Right; created on the first render.</summary>
     private DotNetObjectReference<HeaderBar>? _self;
 
@@ -241,6 +248,7 @@
     protected override void OnInitialized()
     {
         State.Changed += OnStateChanged;
+        State.UndoRequested += OnUndoRequested;
         TrackSession();
 
         // Without an AI runtime (not registered) the AI is off.
@@ -270,6 +278,7 @@
     {
         _self?.Dispose();
         State.Changed -= OnStateChanged;
+        State.UndoRequested -= OnUndoRequested;
         Unsubscribe();
         if (_ai is not null)
         {
@@ -404,9 +413,19 @@
 
     private void OnSessionChanged() => _ = InvokeAsync(StateHasChanged);
 
+    /// <summary>Ctrl+Z in an editor with nothing of its own to undo: as a click on the button, if there is something to undo.</summary>
+    private void OnUndoRequested() => _ = InvokeAsync(async () =>
+    {
+        if (CanUndo)
+        {
+            await Undo();
+        }
+    });
+
     private void OnUndoPushed(IUndoAction action) => _ = InvokeAsync(() =>
     {
         _undoError = null;
+        _undoDone = null;
         StateHasChanged();
     });
 
@@ -421,6 +440,7 @@
         Unsubscribe();
         _session = State.Session;
         _undoError = null;
+        _undoDone = null;
         if (_session is not null)
         {
             _session.Undo.Changed += OnSessionChanged;
@@ -572,6 +592,8 @@
 
         // Refused while a conflict is open, or when the action no longer fits (e.g. the editor already brought a
         // deleted block back); the session logs the details, the header says that nothing was undone.
+        var description = session.Undo.NextDescription;
+        _undoDone = null;
         _undoError = session.TryUndo(out var undoFailure)
             ? null
             : undoFailure is PagesNotRestoredException notRestored
@@ -581,6 +603,11 @@
         // The undone operation changed (and saved) the book page, or a failed one left the vault with the page as it
         // is on disk; views take it from the vault again. A note whose usage went comes back into the notes tabs, also
         // into a "Relevant" list kept for it.
+        if (_undoError is null && description is { Length: > 0 })
+        {
+            _undoDone = L["UndoDone", description];
+        }
+
         State.RelevantHold = null;
         State.RefreshBook();
         State.NotifyNotesChanged();

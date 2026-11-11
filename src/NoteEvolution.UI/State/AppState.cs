@@ -513,6 +513,22 @@ public sealed class AppState
 
     public event Action? Changed;
 
+    /// <summary>
+    /// The undo of the header was asked for from elsewhere (Ctrl+Z in an editor that has nothing of its own to undo);
+    /// the header runs it as its button does.
+    /// </summary>
+    public event Action? UndoRequested;
+
+    /// <summary>
+    /// Adopts the active note block's range the given way, as a click on the button of its bar does (the keyboard of
+    /// the notes pane uses it): <c>true</c> if it was adopted without an error. Set by the bar of the active block while
+    /// it is shown; <c>null</c> without one.
+    /// </summary>
+    public Func<AdoptVariant, Task<bool>>? AdoptActiveNote { get; set; }
+
+    /// <summary>Raises <see cref="UndoRequested"/>.</summary>
+    public void RequestUndo() => UndoRequested?.Invoke();
+
     /// <summary>An element is to be revealed in the active view's editor (see <see cref="RevealElement"/>); raised besides the view's own event.</summary>
     public event Action<Guid>? RevealRequested;
 

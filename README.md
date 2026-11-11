@@ -54,6 +54,11 @@ oder Detail-Unterpunkt); ein Kasten mit Balken links markiert ihn, und er bestim
 Gliederung springt zur Überschrift. Umbenennen (Doppelklick), „+ Abschnitt“ und Verschieben (Ziehen) in der Gliederung
 nimmt „Rückgängig“ in der Kopfzeile zurück, solange das Buch seitdem nicht geändert wurde.
 
+**Rückgängig:** Der Knopf in der Kopfzeile nennt, was er zurücknimmt („Rückgängig: Abschnitt verschieben“), und zeigt
+danach kurz „… zurückgenommen.“ Strg+Z im Editor nimmt zuerst Getipptes zurück; hat der Editor nichts mehr
+zurückzunehmen (z. B. direkt nach Übernehmen, Verschieben oder Zusammenfügen, die den Text neu laden), nimmt Strg+Z
+die letzte Aktion der Kopfzeile zurück.
+
 Jeder Textblock zeigt rechts oben klein und grau, wann er erstellt und zuletzt geändert wurde („erstellt 12.10.2026 ·
 geändert 19.10.2026 14:32“). Die Daten stehen als `created::` und `updated::` im Block der Buchdatei; neue Blöcke
 bekommen beide, eine Änderung von Text oder Status setzt `updated` (Verschieben zählt nicht). Bestehende Blöcke ohne
@@ -245,6 +250,11 @@ damit?** (nur mit lokaler KI), ✓ und Fortschrittspunkt des Bereichskopfs, bei 
 und nennt den Grund im Tooltip (kein Buch gewählt, Buch schreibgeschützt, Notizdatei nicht sicher lesbar, offener
 Konflikt). Ins Buch gezogen wird mit dem Griff „⠿“ vorn in der Leiste (der Bereichskopf); die Karte selbst lässt sich
 nicht ziehen, damit ihr Text markiert werden kann.
+
+**Tastatur in der Liste:** Ist ein Block aktiv und liegt der Fokus im Notizbereich (außerhalb von Feldern und Knöpfen),
+wechseln Pfeil hoch und Pfeil runter zum vorigen bzw. nächsten Hauptpunkt der Liste. Enter übernimmt den Bereich mit
+„Danach“, Umschalt+Enter mit „Darunter“ (wie die Knöpfe; ausgegraut heißt auch hier: nichts passiert), danach ist der
+nächste Hauptpunkt aktiv. Ohne aktiven Block scrollen die Pfeiltasten wie gewohnt.
 
 Jeder kopierte Block bekommt eine eigene Verknüpfung zu seinem Notizblock: `id::` und `source::` am Textblock oder
 Detail, `used-in::` am Notizblock; auch ein Unterpunkt ist damit einzeln verwendet (✓, „Verwendete ausblenden“), und
@@ -509,6 +519,12 @@ Editor
 - [ ] Einen Block am farbigen Balken links seiner Markierung packen und unter ein anderes Kapitel ziehen; danach ist er in der
       Datei richtig eingerückt.
 - [ ] Schalter „Quellen anzeigen“ und die Randmarkierung bei Blöcken mit Quellen.
+- [ ] Rückgängig: nach „Danach“ einer Notiz steht „Rückgängig: …“ auf dem Knopf; Strg+Z im Editor (ohne vorher zu
+      tippen) nimmt die Übernahme zurück, daneben steht „… zurückgenommen.“. Erst tippen, dann Strg+Z: nur das
+      Getippte geht.
+- [ ] Notizliste mit Tastatur: Block anklicken, Pfeil runter/hoch wechselt den Hauptpunkt (die Karte bleibt im
+      Blick); Enter übernimmt „Danach“, Umschalt+Enter „Darunter“, danach ist der nächste Hauptpunkt aktiv. Im
+      Suchfeld tun Pfeile und Enter das Gewohnte.
 - [ ] Markierung: Cursor in Überschrift, Textblock und Detail setzen; der Kasten umfasst jeweils das richtige Element,
       die Leiste sitzt am unteren Rand und bleibt beim Scrollen eines langen Abschnitts am Fensterrand sichtbar.
 - [ ] Alt+Enter, Alt+Umschalt+Enter, Tab/Umschalt+Tab in einer Überschrift und Rücktaste am Titelanfang wirken im

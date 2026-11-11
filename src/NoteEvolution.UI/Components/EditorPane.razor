@@ -655,6 +655,13 @@
         StateHasChanged();
     }
 
+    /// <summary>Ctrl+Z with nothing to undo in the editor: the undo of the header (<see cref="AppState.RequestUndo"/>).</summary>
+    public Task OnUndoRequested()
+    {
+        State.RequestUndo();
+        return Task.CompletedTask;
+    }
+
     /// <summary>
     /// Moves whole text blocks dragged out of the other half's editor here (<see cref="ManuscriptCommands.MoveTextBlocksAsync"/>):
     /// after the given text block, at the start of the given heading's section, or at the start of the current section,

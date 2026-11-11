@@ -61,6 +61,10 @@ public abstract class UiTestContext : BunitContext
         // The header registers for Alt+Left/Right, which index.html catches in the whole window.
         JSInterop.SetupVoid("neNav.register", _ => true).SetVoidResult();
 
+        // The notes pane registers for the arrow keys and Enter of its list, and focuses the card it steps to (index.html).
+        JSInterop.SetupVoid("neNotes.registerKeys", _ => true).SetVoidResult();
+        JSInterop.SetupVoid("neNotes.focusCard", _ => true).SetVoidResult();
+
         // Whether a click on a note block marked text (index.html); without a marking the click makes the block active.
         TextSelection = JSInterop.Setup<bool>("neNotes.hasSelection");
         TextSelection.SetResult(false);

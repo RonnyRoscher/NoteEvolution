@@ -167,6 +167,30 @@
         // Called by a note card (NoteCard.razor) before a click makes its block active: a click that marked text in the
         // notes pane does not, so marking and copying stay possible.
         window.neNotes = {
+            pane: null,
+            // The notes pane (NotesPane.razor) registers for the keys of its list.
+            registerKeys(pane) {
+                this.pane = pane;
+            },
+            // The key of the card before (-1) or after (1) the active block's card, in the order shown; null at the end.
+            neighbour(delta) {
+                const keys = [];
+                for (const card of document.querySelectorAll('.ne-notes-scroll .ne-note-card[data-note-key]')) {
+                    if (!keys.includes(card.dataset.noteKey)) {
+                        keys.push(card.dataset.noteKey);
+                    }
+                }
+                const active = document.querySelector('.ne-notes-scroll .ne-note-bar')?.closest('.ne-note-card')?.dataset.noteKey;
+                const index = keys.indexOf(active);
+                return index < 0 ? null : keys[index + delta] ?? null;
+            },
+            // The focus goes to the card a key made active, so further keys reach the pane; it is scrolled into view.
+            focusCard(key) {
+                const card = [...document.querySelectorAll('.ne-notes-scroll .ne-note-card[data-note-key]')]
+                    .find(c => c.dataset.noteKey === key);
+                card?.focus({ preventScroll: true });
+                card?.scrollIntoView({ block: 'nearest' });
+            },
             hasSelection() {
                 const selection = window.getSelection();
                 if (!selection || selection.isCollapsed || selection.rangeCount === 0) {
@@ -178,6 +202,29 @@
                 return !!element?.closest('.ne-notes-pane');
             },
         };
+
+        // While a note block is active, the arrow keys step to the card before or after it and Enter adopts it ("Danach";
+        // Shift+Enter "Darunter"), then the next card is active (NotesPane.razor). Only with the focus in the notes pane,
+        // outside fields, buttons and links, and not while a modal dialog is open; without an active block the keys keep
+        // their default (scrolling).
+        document.addEventListener('keydown', e => {
+            if (e.altKey || e.ctrlKey || e.metaKey || !(e.target instanceof Element) || !e.target.closest('.ne-notes-pane')
+                || e.target.closest('input, textarea, select, button, a, [contenteditable="true"]')
+                || !document.querySelector('.ne-notes-scroll .ne-note-bar') || document.querySelector('[aria-modal="true"]')) {
+                return;
+            }
+
+            if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && !e.shiftKey) {
+                e.preventDefault();
+                const key = window.neNotes.neighbour(e.key === 'ArrowUp' ? -1 : 1);
+                if (key) {
+                    window.neNotes.pane?.invokeMethodAsync('StepToNote', key).catch(() => { });
+                }
+            } else if (e.key === 'Enter') {
+                e.preventDefault();
+                window.neNotes.pane?.invokeMethodAsync('AdoptActive', e.shiftKey, window.neNotes.neighbour(1)).catch(() => { });
+            }
+        }, true);
 
         // The arrow keys on a row splitter change the list's height (RowSplitter.razor); they must not also scroll a
         // pane. Tab and the other keys keep their default.

@@ -207,6 +207,10 @@ public sealed class TipTapInterop(IJSRuntime js, AppState state) : IEditorIntero
             ? _callbacks.OnBlocksDropped(keys, ParseOrNull(afterKey))
             : Task.CompletedTask;
 
+    /// <summary>Ctrl+Z with nothing to undo in the editor (see <see cref="IEditorCallbacks.OnUndoRequested"/>).</summary>
+    [JSInvokable]
+    public Task UndoRequested() => _callbacks?.OnUndoRequested() ?? Task.CompletedTask;
+
     /// <summary>The keys of a JSON array of strings; none if it is not one.</summary>
     private static IReadOnlyList<Guid>? ParseKeys(string? json)
     {

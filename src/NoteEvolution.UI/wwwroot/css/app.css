@@ -235,6 +235,24 @@ html, body {
     max-width: 220px;
 }
 
+/* What the last undo took back, next to the button. */
+.ne-undo-done {
+    color: var(--fg-muted);
+    font-size: 12px;
+    max-width: 260px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* The undo button names its action: a long name is cut off. */
+.ne-undo {
+    max-width: 280px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .ne-history-problem {
     color: var(--warning);
     font-size: 12px;
