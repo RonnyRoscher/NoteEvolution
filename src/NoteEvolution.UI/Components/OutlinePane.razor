@@ -1,5 +1,6 @@
 @using NoteEvolution.Core.Books
 @using NoteEvolution.Core.Format
+@using NoteEvolution.Core.Links
 @using NoteEvolution.Core.Model
 @using NoteEvolution.Core.Storage
 @using Microsoft.JSInterop
@@ -75,7 +76,6 @@ else
     private string? _error;
     private Guid? _renamingKey;
     private bool _committing;
-    private Guid? _draggedKey;
     private (Guid Key, bool Before)? _dropHint;
     private bool _watching;
     private VaultSession? _watchedSession;
@@ -99,7 +99,14 @@ else
     /// <summary>The text in the inline rename field.</summary>
     internal string RenameText { get; set; } = "";
 
-    internal Guid? DraggedKey => _draggedKey;
+    /// <summary>
+    /// The heading being dragged, in this outline or the other half's (<see cref="AppState.DraggedSectionKey"/>), so a
+    /// section can be dropped into either half.
+    /// </summary>
+    internal Guid? DraggedKey => State.DraggedSectionKey;
+
+    /// <summary>Whole text blocks are dragged out of an editor: they can be dropped onto a heading (or the prologue).</summary>
+    internal bool DraggingTextBlocks => State.DraggedTextBlockKeys is { Count: > 0 };
 
     /// <summary>
     /// The outline may be changed: the book page is safely readable and no conflict is open for its file (R26;
@@ -393,28 +400,41 @@ else
     {
         if (node.Block is not null && Editable)
         {
-            _draggedKey = node.Key;
+            State.DraggedSectionKey = node.Key;
         }
     }
 
+    /// <summary>
+    /// The drag ended (dropped anywhere, or given up): the shared drag state is cleared, and every outline is told, so
+    /// the other half's drop hint goes too.
+    /// </summary>
     internal void DragEnd()
     {
-        _draggedKey = null;
+        var notify = State.DraggedSectionKey is not null;
+        State.DraggedSectionKey = null;
         _dropHint = null;
         StateHasChanged();
+        if (notify)
+        {
+            State.Notify();
+        }
     }
 
     internal void DragEnter(Guid key, bool before)
     {
-        if (_draggedKey is not null)
+        if (DraggedKey is not null || (DraggingTextBlocks && !before))
         {
             _dropHint = (key, before);
             StateHasChanged();
         }
     }
 
-    /// <summary>The dragged section becomes the last sub-section of <paramref name="target"/>.</summary>
-    internal Task DropOnto(OutlineNode target) => MoveDragged(target.Key, beforeKey: null);
+    /// <summary>
+    /// The dragged section becomes the last sub-section of <paramref name="target"/>; text blocks dragged out of an editor
+    /// go to the end of its text (before its sub-sections).
+    /// </summary>
+    internal Task DropOnto(OutlineNode target) =>
+        State.DraggedTextBlockKeys is { Count: > 0 } keys ? MoveTextBlocks(keys, target.Key) : MoveDragged(target.Key, beforeKey: null);
 
     /// <summary>The dragged section moves in front of <paramref name="target"/>, under the same parent.</summary>
     internal Task DropBefore(OutlineNode target) => MoveDragged(target.Parent?.Key ?? Guid.Empty, target.Key);
@@ -422,9 +442,34 @@ else
     /// <summary>The dragged section becomes the last top-level section.</summary>
     internal Task DropAtEnd() => MoveDragged(Guid.Empty, beforeKey: null);
 
+    /// <summary>
+    /// Moves text blocks dragged out of an editor to the end of the text of section <paramref name="sectionKey"/>
+    /// (<see cref="ManuscriptCommands.MoveTextBlocksAsync"/>, which saves every editor first and offers an undo).
+    /// </summary>
+    private async Task MoveTextBlocks(IReadOnlyList<Guid> keys, Guid sectionKey)
+    {
+        State.DraggedTextBlockKeys = null;
+        _dropHint = null;
+        _error = null;
+        if (!Editable || !await ActivateAsync())
+        {
+            StateHasChanged();
+            return;
+        }
+
+        var message = await ManuscriptCommands.MoveTextBlocksAsync(
+            State, keys, _ => new InsertPosition.SectionEnd(sectionKey), L["UndoMoveBlocks"], Logger);
+        if (message is not null)
+        {
+            _error = L[message.Key];
+        }
+
+        StateHasChanged();
+    }
+
     private async Task MoveDragged(Guid parentKey, Guid? beforeKey)
     {
-        var moved = _draggedKey;
+        var moved = DraggedKey;
         DragEnd();
         if (moved is not { } key || key == beforeKey || key == parentKey)
         {

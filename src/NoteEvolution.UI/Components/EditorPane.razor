@@ -655,6 +655,34 @@
         StateHasChanged();
     }
 
+    /// <summary>
+    /// Moves whole text blocks dragged out of the other half's editor here (<see cref="ManuscriptCommands.MoveTextBlocksAsync"/>):
+    /// after the given text block, at the start of the given heading's section, or at the start of the current section,
+    /// as a dropped note. This view becomes the active one first, so the moved blocks are revealed in it.
+    /// </summary>
+    public async Task OnBlocksDropped(IReadOnlyList<Guid> textBlockKeys, Guid? afterTextBlockKey)
+    {
+        State.DraggedTextBlockKeys = null;
+        if (!await ActivateAsync())
+        {
+            return;
+        }
+
+        var section = MyView.CurrentSectionKey;
+        _saver.Message = await ManuscriptCommands.MoveTextBlocksAsync(
+            State,
+            textBlockKeys,
+            book => afterTextBlockKey switch
+            {
+                { } key when book.FindTextBlock(key) is not null => new InsertPosition.After(key),
+                { } key when book.FindNode(key) is not null => new InsertPosition.SectionStart(key),
+                _ => new InsertPosition.SectionStart(book.FindNode(section) is not null ? section : book.Root.Key),
+            },
+            L["UndoMoveBlocks"],
+            Logger);
+        StateHasChanged();
+    }
+
     private void OnStateChanged()
     {
         if (_notifyingCursor)

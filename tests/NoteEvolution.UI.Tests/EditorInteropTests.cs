@@ -269,6 +269,8 @@ public class EditorInteropTests
 
         public Task OnNoteDropped(Guid noteBlockKey, Guid? afterTextBlockKey) => Task.CompletedTask;
 
+        public Task OnBlocksDropped(IReadOnlyList<Guid> textBlockKeys, Guid? afterTextBlockKey) => Task.CompletedTask;
+
         public Task OnPersonClicked(Guid personId) => Task.CompletedTask;
 
         public Task OnSourceClicked(Guid sourceId) => Task.CompletedTask;

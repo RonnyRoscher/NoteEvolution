@@ -222,4 +222,55 @@ public class BookViewPaneTests : UiTestContext
         Assert.NotNull(Upper.WarnUnsavedText);
         Assert.NotNull(Upper.HasUnsavedEditorText);
     }
+
+    private string BookText => _vault.Read("pages/Buch - Alpha.md");
+
+    private static AngleSharp.Dom.IElement OutlineRow(IRenderedComponent<OutlinePane> cut, string title) =>
+        cut.FindAll(".ne-outline-item .ne-outline-row").First(r => r.QuerySelector(".ne-outline-title")?.TextContent == title);
+
+    [Fact]
+    public async Task SectionDraggedInUpperOutline_DroppedInLowerOutline_Moves()
+    {
+        await RenderEditorsAsync();
+        var outline1 = Render<OutlinePane>(p => p.Add(o => o.View, Upper));
+        var outline2 = Render<OutlinePane>(p => p.Add(o => o.View, Lower));
+        OutlineRow(outline1, "Zwei").DragStart();
+
+        await OutlineRow(outline2, "Eins").DropAsync(new());
+
+        Assert.Contains("- # Eins\n\t- Erster Text\n\t- ## Zwei\n\t\t- Dritter Text\n", BookText);
+        Assert.Null(State.DraggedSectionKey);
+    }
+
+    [Fact]
+    public async Task TextBlockDroppedIntoTheOtherEditor_MovesThere_KeepsItsLines_UndoTakesItBack()
+    {
+        var (_, lower) = await RenderEditorsAsync();
+        var before = BookText;
+
+        await lower.InvokeAsync(() => Editors[1].Callbacks!.OnBlocksDropped([KeyOf("Erster Text")], KeyOf("Dritter Text")));
+
+        Assert.Equal(
+            "title:: Alpha\ntype:: book\n\n- # Eins\n- # Zwei\n\t- Dritter Text\n\t  updated:: 2026-10-05T10:00\n\t- Erster Text\n",
+            BookText);
+        Assert.Same(Lower, State.ActiveView);
+        lower.WaitForAssertion(() => Assert.Equal(KeyOf("Erster Text"), Editors[1].Reveals.LastOrDefault()));
+
+        Assert.True(State.Session!.TryUndo(out var error), error?.ToString());
+        Assert.Equal(before, BookText);
+    }
+
+    [Fact]
+    public async Task TextBlockDraggedFromAnEditor_DroppedOnAHeadingOfTheOtherOutline_GoesToTheEndOfItsText()
+    {
+        await RenderEditorsAsync();
+        var outline2 = Render<OutlinePane>(p => p.Add(o => o.View, Lower));
+
+        // As the upper editor's script reports the drag's start (TipTapInterop.BlocksDragStarted).
+        State.DraggedTextBlockKeys = [KeyOf("Erster Text")];
+        await OutlineRow(outline2, "Zwei").DropAsync(new());
+
+        Assert.EndsWith("- # Zwei\n\t- Dritter Text\n\t  updated:: 2026-10-05T10:00\n\t- Erster Text\n", BookText);
+        Assert.Null(State.DraggedTextBlockKeys);
+    }
 }

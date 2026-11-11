@@ -173,6 +173,54 @@ public sealed class TipTapInterop(IJSRuntime js, AppState state) : IEditorIntero
             ? _callbacks.OnNoteDropped(noteKey, ParseOrNull(afterKey))
             : Task.CompletedTask;
 
+    /// <summary>
+    /// Whole text blocks are dragged out of this editor (<paramref name="keysJson"/>: their keys as a JSON array): recorded
+    /// in <see cref="AppState.DraggedTextBlockKeys"/>, so the other half's outline can take them.
+    /// </summary>
+    [JSInvokable]
+    public Task BlocksDragStarted(string keysJson)
+    {
+        state.DraggedTextBlockKeys = ParseKeys(keysJson);
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// A drag out of this editor ended (dropped anywhere, or given up): cleared, and if it was still set (not taken by a
+    /// drop) everyone is told, so an outline's drop hint goes.
+    /// </summary>
+    [JSInvokable]
+    public Task BlocksDragEnded()
+    {
+        if (state.DraggedTextBlockKeys is not null)
+        {
+            state.DraggedTextBlockKeys = null;
+            state.Notify();
+        }
+
+        return Task.CompletedTask;
+    }
+
+    /// <summary>Whole text blocks dragged out of the other editor were dropped here (see <see cref="IEditorCallbacks.OnBlocksDropped"/>).</summary>
+    [JSInvokable]
+    public Task BlocksDropped(string keysJson, string? afterKey) =>
+        _callbacks is not null && ParseKeys(keysJson) is { Count: > 0 } keys
+            ? _callbacks.OnBlocksDropped(keys, ParseOrNull(afterKey))
+            : Task.CompletedTask;
+
+    /// <summary>The keys of a JSON array of strings; none if it is not one.</summary>
+    private static IReadOnlyList<Guid>? ParseKeys(string? json)
+    {
+        try
+        {
+            var keys = System.Text.Json.JsonSerializer.Deserialize<string[]>(json ?? "");
+            return keys is null ? null : [.. keys.Select(ParseOrNull).OfType<Guid>()];
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return null;
+        }
+    }
+
     public async ValueTask DisposeAsync()
     {
         try

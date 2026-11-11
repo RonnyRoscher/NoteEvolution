@@ -344,6 +344,18 @@ public sealed class AppState
     public bool DraggedNoteFromRelevant { get; set; }
 
     /// <summary>
+    /// The heading dragged in an outline (its <see cref="NoteEvolution.Core.Books.OutlineNode.Key"/>), shared by both
+    /// halves of the split view so the other half's outline can take it; <c>null</c> when none is dragged.
+    /// </summary>
+    public Guid? DraggedSectionKey { get; set; }
+
+    /// <summary>
+    /// The whole text blocks dragged out of an editor (their keys, in order), so the other half's outline can take them;
+    /// <c>null</c> when none are dragged. The editor sets it at the drag's start and clears it at its end.
+    /// </summary>
+    public IReadOnlyList<Guid>? DraggedTextBlockKeys { get; set; }
+
+    /// <summary>
     /// Set after a text was adopted from the "Relevant" tab: the tab keeps its list while the cursor stays in the area
     /// around that text, and clears this once it leaves it. Another <see cref="Session"/> clears it too.
     /// </summary>

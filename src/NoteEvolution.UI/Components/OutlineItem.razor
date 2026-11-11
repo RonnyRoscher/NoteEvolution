@@ -19,7 +19,7 @@
              @ondragenter="() => Pane.DragEnter(Node.Key, before: true)" @ondragover:preventDefault
              @ondrop="() => Pane.DropBefore(Node)" @ondrop:preventDefault></div>
     }
-    <div class="ne-outline-row @(Pane.IsSelected(Node) ? "selected" : null) @(isPrologue ? "prologue" : null) @(!isPrologue && Pane.IsDropHint(Node.Key, false) ? "drop-onto" : null)"
+    <div class="ne-outline-row @(Pane.IsSelected(Node) ? "selected" : null) @(isPrologue ? "prologue" : null) @((!isPrologue || Pane.DraggingTextBlocks) && Pane.IsDropHint(Node.Key, false) ? "drop-onto" : null)"
          draggable="@(draggable ? "true" : null)"
          @onclick="() => Pane.Select(Node)" @ondblclick="() => Pane.StartRename(Node)"
          @ondragstart="() => Pane.DragStart(Node)" @ondragend="Pane.DragEnd"

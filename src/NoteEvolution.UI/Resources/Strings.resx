@@ -284,6 +284,10 @@
   <data name="SectionAddRemark" xml:space="preserve">
     <value>Bemerkung anfügen</value>
   </data>
+  <data name="UndoMoveBlocks" xml:space="preserve">
+    <value>Blöcke verschieben</value>
+    <comment>Name der Aktion für „Rückgängig“ nach dem Verschieben von Textblöcken in die andere Hälfte der geteilten Ansicht</comment>
+  </data>
   <data name="UndoStatus" xml:space="preserve">
     <value>Status ändern</value>
     <comment>Name der Aktion für „Rückgängig“ nach einer Statusänderung (Auswahl oder Strg+Umschalt+N)</comment>

@@ -2221,7 +2221,7 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
     /// Parent block and child index for <paramref name="position"/>; the items of a section are its block's children.
     /// A note is not adopted into the appendix: a key there is refused.
     /// </summary>
-    private static (Block? Parent, int Index) Resolve(Book book, InsertPosition position)
+    internal static (Block? Parent, int Index) Resolve(Book book, InsertPosition position)
     {
         var key = position switch
         {
