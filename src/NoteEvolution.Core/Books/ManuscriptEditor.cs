@@ -1227,7 +1227,7 @@ public static partial class ManuscriptEditor
     /// <summary>
     /// The offset in the content of the text block or detail <paramref name="elementKey"/> (as <see cref="InsertReference"/>
     /// takes it) for an offset in its text as the editor shows it: without emphasis markers, line escapes and a
-    /// <c>#notiz</c> tag, <c>\*</c> and <c>\_</c> as one character, a line break and a block reference (one node in the
+    /// <c>#notiz</c> tag, <c>\*</c> and <c>\_</c> as one character, a line break, a block reference, a source citation and an image (one node in the
     /// editor) as one. It is the first place where a reference shows at that offset with the text around it unchanged
     /// (also in its emphasis); out of range is clamped.
     /// </summary>

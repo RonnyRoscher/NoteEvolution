@@ -34,7 +34,7 @@ public static class InlineMarkdown
     /// <summary>
     /// Splits block content at a character offset of its text as the editor shows it: after
     /// <see cref="BlockTextEscape.Unescape"/>, without emphasis markers, <c>"\n"</c> counting as 1 and <c>\*</c> or
-    /// <c>\_</c> as the one character they show, a block reference <c>((id))</c> as one (the editor shows it as one
+    /// <c>\_</c> as the one character they show, a block reference <c>((id))</c>, a source citation or an image as one (the editor shows each as one
     /// node). Emphasis across the offset is closed in <c>Before</c> and reopened in
     /// <c>After</c>; each half is written with <see cref="Format"/> and <see cref="BlockTextEscape.Escape"/>, so that it
     /// reads back as its part of the text. At offset 0 or at the end the content is returned unchanged as the one
@@ -81,7 +81,7 @@ public static class InlineMarkdown
 
     /// <summary>
     /// The characters the editor shows for <paramref name="text"/> (editor text, already unescaped), each with its
-    /// emphasis; <c>\*</c> and <c>\_</c> show as the bare character, a block reference <c>((id))</c> (one node in the
+    /// emphasis; <c>\*</c> and <c>\_</c> show as the bare character, a block reference <c>((id))</c>, a source citation or an image (one node in the
     /// editor) as one unit: its text, lower case.
     /// </summary>
     internal static List<(string Char, bool Bold, bool Italic)> ShownChars(string text)
@@ -119,12 +119,13 @@ public static class InlineMarkdown
 
     /// <summary>
     /// The length in <paramref name="text"/> of the shown character at <paramref name="i"/>: 2 for <c>\*</c> and
-    /// <c>\_</c>, the whole reference for a block reference or source citation (the editor shows each as one node), else 1.
+    /// <c>\_</c>, the whole reference for a block reference, source citation or image (the editor shows each as one node), else 1.
     /// </summary>
     private static int ShownCharLength(string text, int i) =>
         text[i] == '\\' && i + 1 < text.Length && text[i + 1] is '*' or '_' ? 2
         : SourceCitations.LengthAt(text, i) is > 0 and var citation ? citation
         : BlockRefs.LengthAt(text, i) is > 0 and var length ? length
+        : BlockImages.LengthAt(text, i) is > 0 and var image ? image
         : 1;
 
     /// <summary>
@@ -329,6 +330,8 @@ public static class InlineMarkdown
             return i + 1 < text.Length ? 2 : 1;
         if (SourceCitations.LengthAt(text, i) is > 0 and var citation)
             return citation;
+        if (BlockImages.LengthAt(text, i) is > 0 and var image)
+            return image;
         var closer = text[i] switch
         {
             '`' => "`",
