@@ -284,6 +284,18 @@
   <data name="SectionAddRemark" xml:space="preserve">
     <value>Bemerkung anfügen</value>
   </data>
+  <data name="UndoOutlineRename" xml:space="preserve">
+    <value>Abschnitt umbenennen</value>
+    <comment>Name der Aktion für „Rückgängig“ nach dem Umbenennen eines Abschnitts in der Gliederung</comment>
+  </data>
+  <data name="UndoOutlineAdd" xml:space="preserve">
+    <value>Abschnitt hinzufügen</value>
+    <comment>Name der Aktion für „Rückgängig“ nach „+ Abschnitt“ in der Gliederung</comment>
+  </data>
+  <data name="UndoOutlineMove" xml:space="preserve">
+    <value>Abschnitt verschieben</value>
+    <comment>Name der Aktion für „Rückgängig“ nach dem Verschieben eines Abschnitts in der Gliederung (Ziehen)</comment>
+  </data>
   <data name="UndoMoveBlocks" xml:space="preserve">
     <value>Blöcke verschieben</value>
     <comment>Name der Aktion für „Rückgängig“ nach dem Verschieben von Textblöcken in die andere Hälfte der geteilten Ansicht</comment>

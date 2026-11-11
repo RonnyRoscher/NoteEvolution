@@ -51,7 +51,8 @@ zeigt das Hauptfenster einen grünen Startbildschirm mit Logo, Statuszeile und l
 
 Der Editor zeigt immer das ganze Buch. Der **aktuelle Abschnitt** ist das Element am Cursor (Überschrift, Textblock
 oder Detail-Unterpunkt); ein Kasten mit Balken links markiert ihn, und er bestimmt „Relevant“. Ein Klick in der
-Gliederung springt zur Überschrift.
+Gliederung springt zur Überschrift. Umbenennen (Doppelklick), „+ Abschnitt“ und Verschieben (Ziehen) in der Gliederung
+nimmt „Rückgängig“ in der Kopfzeile zurück, solange das Buch seitdem nicht geändert wurde.
 
 Jeder Textblock zeigt rechts oben klein und grau, wann er erstellt und zuletzt geändert wurde („erstellt 12.10.2026 ·
 geändert 19.10.2026 14:32“). Die Daten stehen als `created::` und `updated::` im Block der Buchdatei; neue Blöcke
@@ -484,7 +485,8 @@ Gliederung
       scrollen: Liste und Schieber bleiben stehen.
 - [ ] Zwei datierte Textblöcke zusammenfügen: klappt; der Block behält das frühere Erstellungsdatum.
 - [ ] Überschrift per Doppelklick umbenennen (Fokus im Eingabefeld), „+“ legt eine Unterüberschrift an.
-- [ ] Abschnitte per Ziehen umsortieren und einhängen (echtes Ziehen mit der Maus in WebView2).
+- [ ] Abschnitte per Ziehen umsortieren und einhängen (echtes Ziehen mit der Maus in WebView2); „Rückgängig“ in der
+      Kopfzeile („Abschnitt verschieben“) stellt die alte Reihenfolge wieder her, ebenso nach Umbenennen und „+ Abschnitt“.
 
 Editor
 - [ ] Text tippen und ca. 1 s warten: nur diese Zeile ändert sich in der Datei; der Cursor bleibt, wo er ist.

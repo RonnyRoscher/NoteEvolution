@@ -283,6 +283,47 @@ public class OutlinePaneTests : UiTestContext
     }
 
     [Fact]
+    public async Task Move_Add_Rename_EachHasAnUndo_ThatRestoresTheFile()
+    {
+        using var tv = Plain();
+        var session = await OpenSessionAsync(tv);
+        var cut = Render<OutlinePane>();
+        var original = tv.Read(BookPath);
+
+        Row(cut, "Drei").DragStart();
+        Row(cut, "Eins").Drop();
+        var moved = tv.Read(BookPath);
+        Assert.NotEqual(original, moved);
+
+        cut.Find(".ne-outline-add-root").Click();
+        var added = tv.Read(BookPath);
+        cut.Find(".ne-outline-rename").Input("Vier");
+        cut.Find(".ne-outline-rename").KeyDown(new KeyboardEventArgs { Key = "Enter" });
+        Assert.EndsWith("- # Vier\n", tv.Read(BookPath));
+
+        Assert.True(session.TryUndo(out var error), error?.ToString());
+        Assert.Equal(added, tv.Read(BookPath));
+        Assert.True(session.TryUndo(out error), error?.ToString());
+        Assert.Equal(moved, tv.Read(BookPath));
+        Assert.True(session.TryUndo(out error), error?.ToString());
+        Assert.Equal(original, tv.Read(BookPath));
+        Assert.False(session.Undo.CanUndo);
+    }
+
+    [Fact]
+    public async Task Rename_SameTitle_NoUndo()
+    {
+        using var tv = Plain();
+        var session = await OpenSessionAsync(tv);
+        var cut = Render<OutlinePane>();
+
+        Row(cut, "Zwei").DoubleClick();
+        cut.Find(".ne-outline-rename").KeyDown(new KeyboardEventArgs { Key = "Enter" });
+
+        Assert.False(session.Undo.CanUndo);
+    }
+
+    [Fact]
     public async Task Warning_ShowsIcon()
     {
         using var tv = TestVault.Create(
