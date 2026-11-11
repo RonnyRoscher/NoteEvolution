@@ -295,6 +295,61 @@ public class PdfExportTests
         Assert.DoesNotContain("![", text);
     }
 
+    private static Book BookWithPicture(TempDir dir, string block)
+    {
+        var assets = Directory.CreateDirectory(Path.Combine(dir.Path, "assets")).FullName;
+        File.WriteAllBytes(Path.Combine(assets, "bild.png"), PdfSamples.Png);
+        return PdfSamples.Load(PdfSamples.BookWithBlock(block), Path.Combine(dir.Path, "pages", "Buch.md"));
+    }
+
+    [Fact]
+    public void Content_ImageWithAlt_HasTrimmedCaption()
+    {
+        using var dir = new TempDir();
+        using var content = PdfContent.Build(BookWithPicture(dir, "![ Mein Bild ](../assets/bild.png)"), null);
+
+        Assert.Equal("Mein Bild", content.Elements.OfType<ImageElement>().Single().Caption);
+    }
+
+    [Fact]
+    public void Content_ImageWithoutAlt_HasEmptyCaption()
+    {
+        using var dir = new TempDir();
+        using var content = PdfContent.Build(BookWithPicture(dir, "![](../assets/bild.png)"), null);
+
+        Assert.Equal("", content.Elements.OfType<ImageElement>().Single().Caption);
+    }
+
+    [Fact]
+    public void Export_ImageWithAlt_PrintsCaptionOnce()
+    {
+        using var dir = new TempDir();
+        var text = AllText(Export(BookWithPicture(dir, "![Mein Bild](../assets/bild.png)")).Bytes);
+
+        Assert.Single(Regex.Matches(text, "Mein Bild"));
+    }
+
+    [Fact]
+    public void Export_ImageWithCaption_StaysOnOnePageWithItsCaption()
+    {
+        using var dir = new TempDir();
+        var bytes = Export(BookWithPicture(dir, "Absatz ![Mein Bild](../assets/bild.png)"),
+            size: PdfPageSize.A5).Bytes;
+
+        using var pdf = PdfDocument.Open(bytes);
+        var page = pdf.GetPages().Single(p => p.GetImages().Any());
+        Assert.Contains("Mein Bild", page.Text);
+        Assert.Equal(1, pdf.GetPages().Count(p => p.Text.Contains("Mein Bild")));
+    }
+
+    [Fact]
+    public void Export_MissingImageWithAlt_PrintsNoCaption()
+    {
+        var text = AllText(Export(PdfSamples.Load(PdfSamples.BookWithBlock("![Mein Bild](../assets/fehlt.png)"))).Bytes);
+
+        Assert.DoesNotContain("Mein Bild", text);
+    }
+
     [Fact]
     public void Export_Scope_OnlySelectedChapter()
     {

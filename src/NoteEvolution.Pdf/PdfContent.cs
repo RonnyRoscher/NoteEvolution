@@ -1,6 +1,5 @@
 using System.Globalization;
 using System.Text;
-using System.Text.RegularExpressions;
 using NoteEvolution.Core.Books;
 using NoteEvolution.Core.Model;
 using NoteEvolution.Core.Text;
@@ -36,14 +35,15 @@ internal sealed record PdfRun(
 
 internal sealed record ParagraphElement(IReadOnlyList<PdfRun> Runs) : PdfElement;
 
-internal sealed record ImageElement(Image Image) : PdfElement;
+/// <summary>A picture; <paramref name="Caption"/> is the plain text printed under it, "" for none.</summary>
+internal sealed record ImageElement(Image Image, string Caption = "") : PdfElement;
 
 /// <summary>
 /// The exportable content of a book (or one outline node of it) as a flat list of headings, paragraphs and images,
 /// plus the warnings found while collecting it. Relevant and remark blocks, properties and sources never get in.
 /// The appendix (glossary, people, sources) follows the text, with the entries the exported text uses.
 /// </summary>
-internal sealed partial class PdfContent : IDisposable
+internal sealed class PdfContent : IDisposable
 {
     private const string MissingRef = "→ (Verweis fehlt)";
     private const string Untitled = "(ohne Titel)";
@@ -76,12 +76,6 @@ internal sealed partial class PdfContent : IDisposable
 
     /// <summary>The target id of the referenced text block whose first element is still to come.</summary>
     private Guid? _pendingAnchor;
-
-    [GeneratedRegex(@"!\[[^\]\n]*\]\((?<path>[^)\n]*)\)(\{[^}\n]*\})?")]
-    private static partial Regex ImageRegex();
-
-    [GeneratedRegex(@"^[A-Za-z][A-Za-z0-9+.-]*://")]
-    private static partial Regex RemoteRegex();
 
     private PdfContent(Book book, OutlineNode scope, Func<Guid, bool>? knownElsewhere)
     {
@@ -261,11 +255,11 @@ internal sealed partial class PdfContent : IDisposable
         var marked = hits.Count > 0 && blockText == block.Content ? WithMarks(blockText, block.Key, hits) : blockText;
         var text = BlockTextEscape.Unescape(marked);
         var position = 0;
-        foreach (var match in ImageRegex().Matches(text).Cast<Match>())
+        foreach (var image in BlockImages.Find(text))
         {
-            AddParagraph(text[position..match.Index], hits);
-            AddImage(match.Groups["path"].Value.Trim());
-            position = match.Index + match.Length;
+            AddParagraph(text[position..image.Start], hits);
+            AddImage(image.Path, image.Alt.Trim());
+            position = image.Start + image.Length;
         }
 
         AddParagraph(text[position..], hits);
@@ -543,9 +537,9 @@ internal sealed partial class PdfContent : IDisposable
         }
     }
 
-    private void AddImage(string path)
+    private void AddImage(string path, string caption)
     {
-        if (RemoteRegex().IsMatch(path))
+        if (BlockImages.IsRemote(path))
         {
             Missing(path, $"Bild aus dem Netz wird nicht geladen: {path}");
             return;
@@ -560,7 +554,7 @@ internal sealed partial class PdfContent : IDisposable
 
         try
         {
-            Add(new ImageElement(Image.FromBinaryData(File.ReadAllBytes(file))));
+            Add(new ImageElement(Image.FromBinaryData(File.ReadAllBytes(file)), caption));
         }
         catch (Exception)
         {
