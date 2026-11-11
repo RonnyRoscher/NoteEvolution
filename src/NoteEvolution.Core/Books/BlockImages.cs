@@ -40,9 +40,30 @@ public static partial class BlockImages
     /// <summary>The image syntax for <paramref name="alt"/> and <paramref name="path"/>, followed by <paramref name="suffix"/>.</summary>
     public static string Format(string alt, string path, string suffix = "") => $"![{alt}]({path}){suffix}";
 
-    /// <summary>A caption that fits into the alt text: <c>]</c> and line breaks removed, trimmed.</summary>
-    public static string CleanCaption(string caption) =>
-        caption.Replace("]", "").Replace("\r", "").Replace("\n", "").Trim();
+    /// <summary>
+    /// A caption that fits into the alt text: <c>]</c> and line breaks removed, every <c>::</c> made a single <c>:</c>
+    /// (so the block text is never read as a property), trimmed.
+    /// </summary>
+    public static string CleanCaption(string caption)
+    {
+        var clean = caption.Replace("]", "").Replace("\r", "").Replace("\n", "");
+        while (clean.Contains("::", StringComparison.Ordinal))
+        {
+            clean = clean.Replace("::", ":");
+        }
+
+        return clean.Trim();
+    }
+
+    /// <summary>
+    /// The caption an image's <paramref name="alt"/> text shows: the trimmed alt, or <c>""</c> if it is only an image
+    /// file name (Logseq writes the file name as alt for pasted pictures). The alt text itself is never changed for this.
+    /// </summary>
+    public static string ShownCaption(string alt)
+    {
+        var caption = alt.Trim();
+        return Vaults.VaultAssets.IsImageName(caption) ? "" : caption;
+    }
 
     /// <summary>
     /// <paramref name="text"/> with the caption of its <paramref name="imageIndex"/>-th image (0-based) replaced by the

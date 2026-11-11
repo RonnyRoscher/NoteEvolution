@@ -258,7 +258,7 @@ internal sealed class PdfContent : IDisposable
         foreach (var image in BlockImages.Find(text))
         {
             AddParagraph(text[position..image.Start], hits);
-            AddImage(image.Path, image.Alt.Trim());
+            AddImage(image.Path, BlockImages.ShownCaption(image.Alt));
             position = image.Start + image.Length;
         }
 

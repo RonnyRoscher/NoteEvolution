@@ -60,6 +60,22 @@ public class BlockImagesTests
     [Fact]
     public void CleanCaption_RemovesBracketAndLineBreaks() => Assert.Equal("abc", BlockImages.CleanCaption(" a]b\nc "));
 
+    [Theory]
+    [InlineData("Quelle:: Wikipedia", "Quelle: Wikipedia")]
+    [InlineData("a::::b", "a:b")]
+    [InlineData("a:::b", "a:b")]
+    public void CleanCaption_ReplacesDoubleColons(string caption, string expected) =>
+        Assert.Equal(expected, BlockImages.CleanCaption(caption));
+
+    [Theory]
+    [InlineData("Mein Bild", "Mein Bild")]
+    [InlineData(" Mein Bild ", "Mein Bild")]
+    [InlineData("image.png", "")]
+    [InlineData(" Foto.JPG ", "")]
+    [InlineData("", "")]
+    public void ShownCaption_FileNameIsNoCaption(string alt, string expected) =>
+        Assert.Equal(expected, BlockImages.ShownCaption(alt));
+
     [Fact]
     public void WithCaption_ChangesOnlyTheNthImage()
     {

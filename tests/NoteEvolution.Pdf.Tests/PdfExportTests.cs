@@ -342,6 +342,46 @@ public class PdfExportTests
         Assert.Equal(1, pdf.GetPages().Count(p => p.Text.Contains("Mein Bild")));
     }
 
+    [Theory]
+    [InlineData(PdfPageSize.A5)]
+    [InlineData(PdfPageSize.A4)]
+    public void Export_TallImageWithLongCaption_DoesNotFail(PdfPageSize size)
+    {
+        using var dir = new TempDir();
+        var assets = Directory.CreateDirectory(Path.Combine(dir.Path, "assets")).FullName;
+        File.WriteAllBytes(Path.Combine(assets, "hoch.png"), PdfSamples.PngOfSize(300, 1200));
+        var caption = string.Concat(Enumerable.Repeat("Lange Bildunterschrift ", 31))[..700];
+        var book = PdfSamples.Load(
+            PdfSamples.BookWithBlock($"![{caption}](../assets/hoch.png)"), Path.Combine(dir.Path, "pages", "Buch.md"));
+
+        var (bytes, report) = Export(book, size: size);
+
+        Assert.Empty(report.Warnings);
+        using var pdf = PdfDocument.Open(bytes);
+        Assert.Equal(1, pdf.GetPages().Sum(p => p.GetImages().Count()));
+    }
+
+    [Fact]
+    public void Export_TallImageWithShortCaption_PrintsCaption()
+    {
+        using var dir = new TempDir();
+        var assets = Directory.CreateDirectory(Path.Combine(dir.Path, "assets")).FullName;
+        File.WriteAllBytes(Path.Combine(assets, "hoch.png"), PdfSamples.PngOfSize(300, 1200));
+        var book = PdfSamples.Load(
+            PdfSamples.BookWithBlock("![Kurz und gut](../assets/hoch.png)"), Path.Combine(dir.Path, "pages", "Buch.md"));
+
+        Assert.Contains("Kurz und gut", AllText(Export(book, size: PdfPageSize.A5).Bytes));
+    }
+
+    [Fact]
+    public void Content_ImageWithFileNameAlt_HasEmptyCaption()
+    {
+        using var dir = new TempDir();
+        using var content = PdfContent.Build(BookWithPicture(dir, "![image.png](../assets/bild.png)"), null);
+
+        Assert.Equal("", content.Elements.OfType<ImageElement>().Single().Caption);
+    }
+
     [Fact]
     public void Export_MissingImageWithAlt_PrintsNoCaption()
     {
