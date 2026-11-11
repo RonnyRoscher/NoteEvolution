@@ -1125,6 +1125,23 @@ function visibleArea(scroller) {
  * The key of the text block or heading after which a note dropped at the event's position goes, or null for the
  * start of the view.
  */
+/** The views of the editors shown now (two in the split view): a drop asks the others whether a block comes from them. */
+const editorViews = new Set();
+
+/**
+ * The keys of the whole text blocks a drag carries (a slice of complete text blocks, as dragging blocks by their bar
+ * gives), or null for anything else (text inside a block, a heading).
+ */
+function draggedBlockKeys(dragging) {
+    const slice = dragging?.slice;
+    if (!slice || slice.openStart !== 0 || slice.openEnd !== 0 || slice.content.childCount === 0) {
+        return null;
+    }
+    const keys = [];
+    slice.content.forEach(node => keys.push(node.type.name === 'textBlock' && node.attrs.key ? node.attrs.key : null));
+    return keys.every(key => key) ? keys : null;
+}
+
 function dropTarget(view, event) {
     const doc = view.state.doc;
     let index = -1;
@@ -1143,7 +1160,7 @@ function dropTarget(view, event) {
 /**
  * Creates the editor in host. dotnet receives DocumentChanged(json), CursorChanged(kind, key, textBlockKey, offset),
  * EditorFocused() (whenever the editor gets the focus, before the cursor report that may follow), SectionCommand(name), SectionBoxMoved(barTop, visible), ChipClicked(noteId), ChipRemoved(blockKey, noteId),
- * ReferenceClicked(id), NoteDropped(afterKey), PersonClicked(id), SourceClicked(id), CitationEdit(id, key, offset) and
+ * ReferenceClicked(id), NoteDropped(afterKey), BlocksDragStarted(keysJson), BlocksDragEnded(), BlocksDropped(keysJson, afterKey) (text blocks dragged from the other editor), PersonClicked(id), SourceClicked(id), CitationEdit(id, key, offset) and
  * GlossaryClicked(entryKey). options.citeClickDelay is how long a click on a citation waits for a double click (ms). options.barHeight is the height of the section bar C# shows at the marking box's bottom
  * (.ne-section-bar in the .ne-editor-pane) until the bar can be measured; the bar may wrap into more lines, so its
  * actual height is followed (the gap below the marking, --bar-height, and the scroll distance from the bottom).
@@ -1275,12 +1292,35 @@ export function createEditor(host, dotnet, options = {}) {
             scrollThreshold,
             scrollMargin,
             handleDOMEvents: {
+                // Whole text blocks dragged out of this editor are announced, so the other half's outline can take them.
+                dragstart: view => {
+                    setTimeout(() => {
+                        const keys = draggedBlockKeys(view.dragging);
+                        if (keys) {
+                            call('BlocksDragStarted', JSON.stringify(keys));
+                        }
+                    });
+                    return false;
+                },
+                dragend: () => {
+                    call('BlocksDragEnded');
+                    return false;
+                },
                 drop: (view, event) => {
                     if (view.dragging) {
                         // A block or text moved within the editor.
                         return false;
                     }
                     event.preventDefault();
+                    const source = [...editorViews].find(other => other !== view && other.dragging);
+                    if (source) {
+                        // From the other half: whole text blocks move there (C# saves both); text inside a block does not.
+                        const keys = draggedBlockKeys(source.dragging);
+                        if (keys) {
+                            call('BlocksDropped', JSON.stringify(keys), dropTarget(view, event));
+                        }
+                        return true;
+                    }
                     call('NoteDropped', dropTarget(view, event));
                     return true;
                 },
@@ -1303,6 +1343,8 @@ export function createEditor(host, dotnet, options = {}) {
         },
         onTransaction: scheduleBox,
     });
+
+    editorViews.add(editor.view);
 
     // Scrolling (of any pane; the frame and the 1 px check keep that cheap) and resizing move the box too.
     document.addEventListener('scroll', scheduleBox, { capture: true, passive: true });
@@ -1448,6 +1490,7 @@ export function createEditor(host, dotnet, options = {}) {
             resizes.disconnect();
             document.removeEventListener('scroll', scheduleBox, { capture: true });
             window.removeEventListener('resize', scheduleBox);
+            editorViews.delete(editor.view);
             editor.destroy();
             root.remove();
         },

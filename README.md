@@ -71,6 +71,13 @@ geändert, ◀ ▶, Quellen) landen in ihr. Der Schieber dazwischen stellt das V
 20 bis 80 %). Der Einklapp-Knopf der Gliederung gilt für beide Hälften. Teilung und Verhältnis bleiben nach einem
 Neustart erhalten.
 
+Zwischen den Hälften lässt sich verschieben: Ein Kapitel aus der einen Gliederung lässt sich in der anderen ablegen
+(auf, vor oder hinter einem Kapitel), mit allen Unterkapiteln und Texten. Ganze Textblöcke, am farbigen Balken links
+gepackt, wandern samt Unterpunkten in den Editor der anderen Hälfte (hinter den Block, über dem sie losgelassen
+werden) oder auf eine Überschrift ihrer Gliederung (ans Ende ihres Textes). Die Blöcke behalten `id::`, Quellen und
+Datum, die Notizen bleiben unberührt; „Rückgängig“ in der Kopfzeile nimmt das Verschieben zurück. Markierter Text
+innerhalb eines Blocks wird nicht in die andere Hälfte verschoben.
+
 Am unteren Rand der Markierung stehen die Abschnittsknöpfe und die Quellen:
 
 | Befehl | Tastenkürzel |
@@ -628,6 +635,11 @@ Querverweise und Navigation
       zwischen 20 und 80 % stellen. Ein Klick in die untere Hälfte macht sie aktiv (Akzentstrich, Abschnittsleiste und
       „Relevant“ wechseln); Tippen oben, dann sofort unten klicken: nichts geht verloren. Ausschalten, während unten
       aktiv ist: die obere Hälfte bleibt mit ihrer Stelle. Neustart behält Teilung und Verhältnis.
+- [ ] Geteilte Ansicht, verschieben: ein Kapitel aus der oberen Gliederung auf ein Kapitel der unteren ziehen; einen
+      Textblock mit Unterpunkten am Balken aus dem oberen in den unteren Editor ziehen (beide Hälften zeigen danach den
+      neuen Stand, `source::`/`used-in::` unverändert, „Rückgängig“ holt ihn zurück); einen Textblock auf eine
+      Überschrift der anderen Gliederung ziehen (landet am Ende ihres Textes). Markierten Text hinüberziehen: nichts
+      passiert.
 - [ ] PDF: ein Verweis steht als „→ Titel (S. n)“ mit richtiger Seitenzahl; Klick auf Titel und Seitenzahl springt
       im PDF-Betrachter zur Stelle.
 - [ ] Systemanzeige: „App“ entspricht etwa NoteEvolution plus `ollama*.exe` und `llama-server.exe` im Task-Manager

@@ -130,6 +130,12 @@ public interface IEditorCallbacks
     /// </summary>
     Task OnNoteDropped(Guid noteBlockKey, Guid? afterTextBlockKey);
 
+    /// <summary>
+    /// Whole text blocks dragged out of the other editor of the split view were dropped into this one, to be moved
+    /// there with their details; <paramref name="afterTextBlockKey"/> as for <see cref="OnNoteDropped"/>.
+    /// </summary>
+    Task OnBlocksDropped(IReadOnlyList<Guid> textBlockKeys, Guid? afterTextBlockKey);
+
     /// <summary>A reference to a person was clicked; <paramref name="personId"/> is the entry's <c>id::</c>.</summary>
     Task OnPersonClicked(Guid personId);
 

@@ -839,6 +839,67 @@ public static class ManuscriptCommands
     }
 
     /// <summary>
+    /// Moves whole text blocks with their details to <paramref name="position"/> (<see cref="ManuscriptEditor.MoveTextBlocks"/>),
+    /// dragged into the other half of the split view: in the same order as <see cref="RunAsync"/> every editor saves its
+    /// text first, and text one could not save refuses the move; a read-only book or an open conflict refuses it too.
+    /// Ids, sources and dates stay, so the notes are not touched. The page is saved with an undo action
+    /// (<paramref name="undoDescription"/>) that is refused once the page changed after the move. A refused position or
+    /// block shows <c>SectionCommandFailed</c>; a move to where the blocks are changes nothing. Whatever happens, the
+    /// book view is taken from the vault again (both halves show the new state), the first moved block is revealed and
+    /// <see cref="AppState.Notify"/> is raised.
+    /// </summary>
+    /// <returns>The message to show, or <c>null</c> if the blocks were moved (or nothing changed) without remark.</returns>
+    /// <param name="position">The place, chosen in the book as it is after the editors saved.</param>
+    public static async Task<AdoptMessage?> MoveTextBlocksAsync(
+        AppState state, IReadOnlyList<Guid> textBlockKeys, Func<Book, InsertPosition> position, string undoDescription, ILogger logger)
+    {
+        Guid? reveal = null;
+        try
+        {
+            var (message, session, book) = await PrepareAsync(state, logger);
+            if (session is null || book is null)
+            {
+                return message;
+            }
+
+            var page = book.Page;
+            var before = PageStructureSnapshot.Capture(page);
+            try
+            {
+                if (!ManuscriptEditor.MoveTextBlocks(book, textBlockKeys, position(book)))
+                {
+                    return null;
+                }
+            }
+            catch (ArgumentException ex)
+            {
+                // Refused before anything changed.
+                logger.LogWarning(ex, "Moving text blocks was refused");
+                return new AdoptMessage("SectionCommandFailed", true);
+            }
+
+            if (!session.TrySave(page, out var error))
+            {
+                return SaveFailed(session, page, error);
+            }
+
+            session.Undo.Push(new StructureUndo(undoDescription, session, page.FilePath, before, PageStructureSnapshot.Capture(page)));
+            reveal = textBlockKeys[0];
+            return null;
+        }
+        finally
+        {
+            state.RefreshBook();
+            if (reveal is { } key)
+            {
+                state.RevealElement(key);
+            }
+
+            state.Notify();
+        }
+    }
+
+    /// <summary>
     /// What every command does before it changes anything: the editor saves its text (text it could not save refuses
     /// the command), then the book is taken from the vault and checked for being writable and free of an open conflict
     /// (R26).
