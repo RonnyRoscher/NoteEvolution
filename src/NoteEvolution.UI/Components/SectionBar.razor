@@ -328,6 +328,13 @@
     [Parameter]
     public string? CitationLocator { get; set; }
 
+    /// <summary>
+    /// The edit <see cref="CitationLocator"/> belongs to (any object, compared by reference): another one fills the
+    /// field anew, also with the same locator.
+    /// </summary>
+    [Parameter]
+    public object? CitationEdit { get; set; }
+
     /// <summary>The locator field's text is to be saved.</summary>
     [Parameter]
     public EventCallback<string> OnCitationSave { get; set; }
@@ -339,6 +346,13 @@
     /// <summary>The caption of the image being changed (an empty one: none); <c>null</c> shows no field.</summary>
     [Parameter]
     public string? ImageCaption { get; set; }
+
+    /// <summary>
+    /// The edit <see cref="ImageCaption"/> belongs to (any object, compared by reference): another image fills the
+    /// field anew, also with the same caption, so text typed for one image never goes to another.
+    /// </summary>
+    [Parameter]
+    public object? ImageEdit { get; set; }
 
     /// <summary>The caption field's text is to be saved.</summary>
     [Parameter]
@@ -370,6 +384,8 @@
     /// <summary>The locator the field was opened with; a new one fills the field anew and takes the focus.</summary>
     private string? _citationShown;
 
+    private object? _citationEditShown;
+
     private bool _citationFocusPending;
 
     private ElementReference _imageInput;
@@ -379,6 +395,8 @@
 
     /// <summary>The caption the field was opened with; a new one fills the field anew and takes the focus.</summary>
     private string? _imageShown;
+
+    private object? _imageEditShown;
 
     private bool _imageFocusPending;
 
@@ -407,15 +425,17 @@
             _appendixPicking = null;
         }
 
-        if (CitationLocator != _citationShown)
+        if (CitationLocator != _citationShown || !ReferenceEquals(CitationEdit, _citationEditShown))
         {
+            _citationEditShown = CitationEdit;
             _citationShown = CitationLocator;
             _citationText = CitationLocator ?? "";
             _citationFocusPending = CitationLocator is not null;
         }
 
-        if (ImageCaption != _imageShown)
+        if (ImageCaption != _imageShown || !ReferenceEquals(ImageEdit, _imageEditShown))
         {
+            _imageEditShown = ImageEdit;
             _imageShown = ImageCaption;
             _imageText = ImageCaption ?? "";
             _imageFocusPending = ImageCaption is not null;

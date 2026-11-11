@@ -339,6 +339,41 @@ public class ImageCommandTests : UiTestContext
     }
 
     [Fact]
+    public async Task CaptionField_AnotherImage_StartsFromItsOwnCaption_NotTheTypedText()
+    {
+        var cut = await RenderAsync();
+        await cut.InvokeAsync(() => ManuscriptCommands.InsertImageAsync(State, "eins.png", Png, "Bild einfügen", NullLogger.Instance));
+        await cut.InvokeAsync(() => ManuscriptCommands.InsertImageAsync(State, "zwei.png", [.. Png, 1], "Bild einfügen", NullLogger.Instance));
+        var first = KeyOf("![](../assets/eins.png)");
+        var second = KeyOf("![](../assets/zwei.png)");
+
+        // Both captions are empty: the field of the second image must not keep what was typed for the first.
+        await cut.InvokeAsync(() => Editor.Callbacks!.OnImageEdit(first, 0));
+        cut.Find(".ne-image-caption").Input("Für das erste");
+        await cut.InvokeAsync(() => Editor.Callbacks!.OnImageEdit(second, 0));
+
+        Assert.Equal("", cut.Find(".ne-image-caption").GetAttribute("value"));
+        await cut.InvokeAsync(() => cut.Find(".ne-image-caption-save").Click());
+        Assert.Contains("![](../assets/eins.png)", _vault.Read(BookPath));
+        Assert.Contains("![](../assets/zwei.png)", _vault.Read(BookPath));
+    }
+
+    [Fact]
+    public async Task CaptionField_ClosesWhenACitationIsEdited()
+    {
+        var cut = await RenderAsync();
+        await cut.InvokeAsync(() => ManuscriptCommands.InsertImageAsync(State, "foto.png", Png, "Bild einfügen", NullLogger.Instance));
+        var key = KeyOf("![](../assets/foto.png)");
+        await cut.InvokeAsync(() => Editor.Callbacks!.OnImageEdit(key, 0));
+        Assert.Single(cut.FindAll(".ne-image-caption"));
+
+        // A double click on a citation (none is there: its field does not open) ends the image's edit.
+        await cut.InvokeAsync(() => Editor.Callbacks!.OnCitationEdit(Guid.NewGuid(), key, 0));
+
+        Assert.Empty(cut.FindAll(".ne-image-caption"));
+    }
+
+    [Fact]
     public async Task CaptionField_ShowsCaption_SavesWithButton_AndHides()
     {
         var cut = await RenderAsync();

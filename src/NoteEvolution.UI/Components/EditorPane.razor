@@ -42,9 +42,9 @@
         <SectionBar Top="_barTop" Visible="_barVisible" Element="MyView.ElementIn(State.CurrentBook)" Locked="ReadOnlyReason is not null"
                     OnCommand="OnSectionCommand" OnIndent="() => OnShiftAsync(1)" OnOutdent="() => OnShiftAsync(-1)" OnStatus="OnStatusChosen"
                     OnReference="OnReferenceChosen" OnLevel="OnLevelChosen" OnSource="OnSourceChosen" OnLoosen="OnSourceLoosened"
-                    OnAppendixPick="OnAppendixPicked" CitationLocator="@(_citationEdit?.Locator)"
+                    OnAppendixPick="OnAppendixPicked" CitationLocator="@(_citationEdit?.Locator)" CitationEdit="_citationEdit"
                     OnCitationSave="SaveCitationAsync" OnCitationCancel="CancelCitationEdit"
-                    ImageCaption="@(_imageEdit?.Caption)" OnImageCaptionSave="SaveImageCaptionAsync"
+                    ImageCaption="@(_imageEdit?.Caption)" ImageEdit="_imageEdit" OnImageCaptionSave="SaveImageCaptionAsync"
                     OnImageCaptionCancel="CancelImageEdit" OnInsertImage="InsertImageFromFileAsync" />
     }
 </div>
@@ -1123,6 +1123,9 @@
         }
 
         await FlushAsync();
+
+        // One field at a time: the image's caption field closes.
+        _imageEdit = null;
         SourceCitation? citation = null;
         if (State.CurrentBook is { } book && BookElements.Find(book, elementKey) is { Kind: not ElementKind.Heading })
         {
@@ -1258,6 +1261,9 @@
         }
 
         await FlushAsync();
+
+        // One field at a time: the citation's locator field closes.
+        _citationEdit = null;
         _imageEdit = null;
         if (State.CurrentBook is { } book && BookElements.Find(book, elementKey) is { Kind: not ElementKind.Heading }
             && ManuscriptEditor.ImageIndexAt(book, elementKey, offset) is { } index)
