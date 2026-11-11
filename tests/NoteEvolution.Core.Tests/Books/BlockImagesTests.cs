@@ -31,6 +31,9 @@ public class BlockImagesTests
     }
 
     [Fact]
+    public void Find_SecondImage_HasItsStart() => Assert.Equal(16, BlockImages.Find("![a](p.png) und ![b](q.png)")[1].Start);
+
+    [Fact]
     public void Find_Unclosed_ReturnsNothing() => Assert.Empty(BlockImages.Find("![a](b"));
 
     [Fact]
@@ -68,6 +71,10 @@ public class BlockImagesTests
     [Fact]
     public void WithCaption_KeepsSuffix() =>
         Assert.Equal("![neu](p.png){:w 1}", BlockImages.WithCaption("![a](p.png){:w 1}", 0, "neu"));
+
+    [Fact]
+    public void WithCaption_KeepsRawPathAndSuffix() =>
+        Assert.Equal("![neu]( p.png ){:w 1}", BlockImages.WithCaption("![a]( p.png ){:w 1}", 0, "neu"));
 
     [Fact]
     public void WithCaption_NoSuchImage_Throws()

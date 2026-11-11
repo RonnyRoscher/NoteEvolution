@@ -46,7 +46,7 @@ public static partial class BlockImages
 
     /// <summary>
     /// <paramref name="text"/> with the caption of its <paramref name="imageIndex"/>-th image (0-based) replaced by the
-    /// cleaned <paramref name="caption"/>; the path, the suffix and the rest of the text stay unchanged.
+    /// cleaned <paramref name="caption"/>; everything else, also the path as written, stays byte-identical.
     /// </summary>
     /// <exception cref="ArgumentOutOfRangeException">The text has no such image.</exception>
     public static string WithCaption(string text, int imageIndex, string caption)
@@ -58,8 +58,8 @@ public static partial class BlockImages
         }
 
         var image = images[imageIndex];
-        var changed = Format(CleanCaption(caption), image.Path, image.Suffix);
-        return string.Concat(text.AsSpan(0, image.Start), changed, text.AsSpan(image.Start + image.Length));
+        var from = image.Start + 2; // after "!["
+        return string.Concat(text.AsSpan(0, from), CleanCaption(caption), text.AsSpan(from + image.Alt.Length));
     }
 
     /// <summary>Whether <paramref name="path"/> names a remote resource (has a <c>scheme://</c>); such images are never loaded.</summary>

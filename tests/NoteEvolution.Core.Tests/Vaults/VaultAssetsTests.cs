@@ -123,4 +123,22 @@ public sealed class VaultAssetsTests : IDisposable
         Assert.Null(VaultAssets.Resolve(_vault, _book, "../assets/missing.png"));
         Assert.Null(VaultAssets.Resolve(_vault, _book, "../assets/notes.txt"));
     }
+
+    [Fact]
+    public void Resolve_SiblingDirectoryWithTheVaultNamePrefix_ReturnsNull()
+    {
+        var other = Path.Combine(_root, "vault-other");
+        Directory.CreateDirectory(other);
+        File.WriteAllBytes(Path.Combine(other, "x.png"), One);
+
+        Assert.Null(VaultAssets.Resolve(_vault, _book, "../../vault-other/x.png"));
+    }
+
+    [Fact]
+    public void Resolve_PercentEncodedEscape_ReturnsNull()
+    {
+        File.WriteAllBytes(Path.Combine(_root, "outside.png"), One);
+
+        Assert.Null(VaultAssets.Resolve(_vault, _book, "..%2F..%2Foutside.png"));
+    }
 }
