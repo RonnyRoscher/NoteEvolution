@@ -35,6 +35,9 @@ const image = (path, alt = '', extra = {}) => ({
     attrs: { path, alt, suffix: '', remote: false, error: null, ...extra },
 });
 
+/** The document of setUp with another caption on its image: shown, it makes a new node view. */
+const another = doc => JSON.parse(JSON.stringify(doc).replace('"alt":""', '"alt":"neu"'));
+
 /**
  * An editor with the text block A "Vor [image] nach"; calls holds what it reported. LoadImage answers with
  * load(path) (default: a data URL named after the path).
@@ -155,9 +158,9 @@ test('Doppelklick auf das Bild meldet ImageEdit(Blockschluessel, Offset)', async
     s.done();
 });
 
-function paste(view, items) {
+function paste(view, items, text = '') {
     const event = new window.Event('paste', { bubbles: true, cancelable: true });
-    Object.assign(event, { clipboardData: { items, getData: () => '', types: [] } });
+    Object.assign(event, { clipboardData: { items, getData: type => (type === 'text/plain' ? text : ''), types: [] } });
     view.dom.dispatchEvent(event);
     return event;
 }
@@ -183,9 +186,86 @@ test('Ein Einfuegen nur mit Text meldet kein ImagePasted', async () => {
     const s = setUp(image('a.png'));
     await tick();
 
-    paste(s.editor.view, [{ kind: 'string', type: 'text/plain', getAsFile: () => null }]);
+    const event = paste(s.editor.view, [{ kind: 'string', type: 'text/plain', getAsFile: () => null }], 'abc');
     await tick();
 
     assert.equal(s.calls.filter(c => c.method === 'ImagePasted').length, 0);
+    // ProseMirror's own text paste runs (it prevents the default itself): the text is in the document.
+    assert.ok(event.defaultPrevented);
+    assert.ok(s.editor.state.doc.textContent.includes('abc'));
     s.done();
+});
+
+test('Text und Bild zusammen in der Zwischenablage: der Text wird eingefuegt, kein ImagePasted', async () => {
+    const s = setUp(image('a.png'));
+    await tick();
+
+    const blob = new window.Blob([new Uint8Array([1])], { type: 'image/png' });
+    const event = paste(s.editor.view, [
+        { kind: 'string', type: 'text/plain', getAsFile: () => null },
+        { kind: 'file', type: 'image/png', getAsFile: () => blob },
+    ], 'abc');
+    await new Promise(resolve => setTimeout(resolve, 50));
+
+    assert.equal(s.calls.filter(c => c.method === 'ImagePasted').length, 0);
+    // ProseMirror's own text paste runs (it prevents the default itself): the text is in the document.
+    assert.ok(event.defaultPrevented);
+    assert.ok(s.editor.state.doc.textContent.includes('abc'));
+    s.done();
+});
+
+test('Ein abgelehnter LoadImage-Aufruf zeigt den Fehler und wird beim naechsten Dokument erneut gefragt', async () => {
+    const s = setUp(image('p.png'), () => Promise.reject(new Error('boom')));
+    await tick();
+    assert.equal(s.host.querySelector('.ne-image-missing').textContent, 'boom');
+
+    s.show(another(s.doc));
+    await tick();
+
+    assert.deepEqual(s.loads(), [['p.png'], ['p.png']]);
+    s.done();
+});
+
+test('Ein synchroner Fehler von load wird zum Fehlertext', async () => {
+    const s = setUp(image('p.png'), () => {
+        throw new Error('sync');
+    });
+    await tick();
+
+    assert.equal(s.host.querySelector('.ne-image-missing').textContent, 'sync');
+    s.done();
+});
+
+test('Ein Ergebnis ohne src wird beim naechsten Dokument erneut gefragt, ein Erfolg nicht', async () => {
+    const s = setUp(image('p.png'), () => ({ src: null, error: 'fehlt' }));
+    await tick();
+    s.show(another(s.doc));
+    await tick();
+    assert.equal(s.loads().length, 2);
+    s.done();
+});
+
+test('Gleichzeitige Anfragen desselben Pfads teilen sich einen Aufruf', async () => {
+    const s = setUp(image('p.png'));
+    s.show(s.doc);
+    await tick();
+    assert.equal(s.loads().length, 1);
+    s.done();
+});
+
+test('Feindlicher Text in alt, path und error bleibt Text', async () => {
+    const hostile = '<img src=x onerror=alert(1)>';
+    const s = setUp(image(hostile, hostile));
+    await tick();
+    const figure = s.host.querySelector('figure.ne-image');
+    assert.equal(figure.querySelector('figcaption').textContent, hostile);
+    assert.deepEqual([...figure.querySelectorAll('*')].map(e => e.tagName).sort(), ['FIGCAPTION', 'IMG']);
+    s.done();
+
+    const remote = setUp(image(hostile, hostile, { remote: true, error: hostile }));
+    await tick();
+    const fig = remote.host.querySelector('figure.ne-image');
+    assert.equal(fig.querySelector('.ne-image-missing').textContent, hostile);
+    assert.deepEqual([...fig.querySelectorAll('*')].map(e => e.tagName).sort(), ['FIGCAPTION', 'SPAN']);
+    remote.done();
 });

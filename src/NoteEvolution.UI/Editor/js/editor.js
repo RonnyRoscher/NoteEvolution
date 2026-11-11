@@ -344,12 +344,28 @@ export function clearImageCache() {
     imageCache.clear();
 }
 
-/** The picture of path: the cached answer of load(path), or one (error text) for a failed call. */
+/**
+ * The picture of path: the answer of load(path), or { src: null, error } for a failed call (also a synchronous throw).
+ * A picture is cached; a failure is dropped again once it has been delivered, so the next request asks C# again.
+ * Requests while a call is in flight share it.
+ */
 function loadImage(path, load) {
     if (!imageCache.has(path)) {
-        imageCache.set(path, Promise.resolve(load(path)).then(
+        let call;
+        try {
+            call = Promise.resolve(load(path));
+        } catch (error) {
+            call = Promise.reject(error);
+        }
+        const entry = call.then(
             result => result ?? { src: null, error: path },
-            error => ({ src: null, error: String(error?.message ?? error) })));
+            error => ({ src: null, error: String(error?.message ?? error) }));
+        imageCache.set(path, entry);
+        entry.then(result => {
+            if (!result.src && imageCache.get(path) === entry) {
+                imageCache.delete(path);
+            }
+        });
     }
     return imageCache.get(path);
 }
@@ -383,7 +399,7 @@ const ImageNode = Node.create({
             suffix: { default: '', parseHTML: el => el.getAttribute('data-suffix') ?? '', rendered: false },
             // Shown only: whether the path is remote, and the text standing in for a picture that is not loaded.
             remote: { default: false, parseHTML: el => el.hasAttribute('data-remote'), rendered: false },
-            error: { default: null, rendered: false, parseHTML: () => null },
+            error: { default: null, rendered: false, parseHTML: el => el.getAttribute('data-error') },
         };
     },
     parseHTML() {
@@ -393,6 +409,9 @@ const ImageNode = Node.create({
         const attrs = { 'data-image': node.attrs.path, 'data-alt': node.attrs.alt, 'data-suffix': node.attrs.suffix };
         if (node.attrs.remote) {
             attrs['data-remote'] = '';
+            if (node.attrs.error != null) {
+                attrs['data-error'] = node.attrs.error;
+            }
         }
         return ['span', attrs, imageMarkdown(node.attrs)];
     },
@@ -1442,6 +1461,10 @@ export function createEditor(host, dotnet, options = {}) {
             scrollMargin,
             // An image in the clipboard goes to C# (it saves the file and inserts the block); the document is not changed here.
             handlePaste: (view, event) => {
+                // A clipboard with text next to the picture (a spreadsheet, Word) is a text paste.
+                if ((event.clipboardData?.getData('text/plain') ?? '').trim() !== '') {
+                    return false;
+                }
                 const images = clipboardImages(event);
                 if (images.length === 0) {
                     return false;
