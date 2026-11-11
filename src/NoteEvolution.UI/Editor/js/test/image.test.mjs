@@ -32,7 +32,7 @@ const tick = () => new Promise(resolve => setTimeout(resolve, 5));
 
 const image = (path, alt = '', extra = {}) => ({
     type: 'image',
-    attrs: { path, alt, suffix: '', remote: false, error: null, ...extra },
+    attrs: { path, alt, caption: alt, suffix: '', remote: false, error: null, ...extra },
 });
 
 /** The document of setUp with another caption on its image: shown, it makes a new node view. */
@@ -42,10 +42,8 @@ const another = doc => JSON.parse(JSON.stringify(doc).replace('"alt":""', '"alt"
  * An editor with the text block A "Vor [image] nach"; calls holds what it reported. LoadImage answers with
  * load(path) (default: a data URL named after the path).
  */
-function setUp(img, load = path => ({ src: `data:image/png;base64,${path}`, error: null }), keepCache = false) {
-    if (!keepCache) {
-        clearImageCache();
-    }
+function setUp(img, load = path => ({ src: `data:image/png;base64,${path}`, error: null })) {
+    clearImageCache();
     const host = document.createElement('div');
     document.body.appendChild(host);
     const calls = [];
@@ -57,6 +55,7 @@ function setUp(img, load = path => ({ src: `data:image/png;base64,${path}`, erro
     };
     const api = createEditor(host, dotnet, { barHeight: 0 });
     const show = document => api.setDocument(JSON.stringify(document), false, false);
+    const showKept = document => api.setDocument(JSON.stringify(document), false, true);
     const doc = {
         type: 'doc',
         content: [{
@@ -75,6 +74,7 @@ function setUp(img, load = path => ({ src: `data:image/png;base64,${path}`, erro
         calls,
         doc,
         show,
+        showKept,
         editor: host.querySelector('.ne-doc').editor,
         loads: () => calls.filter(c => c.method === 'LoadImage').map(c => c.args),
         done: () => {
@@ -96,21 +96,26 @@ test('Ein Bild-Knoten rendert figure.ne-image im Block, LoadImage einmal, src au
     s.done();
 });
 
-test('Derselbe Pfad wird nicht erneut geladen (Cache pro Pfad)', async () => {
+test('Derselbe Pfad wird nicht erneut geladen (Cache pro Pfad), solange das Ziel bleibt', async () => {
     const s = setUp(image('../assets/a.png'));
     await tick();
-    s.show(s.doc);
+    s.showKept(another(s.doc));
     await tick();
 
     assert.equal(s.host.querySelectorAll('figure.ne-image img').length, 1);
     assert.deepEqual(s.loads(), [['../assets/a.png']]);
     s.done();
+});
 
-    const other = setUp(image('../assets/a.png'), undefined, true);
+test('Ein Dokument fuer ein neues Ziel (keepCursor false) leert den Cache: derselbe Pfad wird neu geladen', async () => {
+    // Another vault may have its own assets/a.png.
+    const s = setUp(image('../assets/a.png'));
     await tick();
-    assert.deepEqual(other.loads(), []);
-    assert.equal(other.host.querySelector('figure.ne-image img').getAttribute('src'), 'data:image/png;base64,../assets/a.png');
-    other.done();
+    s.show(another(s.doc));
+    await tick();
+
+    assert.deepEqual(s.loads(), [['../assets/a.png'], ['../assets/a.png']]);
+    s.done();
 });
 
 test('Ein Ladefehler zeigt den Text in .ne-image-missing und kein img', async () => {
@@ -146,6 +151,32 @@ test('Die Beschriftung steht in figcaption, bei leerem alt gibt es keine', async
     none.done();
 });
 
+test('Die figcaption zeigt attrs.caption: ein Dateiname als alt (caption leer) zeigt keine', async () => {
+    const s = setUp(image('a.png', 'image.png', { caption: '' }));
+    await tick();
+    assert.ok(s.host.querySelector('figure.ne-image'));
+    assert.equal(s.host.querySelector('figcaption'), null);
+    s.done();
+
+    const shown = setUp(image('b.png', ' Titel ', { caption: 'Titel' }));
+    await tick();
+    assert.equal(shown.host.querySelector('figcaption').textContent, 'Titel');
+    shown.done();
+});
+
+test('Ein Bild, das der Browser nicht dekodieren kann, wird durch .ne-image-missing mit dem Pfad ersetzt', async () => {
+    const s = setUp(image('../assets/kaputt.png', 'Titel'));
+    await tick();
+    const img = s.host.querySelector('figure.ne-image img');
+    img.dispatchEvent(new window.Event('error'));
+
+    const figure = s.host.querySelector('figure.ne-image');
+    assert.equal(figure.querySelector('img'), null);
+    assert.equal(figure.querySelector('.ne-image-missing').textContent, '../assets/kaputt.png');
+    assert.equal(figure.querySelector('figcaption').textContent, 'Titel');
+    s.done();
+});
+
 test('Doppelklick auf das Bild meldet ImageEdit(Blockschluessel, Offset)', async () => {
     const s = setUp(image('a.png', 'x'));
     await tick();
@@ -179,6 +210,23 @@ test('Ein eingefuegtes Bild meldet ImagePasted(base64, mime), ohne das Dokument 
     assert.deepEqual(s.calls.filter(c => c.method === 'ImagePasted').map(c => c.args), [['AQID', 'image/png']]);
     assert.equal(JSON.stringify(s.editor.getJSON()), before);
     assert.equal(s.calls.filter(c => c.method === 'DocumentChanged').length, 0);
+    s.done();
+});
+
+test('Ein Bild in mehreren Formaten in der Zwischenablage meldet nur ein ImagePasted (das erste)', async () => {
+    const s = setUp(image('a.png'));
+    await tick();
+    s.calls.length = 0;
+
+    const png = new window.Blob([new Uint8Array([1, 2, 3])], { type: 'image/png' });
+    const bmp = new window.Blob([new Uint8Array([4, 5, 6])], { type: 'image/bmp' });
+    paste(s.editor.view, [
+        { kind: 'file', type: 'image/png', getAsFile: () => png },
+        { kind: 'file', type: 'image/bmp', getAsFile: () => bmp },
+    ]);
+    await new Promise(resolve => setTimeout(resolve, 50));
+
+    assert.deepEqual(s.calls.filter(c => c.method === 'ImagePasted').map(c => c.args), [['AQID', 'image/png']]);
     s.done();
 });
 
@@ -247,7 +295,7 @@ test('Ein Ergebnis ohne src wird beim naechsten Dokument erneut gefragt, ein Erf
 
 test('Gleichzeitige Anfragen desselben Pfads teilen sich einen Aufruf', async () => {
     const s = setUp(image('p.png'));
-    s.show(s.doc);
+    s.showKept(another(s.doc));
     await tick();
     assert.equal(s.loads().length, 1);
     s.done();

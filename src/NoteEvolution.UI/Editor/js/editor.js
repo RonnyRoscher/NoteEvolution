@@ -336,10 +336,11 @@ const SourceCite = Node.create({
 });
 
 // The pictures C# has loaded, by path: path → Promise of { src, error }. A picture is asked for once, however often
-// it is shown (every editor, every new document).
+// it is shown (every editor, every new document of the same target); a document for a new target (setDocument
+// without keepCursor, e.g. another book or vault, which may have its own assets/foto.png) forgets them all.
 const imageCache = new Map();
 
-/** Forgets the loaded pictures (for tests; a picture changed on disk is only seen after the app restarts). */
+/** Forgets the loaded pictures (a new target, and tests; a picture changed on disk is seen after the next one). */
 export function clearImageCache() {
     imageCache.clear();
 }
@@ -377,9 +378,9 @@ function imageMarkdown(attrs) {
 
 /**
  * An image ![alt](path){suffix} in the text of a text block or detail (Logseq syntax): one non-editable inline unit,
- * a figure with the picture (loaded by options.load(path), a Promise of { src, error }, once per path) and the caption
- * alt below it; where the picture cannot be shown (or is remote, which is never loaded) the text error stands in its
- * place, in .ne-image-missing. C# writes it back from path, alt and suffix. A double click calls
+ * a figure with the picture (loaded by options.load(path), a Promise of { src, error }, once per path) and the shown
+ * caption below it; where the picture cannot be shown (or is remote, which is never loaded) the text error stands in
+ * its place, in .ne-image-missing (the path, if the browser cannot decode the loaded data). C# writes it back from path, alt and suffix. A double click calls
  * options.onEdit(key, offset) with the key of its text block or detail and its offset there, to change the caption.
  */
 const ImageNode = Node.create({
@@ -396,6 +397,8 @@ const ImageNode = Node.create({
         return {
             path: { default: '', parseHTML: el => el.getAttribute('data-image') ?? '', rendered: false },
             alt: { default: '', parseHTML: el => el.getAttribute('data-alt') ?? '', rendered: false },
+            // Shown only: the caption under the picture (C# leaves it empty where alt is just a file name).
+            caption: { default: '', parseHTML: el => el.getAttribute('data-caption') ?? '', rendered: false },
             suffix: { default: '', parseHTML: el => el.getAttribute('data-suffix') ?? '', rendered: false },
             // Shown only: whether the path is remote, and the text standing in for a picture that is not loaded.
             remote: { default: false, parseHTML: el => el.hasAttribute('data-remote'), rendered: false },
@@ -406,7 +409,12 @@ const ImageNode = Node.create({
         return [{ tag: 'span[data-image]' }];
     },
     renderHTML({ node }) {
-        const attrs = { 'data-image': node.attrs.path, 'data-alt': node.attrs.alt, 'data-suffix': node.attrs.suffix };
+        const attrs = {
+            'data-image': node.attrs.path,
+            'data-alt': node.attrs.alt,
+            'data-caption': node.attrs.caption,
+            'data-suffix': node.attrs.suffix,
+        };
         if (node.attrs.remote) {
             attrs['data-remote'] = '';
             if (node.attrs.error != null) {
@@ -437,6 +445,11 @@ const ImageNode = Node.create({
                     }
                     if (result.src) {
                         const img = document.createElement('img');
+                        // Data the browser cannot decode would show a broken-image icon.
+                        img.onerror = () => {
+                            img.remove();
+                            missing(node.attrs.path);
+                        };
                         img.src = result.src;
                         img.alt = node.attrs.alt;
                         dom.prepend(img);
@@ -445,9 +458,9 @@ const ImageNode = Node.create({
                     }
                 });
             }
-            if (node.attrs.alt) {
+            if (node.attrs.caption) {
                 const caption = document.createElement('figcaption');
-                caption.textContent = node.attrs.alt;
+                caption.textContent = node.attrs.caption;
                 dom.appendChild(caption);
             }
             dom.addEventListener('dblclick', event => {
@@ -1469,9 +1482,9 @@ export function createEditor(host, dotnet, options = {}) {
                 if (images.length === 0) {
                     return false;
                 }
-                for (const { file, type } of images) {
-                    readBase64(file).then(base64 => call('ImagePasted', base64, type), error => console.error(error));
-                }
+                // One picture is often offered in several formats (PNG, BMP, ...): only the first is taken.
+                const { file, type } = images[0];
+                readBase64(file).then(base64 => call('ImagePasted', base64, type), error => console.error(error));
                 return true;
             },
             handleDOMEvents: {
@@ -1545,6 +1558,9 @@ export function createEditor(host, dotnet, options = {}) {
         setDocument(json, showChips, keepCursor) {
             const doc = editor.schema.nodeFromJSON(JSON.parse(json));
             doc.check();
+            if (!keepCursor) {
+                clearImageCache();
+            }
             const selection = keepCursor
                 ? TextSelection.near(doc.resolve(Math.min(editor.state.selection.from, doc.content.size)))
                 : TextSelection.atStart(doc);

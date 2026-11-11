@@ -432,6 +432,29 @@ public class EditorDocMapperTests
         Assert.Null(attrs["error"]);
     }
 
+    [Theory]
+    [InlineData("![image.png](../assets/image_1700_0.png)", "")]
+    [InlineData("![ Foto.JPG ](x.png)", "")]
+    [InlineData("![Mein Bild](x.png)", "Mein Bild")]
+    [InlineData("![ Mein Bild ](x.png)", "Mein Bild")]
+    public void ToJson_Image_CaptionIsTheAltUnlessAFileName(string text, string caption)
+    {
+        var json = EditorDocMapper.ToJson(OneBlock(text));
+        var attrs = FirstPara(JsonNode.Parse(json)!)["content"]![0]!["attrs"]!;
+
+        Assert.Equal(caption, (string?)attrs["caption"]);
+        Assert.Equal(text, TextOf(json));
+    }
+
+    [Fact]
+    public void FromJson_ImageCaptionAttr_IsIgnored()
+    {
+        var doc = JsonNode.Parse(EditorDocMapper.ToJson(OneBlock("![image.png](x.png)")))!;
+        FirstPara(doc)["content"]![0]!["attrs"]!["caption"] = "anders";
+
+        Assert.Equal("![image.png](x.png)", TextOf(doc.ToJsonString()));
+    }
+
     [Fact]
     public void FromJson_UnchangedImage_IsByteIdentical()
     {

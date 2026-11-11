@@ -37,10 +37,10 @@ namespace NoteEvolution.UI.Editor;
 /// <see cref="SourceCitations.Format"/>. Each is one unit of the shown text; only id and locator go back.
 /// </para>
 /// <para>
-/// An image <c>![alt](path){suffix}</c> is an inline atom <c>image{path, alt, suffix, remote, error}</c>, written back
+/// An image <c>![alt](path){suffix}</c> is an inline atom <c>image{path, alt, suffix, caption, remote, error}</c>, written back
 /// with <see cref="BlockImages.Format"/>; it is one unit of the shown text and passes through unescaped in both
-/// directions. <c>remote</c> and <c>error</c> (the text shown instead of a remote image, see <see cref="ToJson"/>) are
-/// only shown.
+/// directions. <c>caption</c> (the alt as shown under the picture, see <see cref="BlockImages.ShownCaption"/>), <c>remote</c>
+/// and <c>error</c> (the text shown instead of a remote image, see <see cref="ToJson"/>) are only shown.
 /// </para>
 /// </summary>
 public static class EditorDocMapper
@@ -255,6 +255,7 @@ public static class EditorDocMapper
             {
                 ["path"] = path,
                 ["alt"] = alt,
+                ["caption"] = BlockImages.ShownCaption(alt),
                 ["suffix"] = suffix,
                 ["remote"] = remote,
                 ["error"] = remote ? labels.RemoteImageText(path) : null,
