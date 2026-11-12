@@ -712,6 +712,56 @@ public sealed class UnderstandingWorkerTests
     }
 
     [Fact]
+    public async Task Priority_NotesAndTheirPlacements_ComeRightAfterTheBook_InPriorityOrder()
+    {
+        await using var f = new Fixture();
+        AnswerPlacements(f);
+        var (n1, n2, n3) = (Note("N1"), Note("N2"), Note("N3"));
+        var (p1, p2, p3) = (Placement("P1", n1.Key), Placement("P2", n2.Key), Placement("P3", n3.Key));
+        f.Worker.SetWork([Heading("H")], null, [n1, n2, n3], [Heading("O")], [p1, p2, p3]);
+
+        // The user looks at N3, the Relevant list shows N2: their core statements and checks come before everything else.
+        f.Worker.SetPriority([n3.Key, n2.Key]);
+        f.Start();
+        await Until(() => f.Store.Get(p1.Fingerprint) is not null);
+
+        Assert.Equal(["H", "N3", "N2", p3.Check!.User, p2.Check!.User, "N1", "O", p1.Check!.User], f.Subjects);
+    }
+
+    [Fact]
+    public async Task Priority_SetWhileWorking_AppliesFromTheNextRequest()
+    {
+        await using var f = new Fixture();
+        f.Chat.Gate = new SemaphoreSlim(0);
+        var (n1, n2, n3) = (Note("N1"), Note("N2"), Note("N3"));
+        f.Worker.SetWork([], null, [n1, n2, n3], []);
+        f.Start();
+        await Until(() => f.Chat.Calls.Count == 1);
+
+        // N1 is with the server and is not cancelled; N3 jumps ahead of N2.
+        f.Worker.SetPriority([n3.Key]);
+        f.Chat.Gate.Release(10);
+        await Until(() => f.Worker.Progress is { Done: 3, Total: 3 }, "all notes done");
+
+        Assert.Equal(["N1", "N3", "N2"], f.Subjects);
+    }
+
+    [Fact]
+    public async Task Priority_None_KeepsTheOrderAsBefore()
+    {
+        await using var f = new Fixture();
+        AnswerPlacements(f);
+        var p = Placement("P");
+        f.Worker.SetWork([Heading("H")], null, [Note("N")], [Heading("O")], [p]);
+        f.Worker.SetPriority([]);
+
+        f.Start();
+        await Until(() => f.Store.Get(p.Fingerprint) is not null);
+
+        Assert.Equal(["H", "N", "O", p.Check!.User], f.Subjects);
+    }
+
+    [Fact]
     public async Task Placement_StoredAsJson_NoVector()
     {
         await using var f = new Fixture();
