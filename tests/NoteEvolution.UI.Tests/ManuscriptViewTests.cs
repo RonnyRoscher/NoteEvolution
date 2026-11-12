@@ -362,7 +362,7 @@ public class ManuscriptViewTests : UiTestContext
     private sealed class NoPdfExporter : IPdfExporter
     {
         public PdfExportReport Export(
-            Book book, Guid? scopeKey, PdfOptions options, Stream output, Func<Guid, bool>? knownElsewhere = null) =>
+            Book book, string vaultRoot, Guid? scopeKey, PdfOptions options, Stream output, Func<Guid, bool>? knownElsewhere = null) =>
             throw new NotSupportedException();
     }
 }

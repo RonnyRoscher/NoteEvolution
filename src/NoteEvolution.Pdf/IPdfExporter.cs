@@ -21,8 +21,10 @@ public interface IPdfExporter
     /// its heading and subtree); <c>null</c> or <see cref="Guid.Empty"/> exports the whole book.
     /// <paramref name="knownElsewhere"/> tells whether an id names a block somewhere in the vault: a reference to such a
     /// block that is no target of the book (a note) is left out as before, not shown as missing (spec 2.1).
+    /// Only image files inside <paramref name="vaultRoot"/> are embedded (as the editor shows them,
+    /// <see cref="NoteEvolution.Core.Vaults.VaultAssets.Resolve"/>); any other picture gets a placeholder and a warning.
     /// </summary>
     /// <exception cref="ArgumentException"><paramref name="scopeKey"/> names no outline node of the book.</exception>
     PdfExportReport Export(
-        Book book, Guid? scopeKey, PdfOptions options, Stream output, Func<Guid, bool>? knownElsewhere = null);
+        Book book, string vaultRoot, Guid? scopeKey, PdfOptions options, Stream output, Func<Guid, bool>? knownElsewhere = null);
 }

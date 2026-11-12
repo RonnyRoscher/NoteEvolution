@@ -14,14 +14,15 @@ public sealed class QuestPdfExporter : IPdfExporter
     private const float Points = 72f / 25.4f;
 
     public PdfExportReport Export(
-        Book book, Guid? scopeKey, PdfOptions options, Stream output, Func<Guid, bool>? knownElsewhere = null)
+        Book book, string vaultRoot, Guid? scopeKey, PdfOptions options, Stream output, Func<Guid, bool>? knownElsewhere = null)
     {
         ArgumentNullException.ThrowIfNull(book);
+        ArgumentException.ThrowIfNullOrWhiteSpace(vaultRoot);
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(output);
         QuestPdfSetup.EnsureInitialized();
 
-        using var content = PdfContent.Build(book, scopeKey, knownElsewhere);
+        using var content = PdfContent.Build(book, vaultRoot, scopeKey, knownElsewhere);
         var (pageSize, margin) = options.Size switch
         {
             PdfPageSize.A4 => (PageSizes.A4, 25f * Points),

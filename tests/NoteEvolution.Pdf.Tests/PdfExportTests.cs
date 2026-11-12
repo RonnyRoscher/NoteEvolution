@@ -11,12 +11,18 @@ namespace NoteEvolution.Pdf.Tests;
 public class PdfExportTests
 {
     internal static (byte[] Bytes, PdfExportReport Report) Export(
-        Book book, Guid? scope = null, PdfPageSize size = PdfPageSize.A4, Func<Guid, bool>? knownElsewhere = null)
+        Book book, Guid? scope = null, PdfPageSize size = PdfPageSize.A4, Func<Guid, bool>? knownElsewhere = null,
+        string? vaultRoot = null)
     {
         using var stream = new MemoryStream();
-        var report = new QuestPdfExporter().Export(book, scope, new PdfOptions(size), stream, knownElsewhere);
+        var report = new QuestPdfExporter().Export(
+            book, vaultRoot ?? VaultRootOf(book), scope, new PdfOptions(size), stream, knownElsewhere);
         return (stream.ToArray(), report);
     }
+
+    /// <summary>The vault of a book in <c>&lt;vault&gt;/pages</c>: the folder above the book's folder.</summary>
+    private static string VaultRootOf(Book book) =>
+        Path.GetDirectoryName(Path.GetDirectoryName(Path.GetFullPath(book.Page.FilePath))!)!;
 
     private static string Normalize(string text) => Regex.Replace(text, @"\s+", " ").Trim();
 
@@ -295,6 +301,97 @@ public class PdfExportTests
         Assert.DoesNotContain("![", text);
     }
 
+    /// <summary>
+    /// A vault in <c>&lt;dir&gt;/vault</c> with a book whose single block is <paramref name="block"/> and the picture
+    /// <c>assets/innen.png</c>; next to the vault (outside of it) lies the valid picture <c>outside.png</c>.
+    /// </summary>
+    private static (Book Book, string VaultRoot, string Outside) VaultWithOutsidePicture(TempDir dir, string block)
+    {
+        var vault = Path.Combine(dir.Path, "vault");
+        var assets = Directory.CreateDirectory(Path.Combine(vault, "assets")).FullName;
+        File.WriteAllBytes(Path.Combine(assets, "innen.png"), PdfSamples.Png);
+        var outside = Path.Combine(dir.Path, "outside.png");
+        File.WriteAllBytes(outside, PdfSamples.Png);
+        var book = PdfSamples.Load(PdfSamples.BookWithBlock(block), Path.Combine(vault, "pages", "Buch.md"));
+        return (book, vault, outside);
+    }
+
+    [Fact]
+    public void Content_PictureInsideTheVault_IsEmbedded()
+    {
+        using var dir = new TempDir();
+        var (book, vault, _) = VaultWithOutsidePicture(dir, "![x](../assets/innen.png)");
+
+        using var content = PdfContent.Build(book, vault, null);
+
+        Assert.Single(content.Elements.OfType<ImageElement>());
+        Assert.Empty(content.Warnings);
+    }
+
+    [Fact]
+    public void Content_RelativePathOutOfTheVault_IsNotReadAndGetsTheMissingHint()
+    {
+        using var dir = new TempDir();
+        var (book, vault, _) = VaultWithOutsidePicture(dir, "![x](../../outside.png)");
+
+        using var content = PdfContent.Build(book, vault, null);
+
+        Assert.Empty(content.Elements.OfType<ImageElement>());
+        Assert.Equal(["Bild nicht gefunden: ../../outside.png"], content.Warnings);
+    }
+
+    [Fact]
+    public void Content_AbsolutePathOutsideTheVault_IsNotRead()
+    {
+        using var dir = new TempDir();
+        var path = Path.Combine(dir.Path, "outside.png").Replace('\\', '/');
+        var (book, vault, _) = VaultWithOutsidePicture(dir, $"![x]({path})");
+
+        using var content = PdfContent.Build(book, vault, null);
+
+        Assert.Empty(content.Elements.OfType<ImageElement>());
+        Assert.Equal([$"Bild nicht gefunden: {path}"], content.Warnings);
+    }
+
+    [Fact]
+    public void Content_PictureOutsideTheVault_IsNotEvenOpened()
+    {
+        using var dir = new TempDir();
+        var (book, vault, outside) = VaultWithOutsidePicture(dir, "![x](../../outside.png)");
+
+        // A read of the locked file would fail and be reported as unreadable instead of missing.
+        using var locked = new FileStream(outside, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+        using var content = PdfContent.Build(book, vault, null);
+
+        Assert.Equal(["Bild nicht gefunden: ../../outside.png"], content.Warnings);
+    }
+
+    [Fact]
+    public void Export_PictureOutsideTheVault_IsPlaceholderWithWarning()
+    {
+        using var dir = new TempDir();
+        var (book, vault, _) = VaultWithOutsidePicture(dir, "![x](../../outside.png) und ![y](../assets/innen.png)");
+
+        var (bytes, report) = Export(book, vaultRoot: vault);
+
+        Assert.Equal(["Bild nicht gefunden: ../../outside.png"], report.Warnings);
+        Assert.Contains("[Bild fehlt: ../../outside.png]", AllText(bytes));
+        using var pdf = PdfDocument.Open(bytes);
+        Assert.Equal(1, pdf.GetPages().Sum(p => p.GetImages().Count()));
+    }
+
+    [Fact]
+    public void Content_PathTheFileSystemRejects_GetsTheMissingHintInsteadOfFailing()
+    {
+        using var dir = new TempDir();
+        var (book, vault, _) = VaultWithOutsidePicture(dir, "![x](../assets/in\0nen.png)");
+
+        using var content = PdfContent.Build(book, vault, null);
+
+        Assert.Empty(content.Elements.OfType<ImageElement>());
+        Assert.StartsWith("Bild nicht gefunden: ", Assert.Single(content.Warnings));
+    }
+
     private static Book BookWithPicture(TempDir dir, string block)
     {
         var assets = Directory.CreateDirectory(Path.Combine(dir.Path, "assets")).FullName;
@@ -306,7 +403,7 @@ public class PdfExportTests
     public void Content_ImageWithAlt_HasTrimmedCaption()
     {
         using var dir = new TempDir();
-        using var content = PdfContent.Build(BookWithPicture(dir, "![ Mein Bild ](../assets/bild.png)"), null);
+        using var content = PdfContent.Build(BookWithPicture(dir, "![ Mein Bild ](../assets/bild.png)"), dir.Path, null);
 
         Assert.Equal("Mein Bild", content.Elements.OfType<ImageElement>().Single().Caption);
     }
@@ -315,7 +412,7 @@ public class PdfExportTests
     public void Content_ImageWithoutAlt_HasEmptyCaption()
     {
         using var dir = new TempDir();
-        using var content = PdfContent.Build(BookWithPicture(dir, "![](../assets/bild.png)"), null);
+        using var content = PdfContent.Build(BookWithPicture(dir, "![](../assets/bild.png)"), dir.Path, null);
 
         Assert.Equal("", content.Elements.OfType<ImageElement>().Single().Caption);
     }
@@ -377,7 +474,7 @@ public class PdfExportTests
     public void Content_ImageWithFileNameAlt_HasEmptyCaption()
     {
         using var dir = new TempDir();
-        using var content = PdfContent.Build(BookWithPicture(dir, "![image.png](../assets/bild.png)"), null);
+        using var content = PdfContent.Build(BookWithPicture(dir, "![image.png](../assets/bild.png)"), dir.Path, null);
 
         Assert.Equal("", content.Elements.OfType<ImageElement>().Single().Caption);
     }

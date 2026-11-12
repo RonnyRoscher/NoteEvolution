@@ -181,6 +181,8 @@ bricht ab). Im PDF stehen Bild und Beschriftung. Ist die Beschriftung nur ein Da
 eingefügte Bilder, etwa `![image.png](…)`), wird sie weder im Editor noch im PDF angezeigt; im Feld „Beschriftung“
 steht sie trotzdem, die Datei bleibt unverändert. Löscht man den Block, bleibt die Datei in `assets` liegen; fehlt sie,
 zeigt der Editor „Bild nicht gefunden: …“. Nur Dateien im Vault werden angezeigt, Bilder aus dem Netz nicht.
+Dasselbe gilt für das PDF: Es bettet nur Bilddateien aus dem Vault ein; für jedes andere Bild steht „[Bild fehlt: …]“
+im Text und ein Hinweis in der Warnliste nach dem Export.
 
 **Anhang: Glossar, Menschen, Quellen:** Am Buchende kann ein Buch ein Glossar, eine Liste der Menschen, die
 inspiriert haben, und ein Quellenverzeichnis führen. Jeder Teil ist eine Überschrift der obersten Ebene, erkannt an
