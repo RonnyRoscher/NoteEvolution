@@ -12,6 +12,18 @@
    EditorPane places it where the editor reports the marking's bottom; the bar renders with every render of EditorPane
    (its element is an object parameter), which follows the state and the conflicts. *@
 <div class="ne-section-bar" hidden="@(!Visible)" style="top: @(Top.ToString(CultureInfo.InvariantCulture))px">
+    @* The caption of the image double-clicked in the editor: Enter saves, Escape cancels. *@
+    @if (ImageCaption is not null)
+    {
+        <div class="ne-image-caption-field" role="dialog" aria-label="@L["ImageCaptionLabel"]">
+            <label>@L["ImageCaptionLabel"]
+                <input type="text" class="ne-image-caption" @ref="_imageInput" value="@_imageText"
+                       @oninput="args => _imageText = args.Value?.ToString() ?? string.Empty" @onkeydown="ImageKeyDownAsync" />
+            </label>
+            <button type="button" class="ne-image-caption-save" @onclick="() => OnImageCaptionSave.InvokeAsync(_imageText)">@L["CitationEditSave"]</button>
+            <button type="button" class="ne-image-caption-cancel" @onclick="() => OnImageCaptionCancel.InvokeAsync()">@L["CitationEditCancel"]</button>
+        </div>
+    }
     @* The locator of the citation double-clicked in the editor (appendix spec 3.2): Enter saves, Escape cancels. *@
     @if (CitationLocator is not null)
     {
@@ -107,6 +119,9 @@
                     <ReferencePicker Book="book" ExcludeKey="State.Cursor?.Key" OnPick="PickAsync" OnCancel="() => _picking = false" />
                 }
             </span>
+            @* A picture goes in as a block of its own after the cursor element. *@
+            <button type="button" class="ne-section-image" title="@L["SectionImageTitle"]" disabled="@Locked"
+                    @onclick="() => OnInsertImage.InvokeAsync()">@L["SectionImage"]</button>
             @* People and sources of the appendix go in at the cursor like a cross reference (appendix spec 3). *@
             @foreach (var (css, kind, labelKey, titleKey) in AppendixButtons)
             {
@@ -313,6 +328,13 @@
     [Parameter]
     public string? CitationLocator { get; set; }
 
+    /// <summary>
+    /// The edit <see cref="CitationLocator"/> belongs to (any object, compared by reference): another one fills the
+    /// field anew, also with the same locator.
+    /// </summary>
+    [Parameter]
+    public object? CitationEdit { get; set; }
+
     /// <summary>The locator field's text is to be saved.</summary>
     [Parameter]
     public EventCallback<string> OnCitationSave { get; set; }
@@ -320,6 +342,29 @@
     /// <summary>The locator field was closed without saving.</summary>
     [Parameter]
     public EventCallback OnCitationCancel { get; set; }
+
+    /// <summary>The caption of the image being changed (an empty one: none); <c>null</c> shows no field.</summary>
+    [Parameter]
+    public string? ImageCaption { get; set; }
+
+    /// <summary>
+    /// The edit <see cref="ImageCaption"/> belongs to (any object, compared by reference): another image fills the
+    /// field anew, also with the same caption, so text typed for one image never goes to another.
+    /// </summary>
+    [Parameter]
+    public object? ImageEdit { get; set; }
+
+    /// <summary>The caption field's text is to be saved.</summary>
+    [Parameter]
+    public EventCallback<string> OnImageCaptionSave { get; set; }
+
+    /// <summary>The caption field was closed without saving.</summary>
+    [Parameter]
+    public EventCallback OnImageCaptionCancel { get; set; }
+
+    /// <summary>„Bild einfügen“ was clicked.</summary>
+    [Parameter]
+    public EventCallback OnInsertImage { get; set; }
 
     /// <summary>The insert buttons of the appendix: class, kind, label and tooltip.</summary>
     private static readonly (string Css, AppendixKind Kind, string Label, string Title)[] AppendixButtons =
@@ -339,7 +384,21 @@
     /// <summary>The locator the field was opened with; a new one fills the field anew and takes the focus.</summary>
     private string? _citationShown;
 
+    private object? _citationEditShown;
+
     private bool _citationFocusPending;
+
+    private ElementReference _imageInput;
+
+    /// <summary>The text of the caption field.</summary>
+    private string _imageText = "";
+
+    /// <summary>The caption the field was opened with; a new one fills the field anew and takes the focus.</summary>
+    private string? _imageShown;
+
+    private object? _imageEditShown;
+
+    private bool _imageFocusPending;
 
     /// <summary>Whether „Quellen suchen“ is open.</summary>
     private bool _findingSources;
@@ -366,11 +425,20 @@
             _appendixPicking = null;
         }
 
-        if (CitationLocator != _citationShown)
+        if (CitationLocator != _citationShown || !ReferenceEquals(CitationEdit, _citationEditShown))
         {
+            _citationEditShown = CitationEdit;
             _citationShown = CitationLocator;
             _citationText = CitationLocator ?? "";
             _citationFocusPending = CitationLocator is not null;
+        }
+
+        if (ImageCaption != _imageShown || !ReferenceEquals(ImageEdit, _imageEditShown))
+        {
+            _imageEditShown = ImageEdit;
+            _imageShown = ImageCaption;
+            _imageText = ImageCaption ?? "";
+            _imageFocusPending = ImageCaption is not null;
         }
 
         if (!CanFindSources)
@@ -385,6 +453,12 @@
         {
             _citationFocusPending = false;
             await _citationInput.FocusAsync();
+        }
+
+        if (_imageFocusPending)
+        {
+            _imageFocusPending = false;
+            await _imageInput.FocusAsync();
         }
     }
 
@@ -413,6 +487,19 @@
     {
         _appendixPicking = null;
         await OnAppendixPick.InvokeAsync(pick);
+    }
+
+    private async Task ImageKeyDownAsync(KeyboardEventArgs args)
+    {
+        switch (args.Key)
+        {
+            case "Enter":
+                await OnImageCaptionSave.InvokeAsync(_imageText);
+                break;
+            case "Escape":
+                await OnImageCaptionCancel.InvokeAsync();
+                break;
+        }
     }
 
     private async Task CitationKeyDownAsync(KeyboardEventArgs args)

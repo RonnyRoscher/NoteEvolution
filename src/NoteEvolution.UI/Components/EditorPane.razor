@@ -1,5 +1,6 @@
 @using NoteEvolution.Core.Books
 @using NoteEvolution.Core.Links
+@using NoteEvolution.Core.Vaults
 @using NoteEvolution.UI.Editor
 @implements IEditorCallbacks
 @implements IAsyncDisposable
@@ -8,6 +9,7 @@
 @inject TimeProvider Time
 @inject IStringLocalizer<Strings> L
 @inject ILogger<EditorPane> Logger
+@inject IPlatformServices Platform
 
 @* The book text (spec 7): the whole book as manuscript in the TipTap editor. Every change is saved 1000 ms after the
    last one by reconciling the editor's document into the book page (BookTextSaver). The cursor element sets the
@@ -40,8 +42,10 @@
         <SectionBar Top="_barTop" Visible="_barVisible" Element="MyView.ElementIn(State.CurrentBook)" Locked="ReadOnlyReason is not null"
                     OnCommand="OnSectionCommand" OnIndent="() => OnShiftAsync(1)" OnOutdent="() => OnShiftAsync(-1)" OnStatus="OnStatusChosen"
                     OnReference="OnReferenceChosen" OnLevel="OnLevelChosen" OnSource="OnSourceChosen" OnLoosen="OnSourceLoosened"
-                    OnAppendixPick="OnAppendixPicked" CitationLocator="@(_citationEdit?.Locator)"
-                    OnCitationSave="SaveCitationAsync" OnCitationCancel="CancelCitationEdit" />
+                    OnAppendixPick="OnAppendixPicked" CitationLocator="@(_citationEdit?.Locator)" CitationEdit="_citationEdit"
+                    OnCitationSave="SaveCitationAsync" OnCitationCancel="CancelCitationEdit"
+                    ImageCaption="@(_imageEdit?.Caption)" ImageEdit="_imageEdit" OnImageCaptionSave="SaveImageCaptionAsync"
+                    OnImageCaptionCancel="CancelImageEdit" OnInsertImage="InsertImageFromFileAsync" />
     }
 </div>
 
@@ -864,7 +868,8 @@
             var appendix = AppendixOf(fresh, book);
             var json = EditorDocMapper.ToJson(
                 fresh, key => dates.GetValueOrDefault(key), LabelsOf(book), id => appendix.People.GetValueOrDefault(id),
-                id => appendix.Sources.TryGetValue(id, out var source) ? source : AppendixLabels.MissingSource(L));
+                id => appendix.Sources.TryGetValue(id, out var source) ? source : AppendixLabels.MissingSource(L),
+                remoteImageText: path => L["ImageRemote", path].Value);
             await Editor.SetDocumentAsync(json, _showChips, keepCursor: sameTarget);
             _shownDates = dates;
             _shownRefs = refs;
@@ -1118,6 +1123,9 @@
         }
 
         await FlushAsync();
+
+        // One field at a time: the image's caption field closes.
+        _imageEdit = null;
         SourceCitation? citation = null;
         if (State.CurrentBook is { } book && BookElements.Find(book, elementKey) is { Kind: not ElementKind.Heading })
         {
@@ -1143,6 +1151,152 @@
     }
 
     private void CancelCitationEdit() => _citationEdit = null;
+
+    /// <summary>The image whose caption is being changed (a double click on it); <c>null</c> while none is.</summary>
+    private ImageEditing? _imageEdit;
+
+    /// <summary>The image being edited, for the section bar's caption field and for tests.</summary>
+    internal ImageEditing? ImageEdit => _imageEdit;
+
+    /// <summary>An image at an offset of a text block or detail, and its caption as the field shows it.</summary>
+    internal sealed record ImageEditing(Guid ElementKey, int Offset, string Caption);
+
+    /// <summary>The picture of an image node (<see cref="ManuscriptCommands.LoadImage"/>) of the book shown here.</summary>
+    public Task<ImageView> OnLoadImage(string path) =>
+        Task.FromResult(
+            State.Session is { } session && State.CurrentBook is { } shown && session.Vault.FindBook(shown.LinkName) is { } book
+                ? ManuscriptCommands.LoadImage(session, book, path, L)
+                : new ImageView(null, null));
+
+    /// <summary>
+    /// A pasted image becomes a block (<see cref="ManuscriptCommands.InsertImageAsync"/>) named by the time; this view
+    /// becomes the active one first.
+    /// </summary>
+    public async Task OnImagePasted(string base64, string mime)
+    {
+        // The text is refused by its length before it is decoded (4 characters per 3 bytes, plus padding).
+        byte[] bytes;
+        if (base64.Length > VaultAssets.MaxBytes / 3 * 4 + 4)
+        {
+            _saver.Message = new AdoptMessage("ImageTooLarge", true);
+            StateHasChanged();
+            return;
+        }
+
+        try
+        {
+            bytes = Convert.FromBase64String(base64);
+        }
+        catch (FormatException)
+        {
+            _saver.Message = new AdoptMessage("ImageReadFailed", true);
+            StateHasChanged();
+            return;
+        }
+
+        if (!await ActivateAsync())
+        {
+            return;
+        }
+
+        var extension = mime.ToLowerInvariant() switch
+        {
+            "image/png" => ".png",
+            "image/jpeg" or "image/jpg" => ".jpg",
+            "image/gif" => ".gif",
+            "image/webp" => ".webp",
+            "image/bmp" => ".bmp",
+            _ => "",
+        };
+        var now = State.Session?.Clock.Now ?? Time.GetLocalNow();
+        var name = $"bild-{now.LocalDateTime:yyyyMMdd-HHmmss}{extension}";
+        _saver.Message = await ManuscriptCommands.InsertImageAsync(State, name, bytes, L["UndoInsertImage"], Logger);
+        StateHasChanged();
+    }
+
+    /// <summary>
+    /// „Bild einfügen“: the user chooses a file (<see cref="IPlatformServices.PickImageFileAsync"/>), which is read (one
+    /// above <see cref="VaultAssets.MaxBytes"/> is refused by its length first) and inserted like a pasted image.
+    /// </summary>
+    private async Task InsertImageFromFileAsync()
+    {
+        var path = await Platform.PickImageFileAsync();
+        if (path is null)
+        {
+            return;
+        }
+
+        byte[] bytes;
+        try
+        {
+            if (new FileInfo(path).Length > VaultAssets.MaxBytes)
+            {
+                _saver.Message = new AdoptMessage("ImageTooLarge", true);
+                return;
+            }
+
+            bytes = await File.ReadAllBytesAsync(path);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException or ArgumentException)
+        {
+            Logger.LogWarning(ex, "The image file {Path} could not be read", path);
+            _saver.Message = new AdoptMessage("ImageReadFailed", true);
+            return;
+        }
+
+        _saver.Message = await ManuscriptCommands.InsertImageAsync(
+            State, Path.GetFileName(path), bytes, L["UndoInsertImage"], Logger);
+        StateHasChanged();
+    }
+
+    /// <summary>
+    /// A double click on an image remembers it for the caption field, with its caption; the editor saves its text first,
+    /// so the offset is one of the book's text. Not in a book that cannot be changed.
+    /// </summary>
+    public async Task OnImageEdit(Guid elementKey, int offset)
+    {
+        if (ReadOnlyReason is not null || !await ActivateAsync())
+        {
+            return;
+        }
+
+        await FlushAsync();
+
+        // One field at a time: the citation's locator field closes.
+        _citationEdit = null;
+        _imageEdit = null;
+        if (State.CurrentBook is { } book && BookElements.Find(book, elementKey) is { Kind: not ElementKind.Heading }
+            && ManuscriptEditor.ImageIndexAt(book, elementKey, offset) is { } index)
+        {
+            var block = book.Page.AllBlocks().FirstOrDefault(b => b.Key == elementKey);
+            if (block is not null)
+            {
+                var images = BlockImages.Find(block.Content);
+                if (index < images.Count)
+                {
+                    _imageEdit = new ImageEditing(elementKey, offset, images[index].Alt);
+                }
+            }
+        }
+
+        StateHasChanged();
+    }
+
+    /// <summary>Saves the caption typed in the field (<see cref="ManuscriptCommands.SetImageCaptionAsync"/>) and closes it.</summary>
+    internal async Task SaveImageCaptionAsync(string caption)
+    {
+        if (_imageEdit is not { } edit)
+        {
+            return;
+        }
+
+        _imageEdit = null;
+        _saver.Message = await ManuscriptCommands.SetImageCaptionAsync(
+            State, edit.ElementKey, edit.Offset, caption, L["UndoImageCaption"], Logger);
+        StateHasChanged();
+    }
+
+    private void CancelImageEdit() => _imageEdit = null;
 
     /// <summary>
     /// A person or source chosen in the section bar's picker goes in at the cursor

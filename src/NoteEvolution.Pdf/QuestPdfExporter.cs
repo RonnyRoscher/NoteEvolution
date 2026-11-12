@@ -10,6 +10,7 @@ public sealed class QuestPdfExporter : IPdfExporter
 {
     private const string TocTitle = "Inhaltsverzeichnis";
     private const float BodySize = 11;
+    private const float CaptionSize = 9;
     private const float Points = 72f / 25.4f;
 
     public PdfExportReport Export(
@@ -141,7 +142,17 @@ public sealed class QuestPdfExporter : IPdfExporter
                 case ImageElement image:
                     // Full text width, but never taller than the page: tall images shrink instead of failing. Without
                     // EnsureSpace the area-fitting image would also shrink to whatever is left of the current page.
-                    Anchored(column, image).PaddingBottom(8).EnsureSpace(contentHeight / 4).AlignCenter().Image(image.Image).FitArea();
+                    // The caption is part of one unbreakable item with its picture, which therefore leaves room for it;
+                    // a caption longer than that room shrinks into it instead of failing the layout.
+                    var reserve = image.Caption.Length > 0 ? contentHeight / 5 : 0;
+                    Anchored(column, image).PaddingBottom(8).EnsureSpace(contentHeight / 4).ShowEntire().Column(picture =>
+                    {
+                        picture.Item().AlignCenter().MaxHeight(contentHeight - 8 - reserve).Image(image.Image).FitArea();
+                        if (image.Caption.Length > 0)
+                        {
+                            picture.Item().PaddingTop(4).MaxHeight(reserve - 4).ScaleToFit().AlignCenter().Text(image.Caption).FontSize(CaptionSize).Italic().AlignCenter();
+                        }
+                    });
                     break;
             }
 

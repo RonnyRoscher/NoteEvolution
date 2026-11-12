@@ -827,6 +827,65 @@ public class EditorPaneTests : UiTestContext
         Assert.Contains("\t- Erster Text ((" + NoteId + "))((" + id + ")) hier und ((" + MissingId + "))\n", saved);
     }
 
+    [Fact]
+    public async Task InsertReference_RightAfterAnImage_GoesAfterTheImageSyntax()
+    {
+        using var tv = TestVault.Create(
+            (BookPath, "title:: Alpha\ntype:: book\n\n- # Eins\n\t- Vor ![a](../assets/p.png) nach\n\t- Zweiter Text\n"));
+        var (_, cut) = await RenderAsync(tv);
+        var book = State.CurrentBook!;
+        var element = book.Page.AllBlocks().Single(b => b.Content.StartsWith("Vor ", StringComparison.Ordinal)).Key;
+
+        // The editor counts "Vor " and the image as one position: right after the image is 5.
+        State.Cursor = new CursorInfo(ElementKind.TextBlock, element, element, 5);
+        var target = book.Page.AllBlocks().Single(b => b.Content == "Zweiter Text").Key;
+        var message = await cut.InvokeAsync(() => ManuscriptCommands.InsertReferenceAsync(State, target, "Verweis", NullLogger.Instance));
+
+        Assert.Null(message);
+        var saved = tv.Read(BookPath);
+        var id = System.Text.RegularExpressions.Regex.Match(saved, @"\t- Zweiter Text\n\t  id:: ([0-9a-f-]{36})").Groups[1].Value;
+        Assert.Contains("\t- Vor ![a](../assets/p.png)((" + id + ")) nach\n", saved);
+    }
+
+    [Fact]
+    public async Task Pane_SavingANeighbour_LeavesLogseqImagesByteIdentical()
+    {
+        const string single = "\t- Vorher ![a_b]( ../assets/x_y%20z.png ){:height 100, :width 200}\n";
+        const string two = "\t- Zwei ![eins](../assets/a.png) und dazwischen *Text* ![image.png](../assets/image_1700_0.png){:height 50} Ende\n";
+        const string detail = "\t\t- Im Detail ![d_x](../assets/d%20e.png){:width 300}\n";
+        const string withProps = "\t- Mit Eigenschaften ![p](../assets/p.png)\n" +
+                                 "\t  id:: " + FirstId + "\n" +
+                                 "\t  source:: ((" + NoteId + "))\n";
+        using var tv = TestVault.Create(
+            (BookPath,
+                "title:: Alpha\ntype:: book\n\n" +
+                "- # Eins\n" +
+                single +
+                two +
+                "\t- Mit Detail\n" +
+                detail +
+                withProps +
+                "\t- Nachbar\n"),
+            (NotesPath,
+                "- Notiz\n" +
+                "  id:: " + NoteId + "\n" +
+                "  used-in:: [[Buch - Alpha]] ((" + FirstId + "))\n"));
+        var before = tv.Read(BookPath);
+        var (_, cut) = await RenderAsync(tv);
+        var doc = Doc(Editor.Json);
+        SetText(doc, 4, "Nachbar, geändert");
+
+        await ChangeAsync(cut, doc);
+        await cut.InvokeAsync(() => State.FlushEditor!());
+
+        var saved = tv.Read(BookPath);
+        Assert.Contains("\t- Nachbar, geändert\n", saved);
+        var imageLines = before.Split('\n').Where(line => line.Contains("![", StringComparison.Ordinal)).ToList();
+        Assert.Equal(4, imageLines.Count);
+        Assert.Equal(imageLines, saved.Split('\n').Where(line => line.Contains("![", StringComparison.Ordinal)));
+        Assert.Contains(withProps, saved);
+    }
+
     /// <summary>Alpha with a text block referring to a note and to a missing block.</summary>
     private static TestVault NoteRefVault() => TestVault.Create(
         (BookPath,
@@ -884,6 +943,31 @@ public class EditorPaneTests : UiTestContext
         await cut.InvokeAsync(() => State.FlushEditor!());
 
         Assert.Single(Editor.RefLabels);
+    }
+
+    [Fact]
+    public async Task Pane_OwnSave_TypedImage_ReloadsSoItBecomesANode()
+    {
+        using var tv = Alpha();
+        var (_, cut) = await RenderAsync(tv);
+        var doc = Doc(Editor.Json);
+        SetText(doc, 1, "A ![x](../assets/a.png) B");
+
+        await ChangeAsync(cut, doc);
+        await cut.InvokeAsync(() => State.FlushEditor!());
+
+        Assert.Contains("\t- A ![x](../assets/a.png) B\n", tv.Read(BookPath));
+        Assert.Equal(2, Editor.Documents.Count);
+        Assert.True(Editor.KeepCursor[^1]);
+        var shown = Doc(Editor.Json);
+        var runs = Blocks(shown)[At(shown, 1)]!["content"]![0]!["content"]!.AsArray();
+        Assert.Equal(["text", "image", "text"], runs.Select(r => (string?)r!["type"]));
+        Assert.Equal("../assets/a.png", (string?)runs[1]!["attrs"]!["path"]);
+
+        // Saved again as the node it now is: the document is kept.
+        await ChangeAsync(cut, shown);
+        await cut.InvokeAsync(() => State.FlushEditor!());
+        Assert.Equal(2, Editor.Documents.Count);
     }
 
     [Fact]

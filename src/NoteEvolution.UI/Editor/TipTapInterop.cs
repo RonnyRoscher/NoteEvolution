@@ -90,6 +90,21 @@ public sealed class TipTapInterop(IJSRuntime js, AppState state) : IEditorIntero
     public Task GlossaryClicked(string? entryKey) =>
         _callbacks is not null && Guid.TryParse(entryKey, out var key) ? _callbacks.OnGlossaryClicked(key) : Task.CompletedTask;
 
+    /// <summary>The script asks for the picture of an image node; without callbacks it gets no picture and asks again later.</summary>
+    [JSInvokable]
+    public Task<ImageView> LoadImage(string path) =>
+        _callbacks?.OnLoadImage(path) ?? Task.FromResult(new ImageView(null, null));
+
+    /// <summary>An image was double-clicked: the key of the text block or detail and its offset there.</summary>
+    [JSInvokable]
+    public Task ImageEdit(string? elementKey, int offset) =>
+        _callbacks is not null && Guid.TryParse(elementKey, out var key) ? _callbacks.OnImageEdit(key, offset) : Task.CompletedTask;
+
+    /// <summary>An image was pasted: its bytes as base64 and its MIME type.</summary>
+    [JSInvokable]
+    public Task ImagePasted(string? base64, string? mime) =>
+        _callbacks is not null && !string.IsNullOrEmpty(base64) ? _callbacks.OnImagePasted(base64, mime ?? "") : Task.CompletedTask;
+
     [JSInvokable]
     public Task DocumentChanged(string docJson) => _callbacks?.OnDocumentChanged(docJson) ?? Task.CompletedTask;
 

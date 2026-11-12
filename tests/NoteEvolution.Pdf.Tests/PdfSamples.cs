@@ -85,4 +85,60 @@ internal static class PdfSamples
     /// <summary>A valid 1x1 PNG.</summary>
     public static byte[] Png { get; } = Convert.FromBase64String(
         "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==");
+
+    /// <summary>A valid grey 8-bit greyscale PNG of the given size.</summary>
+    public static byte[] PngOfSize(int width, int height)
+    {
+        var raw = new byte[(width + 1) * height];
+        for (var row = 0; row < height; row++)
+        {
+            // Filter byte 0 (none), then mid-grey pixels.
+            Array.Fill(raw, (byte)0x80, row * (width + 1) + 1, width);
+        }
+
+        using var compressed = new MemoryStream();
+        using (var zlib = new System.IO.Compression.ZLibStream(compressed, System.IO.Compression.CompressionLevel.Optimal, true))
+        {
+            zlib.Write(raw);
+        }
+
+        var header = new byte[13];
+        System.Buffers.Binary.BinaryPrimitives.WriteInt32BigEndian(header, width);
+        System.Buffers.Binary.BinaryPrimitives.WriteInt32BigEndian(header.AsSpan(4), height);
+        header[8] = 8; // bit depth; colour type 0 (greyscale), compression, filter and interlace 0
+
+        using var png = new MemoryStream();
+        png.Write([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
+        WriteChunk(png, "IHDR", header);
+        WriteChunk(png, "IDAT", compressed.ToArray());
+        WriteChunk(png, "IEND", []);
+        return png.ToArray();
+    }
+
+    private static void WriteChunk(Stream png, string type, byte[] data)
+    {
+        var length = new byte[4];
+        System.Buffers.Binary.BinaryPrimitives.WriteInt32BigEndian(length, data.Length);
+        png.Write(length);
+        var typed = Encoding.ASCII.GetBytes(type).Concat(data).ToArray();
+        png.Write(typed);
+        var crc = new byte[4];
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt32BigEndian(crc, Crc32(typed));
+        png.Write(crc);
+    }
+
+    private static uint Crc32(byte[] data)
+    {
+        var crc = 0xFFFFFFFFu;
+        foreach (var b in data)
+        {
+            crc ^= b;
+            for (var bit = 0; bit < 8; bit++)
+            {
+                crc = (crc & 1) != 0 ? (crc >> 1) ^ 0xEDB88320u : crc >> 1;
+            }
+        }
+
+        return ~crc;
+    }
 }

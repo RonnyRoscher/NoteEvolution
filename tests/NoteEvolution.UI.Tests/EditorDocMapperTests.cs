@@ -409,4 +409,119 @@ public class EditorDocMapperTests
         Assert.Equal(((SnapshotTextBlock)back.Nodes.Single()) with { Paragraphs = [], Sources = [] },
             ((SnapshotTextBlock)backChanged.Nodes.Single()) with { Paragraphs = [], Sources = [] });
     }
+
+    private const string ImageText = "Vor ![a_b](../assets/x_y z.png){:height 1} nach";
+
+    private static string TextOf(string json) => ((SnapshotTextBlock)EditorDocMapper.FromJson(json, Scope, false).Nodes.Single()).Text;
+
+    [Fact]
+    public void ToJson_Image_IsAnInlineAtomWithPathAltAndSuffix()
+    {
+        var para = FirstPara(JsonNode.Parse(EditorDocMapper.ToJson(OneBlock(ImageText)))!);
+
+        var content = para["content"]!.AsArray();
+        Assert.Equal(3, content.Count);
+        Assert.Equal("Vor ", (string?)content[0]!["text"]);
+        Assert.Equal(" nach", (string?)content[2]!["text"]);
+        Assert.Equal("image", (string?)content[1]!["type"]);
+        var attrs = content[1]!["attrs"]!;
+        Assert.Equal("../assets/x_y z.png", (string?)attrs["path"]);
+        Assert.Equal("a_b", (string?)attrs["alt"]);
+        Assert.Equal("{:height 1}", (string?)attrs["suffix"]);
+        Assert.False((bool)attrs["remote"]!);
+        Assert.Null(attrs["error"]);
+    }
+
+    [Theory]
+    [InlineData("![image.png](../assets/image_1700_0.png)", "")]
+    [InlineData("![ Foto.JPG ](x.png)", "")]
+    [InlineData("![Mein Bild](x.png)", "Mein Bild")]
+    [InlineData("![ Mein Bild ](x.png)", "Mein Bild")]
+    public void ToJson_Image_CaptionIsTheAltUnlessAFileName(string text, string caption)
+    {
+        var json = EditorDocMapper.ToJson(OneBlock(text));
+        var attrs = FirstPara(JsonNode.Parse(json)!)["content"]![0]!["attrs"]!;
+
+        Assert.Equal(caption, (string?)attrs["caption"]);
+        Assert.Equal(text, TextOf(json));
+    }
+
+    [Fact]
+    public void FromJson_ImageCaptionAttr_IsIgnored()
+    {
+        var doc = JsonNode.Parse(EditorDocMapper.ToJson(OneBlock("![image.png](x.png)")))!;
+        FirstPara(doc)["content"]![0]!["attrs"]!["caption"] = "anders";
+
+        Assert.Equal("![image.png](x.png)", TextOf(doc.ToJsonString()));
+    }
+
+    [Fact]
+    public void FromJson_UnchangedImage_IsByteIdentical()
+    {
+        Assert.Equal(ImageText, TextOf(EditorDocMapper.ToJson(OneBlock(ImageText))));
+    }
+
+    [Fact]
+    public void FromJson_ImageWithPaddingInTheParentheses_IsWrittenBackAsLoaded()
+    {
+        var text = "Bild ![a]( p.png ) hier";
+        var detail = Guid.Parse("0199a000-0000-7000-8000-000000000003");
+        var json = EditorDocMapper.ToJson(OneBlock(text, [new SnapshotParagraph(detail, text, 1, false)]));
+
+        var back = (SnapshotTextBlock)EditorDocMapper.FromJson(json, Scope, false).Nodes.Single();
+
+        Assert.Equal(text, back.Text);
+        Assert.Equal(text, back.Paragraphs.Single().Text);
+    }
+
+    [Fact]
+    public void FromJson_ChangedTextAroundAnImage_WritesTheImageWithoutEscapes()
+    {
+        var doc = JsonNode.Parse(EditorDocMapper.ToJson(OneBlock(ImageText)))!;
+        FirstPara(doc)["content"]![0]!["text"] = "Neu _x_ ";
+
+        // The typed text is escaped only where needed (as for any text); the image keeps its underscores bare.
+        Assert.Equal("Neu _x\\_ ![a_b](../assets/x_y z.png){:height 1} nach", TextOf(doc.ToJsonString()));
+    }
+
+    [Fact]
+    public void ToJson_RemoteImage_IsMarkedAndCarriesTheErrorText()
+    {
+        var text = "![](https://x/y.png)";
+
+        var plain = FirstPara(JsonNode.Parse(EditorDocMapper.ToJson(OneBlock(text)))!)["content"]![0]!["attrs"]!;
+        var custom = FirstPara(JsonNode.Parse(EditorDocMapper.ToJson(
+            OneBlock(text), remoteImageText: p => $"Extern: {p}"))!)["content"]![0]!["attrs"]!;
+
+        Assert.True((bool)plain["remote"]!);
+        Assert.Equal("https://x/y.png", (string?)plain["error"]);
+        Assert.Equal("Extern: https://x/y.png", (string?)custom["error"]);
+        Assert.Equal(text, TextOf(EditorDocMapper.ToJson(OneBlock(text))));
+    }
+
+    [Fact]
+    public void FromJson_ChangedAlt_IsWrittenIntoTheText()
+    {
+        var doc = JsonNode.Parse(EditorDocMapper.ToJson(OneBlock(ImageText)))!;
+        FirstPara(doc)["content"]![1]!["attrs"]!["alt"] = "neu";
+
+        Assert.Equal("Vor ![neu](../assets/x_y z.png){:height 1} nach", TextOf(doc.ToJsonString()));
+    }
+
+    [Fact]
+    public void FromJson_ImageInsideBoldText_RoundTripsUnchanged()
+    {
+        const string text = "**a ![x](p.png) b**";
+        var json = EditorDocMapper.ToJson(OneBlock(text));
+
+        var doc = JsonNode.Parse(json)!;
+        var content = FirstPara(doc)["content"]!.AsArray();
+        Assert.Equal("image", (string?)content[1]!["type"]);
+        Assert.Equal("bold", (string?)content[1]!["marks"]![0]!["type"]);
+        Assert.Equal(text, TextOf(json));
+
+        // Also when the paragraph is rewritten from its runs.
+        content[0]!["text"] = "c ";
+        Assert.Equal("**c ![x](p.png) b**", TextOf(doc.ToJsonString()));
+    }
 }

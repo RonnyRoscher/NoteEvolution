@@ -117,6 +117,7 @@ public sealed class BookTextSaver(AppState state, ILogger logger)
         if (!result.Changed)
         {
             Shown = shown with { Snapshot = snapshot, FromEditor = true };
+            ReloadIfImagesAreText(json, snapshot);
             return;
         }
 
@@ -124,6 +125,7 @@ public sealed class BookTextSaver(AppState state, ILogger logger)
         if (session.TrySave(page, out var error))
         {
             Shown = shown with { Snapshot = snapshot, FromEditor = true };
+            ReloadIfImagesAreText(json, snapshot);
             Message = null;
             QueueEffects(session, book.LinkName, result.Effects);
             ApplyUnsavedEffects();
@@ -455,6 +457,23 @@ public sealed class BookTextSaver(AppState state, ILogger logger)
         snapshot = null!;
         result = null!;
         return false;
+    }
+
+    /// <summary>
+    /// Image syntax typed or pasted as text is saved as an image, but the editor's document <paramref name="json"/>
+    /// still holds it as text; C# already counts each image as one shown position, so the editor's offsets would land
+    /// too far right. Then the editor must take the book again (<see cref="ReloadNeeded"/>), which shows it as a node.
+    /// </summary>
+    private void ReloadIfImagesAreText(string json, SectionSnapshot saved)
+    {
+        var shown = EditorDocMapper.ImageCount(json);
+        var inText = saved.Nodes.OfType<SnapshotTextBlock>()
+            .Sum(text => BlockImages.Find(text.Text).Count + text.Paragraphs.Sum(p => BlockImages.Find(p.Text).Count));
+        // The exact count (what the editor would show) only where the quick one differs.
+        if (inText != shown && EditorDocMapper.ImageCount(EditorDocMapper.ToJson(saved)) != shown)
+        {
+            ReloadNeeded = true;
+        }
     }
 
     /// <summary>

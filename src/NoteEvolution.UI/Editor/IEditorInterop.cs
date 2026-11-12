@@ -89,6 +89,11 @@ public enum SectionCommand
     OutdentDetail,
 }
 
+/// <summary>The picture of an image node.</summary>
+/// <param name="Src">A data URL; <c>null</c> when the image cannot be shown.</param>
+/// <param name="Error">The text to show instead (missing, outside the vault, too large); <c>null</c> with a picture.</param>
+public sealed record ImageView(string? Src, string? Error);
+
 /// <summary>What the editor reports; implemented by the component that shows it (<c>EditorPane</c>).</summary>
 public interface IEditorCallbacks
 {
@@ -156,6 +161,18 @@ public interface IEditorCallbacks
 
     /// <summary>A marked glossary term was clicked with Ctrl; <paramref name="entryKey"/> is the entry's block key.</summary>
     Task OnGlossaryClicked(Guid entryKey);
+
+    /// <summary>The picture for an image node: a data URL, or the text to show instead (missing, outside the vault, too large).</summary>
+    Task<ImageView> OnLoadImage(string path);
+
+    /// <summary>
+    /// An image was double-clicked to change its caption: <paramref name="elementKey"/> is the text block or detail
+    /// holding it and <paramref name="offset"/> its position in the text the editor shows there.
+    /// </summary>
+    Task OnImageEdit(Guid elementKey, int offset);
+
+    /// <summary>An image was pasted into the editor: its bytes as base64 and its MIME type.</summary>
+    Task OnImagePasted(string base64, string mime);
 }
 
 /// <summary>The TipTap editor behind a narrow interface, so components can be tested without JavaScript.</summary>

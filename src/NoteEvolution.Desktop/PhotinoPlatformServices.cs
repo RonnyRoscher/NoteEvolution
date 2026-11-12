@@ -35,6 +35,15 @@ public sealed class PhotinoPlatformServices(IStringLocalizer<Strings> strings) :
         return string.IsNullOrEmpty(path) ? null : path;
     }
 
+    public async Task<string?> PickImageFileAsync()
+    {
+        (string Name, string[] Extensions)[] filters =
+            [(strings["PickImageFilter"], ["*.png", "*.jpg", "*.jpeg", "*.gif", "*.webp", "*.bmp"])];
+        var files = await RequireWindow().ShowOpenFileAsync(
+            strings["PickImageTitle"], Environment.GetFolderPath(Environment.SpecialFolder.MyPictures), false, filters);
+        return files?.FirstOrDefault(f => !string.IsNullOrEmpty(f));
+    }
+
     public void OpenExternal(string uri)
     {
         using var process = Process.Start(new ProcessStartInfo(uri) { UseShellExecute = true });
