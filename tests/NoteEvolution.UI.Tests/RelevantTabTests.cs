@@ -5,7 +5,9 @@ using NoteEvolution.AI.Embeddings;
 using NoteEvolution.AI.Language;
 using NoteEvolution.AI.Search;
 using NoteEvolution.AI.Tests;
+using Microsoft.Extensions.Logging.Abstractions;
 using NoteEvolution.Core.Books;
+using NoteEvolution.Core.Links;
 using NoteEvolution.Core.Vaults;
 using NoteEvolution.TestSupport;
 using NoteEvolution.UI.Components;
@@ -606,6 +608,32 @@ public class RelevantTabPlacedTests : UiTestContext
 
     private static List<string> SimilarTexts(IRenderedComponent<NotesPane> cut) =>
         [.. cut.FindAll(".ne-relevant-list > .ne-note-card > .ne-note-body > .ne-note-text").Select(e => e.TextContent.Trim())];
+
+    [Fact]
+    public async Task Adopting_ANoteWithASuggestion_RecordsWhereItWent()
+    {
+        var session = await OpenPlacedAsync();
+        var book = State.CurrentBook!;
+        var dreams = book.Root.Children.Single(n => n.Title == "Schlaf").Children.Single();
+        var work = book.Root.Children.Single(n => n.Title == "Arbeit");
+        var root = session.Vault.Root;
+
+        // The sleep note goes where the model suggested (Träume), the dream note into another chapter.
+        await NoteAdoption.AdoptAsync(State, Note(session, SleepNote).Key, _ => new InsertPosition.SectionEnd(dreams.Key), NullLogger.Instance);
+        await NoteAdoption.AdoptAsync(
+            State, Note(session, DreamNote).Key, _ => new InsertPosition.SectionEnd(work.Key), NullLogger.Instance, fromRelevant: true);
+        // A note without a suggestion records nothing.
+        await NoteAdoption.AdoptAsync(State, Note(session, OtherNote).Key, _ => new InsertPosition.SectionEnd(work.Key), NullLogger.Instance);
+
+        var outcomes = PlacementOutcomes.Read(root);
+        Assert.Equal(
+            [(OutcomeRelation.SameSection, false), (OutcomeRelation.OtherChapter, true)],
+            outcomes.Select(o => (o.Relation, o.FromRelevant)));
+        Assert.All(outcomes, o => Assert.Equal("Schlaf#0 › Träume#0", o.SuggestedPath));
+        Assert.Equal("Arbeit#0", outcomes[1].ChosenPath);
+        Assert.Equal(State.CurrentBook!.LinkName, outcomes[0].Book);
+        Assert.EndsWith(SleepNote[..10], outcomes[0].Note[..(outcomes[0].Note.IndexOf('#') + 11)]);
+    }
 
     [Fact]
     public async Task Relevant_PlacedHere_FirstGroup_NewestFirst()

@@ -2500,6 +2500,16 @@ html, body {
     margin-bottom: 8px;
 }
 
+/* How often an adopted note went where the model had suggested. */
+.ne-coverage-outcome {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px 12px;
+    margin: 0 0 8px;
+    font-size: 12px;
+    color: var(--fg-muted);
+}
+
 .ne-coverage-metric {
     display: flex;
     flex-direction: column;

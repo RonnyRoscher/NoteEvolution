@@ -452,8 +452,15 @@ verglichen; dadurch weiß jede Überschrift, worum es in ihren Unterabschnitten 
   orange zugeordnete offene Notizen (Tooltip mit „unsicher“, wenn Embedding und Modell uneins sind); ein Klick öffnet
   „Relevant“ des Abschnitts. Eine rote 0 markiert einen untersten Abschnitt ohne Notizen, sobald alle Notizen geprüft
   sind. Der Reiter „Abdeckung“ im Notizbereich zeigt Kennzahlen (geprüft, leere Abschnitte, ohne passenden Ort,
-  unsicher), alle untersten Abschnitte (Buchreihenfolge oder „Wenigste zuerst“), die Notizen ohne passenden Ort
+  unsicher), darunter „Vorschlag getroffen: 14 von 20 …“ (siehe „Trefferquote“), alle untersten Abschnitte (Buchreihenfolge oder „Wenigste zuerst“), die Notizen ohne passenden Ort
   (Passung „kaum“) und eingeklappt die unsicheren Zuordnungen.
+- **Trefferquote:** Bei jeder Übernahme einer Notiz, für die es einen Vorschlag gab (Knopf, Tastatur oder Ziehen),
+  hält die App fest, wohin die Notiz ging: in den vorgeschlagenen Abschnitt, in einen anderen Abschnitt desselben
+  Kapitels oder in ein anderes Kapitel; dazu den vorgeschlagenen Abschnitt, die Passung, ob der Vorschlag veraltet war
+  und ob aus „Relevant“ übernommen wurde. Eine Zeile je Übernahme steht in
+  `<vault>/.noteevolution/placement-outcomes.jsonl`. Der Reiter „Abdeckung“ zeigt die Quote für das aktuelle Buch,
+  einmal für alle Übernahmen und einmal ohne die aus „Relevant“ (dort folgt man dem Vorschlag ohnehin oft). Es wird
+  nur gemessen, nichts hängt davon ab; eine rückgängig gemachte Übernahme bleibt gezählt.
 - **Status je Notiz:** Ein Punkt im Kopf jeder unverwendeten Notizkarte zeigt mit seiner Farbe, wie gut die Notiz ins
   Buch passt (grün = gut, gelb = teilweise, rot = kein passender Ort), und mit seiner Form den Stand: gestrichelter
   Rand = veraltet, blauer pulsierender Ring = wird berechnet, grauer Ring = wartet noch, rot mit „!“ = fehlgeschlagen

@@ -540,6 +540,17 @@
   <data name="CoverageHomeless" xml:space="preserve">
     <value>Ohne passenden Ort</value>
   </data>
+  <data name="CoverageOutcome" xml:space="preserve">
+    <value>Vorschlag getroffen: {0} von {1} im vorgeschlagenen Abschnitt, {2} im selben Kapitel</value>
+    <comment>Reiter Abdeckung: wie oft eine übernommene Notiz dort landete, wo das Sprachmodell sie vorgeschlagen hatte; {0} = im vorgeschlagenen Abschnitt, {1} = alle gezählten Übernahmen, {2} = in einem anderen Abschnitt desselben Kapitels</comment>
+  </data>
+  <data name="CoverageOutcomeOwn" xml:space="preserve">
+    <value>Ohne Übernahmen aus „Relevant“: {0} von {1}</value>
+    <comment>Reiter Abdeckung: dieselbe Quote nur für Übernahmen, die nicht aus dem Reiter „Relevant“ kamen</comment>
+  </data>
+  <data name="CoverageOutcomeTitle" xml:space="preserve">
+    <value>Gezählt wird jede Übernahme einer Notiz, für die es einen Vorschlag gab. Wer aus „Relevant“ übernimmt, folgt dem Vorschlag oft schon; darum steht die Quote auch ohne diese Übernahmen da. Rückgängig gemachte Übernahmen zählen mit.</value>
+  </data>
   <data name="CoverageUncertain" xml:space="preserve">
     <value>unsichere Zuordnungen</value>
   </data>
