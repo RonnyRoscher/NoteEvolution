@@ -102,6 +102,38 @@ public class CoverageTabTests : UiTestContext
     }
 
     [Fact]
+    public async Task Tab_ShowsHowOftenTheSuggestionWasHit_AlsoWithoutAdoptionsFromRelevant()
+    {
+        var session = await OpenWithModelAsync();
+        var coverage = CoverageOf([], [], 1, 1, Section(Node("Zwei"), 0, 0));
+        var book = State.CurrentBook!.LinkName;
+        PlacementOutcome Outcome(OutcomeRelation relation, bool fromRelevant, string inBook) => new(
+            DateTimeOffset.UnixEpoch, inBook, "n", "A#0", NoteEvolution.AI.Understanding.PlacementFit.Good, false, "B#0", relation, fromRelevant);
+
+        // Nothing recorded: no line.
+        var empty = OpenTab(session, coverage);
+        Assert.Empty(empty.FindAll(".ne-coverage-outcome"));
+        empty.Find(".ne-tab-journal").Click();
+
+        foreach (var outcome in new[]
+                 {
+                     Outcome(OutcomeRelation.SameSection, true, book), Outcome(OutcomeRelation.SameSection, true, book),
+                     Outcome(OutcomeRelation.SameSection, false, book), Outcome(OutcomeRelation.SameChapter, false, book),
+                     Outcome(OutcomeRelation.OtherChapter, false, book), Outcome(OutcomeRelation.SameSection, false, "Anderes Buch"),
+                 })
+        {
+            PlacementOutcomes.Append(session.Vault.Root, outcome);
+        }
+
+        empty.Find(".ne-tab-coverage").Click();
+
+        Assert.Equal(
+            "Vorschlag getroffen: 3 von 5 im vorgeschlagenen Abschnitt, 1 im selben Kapitel",
+            empty.Find(".ne-coverage-outcome-all").TextContent.Trim());
+        Assert.Equal("Ohne Übernahmen aus „Relevant“: 1 von 3", empty.Find(".ne-coverage-outcome-own").TextContent.Trim());
+    }
+
+    [Fact]
     public async Task Tab_ShowsTheMetrics()
     {
         var session = await OpenWithModelAsync();

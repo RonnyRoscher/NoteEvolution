@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using NoteEvolution.AI.Understanding;
 using NoteEvolution.Core.Books;
 using NoteEvolution.Core.Links;
 using NoteEvolution.Core.Model;
@@ -165,6 +166,9 @@ public static class NoteAdoption
         AppState state, Guid noteBlockKey, Func<ILinkService, Book, (bool NoteUpdatePending, Guid? Reveal)> adopt, ILogger logger, bool fromRelevant)
     {
         Guid? reveal = null;
+
+        // What the model had suggested for the note, read before the adoption makes the note a used one.
+        var suggestion = SuggestionFor(state, noteBlockKey);
         try
         {
             (var message, reveal) = await TryAdoptAsync(state, noteBlockKey, adopt, logger);
@@ -176,6 +180,7 @@ public static class NoteAdoption
             state.RefreshBook();
             if (reveal is { } key)
             {
+                RecordOutcome(state, suggestion, key, fromRelevant, logger);
                 state.RevealElement(key);
                 if (fromRelevant && state.CurrentBook is { } book)
                 {
@@ -187,6 +192,54 @@ public static class NoteAdoption
             }
 
             state.Notify();
+        }
+    }
+
+    /// <summary>
+    /// The stored suggestion of the note the block belongs to (its main point; a sub-point has none of its own) for the
+    /// current book, with the note's identity; null without one.
+    /// </summary>
+    private static (NotePlacement Placement, string Note)? SuggestionFor(AppState state, Guid noteBlockKey)
+    {
+        if (state.Session is not { } session || session.Vault.FindBlockByKey(noteBlockKey) is not { } found)
+        {
+            return null;
+        }
+
+        var block = found.Block;
+
+        while (block.Parent is { } parent)
+        {
+            block = parent;
+        }
+
+        return session.Placement(block.Key) is { } placement
+            ? (placement, UnderstandingItems.NoteIdentity(block.Content, found.Page.FilePath))
+            : null;
+    }
+
+    /// <summary>
+    /// Writes down where the note went compared with <paramref name="suggestion"/> (<see cref="PlacementOutcomes"/>);
+    /// a measurement only: a failure is logged and never disturbs the adoption.
+    /// </summary>
+    private static void RecordOutcome(
+        AppState state, (NotePlacement Placement, string Note)? suggestion, Guid chosenElementKey, bool fromRelevant, ILogger logger)
+    {
+        if (suggestion is not { } had || state.Session is not { } session || state.CurrentBook is not { } book)
+        {
+            return;
+        }
+
+        try
+        {
+            if (PlacementOutcomes.Of(book, had.Placement, chosenElementKey, had.Note, fromRelevant, session.Clock.Now) is { } outcome)
+            {
+                PlacementOutcomes.Append(session.Vault.Root, outcome);
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            logger.LogWarning(ex, "Recording the outcome of a placement suggestion failed");
         }
     }
 

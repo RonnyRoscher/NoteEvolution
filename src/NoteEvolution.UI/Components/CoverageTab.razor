@@ -54,6 +54,20 @@
                 }
             </div>
 
+            @* How often an adopted note went where the model had suggested (PlacementOutcomes); nothing until one is recorded. *@
+            var hits = PlacementOutcomes.Count(_outcomes, book.LinkName);
+            if (hits.Total > 0)
+            {
+                var own = PlacementOutcomes.Count(_outcomes.Where(o => !o.FromRelevant), book.LinkName);
+                <p class="ne-coverage-outcome" title="@L["CoverageOutcomeTitle"]">
+                    <span class="ne-coverage-outcome-all">@L["CoverageOutcome", hits.SameSection, hits.Total, hits.SameChapter]</span>
+                    @if (own.Total > 0 && own.Total < hits.Total)
+                    {
+                        <span class="ne-coverage-outcome-own">@L["CoverageOutcomeOwn", own.SameSection, own.Total]</span>
+                    }
+                </p>
+            }
+
             var rows = _fewestFirst ? [.. leaves.OrderBy(leaf => Total(coverage, leaf.Node))] : leaves;
             var scale = Math.Max(1, rows.Select(leaf => Total(coverage, leaf.Node)).DefaultIfEmpty(0).Max());
             <div class="ne-coverage-sections-head">
@@ -139,17 +153,31 @@
     private VaultSession? _session;
     private bool _fewestFirst;
 
+    /// <summary>The recorded outcomes of the vault, read when the tab opens and after each adoption.</summary>
+    private IReadOnlyList<PlacementOutcome> _outcomes = [];
+
     protected override void OnInitialized()
     {
         State.Changed += OnStateChanged;
+        State.NotesChanged += OnNotesChanged;
         TrackSession();
     }
 
     public void Dispose()
     {
         State.Changed -= OnStateChanged;
+        State.NotesChanged -= OnNotesChanged;
         Unsubscribe();
     }
+
+    /// <summary>A note was adopted (or an adoption undone): the outcomes are read again.</summary>
+    private void OnNotesChanged() => _ = InvokeAsync(() =>
+    {
+        ReadOutcomes();
+        StateHasChanged();
+    });
+
+    private void ReadOutcomes() => _outcomes = _session is { } session ? PlacementOutcomes.Read(session.Vault.Root) : [];
 
     private void OnStateChanged() => _ = InvokeAsync(() =>
     {
@@ -175,6 +203,8 @@
             _session.UnderstandingChanged += OnSessionChanged;
             _session.WatchCoverage(this, true);
         }
+
+        ReadOutcomes();
     }
 
     private void Unsubscribe()
