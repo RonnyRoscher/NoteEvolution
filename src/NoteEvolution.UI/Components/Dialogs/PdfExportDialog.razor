@@ -133,7 +133,8 @@
             try
             {
                 // A reference to a note stays out of the PDF as before; only an id the vault does not know is missing.
-                var report = await Task.Run(() => Write(book, scope, options, path, id => vault.FindBlockById(id) is not null));
+                var report = await Task.Run(
+                    () => Write(book, vault.Root, scope, options, path, id => vault.FindBlockById(id) is not null));
                 _warnings = report.Warnings;
                 _savedTo = path;
             }
@@ -150,12 +151,13 @@
         }
     }
 
-    private PdfExportReport Write(Book book, Guid? scope, PdfOptions options, string path, Func<Guid, bool> knownElsewhere)
+    private PdfExportReport Write(
+        Book book, string vaultRoot, Guid? scope, PdfOptions options, string path, Func<Guid, bool> knownElsewhere)
     {
         try
         {
             using var stream = File.Create(path);
-            return Exporter.Export(book, scope, options, stream, knownElsewhere);
+            return Exporter.Export(book, vaultRoot, scope, options, stream, knownElsewhere);
         }
         catch
         {

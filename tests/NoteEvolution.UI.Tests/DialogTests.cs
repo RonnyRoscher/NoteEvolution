@@ -821,7 +821,7 @@ public class DialogTests : UiTestContext
     public async Task PdfExportDialog_ShowsWarningsAfterExport()
     {
         using var tv = PdfVault();
-        var (_, target) = await PdfSetupAsync(tv);
+        var (session, target) = await PdfSetupAsync(tv);
         _exporter.Warnings = ["Ein Bild konnte nicht eingebettet werden."];
         var cut = Render<PdfExportDialog>();
 
@@ -834,6 +834,8 @@ public class DialogTests : UiTestContext
         var call = Assert.Single(_exporter.Calls);
         Assert.Null(call.Scope);
         Assert.Equal(PdfPageSize.A4, call.Options.Size);
+        // Only pictures inside the open vault are embedded.
+        Assert.Equal(session.Vault.Root, call.VaultRoot);
         // The exporter can tell a reference to a note (left out as before) from one to an unknown id (missing).
         Assert.True(call.KnownElsewhere!(Guid.Parse(PdfNoteId)));
         Assert.False(call.KnownElsewhere(Guid.NewGuid()));
@@ -1342,14 +1344,14 @@ public class DialogTests : UiTestContext
 
     private sealed class FakePdfExporter : IPdfExporter
     {
-        public List<(Guid? Scope, PdfOptions Options, Func<Guid, bool>? KnownElsewhere)> Calls { get; } = [];
+        public List<(string VaultRoot, Guid? Scope, PdfOptions Options, Func<Guid, bool>? KnownElsewhere)> Calls { get; } = [];
 
         public IReadOnlyList<string> Warnings { get; set; } = [];
 
         public Exception? Failure { get; set; }
 
         public PdfExportReport Export(
-            Book book, Guid? scopeKey, PdfOptions options, Stream output, Func<Guid, bool>? knownElsewhere = null)
+            Book book, string vaultRoot, Guid? scopeKey, PdfOptions options, Stream output, Func<Guid, bool>? knownElsewhere = null)
         {
             output.Write("%PDF-fake"u8);
             if (Failure is not null)
@@ -1357,7 +1359,7 @@ public class DialogTests : UiTestContext
                 throw Failure;
             }
 
-            Calls.Add((scopeKey, options, knownElsewhere));
+            Calls.Add((vaultRoot, scopeKey, options, knownElsewhere));
             return new PdfExportReport(Warnings);
         }
     }

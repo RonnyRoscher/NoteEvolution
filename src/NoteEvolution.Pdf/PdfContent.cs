@@ -3,6 +3,7 @@ using System.Text;
 using NoteEvolution.Core.Books;
 using NoteEvolution.Core.Model;
 using NoteEvolution.Core.Text;
+using NoteEvolution.Core.Vaults;
 using QuestPDF.Infrastructure;
 
 namespace NoteEvolution.Pdf;
@@ -55,7 +56,7 @@ internal sealed class PdfContent : IDisposable
     private const char MarkEnd = '';
 
     private readonly Book _book;
-    private readonly string _bookDirectory;
+    private readonly string _vaultRoot;
     private readonly CrossRefIndex _refs;
     private readonly AppendixIndex _appendix;
     private readonly Dictionary<Guid, PersonEntry> _people = [];
@@ -77,9 +78,10 @@ internal sealed class PdfContent : IDisposable
     /// <summary>The target id of the referenced text block whose first element is still to come.</summary>
     private Guid? _pendingAnchor;
 
-    private PdfContent(Book book, OutlineNode scope, Func<Guid, bool>? knownElsewhere)
+    private PdfContent(Book book, string vaultRoot, OutlineNode scope, Func<Guid, bool>? knownElsewhere)
     {
         _book = book;
+        _vaultRoot = vaultRoot;
         _refs = CrossRefIndex.Of(book, knownElsewhere);
         _appendix = AppendixIndex.Of(book);
         foreach (var person in Appendix.People(book).Where(p => p.Id != Guid.Empty))
@@ -111,7 +113,6 @@ internal sealed class PdfContent : IDisposable
 
         Title = book.Title;
         Dedication = book.Dedication;
-        _bookDirectory = Path.GetDirectoryName(Path.GetFullPath(book.Page.FilePath)) ?? "";
     }
 
     public string Title { get; }
@@ -123,8 +124,9 @@ internal sealed class PdfContent : IDisposable
     public IReadOnlyList<string> Warnings => _warnings;
 
     /// <exception cref="ArgumentException"><paramref name="scopeKey"/> names no outline node of the book.</exception>
+    /// <param name="vaultRoot">The vault's folder: only image files inside it are embedded.</param>
     /// <param name="knownElsewhere">Whether an id names a block in the vault; see <see cref="CrossRefIndex.Of"/>.</param>
-    public static PdfContent Build(Book book, Guid? scopeKey, Func<Guid, bool>? knownElsewhere = null)
+    public static PdfContent Build(Book book, string vaultRoot, Guid? scopeKey, Func<Guid, bool>? knownElsewhere = null)
     {
         var scope = book.FindNode(scopeKey ?? Guid.Empty)
             ?? throw new ArgumentException($"Kein Gliederungsknoten mit dem Schlüssel {scopeKey}.", nameof(scopeKey));
@@ -133,7 +135,7 @@ internal sealed class PdfContent : IDisposable
             throw new ArgumentException($"Der Anhang ist kein Teil des Buchtexts: {scopeKey}.", nameof(scopeKey));
         }
 
-        var content = new PdfContent(book, scope, knownElsewhere);
+        var content = new PdfContent(book, vaultRoot, scope, knownElsewhere);
         try
         {
             if (scope.Level > 0)
@@ -545,7 +547,8 @@ internal sealed class PdfContent : IDisposable
             return;
         }
 
-        var file = Resolve(path);
+        // As in the editor: only an image file inside the vault; nothing else is looked at, let alone read.
+        var file = VaultAssets.Resolve(_vaultRoot, _book.Page.FilePath, path);
         if (file is null)
         {
             Missing(path, $"Bild nicht gefunden: {path}");
@@ -560,33 +563,6 @@ internal sealed class PdfContent : IDisposable
         {
             // Unreadable file or a format QuestPDF cannot decode: the export goes on with a placeholder.
             Missing(path, $"Bild nicht lesbar: {path}");
-        }
-    }
-
-    private string? Resolve(string path)
-    {
-        // Logseq writes spaces and the like percent-encoded.
-        foreach (var candidate in new[] { path, SafeUnescape(path) }.Distinct())
-        {
-            var file = Path.GetFullPath(Path.Combine(_bookDirectory, candidate));
-            if (File.Exists(file))
-            {
-                return file;
-            }
-        }
-
-        return null;
-    }
-
-    private static string SafeUnescape(string path)
-    {
-        try
-        {
-            return Uri.UnescapeDataString(path);
-        }
-        catch (UriFormatException)
-        {
-            return path;
         }
     }
 
