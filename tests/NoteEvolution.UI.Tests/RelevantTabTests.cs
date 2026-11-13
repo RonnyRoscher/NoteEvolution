@@ -610,6 +610,43 @@ public class RelevantTabPlacedTests : UiTestContext
         [.. cut.FindAll(".ne-relevant-list > .ne-note-card > .ne-note-body > .ne-note-text").Select(e => e.TextContent.Trim())];
 
     [Fact]
+    public async Task Priority_TheActiveNoteThenTheListsNotes_AreToldToTheBackgroundWork()
+    {
+        var session = await OpenPlacedAsync();
+        var (sleep, dream) = (Note(session, SleepNote).Key, Note(session, DreamNote).Key);
+        Assert.Empty(session.PriorityNotes);
+
+        // The list of the section: the notes placed here first (newest first), then the similar ones.
+        var cut = OpenTab();
+        cut.WaitForAssertion(() => Assert.Equal([dream, sleep], session.PriorityNotes.Take(2)));
+
+        // The active block's note comes before the list and is not named twice.
+        State.SelectNoteBlock(sleep, sleep);
+        Assert.Equal(sleep, session.PriorityNotes[0]);
+        Assert.Equal(dream, session.PriorityNotes[1]);
+        Assert.Single(session.PriorityNotes, key => key == sleep);
+
+        State.ClearNoteSelection();
+        Assert.Equal([dream, sleep], session.PriorityNotes.Take(2));
+
+        // Another tab: the list is gone, nothing has priority.
+        // (Waited for: under load the rendering that closes the tab may finish after the click returns.)
+        await cut.InvokeAsync(() => cut.Find(".ne-tab-journal").Click());
+        cut.WaitForAssertion(() => Assert.Empty(session.PriorityNotes));
+    }
+
+    [Fact]
+    public async Task Priority_AtMostTwentyNotesOfAList()
+    {
+        var session = await OpenPlacedAsync();
+
+        session.SetShownNotes([.. Enumerable.Range(0, 30).Select(_ => Guid.NewGuid())]);
+
+        Assert.Equal(VaultSession.ShownNotesLimit, session.PriorityNotes.Count);
+        Assert.Equal(20, VaultSession.ShownNotesLimit);
+    }
+
+    [Fact]
     public async Task Adopting_ANoteWithASuggestion_RecordsWhereItWent()
     {
         var session = await OpenPlacedAsync();

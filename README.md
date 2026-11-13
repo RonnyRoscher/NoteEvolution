@@ -473,7 +473,10 @@ verglichen; dadurch weiß jede Überschrift, worum es in ihren Unterabschnitten 
   Rand = veraltet, blauer pulsierender Ring = wird berechnet, grauer Ring = wartet noch, rot mit „!“ = fehlgeschlagen
   (Tooltip mit allen Stufen). „?“ oben im Notizbereich erklärt die Punkte.
 - **Hintergrund:** immer nur eine Anfrage; zuerst das aktuelle Kapitel, dann das übrige Buch, dann die Notizen
-  (neueste zuerst). Beim Tippen wartet die Berechnung 10 s Ruhe ab, im Akkubetrieb pausiert sie, der Schalter ⏸/▶ in
+  (neueste zuerst). **Vorrang** hat, was gerade vor einem liegt: die Notiz des aktiven Blocks im Notizbereich, dann die
+  (bis zu 20) Notizen, die der Reiter „Relevant“ für den Abschnitt am Cursor zeigt. Ihre Kernaussagen und danach ihre
+  Zuordnungen kommen direkt nach den Zusammenfassungen des Buchs, vor allen übrigen Notizen. Eine laufende Anfrage
+  wird dafür nicht abgebrochen; was berechnet wird, bleibt gleich. Beim Tippen wartet die Berechnung 10 s Ruhe ab, im Akkubetrieb pausiert sie, der Schalter ⏸/▶ in
   der Kopfzeile hält sie an. Auf dem Testrechner braucht eine Zusammenfassung etwa 45 s, eine Kernaussage etwa 18 s je
   Eintrag, eine Zuordnung knapp eine Minute. Die Kopfzeile zeigt den Fortschritt mit Balken und Restzeit („Sprachmodell
   34/120 · noch ca. 1 h 10 min“); ein Klick darauf schlüsselt ihn nach Embedding, Zusammenfassungen, Kernaussagen und
