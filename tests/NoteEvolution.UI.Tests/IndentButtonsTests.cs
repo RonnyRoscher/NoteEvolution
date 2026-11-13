@@ -140,6 +140,28 @@ public class IndentButtonsTests : UiTestContext
     }
 
     [Fact]
+    public async Task BoldAndItalicButtons_ToggleTheMarkInTheEditor_NotOnAHeading()
+    {
+        var cut = await RenderAsync();
+
+        // On a text block or detail the buttons go to the editor (the cursor or the selected text there).
+        await MoveToAsync(cut, "Erster Text");
+        Assert.Equal("B", cut.Find(".ne-sec-bold").TextContent.Trim());
+        Assert.Equal("I", cut.Find(".ne-sec-italic").TextContent.Trim());
+        Assert.Equal("Fett (Strg+B)", cut.Find(".ne-sec-bold").GetAttribute("title"));
+        Assert.Equal("Kursiv (Strg+I)", cut.Find(".ne-sec-italic").GetAttribute("title"));
+        await ClickAsync(cut, ".ne-sec-bold");
+        await MoveToAsync(cut, "Punkt A");
+        await ClickAsync(cut, ".ne-sec-italic");
+        Assert.Equal(["bold", "italic"], Editor.MarkToggles);
+
+        // A heading has no formatting.
+        await MoveToAsync(cut, "# Eins");
+        Assert.True(cut.Find(".ne-sec-bold").HasAttribute("disabled"));
+        Assert.True(cut.Find(".ne-sec-italic").HasAttribute("disabled"));
+    }
+
+    [Fact]
     public async Task DeeperDetail_UsesEditorShiftDepth()
     {
         var cut = await RenderAsync();
