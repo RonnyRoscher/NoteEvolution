@@ -461,6 +461,14 @@ verglichen; dadurch weiß jede Überschrift, worum es in ihren Unterabschnitten 
   sind. Der Reiter „Abdeckung“ im Notizbereich zeigt Kennzahlen (geprüft, leere Abschnitte, ohne passenden Ort,
   unsicher), darunter „Vorschlag getroffen: 14 von 20 …“ (siehe „Trefferquote“), alle untersten Abschnitte (Buchreihenfolge oder „Wenigste zuerst“), die Notizen ohne passenden Ort
   (Passung „kaum“) und eingeklappt die unsicheren Zuordnungen.
+- **Ähnlich schon im Buch:** Sagt eine offene Notiz fast dasselbe wie eine Notiz, die das aktuelle Buch schon als
+  Quelle hat, zeigt ihre Karte „Ähnlich schon im Buch (94 %)“ (Tooltip: der Text der verwendeten Notiz). Ein Klick
+  springt zum Block mit dieser Quelle; „Als Quelle verknüpfen“ hängt die offene Notiz als weitere Quelle an dessen
+  Textblock, ohne Text einzufügen (sie gilt dann als verwendet; das × am Quellen-Chip nimmt es zurück). Verglichen
+  werden die Bedeutungsvektoren der Notizen (lokale KI, kein Sprachmodell), ab 92 % Ähnlichkeit; die eigenen
+  Unterpunkte einer Notiz zählen nicht, Notizen aus anderen Büchern und Text ohne Quelle auch nicht. Die Schwelle ist
+  geschätzt: das Log hält jedes Paar ab 85 % als „Duplicate candidate 0.943 hint=True …“ fest. Die Vorschläge der
+  Zuordnung bleiben davon unberührt.
 - **Trefferquote:** Bei jeder Übernahme einer Notiz, für die es einen Vorschlag gab (Knopf, Tastatur oder Ziehen),
   hält die App fest, wohin die Notiz ging: in den vorgeschlagenen Abschnitt, in einen anderen Abschnitt desselben
   Kapitels oder in ein anderes Kapitel; dazu den vorgeschlagenen Abschnitt, die Passung, ob der Vorschlag veraltet war
@@ -653,6 +661,9 @@ Sprachmodell (Ollama, Modell `qwen2.5:7b` geladen)
 - [ ] Nach den Zusammenfassungen und Kernaussagen laufen die Zuordnungen: Statuspunkte wechseln von grau über blau
       auf grün; „Wohin damit?“ zeigt die Empfehlung sofort, nach einer Textänderung „veraltet“.
 - [ ] „Relevant“ zeigt „Hierher eingeordnet“ über „Weitere ähnliche“, ohne doppelte Notizen.
+- [ ] Eine offene Notiz, die einer schon übernommenen fast gleicht, zeigt „Ähnlich schon im Buch (… %)“; der Klick
+      springt zum Block, „Als Quelle verknüpfen“ macht sie zur weiteren Quelle, und der Hinweis verschwindet. Im Log
+      stehen „Duplicate candidate“-Zeilen; die Treffer wirken weder zu streng noch zu großzügig.
 - [ ] Gliederung: „Abdeckung“ an/aus bleibt nach Neustart erhalten; Balken, Tooltip und rote 0 plausibel; Klick öffnet
       „Relevant“.
 - [ ] Reiter „Abdeckung“: Kennzahlen, Sortierung „Wenigste zuerst“, Notizen ohne passenden Ort.

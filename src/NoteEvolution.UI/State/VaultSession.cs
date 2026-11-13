@@ -164,6 +164,7 @@ public sealed class VaultSession : IDisposable
             _language.Changed += OnLanguageChanged;
         }
 
+        _duplicates = new DuplicateHints(logger);
         vault.PageReplaced += OnPageReplacedForCoverage;
         PagesChanged += _ => _coverage.Schedule();
         PlacementsChanged += _coverage.Schedule;
@@ -236,6 +237,40 @@ public sealed class VaultSession : IDisposable
 
     /// <summary>For tests: wraps <see cref="Relevance"/> (e.g. to hold its answers back); <c>null</c>: as it is.</summary>
     internal Func<IRelevanceService, IRelevanceService>? WrapRelevance { get; set; }
+
+    /// <summary>For tests: the notes' vectors instead of those of <see cref="Semantic"/>; <c>null</c>: as they are.</summary>
+    internal Func<Guid, float[]?>? NoteVectors { get; set; }
+
+    private readonly DuplicateHints _duplicates;
+
+    /// <summary>Replaced whenever a page of the vault is: the duplicate hints are computed again.</summary>
+    private volatile object _pagesStamp = new();
+
+    /// <summary>The state of the vectors and pages the duplicate hints were last computed for, and the stamp standing for it.</summary>
+    private (object? Vectors, object? Pages, object? Stamp) _duplicateStamp;
+
+    /// <summary>
+    /// The hint that the open <paramref name="note"/> says nearly the same as a note <paramref name="book"/> already
+    /// uses (<see cref="DuplicateHints"/>); null without one or without the notes' vectors. Call it on the UI thread.
+    /// </summary>
+    public DuplicateHint? DuplicateOf(NoteBlock note, Book book)
+    {
+        var index = Semantic;
+        var vectorOf = NoteVectors ?? (index is null ? null : (Func<Guid, float[]?>)index.VectorOf);
+        if (vectorOf is null)
+        {
+            return null;
+        }
+
+        var vectors = index?.Status;
+        var pages = _pagesStamp;
+        if (!ReferenceEquals(vectors, _duplicateStamp.Vectors) || !ReferenceEquals(pages, _duplicateStamp.Pages))
+        {
+            _duplicateStamp = (vectors, pages, new object());
+        }
+
+        return _duplicates.Of(note, book, Notes, vectorOf, _duplicateStamp.Stamp);
+    }
 
     /// <summary>The language model's background progress; <c>null</c> while it does not run for this vault.</summary>
     public UnderstandingProgress? Understanding => _understanding?.Worker.Progress;
@@ -1752,7 +1787,11 @@ public sealed class VaultSession : IDisposable
     }
 
     /// <summary>Raised on the thread that replaced the page (the UI thread, or the opening's thread).</summary>
-    private void OnPageReplacedForCoverage(Page page) => _coverage.Schedule();
+    private void OnPageReplacedForCoverage(Page page)
+    {
+        _pagesStamp = new object();
+        _coverage.Schedule();
+    }
 
     /// <summary>Called on any thread; never throws.</summary>
     private void RaiseUnderstandingChanged()
