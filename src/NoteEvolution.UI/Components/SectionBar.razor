@@ -119,6 +119,14 @@
                     <ReferencePicker Book="book" ExcludeKey="State.Cursor?.Key" OnPick="PickAsync" OnCancel="() => _picking = false" />
                 }
             </span>
+            @* Bold and italic for the selected text (or what is typed next), as Ctrl+B and Ctrl+I; the mouse button does not
+               take the focus from the editor, so its selection stays. A heading has no formatting. *@
+            <button type="button" class="ne-sec-bold" title="@L["SectionBoldTitle"]" aria-label="@L["SectionBoldTitle"]"
+                    disabled="@(Locked || Element is not { Kind: not ElementKind.Heading })"
+                    @onmousedown:preventDefault @onclick="@(() => OnMark.InvokeAsync("bold"))">@L["SectionBold"]</button>
+            <button type="button" class="ne-sec-italic" title="@L["SectionItalicTitle"]" aria-label="@L["SectionItalicTitle"]"
+                    disabled="@(Locked || Element is not { Kind: not ElementKind.Heading })"
+                    @onmousedown:preventDefault @onclick="@(() => OnMark.InvokeAsync("italic"))">@L["SectionItalic"]</button>
             @* A picture goes in as a block of its own after the cursor element. *@
             <button type="button" class="ne-section-image" title="@L["SectionImageTitle"]" disabled="@Locked"
                     @onclick="() => OnInsertImage.InvokeAsync()">@L["SectionImage"]</button>
@@ -361,6 +369,10 @@
     /// <summary>The caption field was closed without saving.</summary>
     [Parameter]
     public EventCallback OnImageCaptionCancel { get; set; }
+
+    /// <summary>B or I was clicked: <c>"bold"</c> or <c>"italic"</c>.</summary>
+    [Parameter]
+    public EventCallback<string> OnMark { get; set; }
 
     /// <summary>„Bild einfügen“ was clicked.</summary>
     [Parameter]

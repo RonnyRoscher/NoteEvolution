@@ -1658,7 +1658,7 @@
     <value>Strg+B / Strg+I</value>
   </data>
   <data name="KeysText5" xml:space="preserve">
-    <value>Fett / kursiv</value>
+    <value>Fett / kursiv für den markierten Text (auch mit den Knöpfen B und I); im Absatz mit dem Cursor stehen die Sterne ** und *, Rücktaste direkt dahinter bzw. Entf direkt davor entfernt die Formatierung</value>
   </data>
   <data name="KeysText6Keys" xml:space="preserve">
     <value>Strg+Z / Strg+Y</value>
@@ -1965,6 +1965,22 @@
   </data>
   <data name="PickImageFilter" xml:space="preserve">
     <value>Bilder</value>
+  </data>
+  <data name="SectionBold" xml:space="preserve">
+    <value>B</value>
+    <comment>Beschriftung des Knopfs für Fett in der Leiste (ein Buchstabe)</comment>
+  </data>
+  <data name="SectionItalic" xml:space="preserve">
+    <value>I</value>
+    <comment>Beschriftung des Knopfs für Kursiv in der Leiste (ein Buchstabe)</comment>
+  </data>
+  <data name="SectionBoldTitle" xml:space="preserve">
+    <value>Fett (Strg+B)</value>
+    <comment>Tooltip des Knopfs „B“ in der Leiste: setzt oder entfernt Fett für den markierten Text</comment>
+  </data>
+  <data name="SectionItalicTitle" xml:space="preserve">
+    <value>Kursiv (Strg+I)</value>
+    <comment>Tooltip des Knopfs „I“ in der Leiste: setzt oder entfernt Kursiv für den markierten Text</comment>
   </data>
   <data name="SectionImage" xml:space="preserve">
     <value>Bild einfügen</value>

@@ -97,6 +97,16 @@ public sealed class FakeEditorInterop : IEditorInterop, IDisposable
         return Task.CompletedTask;
     }
 
+    /// <summary>The marks passed to <see cref="ToggleMarkAsync"/>, in order.</summary>
+    public List<string> MarkToggles { get; } = [];
+
+    public Task ToggleMarkAsync(string mark)
+    {
+        MarkToggles.Add(mark);
+        Calls.Add($"mark:{mark}");
+        return Task.CompletedTask;
+    }
+
     public Task RevealAsync(Guid elementKey, int offset = 0, bool focus = true)
     {
         Reveals.Add(elementKey);

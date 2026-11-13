@@ -1669,6 +1669,25 @@ html, body {
     font-size: 0.85em;
 }
 
+/* The B and I buttons of the section bar look like what they do. */
+.ne-sec-bold {
+    font-weight: bold;
+}
+
+.ne-sec-italic {
+    font-style: italic;
+    font-family: Georgia, "Times New Roman", serif;
+}
+
+/* The Markdown stars of bold and italic in the paragraph with the cursor: shown, but no text. */
+.ne-md-star {
+    color: var(--fg-muted);
+    opacity: 0.7;
+    font-weight: normal;
+    font-style: normal;
+    user-select: none;
+}
+
 .ne-image-missing {
     color: var(--fg-muted);
     font-style: italic;

@@ -42,6 +42,8 @@ public sealed class TipTapInterop(IJSRuntime js, AppState state) : IEditorIntero
 
     public async Task ShiftDepthAsync(int delta) => await Initialized.InvokeVoidAsync("shiftDepth", delta);
 
+    public async Task ToggleMarkAsync(string mark) => await Initialized.InvokeVoidAsync("toggleMark", mark);
+
     /// <summary>Passes the nodes to the script as an array of <c>{ key, ownTextOnly }</c>.</summary>
     public async Task SetMarkedAsync(IReadOnlyList<MarkedNode> nodes) =>
         await Initialized.InvokeVoidAsync(

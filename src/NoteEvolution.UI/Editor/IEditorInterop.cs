@@ -208,6 +208,13 @@ public interface IEditorInterop : IAsyncDisposable
     Task ShiftDepthAsync(int delta);
 
     /// <summary>
+    /// Sets or removes bold (<c>"bold"</c>) or italic (<c>"italic"</c>) on the selected text, or at a cursor for what is
+    /// typed next, as Ctrl+B and Ctrl+I do, and gives the editor the focus back; the editor saves the result like typed
+    /// text.
+    /// </summary>
+    Task ToggleMarkAsync(string mark);
+
+    /// <summary>
     /// Marks the nodes of the range (<see cref="RangeInfo.Nodes"/>); the editor draws a box per contiguous piece and
     /// keeps the list for later documents, ignoring keys it does not show. An empty list removes the marking.
     /// </summary>
