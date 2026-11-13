@@ -1,4 +1,5 @@
 @using Microsoft.JSInterop
+@using NoteEvolution.Core.Books
 @using NoteEvolution.Core.Model
 @using NoteEvolution.Core.Vaults
 @implements IDisposable
@@ -46,6 +47,7 @@
         @Bar(range, Note.Block, ownOnly: true)
         @if (InDay)
         {
+            @Duplicate()
             @Hint()
         }
         @SubBullets(range, Note.Block)
@@ -53,6 +55,7 @@
     </div>
     @if (!InDay)
     {
+        @Duplicate()
         @Hint()
     }
 </article>
@@ -86,6 +89,12 @@
 
     /// <summary>The card stands on top of the notes pane (<see cref="AppState.FocusedNoteKey"/>), apart from the lists.</summary>
     [Parameter] public bool Focused { get; set; }
+
+    /// <summary>The card stands in the "Relevant" tab: that list stays after linking from it (<see cref="AppState.RelevantHold"/>).</summary>
+    [CascadingParameter(Name = "FromRelevant")] public bool FromRelevant { get; set; }
+
+    /// <summary>What linking the note as a source last had to say (a refusal or failure).</summary>
+    private AdoptMessage? _duplicateMessage;
 
     private string Origin => Note.Date is { } date
         ? date.ToString("dd.MM.yyyy", CultureInfo.InvariantCulture)
@@ -171,6 +180,78 @@
         if (!_disposed)
         {
             State.SelectNoteBlock(Note.Key, block.Key, Focused);
+        }
+    }
+
+    /// <summary>
+    /// The hint that the open note says nearly the same as a note the current book already uses
+    /// (<see cref="VaultSession.DuplicateOf"/>): a click goes to the book element that has that note as a source, and the
+    /// button links this note as a further source of it, without adding text.
+    /// </summary>
+    private RenderFragment Duplicate() =>
+        @<text>
+            @if (State is { Session: { } session, CurrentBook: { } book } && session.DuplicateOf(Note, book) is { } hint)
+            {
+                var blocked = Note.Page.IsReadOnly || book.Page.IsReadOnly;
+                <div class="ne-note-duplicate">
+                    <button type="button" class="ne-note-duplicate-jump" title="@DuplicateTitle(session, hint)"
+                            @onclick="() => GoToDuplicateAsync(hint)">@L["NoteDuplicate", hint.Percent]</button>
+                    <button type="button" class="ne-note-duplicate-link" title="@L["NoteDuplicateLinkTitle"]" disabled="@blocked"
+                            @onclick="() => LinkDuplicateAsync(hint)">@L["NoteDuplicateLink"]</button>
+                </div>
+            }
+            @if (_duplicateMessage is { } message)
+            {
+                <div class="ne-note-message @(message.IsError ? "ne-note-error" : "ne-note-info")" role="@(message.IsError ? "alert" : "status")">@L[message.Key]</div>
+            }
+        </text>;
+
+    /// <summary>The tooltip of the hint: what a click does and the text of the used note.</summary>
+    private string DuplicateTitle(VaultSession session, DuplicateHint hint) =>
+        session.Notes.Get(hint.UsedNoteKey) is { } used
+            ? L["NoteDuplicateTitle", Excerpt.FirstLine(SourceFinder.TextOf(used.Block).ReplaceLineEndings(" "), DuplicateTitleLength)].Value
+            : L["NoteDuplicateTitle", ""].Value;
+
+    /// <summary>How much of the used note's text the hint's tooltip shows.</summary>
+    private const int DuplicateTitleLength = 300;
+
+    /// <summary>
+    /// Goes to the book element that has the similar note as a source: the editor saves first, then reveals it, while
+    /// the book still has it.
+    /// </summary>
+    private async Task GoToDuplicateAsync(DuplicateHint hint)
+    {
+        try
+        {
+            if (State.FlushEditor is { } flush)
+            {
+                await flush();
+            }
+        }
+        catch (Exception ex)
+        {
+            // The text may not be saved, so the view stays where it is.
+            Logger.LogError(ex, "Saving the editor before going to a similar note's block failed");
+            return;
+        }
+
+        if (_disposed || State.CurrentBook is not { } book || BookElements.Find(book, hint.ElementKey) is null)
+        {
+            return;
+        }
+
+        State.JumpTo(hint.ElementKey);
+        State.Notify();
+    }
+
+    /// <summary>Links the note as a further source of the similar note's text block (<see cref="NoteAdoption.LinkAsSourceAsync"/>).</summary>
+    private async Task LinkDuplicateAsync(DuplicateHint hint)
+    {
+        _duplicateMessage = null;
+        _duplicateMessage = await NoteAdoption.LinkAsSourceAsync(State, Note.Key, hint.TextBlockKey, hint.ElementKey, Logger, FromRelevant);
+        if (!_disposed)
+        {
+            StateHasChanged();
         }
     }
 

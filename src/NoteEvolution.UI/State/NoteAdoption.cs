@@ -55,6 +55,20 @@ public static class NoteAdoption
             (links, book) => NewTextBlock(links.Adopt(book, noteBlockKey, position(book), includeChildren, state.HideUsedNotes)), logger, fromRelevant);
 
     /// <summary>
+    /// Links the note block as a further source of the text block <paramref name="textBlockKey"/> of the current book
+    /// without adding text (<see cref="ILinkService.Link"/>): the note counts as used. The same checks and messages as
+    /// adopting; <paramref name="revealKey"/> (the text block or the detail in it that the note resembles) is revealed.
+    /// No outcome of a placement suggestion is recorded, and the link records no undo: the source chip's × takes it back.
+    /// </summary>
+    public static Task<AdoptMessage?> LinkAsSourceAsync(
+        AppState state, Guid noteBlockKey, Guid textBlockKey, Guid revealKey, ILogger logger, bool fromRelevant = false) =>
+        RunAsync(state, noteBlockKey, (links, book) =>
+        {
+            links.Link(book, textBlockKey, noteBlockKey);
+            return (false, revealKey);
+        }, logger, fromRelevant, recordOutcome: false);
+
+    /// <summary>
     /// Whether <paramref name="variant"/> is offered for <paramref name="noteBlock"/>: the heading variants only for a
     /// note block with shown sub-points (with "Verwendete ausblenden" the hidden ones do not count, see
     /// <see cref="AppState.HideUsedNotes"/>), a sub-heading not below a level-6 heading (<see cref="ReferenceSection"/>
@@ -163,7 +177,8 @@ public static class NoteAdoption
     /// element. The notes pane is told only then, so a "Relevant" list that is to stay sees the hold and the new place.
     /// </summary>
     private static async Task<AdoptMessage?> RunAsync(
-        AppState state, Guid noteBlockKey, Func<ILinkService, Book, (bool NoteUpdatePending, Guid? Reveal)> adopt, ILogger logger, bool fromRelevant)
+        AppState state, Guid noteBlockKey, Func<ILinkService, Book, (bool NoteUpdatePending, Guid? Reveal)> adopt, ILogger logger, bool fromRelevant,
+        bool recordOutcome = true)
     {
         Guid? reveal = null;
 
@@ -180,7 +195,11 @@ public static class NoteAdoption
             state.RefreshBook();
             if (reveal is { } key)
             {
-                RecordOutcome(state, suggestion, key, fromRelevant, logger);
+                if (recordOutcome)
+                {
+                    RecordOutcome(state, suggestion, key, fromRelevant, logger);
+                }
+
                 state.RevealElement(key);
                 if (fromRelevant && state.CurrentBook is { } book)
                 {

@@ -748,6 +748,18 @@
   <data name="JournalDayFailed" xml:space="preserve">
     <value>Die Markierung konnte nicht gespeichert werden. Angezeigt wird der Stand der Datei.</value>
   </data>
+  <data name="NoteDuplicate" xml:space="preserve">
+    <value>Ähnlich schon im Buch ({0} %)</value>
+  </data>
+  <data name="NoteDuplicateTitle" xml:space="preserve">
+    <value>Zum Block im Buch springen, der diese ähnliche Notiz als Quelle hat: {0}</value>
+  </data>
+  <data name="NoteDuplicateLink" xml:space="preserve">
+    <value>Als Quelle verknüpfen</value>
+  </data>
+  <data name="NoteDuplicateLinkTitle" xml:space="preserve">
+    <value>Hängt diese Notiz als weitere Quelle an den Block, ohne Text einzufügen; sie gilt dann als verwendet</value>
+  </data>
   <data name="NoteReadOnlyHint" xml:space="preserve">
     <value>Diese Notizdatei ist nicht sicher lesbar. Übernehmen ist nicht möglich.</value>
   </data>

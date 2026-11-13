@@ -1349,6 +1349,34 @@ html, body {
     font-style: italic;
 }
 
+.ne-note-duplicate {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin-top: 4px;
+    font-size: 11px;
+}
+
+.ne-note-duplicate-jump {
+    padding: 0;
+    border: none;
+    background: none;
+    color: var(--fg-muted);
+    font: inherit;
+    text-decoration: underline dotted;
+    cursor: pointer;
+}
+
+.ne-note-duplicate-jump:hover {
+    color: var(--fg);
+}
+
+.ne-note-duplicate-link {
+    padding: 0 6px;
+    font-size: 11px;
+}
+
 .ne-note-hint,
 .ne-note-info {
     margin-top: 4px;
