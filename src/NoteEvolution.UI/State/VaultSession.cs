@@ -1026,6 +1026,44 @@ public sealed class VaultSession : IDisposable
 
     // ---- Language model ----
 
+    /// <summary>How many notes of a list count as "in front of the user" for <see cref="SetShownNotes"/>.</summary>
+    public const int ShownNotesLimit = 20;
+
+    private Guid? _priorityActive;
+    private IReadOnlyList<Guid> _priorityShown = [];
+
+    /// <summary>
+    /// The notes the user has in front of them, most important first: the active block's note, then the notes a list
+    /// shows (<see cref="SetShownNotes"/>). The background work computes their core statements and placement checks
+    /// before those of all other notes (<see cref="UnderstandingWorker.SetPriority"/>).
+    /// </summary>
+    internal IReadOnlyList<Guid> PriorityNotes =>
+        _priorityActive is { } active ? [active, .. _priorityShown.Where(key => key != active)] : _priorityShown;
+
+    /// <summary>The note of the active block in the notes pane (its main point's key), or null without one.</summary>
+    public void SetActiveNote(Guid? noteKey)
+    {
+        if (_priorityActive != noteKey)
+        {
+            _priorityActive = noteKey;
+            _understanding?.Worker.SetPriority(PriorityNotes);
+        }
+    }
+
+    /// <summary>
+    /// The notes a list shows for the place the user works at (the "Relevant" tab), best first; at most
+    /// <see cref="ShownNotesLimit"/> count. An empty list when it shows none or is closed.
+    /// </summary>
+    public void SetShownNotes(IReadOnlyList<Guid> noteKeys)
+    {
+        IReadOnlyList<Guid> shown = [.. noteKeys.Distinct().Take(ShownNotesLimit)];
+        if (!_priorityShown.SequenceEqual(shown))
+        {
+            _priorityShown = shown;
+            _understanding?.Worker.SetPriority(PriorityNotes);
+        }
+    }
+
     /// <summary>Called after every input in the editor: the background work waits until nothing was typed for a while (spec 4).</summary>
     public void NotifyTyping() => _understanding?.Worker.NotifyTyping();
 
@@ -1321,6 +1359,8 @@ public sealed class VaultSession : IDisposable
             _understanding = parts;
         }
 
+        // What the user looks at was told before the language model's parts existed.
+        worker.SetPriority(PriorityNotes);
         worker.ProgressChanged += () => OnUnderstandingProgress(parts);
         store.EntryChanged += fingerprint => OnEntryChanged(parts, fingerprint);
         Feed(notesChanged: true);

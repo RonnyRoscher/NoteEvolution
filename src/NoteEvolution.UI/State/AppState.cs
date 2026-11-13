@@ -588,6 +588,7 @@ public sealed class AppState
             if (_noteSelection is { } selection && FindNote(selection) is null)
             {
                 _noteSelection = null;
+                _session?.SetActiveNote(null);
             }
 
             return _noteSelection;
@@ -618,6 +619,9 @@ public sealed class AppState
         if (_noteSelection != selection)
         {
             _noteSelection = selection;
+
+            // The background work computes this note's core statement and placement first.
+            _session?.SetActiveNote(noteKey);
             Notify();
         }
     }
@@ -645,6 +649,7 @@ public sealed class AppState
         if (_noteSelection is not null)
         {
             _noteSelection = null;
+            _session?.SetActiveNote(null);
             Notify();
         }
     }

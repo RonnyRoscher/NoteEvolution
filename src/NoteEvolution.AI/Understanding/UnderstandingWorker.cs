@@ -81,6 +81,8 @@ public sealed class UnderstandingWorker : IDisposable
     private Work _work = new([], null, [], [], []);
     private bool _workChanged = true;
     private bool _workSet;
+    private IReadOnlyList<Guid> _priority = [];
+    private bool _priorityChanged;
     private DateTimeOffset _lastTyping = DateTimeOffset.MinValue;
     private bool _paused;
     private bool _disposed;
@@ -91,6 +93,7 @@ public sealed class UnderstandingWorker : IDisposable
 
     // Only touched by the loop.
     private Work _planWork = new([], null, [], [], []);
+    private IReadOnlyList<Guid> _planPriority = [];
     private Plan? _plan;
     private bool _planStale = true;
     private bool _planned;
@@ -159,7 +162,7 @@ public sealed class UnderstandingWorker : IDisposable
     /// <see cref="UnderstandingItems.ForBook"/> builds it) with the current section, its sub-sections and its ancestors
     /// first, then the notes in the given order (the caller sorts them newest first), then the headings of other books, then
     /// the placement checks. Within each group, items whose content changed (an older entry of the same identity exists)
-    /// come first.
+    /// come first. The notes of <see cref="SetPriority"/> go before the other notes, with their checks.
     /// </summary>
     public void SetWork(IReadOnlyList<UnderstandingItem> currentBook, Guid? currentSectionKey,
         IReadOnlyList<UnderstandingItem> notes, IReadOnlyList<UnderstandingItem> otherBooks,
@@ -170,6 +173,28 @@ public sealed class UnderstandingWorker : IDisposable
             _work = new Work(currentBook, currentSectionKey, notes, otherBooks, placements ?? []);
             _workChanged = true;
             _workSet = true;
+        }
+
+        Signal();
+    }
+
+    /// <summary>
+    /// The notes the user has in front of them now (their keys, most important first): after the current book's
+    /// headings, their core statements and then their placement checks come before all other notes, the other books and
+    /// the other checks, in this order. The request running now is not cancelled; the order holds from the next one.
+    /// What is computed does not change. An empty list gives the order of <see cref="SetWork"/>.
+    /// </summary>
+    public void SetPriority(IReadOnlyList<Guid> noteKeys)
+    {
+        lock (_gate)
+        {
+            if (_priority.SequenceEqual(noteKeys))
+            {
+                return;
+            }
+
+            _priority = [.. noteKeys];
+            _priorityChanged = true;
         }
 
         Signal();
@@ -705,6 +730,13 @@ public sealed class UnderstandingWorker : IDisposable
                 _unembeddable.Clear();
                 _planned = _workSet;
             }
+
+            if (_priorityChanged)
+            {
+                _planPriority = _priority;
+                _priorityChanged = false;
+                _planStale = true;
+            }
         }
 
         if (_planStale || _plan is null)
@@ -750,11 +782,23 @@ public sealed class UnderstandingWorker : IDisposable
 
         // An ancestor waits for all its children, so its whole chapter comes first; the section's own path before its siblings.
         var (path, chapter) = SectionAndChapter(work.Book, work.SectionKey);
+
+        // The notes the user has in front of them (SetPriority): their rank; their cores and checks go before the rest.
+        var rank = new Dictionary<Guid, int>();
+        foreach (var key in _planPriority)
+        {
+            rank.TryAdd(key, rank.Count);
+        }
+
+        IEnumerable<UnderstandingItem> First(IReadOnlyList<UnderstandingItem> group) =>
+            group.Where(i => rank.ContainsKey(i.Key)).OrderBy(i => rank[i.Key]);
         var groups = new[]
         {
             work.Book.Where(i => path.Contains(i.Fingerprint)),
             work.Book.Where(i => chapter.Contains(i.Fingerprint) && !path.Contains(i.Fingerprint)),
             work.Book.Where(i => !chapter.Contains(i.Fingerprint)),
+            First(work.Notes),
+            First(work.Placements),
             work.Notes,
             work.OtherBooks,
             work.Placements,

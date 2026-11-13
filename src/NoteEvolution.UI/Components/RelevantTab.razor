@@ -146,9 +146,17 @@
         Refresh();
     }
 
+    /// <summary>
+    /// Tells the session which notes the list shows (placed here first, then the similar ones): the background work
+    /// computes their core statements and placement checks before those of other notes.
+    /// </summary>
+    private void ReportShown() =>
+        State.Session?.SetShownNotes([.. _placed.Select(p => p.Key), .. _hits.Select(hit => hit.Key)]);
+
     public void Dispose()
     {
         _disposed = true;
+        State.Session?.SetShownNotes([]);
         State.RelevantHold = null;
         Unsubscribe();
         _generation++;
@@ -197,6 +205,7 @@
         _placed = PlacedHere(session, book, Filter);
         var placedKeys = _placed.Select(p => p.Key).ToHashSet();
         _hits.RemoveAll(hit => placedKeys.Contains(hit.Key));
+        ReportShown();
         StateHasChanged();
     });
 
@@ -317,6 +326,7 @@
             _hits = [];
             _placed = [];
             _keptOnly = [];
+            ReportShown();
             return;
         }
 
@@ -369,6 +379,7 @@
                 (_hits, _keptOnly) = WhereToPins.Merge(_hits, hits, hit => hit.Key, State.WhereToOpenNotes);
                 _placed = placed;
                 _computed = true;
+                ReportShown();
                 StateHasChanged();
             });
         }
