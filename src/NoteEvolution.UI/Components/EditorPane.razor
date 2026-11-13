@@ -45,7 +45,7 @@
                     OnAppendixPick="OnAppendixPicked" CitationLocator="@(_citationEdit?.Locator)" CitationEdit="_citationEdit"
                     OnCitationSave="SaveCitationAsync" OnCitationCancel="CancelCitationEdit"
                     ImageCaption="@(_imageEdit?.Caption)" ImageEdit="_imageEdit" OnImageCaptionSave="SaveImageCaptionAsync"
-                    OnImageCaptionCancel="CancelImageEdit" OnInsertImage="InsertImageFromFileAsync" />
+                    OnImageCaptionCancel="CancelImageEdit" OnInsertImage="InsertImageFromFileAsync" OnMark="Editor.ToggleMarkAsync" />
     }
 </div>
 

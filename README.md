@@ -95,6 +95,13 @@ Am unteren Rand der Markierung stehen die Abschnittsknöpfe und die Quellen:
 | Überschrift entfernen (der Titel wird ein Textblock, der Inhalt bleibt) | Rücktaste am Anfang des Titels |
 | Abschnitt löschen | nur Knopf |
 
+**Fett und kursiv:** Die Knöpfe **B** und *I* in der Leiste (wie Strg+B und Strg+I) setzen oder entfernen Fett bzw.
+Kursiv für den markierten Text, auch über mehrere Absätze; ohne Markierung gilt es für das, was als Nächstes getippt
+wird. Getippte Sterne (`**Text**`, `*Text*`) werden beim Schließen zur Formatierung. Im Absatz mit dem Cursor zeigt der
+Editor die Sterne der Datei grau an (`**` um Fettes, `*` um Kursives, `***` um beides); sie sind Anzeige, kein Text.
+Rücktaste direkt hinter den öffnenden Sternen oder Entf direkt vor den schließenden entfernt die Formatierung (bei
+`***` zuerst Kursiv, dann Fett). In Überschriften gibt es keine Formatierung.
+
 **Teilen** (neben „Zusammenfügen“) teilt den Textblock an der Cursorstelle in zwei, wie Strg+Enter; Strg+Z im Editor
 nimmt es zurück. Alle Tastenkürzel listet der Knopf **„Tastenkürzel“** in der Kopfzeile.
 
@@ -539,6 +546,10 @@ Editor
 - [ ] Einen Block am farbigen Balken links seiner Markierung packen und unter ein anderes Kapitel ziehen; danach ist er in der
       Datei richtig eingerückt.
 - [ ] Schalter „Quellen anzeigen“ und die Randmarkierung bei Blöcken mit Quellen.
+- [ ] Fett/kursiv: Cursor in einen Absatz mit fettem und kursivem Text: graue Sterne erscheinen nur dort und
+      verschwinden beim Verlassen des Absatzes und des Editors; Rücktaste direkt hinter `**` entfernt Fett; Text
+      markieren und „B“ bzw. „I“ klicken (die Markierung bleibt dabei sichtbar) setzt und entfernt die Formatierung,
+      ebenso Strg+B/Strg+I; die Datei enthält danach `**…**` bzw. `*…*`.
 - [ ] Rückgängig: nach „Danach“ einer Notiz steht „Rückgängig: …“ auf dem Knopf; Strg+Z im Editor (ohne vorher zu
       tippen) nimmt die Übernahme zurück, daneben steht „… zurückgenommen.“. Erst tippen, dann Strg+Z: nur das
       Getippte geht.

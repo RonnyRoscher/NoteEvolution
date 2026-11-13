@@ -1015,12 +1015,16 @@ const Keys = Extension.create({
             Backspace: () => {
                 const { state, view } = this.editor;
                 const { selection } = state;
+                if (removeStarsAtCursor(state, view.dispatch, true)) {
+                    return true;
+                }
                 if (selection.empty && selection.$from.parentOffset === 0 && inHeading(state)) {
                     return section('RemoveHeading')();
                 }
                 return deleteReference(state, view.dispatch, false);
             },
-            Delete: () => deleteReference(this.editor.state, this.editor.view.dispatch, true),
+            Delete: () => removeStarsAtCursor(this.editor.state, this.editor.view.dispatch, false)
+                || deleteReference(this.editor.state, this.editor.view.dispatch, true),
             'Mod-Shift-n': section('ToggleRemark'),
             'Mod-Shift-N': section('ToggleRemark'),
             'Alt-ArrowUp': section('RangeUp'),
@@ -1246,6 +1250,150 @@ function markedDecorations(doc, marked) {
 
 const markedKey = new PluginKey('markedNodes');
 
+// ---- The Markdown stars of bold and italic ----
+// In the paragraph with the cursor, bold text stands between ** and italic text between * (both: ***), as the file has
+// it. The stars are widgets, no text of the document: nothing about saving or offsets changes. Backspace right after the
+// opening stars, or Delete right before the closing ones, removes that formatting (italic before bold where both start
+// or end there). Only while the editor has the focus.
+
+const starsKey = new PluginKey('markdownStars');
+
+/** The star marks in the order they open (the closing order is the reverse): [mark name, stars]. */
+const starMarks = [['bold', '**'], ['italic', '*']];
+
+const hasMark = (node, name) => !!node && node.marks.some(mark => mark.type.name === name);
+
+/** The paragraph the cursor is in ({ node, start: position of its content }), or null in a heading or a node selection. */
+function cursorPara(state) {
+    const { $from } = state.selection;
+    return $from.parent.type.name === 'para' ? { node: $from.parent, start: $from.start() } : null;
+}
+
+function starWidget(pos, stars, opening) {
+    const dom = document.createElement('span');
+    dom.className = 'ne-md-star';
+    dom.textContent = stars;
+    // Opening stars stand before the cursor at their position, closing ones after it.
+    return Decoration.widget(pos, dom, { side: opening ? -1 : 1, marks: [], ignoreSelection: true, key: `${opening ? 'o' : 'c'}${stars}` });
+}
+
+/** The stars of the paragraph with the cursor; none without the focus. */
+function starDecorations(state, focused) {
+    const para = focused ? cursorPara(state) : null;
+    if (!para) {
+        return DecorationSet.empty;
+    }
+    const decorations = [];
+    let previous = null;
+    let pos = para.start;
+    const boundary = (before, after) => {
+        // Closing stars of what ends here (innermost first), then opening stars of what starts here (outermost first).
+        const closing = [...starMarks].reverse().filter(([name]) => hasMark(before, name) && !hasMark(after, name));
+        const opening = starMarks.filter(([name]) => !hasMark(before, name) && hasMark(after, name));
+        if (closing.length > 0) {
+            decorations.push(starWidget(pos, closing.map(([, stars]) => stars).join(''), false));
+        }
+        if (opening.length > 0) {
+            decorations.push(starWidget(pos, opening.map(([, stars]) => stars).join(''), true));
+        }
+    };
+    para.node.forEach(child => {
+        boundary(previous, child);
+        previous = child;
+        pos += child.nodeSize;
+    });
+    boundary(previous, null);
+    return DecorationSet.create(state.doc, decorations);
+}
+
+/**
+ * Backspace (atStart) with the cursor right after opening stars, or Delete with it right before closing ones: removes
+ * that formatting from the whole run it stands at; italic first where both start or end there. False anywhere else.
+ */
+function removeStarsAtCursor(state, dispatch, atStart) {
+    const { selection } = state;
+    const para = selection.empty ? cursorPara(state) : null;
+    if (!para) {
+        return false;
+    }
+    const { $from } = selection;
+    const [inside, outside] = atStart ? [$from.nodeAfter, $from.nodeBefore] : [$from.nodeBefore, $from.nodeAfter];
+    const found = [...starMarks].reverse().find(([name]) => hasMark(inside, name) && !hasMark(outside, name));
+    if (!found) {
+        return false;
+    }
+    const [name] = found;
+    // The run of the mark: from the cursor to where the mark ends (or began).
+    let from = $from.pos;
+    let to = $from.pos;
+    let pos = para.start;
+    let open = false;
+    para.node.forEach(child => {
+        const end = pos + child.nodeSize;
+        if (atStart && pos >= $from.pos && (open || pos === $from.pos)) {
+            open = hasMark(child, name) && (open || pos === $from.pos);
+            if (open) {
+                to = end;
+            }
+        }
+        pos = end;
+    });
+    if (!atStart) {
+        // Backwards from the cursor.
+        const children = [];
+        let at = para.start;
+        para.node.forEach(child => {
+            children.push([at, child]);
+            at += child.nodeSize;
+        });
+        for (let i = children.length - 1; i >= 0; i--) {
+            const [start, child] = children[i];
+            if (start + child.nodeSize > $from.pos) {
+                continue;
+            }
+            if (!hasMark(child, name)) {
+                break;
+            }
+            from = start;
+        }
+    }
+    if (from === to) {
+        return false;
+    }
+    if (dispatch) {
+        dispatch(state.tr.removeMark(from, to, state.schema.marks[name]).scrollIntoView());
+    }
+    return true;
+}
+
+const MarkdownStars = Extension.create({
+    name: 'markdownStars',
+    addProseMirrorPlugins() {
+        const focus = focused => view => {
+            view.dispatch(view.state.tr.setMeta(starsKey, { focused }).setMeta('addToHistory', false));
+            return false;
+        };
+        return [
+            new Plugin({
+                key: starsKey,
+                state: {
+                    init: () => ({ focused: false, decorations: DecorationSet.empty }),
+                    apply: (tr, value, _old, state) => {
+                        const focused = tr.getMeta(starsKey)?.focused ?? value.focused;
+                        return tr.docChanged || tr.selectionSet || focused !== value.focused
+                            ? { focused, decorations: starDecorations(state, focused) }
+                            : value;
+                    },
+                },
+                props: {
+                    decorations: state => starsKey.getState(state).decorations,
+                    handleDOMEvents: { focus: focus(true), blur: focus(false) },
+                },
+            }),
+        ];
+    },
+});
+
 /**
  * Marks the nodes of the range the app gives (spec 2, "Inhalt des Bereichs"): options.marked() returns the current
  * list (a Map key → ownTextOnly). The decorations are computed anew when the document changes, when a transaction
@@ -1464,6 +1612,7 @@ export function createEditor(host, dotnet, options = {}) {
             UniqueKeys,
             FixedHeadings,
             MarkedNodes.configure({ marked: () => marked }),
+            MarkdownStars,
             GlossaryMarks.configure({ marks: () => glossaryMarks, onClicked: key => call('GlossaryClicked', key) }),
         ],
         content: { type: 'doc', content: [{ type: 'textBlock', attrs: { key: newKey() }, content: [{ type: 'para' }] }] },
@@ -1583,6 +1732,15 @@ export function createEditor(host, dotnet, options = {}) {
         /** The split button of the section bar: Ctrl+Enter at the cursor, with the focus back in the editor. */
         splitAtCursor() {
             editor.chain().focus().command(splitTextBlock).run();
+        },
+        /**
+         * The B and I buttons of the section bar: sets or removes bold or italic on the selected text (at a cursor: for
+         * what is typed next), as Ctrl+B and Ctrl+I do, with the focus back in the editor. Other names do nothing.
+         */
+        toggleMark(name) {
+            if (name === 'bold' || name === 'italic') {
+                editor.chain().focus().toggleMark(name).run();
+            }
         },
         /** The indent buttons of the section bar on a sub-point: Tab (+1) or Shift+Tab (−1) there, with the focus back in the editor. */
         shiftDepth(delta) {
