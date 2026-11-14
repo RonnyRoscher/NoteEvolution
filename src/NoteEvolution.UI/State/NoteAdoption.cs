@@ -58,13 +58,13 @@ public static class NoteAdoption
     /// Links the note block as a further source of the text block <paramref name="textBlockKey"/> of the current book
     /// without adding text (<see cref="ILinkService.Link"/>): the note counts as used. The same checks and messages as
     /// adopting; <paramref name="revealKey"/> (the text block or the detail in it that the note resembles) is revealed.
-    /// No outcome of a placement suggestion is recorded, and the link records no undo: the source chip's × takes it back.
+    /// No outcome of a placement suggestion is recorded; "Rückgängig" takes the link back.
     /// </summary>
     public static Task<AdoptMessage?> LinkAsSourceAsync(
         AppState state, Guid noteBlockKey, Guid textBlockKey, Guid revealKey, ILogger logger, bool fromRelevant = false) =>
         RunAsync(state, noteBlockKey, (links, book) =>
         {
-            links.Link(book, textBlockKey, noteBlockKey);
+            links.Link(book, textBlockKey, noteBlockKey, undoable: true);
             return (false, revealKey);
         }, logger, fromRelevant, recordOutcome: false);
 

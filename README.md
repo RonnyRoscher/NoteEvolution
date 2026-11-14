@@ -110,7 +110,7 @@ eigenen Text des Blocks am ähnlichsten sind, mit Datum, ganzem Text samt Unterp
 ganze Breite der Leiste); schon anderswo verwendete Notizen
 stehen mit „verwendet“ dabei (Tooltip: in welchen Büchern), die bisherigen Quellen des Blocks fehlen. „Als Quelle
 verknüpfen“ verknüpft wie der `[handled]`-Assistent: der Block bekommt `source::`, die Notiz
-`used-in:: [[Buch]] ((id))`; das × am Quellen-Chip nimmt es zurück.
+`used-in:: [[Buch]] ((id))`; „Rückgängig“ oder das × am Quellen-Chip nimmt es zurück.
 
 **Quellen der Leiste:** „N Quellen ▸“ zeigt die Verknüpfungen des Bereichs, die des Textblocks und die seiner Details
 (bei einer Überschrift die ihres ganzen Abschnitts), je Verknüpfung eine Zeile; hängt dieselbe Notiz an mehreren Blöcken,
@@ -464,7 +464,7 @@ verglichen; dadurch weiß jede Überschrift, worum es in ihren Unterabschnitten 
 - **Ähnlich schon im Buch:** Sagt eine offene Notiz fast dasselbe wie eine Notiz, die das aktuelle Buch schon als
   Quelle hat, zeigt ihre Karte „Ähnlich schon im Buch (94 %)“ (Tooltip: der Text der verwendeten Notiz). Ein Klick
   springt zum Block mit dieser Quelle; „Als Quelle verknüpfen“ hängt die offene Notiz als weitere Quelle an dessen
-  Textblock, ohne Text einzufügen (sie gilt dann als verwendet; das × am Quellen-Chip nimmt es zurück). Verglichen
+  Textblock, ohne Text einzufügen (sie gilt dann als verwendet; „Rückgängig“ nimmt es zurück). Verglichen
   werden die Bedeutungsvektoren der Notizen (lokale KI, kein Sprachmodell), ab 92 % Ähnlichkeit; die eigenen
   Unterpunkte einer Notiz zählen nicht, Notizen aus anderen Büchern und Text ohne Quelle auch nicht. Die Schwelle ist
   geschätzt: das Log hält jedes Paar ab 85 % als „Duplicate candidate 0.943 hint=True …“ fest. Die Vorschläge der

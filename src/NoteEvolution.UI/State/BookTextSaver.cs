@@ -327,7 +327,7 @@ public sealed class BookTextSaver(AppState state, ILogger logger)
 
     /// <summary>
     /// Links the note as a source of the text block (after <see cref="Save"/>): <c>source::</c> on the block,
-    /// <c>used-in::</c> with the block's id on the note (<see cref="ILinkService.Link"/>). Refused like
+    /// <c>used-in::</c> with the block's id on the note (<see cref="ILinkService.Link"/>, with its undo action). Refused like
     /// <see cref="RemoveSource"/>.
     /// </summary>
     public void AddSource(Guid textBlockKey, Guid noteBlockKey)
@@ -364,7 +364,7 @@ public sealed class BookTextSaver(AppState state, ILogger logger)
 
         try
         {
-            session.Links.Link(book, textBlockKey, noteBlockKey);
+            session.Links.Link(book, textBlockKey, noteBlockKey, undoable: true);
         }
         catch (FileChangedExternallyException)
         {

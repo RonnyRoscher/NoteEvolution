@@ -151,6 +151,70 @@ public class LinkTests
     }
 
     [Fact]
+    public void Link_Undoable_UndoTakesTheSourceAndTheUsageBack_TheNoteKeepsItsId()
+    {
+        using var s = new LinkSetup();
+
+        s.Links.Link(s.Book, s.Text("Erster Textblock").Key, s.Note("Kern").Key, undoable: true);
+
+        var noteId = s.Note("Kern").Id;
+        Assert.Equal("Als Quelle verknüpfen", s.Undo.NextDescription);
+
+        s.Undo.Undo();
+
+        Assert.Equal(LinkSetup.DefaultBook, s.ReadBook());
+        Assert.Equal($"- Kern\n  collapsed:: true\n  id:: {noteId}\n\t- Detail\n- Zweite Notiz\n", s.ReadJournal());
+        Assert.False(s.Undo.CanUndo);
+        Assert.Empty(s.Pending.Load());
+    }
+
+    [Fact]
+    public void Link_Undoable_FurtherSource_UndoKeepsTheOtherSourceAndGivesTheIdlessEntryBack()
+    {
+        const string source = "\t\t  id:: 6f1c2a3b-0000-4000-8000-000000000001\n\t\t  source:: ((6f1c2a3b-0000-4000-8000-000000000002))\n";
+        var book = LinkSetup.DefaultBook.Replace("- Erster Textblock\n", "- Erster Textblock\n" + source);
+        const string journal = "- Kern\n  id:: 6f1c2a3b-0000-4000-8000-000000000003\n  used-in:: [[Buch - Test]]\n- Zweite Notiz\n";
+        using var s = new LinkSetup(book, journal);
+
+        s.Links.Link(s.Book, s.Text("Erster Textblock").Key, s.Note("Kern").Key, undoable: true);
+        Assert.Contains("((6f1c2a3b-0000-4000-8000-000000000002)), ((6f1c2a3b-0000-4000-8000-000000000003))", s.ReadBook());
+
+        s.Undo.Undo();
+
+        Assert.Equal(book, s.ReadBook());
+        Assert.Equal(journal, s.ReadJournal());
+    }
+
+    [Fact]
+    public void Link_Undoable_BlockChangedSince_UndoIsRefusedAndChangesNothing()
+    {
+        using var s = new LinkSetup();
+        var text = s.Text("Erster Textblock");
+        s.Links.Link(s.Book, text.Key, s.Note("Kern").Key, undoable: true);
+        s.Links.Link(s.Book, text.Key, s.Note("Zweite Notiz").Key);
+        var bookAfter = s.ReadBook();
+        var journalAfter = s.ReadJournal();
+
+        Assert.ThrowsAny<Exception>(() => s.Undo.Undo());
+
+        Assert.Equal(bookAfter, s.ReadBook());
+        Assert.Equal(journalAfter, s.ReadJournal());
+    }
+
+    [Fact]
+    public void Link_Undoable_AlreadyLinked_RecordsNoUndo()
+    {
+        using var s = new LinkSetup();
+        var text = s.Text("Erster Textblock");
+        var note = s.Note("Kern");
+        s.Links.Link(s.Book, text.Key, note.Key);
+
+        s.Links.Link(s.Book, text.Key, note.Key, undoable: true);
+
+        Assert.False(s.Undo.CanUndo);
+    }
+
+    [Fact]
     public void Link_NoteWriteFails_Pending()
     {
         using var s = new LinkSetup();
