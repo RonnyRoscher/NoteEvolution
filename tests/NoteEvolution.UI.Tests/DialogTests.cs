@@ -915,6 +915,165 @@ public class DialogTests : UiTestContext
         Assert.Empty(cut.FindAll(".ne-pdf-saved"));
     }
 
+    private async Task<IRenderedComponent<PdfExportDialog>> RenderPrintDialogAsync(TestVault tv)
+    {
+        await PdfSetupAsync(tv);
+        var cut = Render<PdfExportDialog>();
+        cut.Find("input[value='print']").Change(true);
+        return cut;
+    }
+
+    private async Task<PdfOptions> ExportAsync(IRenderedComponent<PdfExportDialog> cut)
+    {
+        var before = _exporter.Calls.Count;
+        cut.Find(".ne-pdf-export").Click();
+        cut.WaitForAssertion(() => Assert.Equal(before + 1, _exporter.Calls.Count));
+        await Task.CompletedTask;
+        return _exporter.Calls[^1].Options;
+    }
+
+    [Fact]
+    public async Task PdfExportDialog_PrintFieldsOnlyWithPrint()
+    {
+        using var tv = PdfVault();
+        await PdfSetupAsync(tv);
+        var cut = Render<PdfExportDialog>();
+        Assert.Empty(cut.FindAll(".ne-pdf-format"));
+        Assert.Empty(cut.FindAll(".ne-pdf-bleed"));
+
+        cut.Find("input[value='print']").Change(true);
+
+        Assert.Single(cut.FindAll(".ne-pdf-format"));
+        Assert.Single(cut.FindAll(".ne-pdf-bleed"));
+        Assert.Empty(cut.FindAll(".ne-pdf-width"));
+    }
+
+    [Fact]
+    public async Task PdfExportDialog_PrintPreset_IsPassedOn()
+    {
+        using var tv = PdfVault();
+        var cut = await RenderPrintDialogAsync(tv);
+
+        cut.Find(".ne-pdf-format").Change("135x215");
+        var options = await ExportAsync(cut);
+
+        Assert.Equal(new PrintLayout(135, 215, 0, false), options.Print);
+    }
+
+    [Theory]
+    [InlineData("190,5")]
+    [InlineData("190.5")]
+    public async Task PdfExportDialog_CustomFormatBleedAndMarks_ArePassedOn(string height)
+    {
+        using var tv = PdfVault();
+        var cut = await RenderPrintDialogAsync(tv);
+
+        cut.Find(".ne-pdf-format").Change("custom");
+        cut.Find(".ne-pdf-width").Change("125");
+        cut.Find(".ne-pdf-height").Change(height);
+        cut.Find(".ne-pdf-bleed").Change("3");
+        cut.Find(".ne-pdf-marks").Change(true);
+        var options = await ExportAsync(cut);
+
+        Assert.Equal(new PrintLayout(125, 190.5f, 3, true), options.Print);
+        Assert.Equal("190,5", cut.Find(".ne-pdf-height").GetAttribute("value"));
+    }
+
+    [Fact]
+    public async Task PdfExportDialog_SimpleSizes_PassNoPrint()
+    {
+        using var tv = PdfVault();
+        await PdfSetupAsync(tv);
+        var cut = Render<PdfExportDialog>();
+
+        cut.Find("input[value='A5']").Change(true);
+        var options = await ExportAsync(cut);
+
+        Assert.Null(options.Print);
+        Assert.Equal(PdfPageSize.A5, options.Size);
+    }
+
+    [Theory]
+    [InlineData("width", "99")]
+    [InlineData("height", "301")]
+    [InlineData("width", "")]
+    [InlineData("bleed", "11")]
+    [InlineData("bleed", "x")]
+    public async Task PdfExportDialog_OutOfRange_DisablesExport(string field, string value)
+    {
+        using var tv = PdfVault();
+        var cut = await RenderPrintDialogAsync(tv);
+        cut.Find(".ne-pdf-format").Change("custom");
+        Assert.False(cut.Find(".ne-pdf-export").HasAttribute("disabled"));
+
+        cut.Find($".ne-pdf-{field}").Change(value);
+
+        Assert.True(cut.Find(".ne-pdf-export").HasAttribute("disabled"));
+        Assert.Single(cut.FindAll(".ne-pdf-range"));
+    }
+
+    [Fact]
+    public async Task PdfExportDialog_MarksNeedBleed()
+    {
+        using var tv = PdfVault();
+        var cut = await RenderPrintDialogAsync(tv);
+        Assert.True(cut.Find(".ne-pdf-marks").HasAttribute("disabled"));
+        cut.Find(".ne-pdf-bleed").Change("3");
+        cut.Find(".ne-pdf-marks").Change(true);
+
+        cut.Find(".ne-pdf-bleed").Change("0");
+        var options = await ExportAsync(cut);
+
+        Assert.True(cut.Find(".ne-pdf-marks").HasAttribute("disabled"));
+        Assert.False(options.Print!.CropMarks);
+        Assert.Equal(0, options.Print.BleedMm);
+    }
+
+    [Fact]
+    public async Task PdfExportDialog_RemembersTheSettings()
+    {
+        using var tv = PdfVault();
+        var cut = await RenderPrintDialogAsync(tv);
+        cut.Find(".ne-pdf-format").Change("custom");
+        cut.Find(".ne-pdf-width").Change("125");
+        cut.Find(".ne-pdf-height").Change("190");
+        cut.Find(".ne-pdf-bleed").Change("3");
+        cut.Find(".ne-pdf-marks").Change(true);
+        await ExportAsync(cut);
+
+        Assert.True(Settings.PdfPrint);
+        Assert.Equal("custom", Settings.PdfPrintFormat);
+        Assert.Equal(125, Settings.PdfPrintWidthMm);
+        Assert.Equal(190, Settings.PdfPrintHeightMm);
+        Assert.Equal(3, Settings.PdfBleedMm);
+        Assert.True(Settings.PdfCropMarks);
+        Assert.Equal(3, UiSettings.Load(Platform.UserDataDirectory).PdfBleedMm);
+
+        var again = Render<PdfExportDialog>();
+        Assert.True(again.Find("input[value='print']").HasAttribute("checked"));
+        Assert.Equal("custom", again.Find(".ne-pdf-format").GetAttribute("value") ?? again.Find(".ne-pdf-format option[selected]").GetAttribute("value"));
+        Assert.Equal("125", again.Find(".ne-pdf-width").GetAttribute("value"));
+        Assert.Equal("190", again.Find(".ne-pdf-height").GetAttribute("value"));
+        Assert.Equal("3", again.Find(".ne-pdf-bleed").GetAttribute("value"));
+        Assert.True(again.Find(".ne-pdf-marks").HasAttribute("checked"));
+    }
+
+    [Theory]
+    [InlineData(142, "142 Seiten")]
+    [InlineData(1, "1 Seite")]
+    public async Task PdfExportDialog_ShowsThePageCount(int pages, string expected)
+    {
+        using var tv = PdfVault();
+        await PdfSetupAsync(tv);
+        _exporter.PageCount = pages;
+        var cut = Render<PdfExportDialog>();
+        Assert.Empty(cut.FindAll(".ne-pdf-pages"));
+
+        cut.Find(".ne-pdf-export").Click();
+
+        cut.WaitForAssertion(() => Assert.Equal(expected, cut.Find(".ne-pdf-pages").TextContent.Trim()));
+    }
+
     // ---- SettingsDialog ----
 
     [Fact]
@@ -1348,6 +1507,8 @@ public class DialogTests : UiTestContext
 
         public IReadOnlyList<string> Warnings { get; set; } = [];
 
+        public int PageCount { get; set; }
+
         public Exception? Failure { get; set; }
 
         public PdfExportReport Export(
@@ -1360,7 +1521,7 @@ public class DialogTests : UiTestContext
             }
 
             Calls.Add((vaultRoot, scopeKey, options, knownElsewhere));
-            return new PdfExportReport(Warnings, 0);
+            return new PdfExportReport(Warnings, PageCount);
         }
     }
 }

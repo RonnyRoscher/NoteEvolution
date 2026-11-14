@@ -1,3 +1,4 @@
+using NoteEvolution.Pdf;
 using NoteEvolution.TestSupport;
 using NoteEvolution.UI.State;
 
@@ -124,6 +125,55 @@ public class UiSettingsTests
         dir.Write("ui.json", "{ \"LastAdoptVariant\": 7 }");
 
         Assert.Equal(AdoptVariant.AtCursor, UiSettings.Load(dir.Path).LastAdoptVariant);
+    }
+
+    [Fact]
+    public void PdfPrintSettings_DefaultsAndRoundTrip()
+    {
+        using var dir = new TempDir();
+        var defaults = new UiSettings();
+        Assert.False(defaults.PdfPrint);
+        Assert.Equal(PdfPageSize.A4, defaults.PdfSize);
+        Assert.Equal("120x190", defaults.PdfPrintFormat);
+        Assert.Equal(120, defaults.PdfPrintWidthMm);
+        Assert.Equal(190, defaults.PdfPrintHeightMm);
+        Assert.Equal(0, defaults.PdfBleedMm);
+        Assert.False(defaults.PdfCropMarks);
+
+        new UiSettings
+        {
+            PdfPrint = true,
+            PdfSize = PdfPageSize.A5,
+            PdfPrintFormat = "custom",
+            PdfPrintWidthMm = 125.5,
+            PdfPrintHeightMm = 190,
+            PdfBleedMm = 3,
+            PdfCropMarks = true,
+        }.Save(dir.Path);
+        var loaded = UiSettings.Load(dir.Path);
+
+        Assert.True(loaded.PdfPrint);
+        Assert.Equal(PdfPageSize.A5, loaded.PdfSize);
+        Assert.Equal("custom", loaded.PdfPrintFormat);
+        Assert.Equal(125.5, loaded.PdfPrintWidthMm);
+        Assert.Equal(190, loaded.PdfPrintHeightMm);
+        Assert.Equal(3, loaded.PdfBleedMm);
+        Assert.True(loaded.PdfCropMarks);
+    }
+
+    [Fact]
+    public void Load_WrongPdfPrintValues_GiveDefaults()
+    {
+        using var dir = new TempDir();
+        dir.Write("ui.json", "{ \"PdfPrintWidthMm\": 5000, \"PdfPrintHeightMm\": 200, \"PdfBleedMm\": -1, \"PdfPrintFormat\": \"A3\", \"PdfSize\": 9 }");
+
+        var loaded = UiSettings.Load(dir.Path);
+
+        Assert.Equal(120, loaded.PdfPrintWidthMm);
+        Assert.Equal(190, loaded.PdfPrintHeightMm);
+        Assert.Equal(0, loaded.PdfBleedMm);
+        Assert.Equal("120x190", loaded.PdfPrintFormat);
+        Assert.Equal(PdfPageSize.A4, loaded.PdfSize);
     }
 
     private static void AssertDefaults(UiSettings settings)

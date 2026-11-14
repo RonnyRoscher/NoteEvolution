@@ -338,6 +338,15 @@ dem sie steht, auf oberster Ebene nur ihr eigener. Die Reihenfolge bleibt, die �
 verschwindet mit „Verwendete ausblenden“. Neu berechnet wird sofort, wenn der Cursor den Bereich verlässt, das Buch
 wechselt, „Verwendete ausblenden“ umgeschaltet oder die Übernahme rückgängig gemacht wird.
 
+**Druck-PDF:** Im PDF-Dialog wählt „Druck“ statt A4 oder A5 ein Buchformat für die Druckerei: 12 × 19, 13,5 × 21,5,
+14,8 × 21, 15,5 × 22 oder 17 × 22 cm, oder „Eigenes Format“ mit Breite und Höhe in mm (100 bis 300). Dezimalstellen
+dürfen mit Komma oder Punkt geschrieben werden. Der Beschnitt (0 bis 10 mm) ist bei Books on Demand 0, außer
+Bilder reichen bis an den Papierrand; dann sind es 5 mm. Schnittmarken gibt es nur bei einem Beschnitt über 0;
+Books on Demand will keine. Die Ränder sind gespiegelt (innen breiter als außen), der Text steht im Blocksatz mit
+Silbentrennung. Nach dem Export zeigt der Dialog die Seitenzahl, die Books on Demand beim Hochladen verlangt. Die
+letzten Einstellungen merkt sich die App. Grenzen: Die einzige letzte Zeile eines Absatzes kann allein auf einer neuen
+Seite stehen; das PDF ist kein PDF/X und enthält weder TrimBox noch BleedBox.
+
 ## Änderungshistorie
 
 Jeder Textblock mit `id::` hat einen Verlauf früherer Fassungen. Er liegt in `<vault>/.noteevolution/history.db`, nicht
@@ -762,7 +771,11 @@ PDF
 - [ ] PDF-Export für das ganze Buch in A4 und A5 sowie für „Aktueller Abschnitt“: der native Speichern-Dialog schlägt
       einen sinnvollen Dateinamen vor; das PDF hat Titelseite und Inhaltsverzeichnis, Schrift und Abstände sehen gut
       aus, Blöcke mit Status Relevant oder Bemerkung (auch `#notiz`) fehlen samt Details; Warnungen erscheinen im
-      Dialog.
+      Dialog; die Seitenzahl steht nach dem Export im Dialog.
+- [ ] Druck-PDF: „Druck“ mit 12 × 19 cm, dann „Eigenes Format“ (Komma und Punkt in den Feldern), Beschnitt 3 mm mit
+      Schnittmarken; der Betrachter zeigt Seitengröße samt Beschnitt, die Marken stehen im Beschnitt, die Ränder sind
+      gespiegelt, der Text ist im Blocksatz. Beschnitt 0 sperrt „Schnittmarken“, ein Wert außerhalb des Bereichs sperrt
+      „Exportieren“. Der Dialog zeigt beim nächsten Öffnen die letzten Werte.
 
 Änderungshistorie
 - [ ] Einen Textblock mit `id::` ändern, 10 Minuten warten (oder die App schließen und öffnen): „Historie“ in der Leiste

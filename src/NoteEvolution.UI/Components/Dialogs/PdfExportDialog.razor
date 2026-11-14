@@ -1,3 +1,4 @@
+@using System.Globalization
 @using NoteEvolution.Core.Books
 @using NoteEvolution.Pdf
 @inject AppState State
@@ -31,11 +32,62 @@
             @foreach (var size in Sizes)
             {
                 <label>
-                    <input type="radio" name="pdf-size" value="@size" checked="@(_size == size)" @onchange="() => _size = size" />
+                    <input type="radio" name="pdf-size" value="@size" checked="@(!_print && _size == size)" @onchange="() => { _size = size; _print = false; }" />
                     @size
                 </label>
             }
+            <label>
+                <input type="radio" name="pdf-size" value="print" checked="@_print" @onchange="() => _print = true" />
+                @L["PdfSizePrint"]
+            </label>
         </fieldset>
+        @if (_print)
+        {
+            <fieldset class="ne-pdf-print" disabled="@_busy">
+                <div class="ne-pdf-row">
+                    <label>
+                        @L["PdfFormat"]
+                        <select class="ne-pdf-format" @onchange="e => _format = e.Value?.ToString() ?? _format">
+                            @foreach (var key in UiSettings.PdfPrintFormats)
+                            {
+                                <option value="@key" selected="@(key == _format)">@FormatLabel(key)</option>
+                            }
+                        </select>
+                    </label>
+                </div>
+                @if (_format == Custom)
+                {
+                    <div class="ne-pdf-row">
+                        <label>
+                            @L["PdfWidth"]
+                            <input type="text" class="ne-pdf-width" value="@_widthText" @onchange="e => _widthText = Typed(e, PrintLayout.MinSizeMm, PrintLayout.MaxSizeMm)" />
+                        </label>
+                        @RangeNote(_widthText, PrintLayout.MinSizeMm, PrintLayout.MaxSizeMm)
+                    </div>
+                    <div class="ne-pdf-row">
+                        <label>
+                            @L["PdfHeight"]
+                            <input type="text" class="ne-pdf-height" value="@_heightText" @onchange="e => _heightText = Typed(e, PrintLayout.MinSizeMm, PrintLayout.MaxSizeMm)" />
+                        </label>
+                        @RangeNote(_heightText, PrintLayout.MinSizeMm, PrintLayout.MaxSizeMm)
+                    </div>
+                }
+                <div class="ne-pdf-row">
+                    <label>
+                        @L["PdfBleed"]
+                        <input type="text" class="ne-pdf-bleed" value="@_bleedText" @onchange="e => _bleedText = Typed(e, PrintLayout.MinBleedMm, PrintLayout.MaxBleedMm)" />
+                    </label>
+                    @RangeNote(_bleedText, PrintLayout.MinBleedMm, PrintLayout.MaxBleedMm)
+                </div>
+                <div class="ne-pdf-row">
+                    <label>
+                        <input type="checkbox" class="ne-pdf-marks" checked="@MarksOn" disabled="@(!BleedPositive)"
+                               @onchange="e => _marks = e.Value is true" />
+                        @L["PdfCropMarks"]
+                    </label>
+                </div>
+            </fieldset>
+        }
         @if (_error is not null)
         {
             <p class="ne-dialog-error" role="alert">@_error</p>
@@ -43,6 +95,7 @@
         @if (_savedTo is not null)
         {
             <p class="ne-pdf-saved" role="status">@L["PdfSaved", _savedTo]</p>
+            <p class="ne-pdf-pages">@(_pageCount == 1 ? L["PdfPagesOne"] : L["PdfPages", _pageCount])</p>
             @if (_warnings.Count == 0)
             {
                 <p class="ne-pdf-nowarnings">@L["PdfNoWarnings"]</p>
@@ -61,7 +114,7 @@
     }
     </ChildContent>
     <Footer>
-        <button type="button" class="ne-pdf-export" disabled="@(_busy || State.CurrentBook is null)" @onclick="ExportAsync">@L["PdfExportStart"]</button>
+        <button type="button" class="ne-pdf-export" disabled="@(_busy || State.CurrentBook is null || (_print && Layout is null))" @onclick="ExportAsync">@L["PdfExportStart"]</button>
         <button type="button" class="ne-pdf-close" disabled="@_busy" @onclick="OnClose">@L["Close"]</button>
     </Footer>
 </Modal>
@@ -71,6 +124,19 @@
 
     private bool _section;
     private PdfPageSize _size = PdfPageSize.A4;
+    private const string Custom = "custom";
+
+    private static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
+
+    [Inject] private UiSettings Settings { get; set; } = default!;
+
+    private bool _print;
+    private string _format = UiSettings.DefaultPdfPrintFormat;
+    private string _widthText = "";
+    private string _heightText = "";
+    private string _bleedText = "";
+    private bool _marks;
+    private int _pageCount;
     private bool _busy;
     private string? _error;
     private string? _savedTo;
@@ -84,7 +150,135 @@
             ? null
             : book.FindNode(State.CurrentSectionKey) is { AppendixKind: AppendixKind.None } node ? node : null;
 
-    protected override void OnInitialized() => _section = State.CurrentBook is { } book && SectionNode(book) is not null;
+    protected override void OnInitialized()
+    {
+        _section = State.CurrentBook is { } book && SectionNode(book) is not null;
+        _print = Settings.PdfPrint;
+        _size = Settings.PdfSize;
+        _format = Settings.PdfPrintFormat;
+        _widthText = Show(Settings.PdfPrintWidthMm);
+        _heightText = Show(Settings.PdfPrintHeightMm);
+        _bleedText = Show(Settings.PdfBleedMm);
+        _marks = Settings.PdfCropMarks;
+    }
+
+    /// <summary>A number as shown: "," as the decimal separator, whatever the machine culture.</summary>
+    private static string Show(double value) => value.ToString("0.##########", Inv).Replace('.', ',');
+
+    /// <summary>Reads a number typed with "," or "." as the decimal separator.</summary>
+    private static bool TryRead(string text, out double value)
+    {
+        value = 0;
+        return double.TryParse(
+            text.Replace(',', '.'), NumberStyles.AllowLeadingWhite | NumberStyles.AllowTrailingWhite | NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint,
+            Inv, out value) && double.IsFinite(value);
+    }
+
+    private static bool InRange(string text, double min, double max) => TryRead(text, out var v) && v >= min && v <= max;
+
+    /// <summary>The typed text; a valid number is shown in the "," form.</summary>
+    private static string Typed(ChangeEventArgs e, double min, double max)
+    {
+        var text = e.Value?.ToString() ?? "";
+        return InRange(text, min, max) ? Show(double.Parse(text.Replace(',', '.'), Inv)) : text;
+    }
+
+    private RenderFragment RangeNote(string text, double min, double max) => InRange(text, min, max)
+        ? builder => { }
+        : builder =>
+        {
+            builder.OpenElement(0, "span");
+            builder.AddAttribute(1, "class", "ne-pdf-range");
+            builder.AddContent(2, L["PdfRange", Show(min), Show(max)].Value);
+            builder.CloseElement();
+        };
+
+    private static (int Width, int Height) FormatSize(string key)
+    {
+        var parts = key.Split('x');
+        return (int.Parse(parts[0], Inv), int.Parse(parts[1], Inv));
+    }
+
+    private string FormatLabel(string key)
+    {
+        if (key == Custom)
+        {
+            return L["PdfFormatCustom"];
+        }
+
+        var (w, h) = FormatSize(key);
+        return $"{Show(w / 10.0)} × {Show(h / 10.0)} cm";
+    }
+
+    private bool BleedPositive => TryRead(_bleedText, out var b) && b > 0 && b <= PrintLayout.MaxBleedMm;
+
+    private bool MarksOn => _marks && BleedPositive;
+
+    /// <summary>The print layout of the inputs; null while a field is empty or outside its range.</summary>
+    private PrintLayout? Layout
+    {
+        get
+        {
+            if (!InRange(_bleedText, PrintLayout.MinBleedMm, PrintLayout.MaxBleedMm))
+            {
+                return null;
+            }
+
+            TryRead(_bleedText, out var bleed);
+            double w, h;
+            if (_format == Custom)
+            {
+                if (!InRange(_widthText, PrintLayout.MinSizeMm, PrintLayout.MaxSizeMm)
+                    || !InRange(_heightText, PrintLayout.MinSizeMm, PrintLayout.MaxSizeMm))
+                {
+                    return null;
+                }
+
+                TryRead(_widthText, out w);
+                TryRead(_heightText, out h);
+            }
+            else
+            {
+                (var pw, var ph) = FormatSize(_format);
+                (w, h) = (pw, ph);
+            }
+
+            var layout = new PrintLayout((float)w, (float)h, (float)bleed, bleed > 0 && _marks);
+            return layout.IsValid ? layout : null;
+        }
+    }
+
+    /// <summary>Remembers the dialog's choices; an invalid field keeps its stored value.</summary>
+    private void SaveSettings()
+    {
+        Settings.PdfPrint = _print;
+        Settings.PdfSize = _size;
+        Settings.PdfPrintFormat = _format;
+        if (InRange(_widthText, PrintLayout.MinSizeMm, PrintLayout.MaxSizeMm)
+            && InRange(_heightText, PrintLayout.MinSizeMm, PrintLayout.MaxSizeMm))
+        {
+            TryRead(_widthText, out var w);
+            TryRead(_heightText, out var h);
+            Settings.PdfPrintWidthMm = w;
+            Settings.PdfPrintHeightMm = h;
+        }
+
+        if (InRange(_bleedText, PrintLayout.MinBleedMm, PrintLayout.MaxBleedMm))
+        {
+            TryRead(_bleedText, out var bleed);
+            Settings.PdfBleedMm = bleed;
+        }
+
+        Settings.PdfCropMarks = _marks;
+        try
+        {
+            Settings.Save(Platform.UserDataDirectory);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Logger.LogWarning(ex, "Saving the UI settings failed");
+        }
+    }
 
     /// <summary>
     /// Asks where to save, then writes the PDF on a background thread. The editor saves first, so the PDF has the
@@ -97,9 +291,15 @@
             return;
         }
 
+        if (_print && Layout is null)
+        {
+            return;
+        }
+
         _busy = true;
         _error = null;
         _savedTo = null;
+        SaveSettings();
         try
         {
             try
@@ -129,13 +329,14 @@
             }
 
             Guid? scope = _section && SectionNode(book) is { } node ? node.Key : null;
-            var options = new PdfOptions(_size);
+            var options = new PdfOptions(_size, _print ? Layout : null);
             try
             {
                 // A reference to a note stays out of the PDF as before; only an id the vault does not know is missing.
                 var report = await Task.Run(
                     () => Write(book, vault.Root, scope, options, path, id => vault.FindBlockById(id) is not null));
                 _warnings = report.Warnings;
+                _pageCount = report.PageCount;
                 _savedTo = path;
             }
             catch (Exception ex)
