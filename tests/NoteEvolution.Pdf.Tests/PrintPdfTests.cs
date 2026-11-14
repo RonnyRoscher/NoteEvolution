@@ -258,6 +258,237 @@ public class PrintPdfTests
         Assert.InRange(middle, (26 + 180) / 2.0 * Mm - 10.5, (26 + 180) / 2.0 * Mm + 10.5);
     }
 
+    private const string WordsChapter = "Lange Wörter";
+    private const string HyphenationWarning = "Silbentrennung nicht verfügbar";
+
+    /// <summary>German sentences with long words; no hyphen and no digit anywhere.</summary>
+    private const string LongWords =
+        "Die Donaudampfschifffahrtsgesellschaft beschäftigte Kapitäne, deren Verantwortungsbewusstsein und " +
+        "Zuverlässigkeit weithin bekannt waren. Gemeinschaftsunterkünfte, Versicherungsbedingungen und " +
+        "Rechtsschutzversicherungen bestimmten den Arbeitsalltag der Besatzungsmitglieder.";
+
+    /// <summary>One chapter of <paramref name="paragraphs"/> paragraphs, each <paramref name="sentences"/> times <see cref="LongWords"/>.</summary>
+    private static Book LongWordsBook(int paragraphs = 12, int sentences = 1)
+    {
+        var sb = new StringBuilder($"title:: Silbenbuch\ntype:: book\n\n- # {WordsChapter}\n");
+        for (var i = 0; i < paragraphs; i++)
+        {
+            sb.Append("\t- ").AppendJoin(' ', Enumerable.Repeat(LongWords, sentences)).Append('\n');
+        }
+
+        return PdfSamples.Load(sb.ToString());
+    }
+
+    /// <summary>
+    /// The text lines of a page from the top, each with its words left to right; the line of a page number alone is
+    /// left out (the samples have no digits).
+    /// </summary>
+    private static List<List<Word>> Lines(Page page)
+    {
+        var lines = new List<List<Word>>();
+        foreach (var word in page.GetWords().OrderByDescending(w => w.BoundingBox.Bottom))
+        {
+            if (lines.Count > 0 && Math.Abs(lines[^1][0].BoundingBox.Bottom - word.BoundingBox.Bottom) < 1)
+            {
+                lines[^1].Add(word);
+            }
+            else
+            {
+                lines.Add([word]);
+            }
+        }
+
+        return [.. lines.Select(l => l.OrderBy(w => w.BoundingBox.Left).ToList()).Where(l => !(l.Count == 1 && l[0].Text.All(char.IsDigit)))];
+    }
+
+    /// <summary>
+    /// The text of a line. PdfPig reports the syllables between soft hyphens as words of their own that touch (or,
+    /// kerned, overlap) each other; they are joined without a space. U+00AD itself does not appear in the text.
+    /// </summary>
+    private static string TextOf(List<Word> line)
+    {
+        var sb = new StringBuilder(line[0].Text);
+        for (var i = 1; i < line.Count; i++)
+        {
+            sb.Append(line[i].BoundingBox.Left - line[i - 1].BoundingBox.Right < 0.5 ? "" : " ").Append(line[i].Text);
+        }
+
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// The right edge of a line's text. QuestPDF justifies the line without its line-end hyphen and hangs the hyphen
+    /// into the margin, so a trailing "-" is left out.
+    /// </summary>
+    private static double RightEdgeOfText(List<Word> line)
+    {
+        var letters = line.SelectMany(w => w.Letters).ToList();
+        var last = letters.Count > 1 && letters[^1].Value == "-" ? letters[^2] : letters[^1];
+        return last.BoundingBox.Right;
+    }
+
+    /// <summary>The text lines of the pages from the 1-based <paramref name="firstPage"/> on.</summary>
+    private static List<string> LineTexts(byte[] bytes, int firstPage = 1)
+    {
+        using var pdf = PdfDocument.Open(bytes);
+        return [.. pdf.GetPages().Where(p => p.Number >= firstPage).SelectMany(p => Lines(p).Select(TextOf))];
+    }
+
+    private static bool EndsWithHyphen(string line) => line.EndsWith('-');
+
+    /// <summary>
+    /// The running text of <paramref name="lines"/>: a line ending in a hyphen is joined to the next without a space
+    /// (the samples contain no real hyphens), U+00AD is removed, white space collapsed.
+    /// </summary>
+    private static string Dehyphenate(IEnumerable<string> lines)
+    {
+        var sb = new StringBuilder();
+        foreach (var line in lines)
+        {
+            sb.Append(EndsWithHyphen(line) ? line[..^1] : line + " ");
+        }
+
+        return Regex.Replace(sb.ToString().Replace("­", ""), @"\s+", " ").Trim();
+    }
+
+    private static int BodyStart(byte[] bytes, string chapter) => FirstPageStartingWith(PageTexts(bytes), chapter);
+
+    [Fact]
+    public void Text_IsJustified()
+    {
+        // One paragraph over several pages: every line of its second page is a full line.
+        var bytes = ExportPrint(LongWordsBook(1, 12), new PrintLayout(120, 190)).Bytes;
+        var page = BodyStart(bytes, WordsChapter) + 1;
+
+        using var pdf = PdfDocument.Open(bytes);
+        var lines = Lines(pdf.GetPage(page));
+        Assert.True(lines.Count >= 20, "a full page");
+        var right = (page % 2 == 1 ? 120 - 14 : 120 - 18) * Mm;
+        Assert.All(lines, line => Assert.InRange(RightEdgeOfText(line), right - 1.5, right + 1.5));
+        // The hanging hyphen stays close to the margin's edge.
+        Assert.All(lines, line => Assert.True(line.Max(w => w.BoundingBox.Right) < right + 4, TextOf(line)));
+    }
+
+    [Fact]
+    public void Text_IsHyphenated()
+    {
+        var bytes = ExportPrint(LongWordsBook(), new PrintLayout(120, 190)).Bytes;
+
+        Assert.DoesNotContain('-', LongWords);
+        Assert.Contains(LineTexts(bytes), EndsWithHyphen);
+    }
+
+    [Fact]
+    public void Text_IsTheSameAsInTheSimplePdf()
+    {
+        var book = LongWordsBook();
+        var print = ExportPrint(book, new PrintLayout(120, 190)).Bytes;
+        var simple = Export(book, size: PdfPageSize.A5).Bytes;
+
+        var printText = Dehyphenate(LineTexts(print, BodyStart(print, WordsChapter)));
+        var simpleText = Dehyphenate(LineTexts(simple, BodyStart(simple, WordsChapter)));
+
+        Assert.StartsWith(WordsChapter, printText);
+        Assert.Equal(simpleText.Split(' '), printText.Split(' '));
+    }
+
+    [Fact]
+    public void Headings_AreNotHyphenated()
+    {
+        // Each word fits on a line, all of them do not.
+        const string title = "Lebensgeschichten Freundschaften Verantwortung Gemeinschaftssinn Zuversicht";
+        var bytes = ExportPrint(
+            PdfSamples.Load($"title:: Titelbuch\ntype:: book\n\n- # {title}\n\t- Kurzer Text.\n"), new PrintLayout(120, 190)).Bytes;
+        var body = BodyStart(bytes, "Lebensgeschichten");
+
+        var lines = LineTexts(bytes, body);
+        Assert.NotEqual(title, lines[0]);
+        Assert.StartsWith("Lebensgeschichten", lines[0]);
+        Assert.DoesNotContain(LineTexts(bytes), EndsWithHyphen);
+    }
+
+    [Fact]
+    public void Paragraph_DoesNotStartWithASingleLineAtThePageEnd()
+    {
+        var target = Guid.Parse("00000000-0000-4000-8000-0000000000d6");
+        for (var offset = 1; offset <= 30; offset++)
+        {
+            // The first paragraph grows by about a line per book, so the page breaks fall at every point of the
+            // marked paragraphs, each of them at least two lines long. Paragraph 6 is a referenced text block.
+            var sb = new StringBuilder("title:: Schusterbuch\ntype:: book\n\n- # Kapitel\n\t- Anfang");
+            sb.Append(string.Concat(Enumerable.Repeat(" Gedanke", offset * 6))).Append('\n');
+            for (var k = 1; k <= 12; k++)
+            {
+                sb.Append($"\t- §{k}§ Wer fragt, der lernt, und wer lernt, der fragt weiter, bis aus Neugier Gewissheit " +
+                          "wird und aus Gewissheit wieder eine neue Frage folgt.\n");
+                if (k == 6)
+                {
+                    sb.Append($"\t  id:: {target}\n");
+                }
+            }
+
+            sb.Append($"\t- Siehe (({target})).\n");
+            var bytes = ExportPrint(PdfSamples.Load(sb.ToString()), new PrintLayout(120, 190)).Bytes;
+
+            using var pdf = PdfDocument.Open(bytes);
+            var pages = pdf.GetPages().Select(p => Lines(p).Select(TextOf).ToList()).ToList();
+            for (var i = 0; i < pages.Count - 1; i++)
+            {
+                if (pages[i].Count > 0 && pages[i][^1].StartsWith('§'))
+                {
+                    Assert.Fail($"Book {offset}, page {i + 1} ends with the first line of a paragraph: {pages[i][^1]}");
+                }
+            }
+
+            // The reference names the page where the paragraph starts.
+            var reference = Regex.Match(string.Join(" ", pages.Last()), @"\(S\. (\d+)\)");
+            Assert.True(reference.Success, $"Book {offset}: reference");
+            Assert.Equal(pages.FindIndex(p => p.Any(l => l.StartsWith("§6§", StringComparison.Ordinal))) + 1, int.Parse(reference.Groups[1].Value));
+        }
+    }
+
+    [Fact]
+    public void MissingPatterns_ExportWithoutHyphenation_AndWarn()
+    {
+        using var stream = new MemoryStream();
+        var book = LongWordsBook();
+        var report = new QuestPdfExporter(() => null).Export(
+            book, VaultRootOf(book), null, new PdfOptions(PdfPageSize.A5, new PrintLayout(120, 190)), stream);
+
+        Assert.Single(report.Warnings, w => w == HyphenationWarning);
+        Assert.DoesNotContain(LineTexts(stream.ToArray()), EndsWithHyphen);
+    }
+
+    [Fact]
+    public void Print_WithPatterns_DoesNotWarn() =>
+        Assert.DoesNotContain(HyphenationWarning, ExportPrint(LongWordsBook(), new PrintLayout(120, 190)).Report.Warnings);
+
+    [Fact]
+    public void SimplePdf_HasNoHyphenationAndIsLeftAligned()
+    {
+        var (bytes, report) = Export(LongWordsBook(1, 12), size: PdfPageSize.A5);
+
+        Assert.Empty(report.Warnings);
+        Assert.DoesNotContain(LineTexts(bytes), EndsWithHyphen);
+        using var pdf = PdfDocument.Open(bytes);
+        var rights = Lines(pdf.GetPage(BodyStart(bytes, WordsChapter) + 1)).Select(l => l.Max(w => w.BoundingBox.Right)).ToList();
+        Assert.True(rights.Max() - rights.Min() > 3, "ragged right edge");
+    }
+
+    [Fact]
+    public void LongUnbreakableWord_DoesNotFail()
+    {
+        var url = "https://beispiel.org/" + string.Concat(Enumerable.Repeat("verzeichnis/", 15));
+        Assert.True(url.Length >= 200);
+
+        var (bytes, report) = ExportPrint(
+            PdfSamples.Load($"title:: Linkbuch\ntype:: book\n\n- # Verweis\n\t- Siehe {url} dort.\n"), new PrintLayout(100, 100));
+
+        using var pdf = PdfDocument.Open(bytes);
+        Assert.Equal(pdf.NumberOfPages, report.PageCount);
+        Assert.Contains("dort.", string.Join(" ", PageTexts(bytes)));
+    }
+
     [Fact]
     public void SimplePdf_IsUnchanged()
     {
