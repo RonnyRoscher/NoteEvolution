@@ -60,24 +60,24 @@
                     <div class="ne-pdf-row">
                         <label>
                             @L["PdfWidth"]
-                            <input type="text" class="ne-pdf-width" value="@_widthText" @onchange="e => _widthText = Typed(e, PrintLayout.MinSizeMm, PrintLayout.MaxSizeMm)" />
+                            <input type="text" class="ne-pdf-width" value="@_widthText" aria-invalid="@Invalid(_widthText, PrintLayout.MinSizeMm, PrintLayout.MaxSizeMm)" aria-describedby="@Described(_widthText, PrintLayout.MinSizeMm, PrintLayout.MaxSizeMm, "width")" @onchange="e => _widthText = Typed(e, PrintLayout.MinSizeMm, PrintLayout.MaxSizeMm)" />
                         </label>
-                        @RangeNote(_widthText, PrintLayout.MinSizeMm, PrintLayout.MaxSizeMm)
+                        @RangeNote(_widthText, PrintLayout.MinSizeMm, PrintLayout.MaxSizeMm, "width")
                     </div>
                     <div class="ne-pdf-row">
                         <label>
                             @L["PdfHeight"]
-                            <input type="text" class="ne-pdf-height" value="@_heightText" @onchange="e => _heightText = Typed(e, PrintLayout.MinSizeMm, PrintLayout.MaxSizeMm)" />
+                            <input type="text" class="ne-pdf-height" value="@_heightText" aria-invalid="@Invalid(_heightText, PrintLayout.MinSizeMm, PrintLayout.MaxSizeMm)" aria-describedby="@Described(_heightText, PrintLayout.MinSizeMm, PrintLayout.MaxSizeMm, "height")" @onchange="e => _heightText = Typed(e, PrintLayout.MinSizeMm, PrintLayout.MaxSizeMm)" />
                         </label>
-                        @RangeNote(_heightText, PrintLayout.MinSizeMm, PrintLayout.MaxSizeMm)
+                        @RangeNote(_heightText, PrintLayout.MinSizeMm, PrintLayout.MaxSizeMm, "height")
                     </div>
                 }
                 <div class="ne-pdf-row">
                     <label>
                         @L["PdfBleed"]
-                        <input type="text" class="ne-pdf-bleed" value="@_bleedText" @onchange="e => _bleedText = Typed(e, PrintLayout.MinBleedMm, PrintLayout.MaxBleedMm)" />
+                        <input type="text" class="ne-pdf-bleed" value="@_bleedText" aria-invalid="@Invalid(_bleedText, PrintLayout.MinBleedMm, PrintLayout.MaxBleedMm)" aria-describedby="@Described(_bleedText, PrintLayout.MinBleedMm, PrintLayout.MaxBleedMm, "bleed")" @onchange="OnBleedChanged" />
                     </label>
-                    @RangeNote(_bleedText, PrintLayout.MinBleedMm, PrintLayout.MaxBleedMm)
+                    @RangeNote(_bleedText, PrintLayout.MinBleedMm, PrintLayout.MaxBleedMm, "bleed")
                 </div>
                 <div class="ne-pdf-row">
                     <label>
@@ -183,13 +183,29 @@
         return InRange(text, min, max) ? Show(double.Parse(text.Replace(',', '.'), Inv)) : text;
     }
 
-    private RenderFragment RangeNote(string text, double min, double max) => InRange(text, min, max)
+    private static string? Invalid(string text, double min, double max) => InRange(text, min, max) ? null : "true";
+
+    private static string? Described(string text, double min, double max, string field) =>
+        InRange(text, min, max) ? null : "ne-pdf-range-" + field;
+
+    /// <summary>A bleed of 0 or an invalid one takes the crop marks back, so they are off when the bleed is raised again.</summary>
+    private void OnBleedChanged(ChangeEventArgs e)
+    {
+        _bleedText = Typed(e, PrintLayout.MinBleedMm, PrintLayout.MaxBleedMm);
+        if (!BleedPositive)
+        {
+            _marks = false;
+        }
+    }
+
+    private RenderFragment RangeNote(string text, double min, double max, string field) => InRange(text, min, max)
         ? builder => { }
         : builder =>
         {
             builder.OpenElement(0, "span");
             builder.AddAttribute(1, "class", "ne-pdf-range");
-            builder.AddContent(2, L["PdfRange", Show(min), Show(max)].Value);
+            builder.AddAttribute(2, "id", "ne-pdf-range-" + field);
+            builder.AddContent(3, L["PdfRange", Show(min), Show(max)].Value);
             builder.CloseElement();
         };
 
@@ -269,7 +285,7 @@
             Settings.PdfBleedMm = bleed;
         }
 
-        Settings.PdfCropMarks = _marks;
+        Settings.PdfCropMarks = MarksOn;
         try
         {
             Settings.Save(Platform.UserDataDirectory);
@@ -299,9 +315,9 @@
         _busy = true;
         _error = null;
         _savedTo = null;
-        SaveSettings();
         try
         {
+            SaveSettings();
             try
             {
                 if (State.FlushEditor is { } flush)
