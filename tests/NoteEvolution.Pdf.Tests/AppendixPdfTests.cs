@@ -181,6 +181,22 @@ public class AppendixPdfTests
     }
 
     [Fact]
+    public void Print_AppendixAndCrossReference()
+    {
+        const string first = "00000000-0000-4000-8000-0000000000e1";
+        var body = Body().Replace("- # Erstes\n", $"- # Erstes\n  id:: {first}\n") + $"\t- Zurück zu (({first})).\n";
+        var pages = PdfExportTests.PageTexts(PrintPdfTests.ExportPrint(PdfSamples.Load(BookText(body)), new PrintLayout(120, 190)).Bytes);
+
+        Assert.Contains(pages, p => p.StartsWith("Glossar", StringComparison.Ordinal));
+        Assert.Contains(pages, p => p.StartsWith("Menschen, die mich inspiriert haben", StringComparison.Ordinal));
+        Assert.Contains(pages, p => p.StartsWith("Quellen", StringComparison.Ordinal));
+        // The only cross reference; the extraction may split the hyphenated words before it into syllables.
+        var reference = System.Text.RegularExpressions.Regex.Match(string.Join(" ", pages), @"→ Erstes \(S\. (\d+)\)");
+        Assert.True(reference.Success, "the cross reference");
+        Assert.Equal(pages.FindIndex(p => p.StartsWith("Erstes", StringComparison.Ordinal)) + 1, int.Parse(reference.Groups[1].Value));
+    }
+
+    [Fact]
     public void Export_AppendixNodeAsScope_Throws()
     {
         var book = PdfSamples.Load(BookText(Body()));

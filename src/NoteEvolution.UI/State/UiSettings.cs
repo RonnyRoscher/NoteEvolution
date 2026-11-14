@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using NoteEvolution.Core.Format;
+using NoteEvolution.Pdf;
 
 namespace NoteEvolution.UI.State;
 
@@ -115,6 +116,34 @@ public sealed class UiSettings
     /// <summary>The header shows the system meter (CPU, memory, free disk space; spec 11.2).</summary>
     public bool SystemMeterVisible { get; set; } = true;
 
+    /// <summary>The keys of the print formats in the PDF dialog (width x height in mm) and "custom".</summary>
+    public static readonly string[] PdfPrintFormats = ["120x190", "135x215", "148x210", "155x220", "170x220", "custom"];
+
+    public const string DefaultPdfPrintFormat = "120x190";
+
+    public const double DefaultPdfPrintWidthMm = 120;
+
+    public const double DefaultPdfPrintHeightMm = 190;
+
+    /// <summary>The PDF dialog has "Druck" chosen instead of A4 or A5.</summary>
+    public bool PdfPrint { get; set; }
+
+    /// <summary>The simple page size of the PDF dialog.</summary>
+    public PdfPageSize PdfSize { get; set; } = PdfPageSize.A4;
+
+    /// <summary>One of <see cref="PdfPrintFormats"/>.</summary>
+    public string PdfPrintFormat { get; set; } = DefaultPdfPrintFormat;
+
+    /// <summary>The width in mm of the custom print format.</summary>
+    public double PdfPrintWidthMm { get; set; } = DefaultPdfPrintWidthMm;
+
+    /// <summary>The height in mm of the custom print format.</summary>
+    public double PdfPrintHeightMm { get; set; } = DefaultPdfPrintHeightMm;
+
+    public double PdfBleedMm { get; set; }
+
+    public bool PdfCropMarks { get; set; }
+
     /// <summary>
     /// The book chosen last in each vault: the vault folder (full path) to the book page's path relative to it, with
     /// <c>/</c> separators. Use <see cref="LastBookOf"/> and <see cref="RememberBook"/>.
@@ -152,6 +181,28 @@ public sealed class UiSettings
             if (!Enum.IsDefined(settings.LastAdoptVariant))
             {
                 settings.LastAdoptVariant = AdoptVariant.AtCursor;
+            }
+
+            if (!Enum.IsDefined(settings.PdfSize))
+            {
+                settings.PdfSize = PdfPageSize.A4;
+            }
+
+            if (!PdfPrintFormats.Contains(settings.PdfPrintFormat))
+            {
+                settings.PdfPrintFormat = DefaultPdfPrintFormat;
+            }
+
+            if (!(settings.PdfPrintWidthMm is >= PrintLayout.MinSizeMm and <= PrintLayout.MaxSizeMm
+                  && settings.PdfPrintHeightMm is >= PrintLayout.MinSizeMm and <= PrintLayout.MaxSizeMm))
+            {
+                settings.PdfPrintWidthMm = DefaultPdfPrintWidthMm;
+                settings.PdfPrintHeightMm = DefaultPdfPrintHeightMm;
+            }
+
+            if (!(settings.PdfBleedMm is >= PrintLayout.MinBleedMm and <= PrintLayout.MaxBleedMm))
+            {
+                settings.PdfBleedMm = 0;
             }
 
             // JSON gives a case-sensitive dictionary; vault paths compare without case, as Windows does.

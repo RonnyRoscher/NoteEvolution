@@ -14,6 +14,7 @@
 
   <ItemGroup>
     <EmbeddedResource Include="Fonts\*.ttf;Fonts\OFL.txt" LogicalName="Fonts/%(Filename)%(Extension)" />
+    <EmbeddedResource Include="Hyphenation\hyph-de-1996.pat.txt;Hyphenation\hyph-de-1996.LICENSE.txt" LogicalName="Hyphenation/%(Filename)%(Extension)" />
   </ItemGroup>
 
 </Project>

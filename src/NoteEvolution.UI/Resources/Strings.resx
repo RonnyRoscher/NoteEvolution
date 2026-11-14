@@ -1153,6 +1153,36 @@
   <data name="PdfSize" xml:space="preserve">
     <value>Seitengröße</value>
   </data>
+  <data name="PdfSizePrint" xml:space="preserve">
+    <value>Druck</value>
+  </data>
+  <data name="PdfFormat" xml:space="preserve">
+    <value>Format</value>
+  </data>
+  <data name="PdfFormatCustom" xml:space="preserve">
+    <value>Eigenes Format</value>
+  </data>
+  <data name="PdfWidth" xml:space="preserve">
+    <value>Breite (mm)</value>
+  </data>
+  <data name="PdfHeight" xml:space="preserve">
+    <value>Höhe (mm)</value>
+  </data>
+  <data name="PdfBleed" xml:space="preserve">
+    <value>Beschnitt (mm)</value>
+  </data>
+  <data name="PdfCropMarks" xml:space="preserve">
+    <value>Schnittmarken</value>
+  </data>
+  <data name="PdfRange" xml:space="preserve">
+    <value>erlaubt: {0} bis {1} mm</value>
+  </data>
+  <data name="PdfPages" xml:space="preserve">
+    <value>{0} Seiten</value>
+  </data>
+  <data name="PdfPagesOne" xml:space="preserve">
+    <value>1 Seite</value>
+  </data>
   <data name="PdfExportStart" xml:space="preserve">
     <value>Exportieren …</value>
   </data>

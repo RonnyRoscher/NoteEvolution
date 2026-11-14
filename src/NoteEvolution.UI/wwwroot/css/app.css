@@ -2199,6 +2199,22 @@ html, body {
     margin-right: 14px;
 }
 
+.ne-pdf-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 4px 0;
+}
+
+.ne-pdf-row input[type="text"] {
+    width: 6em;
+}
+
+.ne-pdf-range {
+    color: var(--danger);
+    font-size: 12px;
+}
+
 .ne-dialog-error {
     color: var(--danger);
     margin: 0 0 8px;
