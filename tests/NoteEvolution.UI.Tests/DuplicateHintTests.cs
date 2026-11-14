@@ -170,6 +170,23 @@ public class DuplicateHintTests : UiTestContext
     }
 
     [Fact]
+    public async Task Link_CanBeUndone_TheNoteIsOpenAgainWithItsHint()
+    {
+        var session = await OpenAsync();
+        var cut = RenderCard(Note(session, "Fast gleich"));
+        await cut.Find(".ne-note-duplicate-link").ClickAsync(new());
+        Assert.Equal("Als Quelle verknüpfen", session.Undo.NextDescription);
+
+        session.Undo.Undo();
+        State.RefreshBook();
+
+        var note = Note(session, "Fast gleich");
+        Assert.False(note.IsUsed);
+        Assert.DoesNotContain(note.Block.Id!.Value, First.AllSources);
+        Assert.NotEmpty(RenderCard(note).FindAll(".ne-note-duplicate"));
+    }
+
+    [Fact]
     public async Task Hint_IsComputedOncePerBookState()
     {
         var session = await OpenAsync();

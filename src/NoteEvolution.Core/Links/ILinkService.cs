@@ -102,12 +102,15 @@ public interface ILinkService
     /// Fully links an existing text block and a note block (a confirmed placement): gives both an <c>id::</c>, adds
     /// the note's id to the text block's <c>source::</c>, then sets <c>used-in:: [[book]] ((text block id))</c> on the
     /// note, replacing an entry for the same book that has no block reference. Writes only property lines; what is
-    /// there already is not written again (a fully linked pair writes nothing). Records no undo action.
+    /// there already is not written again (a fully linked pair writes nothing). With <paramref name="undoable"/> a link
+    /// that wrote something records the undo action "Als Quelle verknüpfen": it gives the text block its lines from
+    /// before back (refused if the block was changed since) and takes the usage from the note again; otherwise no undo
+    /// action is recorded.
     /// </summary>
     /// <exception cref="ArgumentException">Unknown text block (a linked paragraph does not count) or note block.</exception>
     /// <exception cref="ReadOnlyPageException">The book page is read-only.</exception>
     /// <exception cref="InvalidOperationException">The note's page is read-only; nothing was changed.</exception>
-    void Link(Book book, Guid textBlockKey, Guid noteBlockKey);
+    void Link(Book book, Guid textBlockKey, Guid noteBlockKey, bool undoable = false);
 
     /// <summary>
     /// Loosens one link of a text block or a detail (<paramref name="blockKey"/>, the block carrying it): removes

@@ -331,12 +331,13 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
         return new HeadingAdoptResult(headingKey, noteUpdatePending);
     }
 
-    public void Link(Book book, Guid textBlockKey, Guid noteBlockKey)
+    public void Link(Book book, Guid textBlockKey, Guid noteBlockKey, bool undoable = false)
     {
         var bookPage = book.Page;
         EnsureWritable(bookPage);
         var textBlock = FindTextBlock(book, textBlockKey);
         var (notePage, note) = FindWritableNote(noteBlockKey);
+        var before = CaptureSubtree(textBlock);
 
         var textLines = textBlock.Lines.ToList();
         var textWasDirty = textBlock.IsDirty;
@@ -360,8 +361,44 @@ public sealed partial class LinkService(IVault vault, IPageWriter writer, UndoMa
             }
         }
 
+        // The note as the undo gives it back: with its id:: (the book may name it elsewhere), before its entry changed.
+        var noteBefore = note.Lines.ToList();
         ReplaceIdlessEntry(note, book.LinkName, textBlockId);
-        if (!UpdateNote(notePage, note, book.LinkName, textBlockId, remove: false).Pending)
+        var change = UpdateNote(notePage, note, book.LinkName, textBlockId, remove: false) with { Before = noteBefore };
+        var after = CaptureSubtree(textBlock);
+        if (undoable && (!textBlock.Lines.SequenceEqual(textLines) || !change.After.SequenceEqual(noteBefore)))
+        {
+            var bookPath = bookPage.FilePath;
+            var linkName = book.LinkName;
+            undo.Push(new UndoAction(
+                "Als Quelle verknüpfen", () => UndoLink(bookPath, linkName, textBlock.Key, before, after, change)));
+        }
+
+        if (!change.Pending)
+        {
+            RetryPending();
+        }
+    }
+
+    /// <summary>
+    /// Gives the text block its lines from before <see cref="Link"/> back (without the note in its <c>source::</c>), then
+    /// takes the usage from the note again as in <see cref="UndoUsage"/>. Refused before anything changes if the block
+    /// with its subtree is no longer exactly as <see cref="Link"/> left it (<paramref name="after"/>).
+    /// </summary>
+    private void UndoLink(
+        string bookPath, string linkName, Guid blockKey, IReadOnlyList<SubtreeBlock> before, IReadOnlyList<SubtreeBlock> after,
+        NoteChange change)
+    {
+        var page = CurrentPage(bookPath);
+        if (page.AllBlocks().FirstOrDefault(b => b.Key == blockKey) is not { } block || !SubtreeIs(block, after))
+        {
+            throw new InvalidOperationException("Der Block wurde seit dem Verknüpfen geändert.");
+        }
+
+        RestoreSubtree(before, markDirty: true);
+        SaveBook(page, () => RestoreSubtree(after, markDirty: true));
+
+        if (!UndoUsage(linkName, change, removeOtherwise: true))
         {
             RetryPending();
         }
