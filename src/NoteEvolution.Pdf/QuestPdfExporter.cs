@@ -202,8 +202,12 @@ public sealed class QuestPdfExporter : IPdfExporter
                 })));
             }
 
-            document.Page(page => Configure(page, true,
-                container => container.Column(column => ComposeBody(column, content, geometry.ContentHeight, style))));
+            // A book without any text ends with the blank page: an empty page would still carry its number.
+            if (content.Elements.Count > 0)
+            {
+                document.Page(page => Configure(page, true,
+                    container => container.Column(column => ComposeBody(column, content, geometry.ContentHeight, style))));
+            }
         }).GeneratePdf(output);
 
         IReadOnlyList<string> warnings = hyphenator is null ? [.. content.Warnings, HyphenationMissing] : content.Warnings;

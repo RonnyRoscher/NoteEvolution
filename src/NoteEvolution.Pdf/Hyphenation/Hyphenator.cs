@@ -106,8 +106,8 @@ internal sealed class Hyphenator
     }
 
     /// <summary>
-    /// Whether a whitespace-delimited token starts at <paramref name="start"/> that is an internet address (it contains
-    /// "://" or starts with "www."); such a token is not hyphenated. <paramref name="end"/> is where the token ends.
+    /// Whether a whitespace-delimited token starts at <paramref name="start"/> that is an internet or mail address (it
+    /// contains "://" or "@", or starts with "www."); such a token is not hyphenated. <paramref name="end"/> is where the token ends.
     /// </summary>
     private static bool IsInternetAddressAt(string text, int start, out int end)
     {
@@ -117,7 +117,12 @@ internal sealed class Hyphenator
         while (end < text.Length && !char.IsWhiteSpace(text[end]))
             end++;
         var token = text.AsSpan(start, end - start);
-        return token.Contains("://", StringComparison.Ordinal) || token.StartsWith("www.", StringComparison.OrdinalIgnoreCase);
+        // Punctuation before the address ("(www.…", an opening quote) does not hide it.
+        var bare = token;
+        while (bare.Length > 0 && !char.IsLetterOrDigit(bare[0]))
+            bare = bare[1..];
+        return token.Contains("://", StringComparison.Ordinal) || token.Contains('@')
+            || bare.StartsWith("www.", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool IsDigitOrSoftHyphen(char c) => char.IsDigit(c) || c == SoftHyphen;

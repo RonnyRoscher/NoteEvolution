@@ -193,6 +193,17 @@ public class PrintPdfTests
     }
 
     [Fact]
+    public void Structure_EmptyBook_HasNoNumberedEmptyPage()
+    {
+        var result = ExportPrint(PdfSamples.Load("title:: Leer\ntype:: book\n\n"), new PrintLayout(120, 190));
+        var pages = PageTexts(result.Bytes);
+
+        Assert.Equal(2, pages.Count);
+        Assert.Equal("", pages[1]);
+        Assert.Equal(2, result.Report.PageCount);
+    }
+
+    [Fact]
     public void Structure_SectionScope()
     {
         var book = PdfSamples.Load(PdfSamples.SpecBookWithTwoChapters);

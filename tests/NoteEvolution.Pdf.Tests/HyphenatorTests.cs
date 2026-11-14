@@ -102,6 +102,21 @@ public class HyphenatorTests
         Assert.Equal(input, result.Replace("­", ""));
     }
 
+    [Theory]
+    [InlineData("(www.silbentrennung.example),")]
+    [InlineData("„www.silbentrennung.example“")]
+    [InlineData("(https://beispiel.org/silbentrennung).")]
+    [InlineData("silbentrennung@beispielverzeichnis.example")]
+    public void Hyphenate_AddressInPunctuationOrMailAddressStays(string token)
+    {
+        var input = "Siehe " + token + " zur Silbentrennung";
+
+        var tokens = German.Hyphenate(input).Split(' ');
+
+        Assert.Equal(token, tokens[1]);
+        Assert.Equal("Sil|ben|tren|nung", Show(tokens[3]));
+    }
+
     [Fact]
     public void FromPatterns_KeepsTheMinimumLettersAroundABreak()
     {

@@ -27,7 +27,7 @@ Diese Spec ersetzt Abschnitt 8.2 der Hauptspec (`2026-10-05-noteevolution-design
 Der Dialog „PDF exportieren“ bekommt unter „Format“ eine dritte Wahl **Druck**. Ist sie gewählt, erscheinen:
 
 - **Endformat:** Auswahl mit 12 × 19 cm, 13,5 × 21,5 cm, 14,8 × 21 cm, 15,5 × 22 cm, 17 × 22 cm und „Eigenes
-  Format“. Bei „Eigenes Format“ zwei Zahlenfelder Breite und Höhe in mm (ganze oder halbe mm), erlaubt 100 bis
+  Format“. Bei „Eigenes Format“ zwei Zahlenfelder Breite und Höhe in mm (Dezimalstellen erlaubt), erlaubt 100 bis
   300 mm.
 - **Beschnitt:** Zahlenfeld in mm je Seite, 0 bis 10, Vorgabe 0.
 - **Schnittmarken:** Häkchen, Vorgabe aus; nur wählbar, wenn der Beschnitt größer als 0 ist.
@@ -80,6 +80,8 @@ Die Seitenzählung läuft ab der Titelseite durch; die Seitenzahlen im Inhaltsve
     Datei geprüft; ist sie anders als angenommen, wird vor dem Einbinden nachgefragt.
   - Mindestens 2 Buchstaben vor und 3 nach der Trennstelle; Wörter unter 6 Buchstaben, Wörter mit Ziffern und
     Wörter, die schon U+00AD enthalten, bleiben unberührt. Trennstellen entstehen nur zwischen Buchstaben.
+  - Internet- und Mailadressen (ein Wort mit „://“ oder „@“ oder mit „www.“ am Anfang) werden nicht getrennt,
+    damit im Druck keine Adresse mit Trennstrich steht. Hochgestellte Kürzel und Nummern werden nicht getrennt.
   - Die Muster werden einmal je Programmlauf geladen.
 - **Schusterjungen:** Ein Absatz beginnt nur auf einer Seite, wenn dort noch zwei Zeilen Platz haben; sonst
   beginnt er auf der nächsten.
