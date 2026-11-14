@@ -242,11 +242,13 @@ Drei Bereiche, Trennlinien verstellbar, Layout wird gespeichert, helles und dunk
 
 ### 8.2 Druck-PDF (Stufe 4)
 
-- Wählbares Endformat (z. B. 12,5 × 19 cm), 3 mm Beschnitt, Schnittmarken.
+Einzelheiten in `2026-11-14-druck-pdf-design.md` (ersetzt die frühere Fassung dieses Abschnitts am 2026-11-14).
+
+- Wählbares Endformat (Vorgaben und eigene Maße), einstellbarer Beschnitt (Vorgabe 0), Schnittmarken zuschaltbar.
 - Gespiegelte Innen- und Außenränder.
-- Deutsche Silbentrennung, Schutz vor Hurenkindern und Schusterjungen.
-- PDF/X für die Druckerei.
-- Zu Beginn der Stufe entscheidet ein kurzer Test, ob QuestPDF genügt oder Typst als Satzsystem eingebunden wird.
+- Blocksatz mit deutscher Silbentrennung, Schutz vor Schusterjungen; Hurenkinder werden nicht verhindert.
+- Kein PDF/X: BoD verlangt es nicht, QuestPDF liefert es nicht.
+- Der Test zu Beginn der Stufe (2026-11-14) hat ergeben: QuestPDF genügt, Typst wird nicht eingebunden.
 
 ## 9. Fehlerbehandlung
 
