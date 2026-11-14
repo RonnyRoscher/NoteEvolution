@@ -30,8 +30,17 @@ public sealed class QuestPdfExporter : IPdfExporter
             _ => throw new ArgumentOutOfRangeException(nameof(options)),
         };
 
+        // TotalPages is not known while the document is laid out, so the last page is found by watching the page
+        // numbers go by in a condition that never shows anything. Layout runs more than once; the maximum is safe.
+        var pageCount = 0;
+
         void Configure(PageDescriptor page)
         {
+            page.Background().ShowIf(context =>
+            {
+                pageCount = Math.Max(pageCount, context.PageNumber);
+                return false;
+            });
             page.Size(pageSize);
             page.Margin(margin);
             page.DefaultTextStyle(style => style.FontFamily(QuestPdfSetup.FontFamily).FontSize(BodySize).LineHeight(1.4f));
@@ -70,7 +79,7 @@ public sealed class QuestPdfExporter : IPdfExporter
             });
         }).GeneratePdf(output);
 
-        return new PdfExportReport(content.Warnings);
+        return new PdfExportReport(content.Warnings, pageCount);
     }
 
     private static void ComposeTitlePage(ColumnDescriptor column, PdfContent content)

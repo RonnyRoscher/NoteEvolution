@@ -645,4 +645,39 @@ public class PdfExportTests
 
         Assert.Empty(pdf.GetPage(3).GetAnnotations());
     }
+
+    [Theory]
+    [InlineData(PdfPageSize.A4, false)]
+    [InlineData(PdfPageSize.A5, false)]
+    [InlineData(PdfPageSize.A4, true)]
+    [InlineData(PdfPageSize.A5, true)]
+    public void Export_ReportsThePageCount(PdfPageSize size, bool longBook)
+    {
+        var text = PdfSamples.SpecBookWithTwoChapters;
+        if (longBook)
+        {
+            text += string.Concat(Enumerable.Range(1, 300).Select(i =>
+                $"\t- Langer Absatz {i}: Wer fragt, der lernt, und wer lernt, der fragt weiter, bis aus Neugier Gewissheit wird.\n"));
+        }
+
+        var (bytes, report) = Export(PdfSamples.Load(text), size: size);
+
+        using var pdf = PdfDocument.Open(bytes);
+        Assert.Equal(pdf.NumberOfPages, report.PageCount);
+        Assert.True(report.PageCount > 3);
+    }
+
+    [Theory]
+    [InlineData(100f, 100f, 0f, true)]
+    [InlineData(300f, 300f, 10f, true)]
+    [InlineData(99.9f, 190f, 0f, false)]
+    [InlineData(120f, 300.5f, 0f, false)]
+    [InlineData(120f, 190f, -1f, false)]
+    [InlineData(120f, 190f, 10.5f, false)]
+    [InlineData(float.NaN, 190f, 0f, false)]
+    [InlineData(120f, float.NaN, 0f, false)]
+    [InlineData(120f, 190f, float.NaN, false)]
+    [InlineData(float.PositiveInfinity, 190f, 0f, false)]
+    public void PrintLayout_IsValid(float width, float height, float bleed, bool expected) =>
+        Assert.Equal(expected, new PrintLayout(width, height, bleed).IsValid);
 }

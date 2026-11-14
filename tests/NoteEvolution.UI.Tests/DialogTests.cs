@@ -1360,7 +1360,7 @@ public class DialogTests : UiTestContext
             }
 
             Calls.Add((vaultRoot, scopeKey, options, knownElsewhere));
-            return new PdfExportReport(Warnings);
+            return new PdfExportReport(Warnings, 0);
         }
     }
 }

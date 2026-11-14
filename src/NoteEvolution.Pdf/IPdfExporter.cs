@@ -8,10 +8,22 @@ public enum PdfPageSize
     A5,
 }
 
-public sealed record PdfOptions(PdfPageSize Size);
+/// <summary>The page format of a print PDF: trim size, bleed and crop marks, all in millimetres.</summary>
+public sealed record PrintLayout(float WidthMm, float HeightMm, float BleedMm = 0, bool CropMarks = false)
+{
+    public const float MinSizeMm = 100, MaxSizeMm = 300, MinBleedMm = 0, MaxBleedMm = 10;
 
-/// <summary>What the export noticed on the way, e.g. images that could not be embedded.</summary>
-public sealed record PdfExportReport(IReadOnlyList<string> Warnings);
+    /// <summary>Whether the sizes and the bleed are inside the limits.</summary>
+    public bool IsValid =>
+        WidthMm is >= MinSizeMm and <= MaxSizeMm
+        && HeightMm is >= MinSizeMm and <= MaxSizeMm
+        && BleedMm is >= MinBleedMm and <= MaxBleedMm;
+}
+
+public sealed record PdfOptions(PdfPageSize Size, PrintLayout? Print = null);
+
+/// <summary>What the export noticed on the way, e.g. images that could not be embedded, and the pages it wrote.</summary>
+public sealed record PdfExportReport(IReadOnlyList<string> Warnings, int PageCount);
 
 public interface IPdfExporter
 {
