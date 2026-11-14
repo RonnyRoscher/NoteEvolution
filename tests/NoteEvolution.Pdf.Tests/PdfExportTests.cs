@@ -21,7 +21,7 @@ public class PdfExportTests
     }
 
     /// <summary>The vault of a book in <c>&lt;vault&gt;/pages</c>: the folder above the book's folder.</summary>
-    private static string VaultRootOf(Book book) =>
+    internal static string VaultRootOf(Book book) =>
         Path.GetDirectoryName(Path.GetDirectoryName(Path.GetFullPath(book.Page.FilePath))!)!;
 
     private static string Normalize(string text) => Regex.Replace(text, @"\s+", " ").Trim();
