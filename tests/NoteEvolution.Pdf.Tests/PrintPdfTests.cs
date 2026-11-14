@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.RegularExpressions;
 using NoteEvolution.Core.Books;
+using NoteEvolution.Pdf.Hyphenation;
 using NoteEvolution.TestSupport;
 using UglyToad.PdfPig;
 using UglyToad.PdfPig.Content;
@@ -356,11 +357,13 @@ public class PrintPdfTests
     [Fact]
     public void Text_IsJustified()
     {
-        // One paragraph over several pages: every line of its second page is a full line.
-        var bytes = ExportPrint(LongWordsBook(1, 12), new PrintLayout(120, 190)).Bytes;
+        // One paragraph over several pages: every line of its second page is a full line. It goes on for more than a
+        // page after that, so where exactly it ends does not matter.
+        var bytes = ExportPrint(LongWordsBook(1, 24), new PrintLayout(120, 190)).Bytes;
         var page = BodyStart(bytes, WordsChapter) + 1;
 
         using var pdf = PdfDocument.Open(bytes);
+        Assert.True(pdf.NumberOfPages >= page + 2, "the paragraph goes on beyond the next page");
         var lines = Lines(pdf.GetPage(page));
         Assert.True(lines.Count >= 20, "a full page");
         var right = (page % 2 == 1 ? 120 - 14 : 120 - 18) * Mm;
@@ -478,15 +481,141 @@ public class PrintPdfTests
     [Fact]
     public void LongUnbreakableWord_DoesNotFail()
     {
-        var url = "https://beispiel.org/" + string.Concat(Enumerable.Repeat("verzeichnis/", 15));
-        Assert.True(url.Length >= 200);
+        // Letter runs too short for the hyphenator: no break inside the token at all.
+        var token = string.Concat(Enumerable.Repeat("a1b2c3d4/", 23));
+        Assert.True(token.Length >= 200);
+        Assert.DoesNotContain(Hyphenator.SoftHyphen, Hyphenator.German!.Hyphenate(token));
 
         var (bytes, report) = ExportPrint(
-            PdfSamples.Load($"title:: Linkbuch\ntype:: book\n\n- # Verweis\n\t- Siehe {url} dort.\n"), new PrintLayout(100, 100));
+            PdfSamples.Load($"title:: Linkbuch\ntype:: book\n\n- # Verweis\n\t- Siehe {token} dort.\n"), new PrintLayout(100, 100));
 
         using var pdf = PdfDocument.Open(bytes);
         Assert.Equal(pdf.NumberOfPages, report.PageCount);
         Assert.Contains("dort.", string.Join(" ", PageTexts(bytes)));
+    }
+
+    private static (byte[] Bytes, PdfExportReport Report) ExportA5OrPrint(Book book, bool print) =>
+        print ? ExportPrint(book, new PrintLayout(120, 190)) : Export(book, size: PdfPageSize.A5);
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void PushedHeading_ContentsNameThePageItLandsOn(bool print)
+    {
+        // The filler grows by a paragraph per book, so for some books the level-2 heading no longer has the room
+        // EnsureSpace asks for and moves to the next page.
+        var landedOnTop = false;
+        for (var filler = 14; filler <= 20; filler++)
+        {
+            var sb = new StringBuilder("title:: Kapitelbuch\ntype:: book\n\n- # Kapitel\n");
+            sb.Append(string.Concat(Enumerable.Repeat("\t- Ein kurzer Satz.\n", filler)));
+            sb.Append("\t- ## Unterkapitel\n\t\t- Text danach.\n");
+            var pages = PageTexts(ExportA5OrPrint(PdfSamples.Load(sb.ToString()), print).Bytes);
+
+            var contents = pages.FindIndex(p => p.StartsWith("Inhaltsverzeichnis", StringComparison.Ordinal));
+            var number = int.Parse(Regex.Match(pages[contents], @"Unterkapitel (\d+)").Groups[1].Value);
+            var actual = pages.FindIndex(contents + 1, p => p.Contains("Unterkapitel", StringComparison.Ordinal)) + 1;
+            Assert.True(number == actual, $"Book {filler}: contents say {number}, the heading is on {actual}");
+            landedOnTop |= pages[actual - 1].StartsWith("Unterkapitel", StringComparison.Ordinal);
+        }
+
+        Assert.True(landedOnTop, "some book moves the heading to the next page");
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void PushedImage_ReferenceNamesThePageItLandsOn(bool print)
+    {
+        using var dir = new TempDir();
+        var assets = Directory.CreateDirectory(Path.Combine(dir.Path, "assets")).FullName;
+        File.WriteAllBytes(Path.Combine(assets, "bild.png"), PdfSamples.PngOfSize(400, 300));
+        const string target = "00000000-0000-4000-8000-0000000000f1";
+        for (var filler = 12; filler <= 20; filler++)
+        {
+            // A referenced text block that starts with a picture.
+            var sb = new StringBuilder("title:: Bilderbuch\ntype:: book\n\n- # Kapitel\n");
+            sb.Append(string.Concat(Enumerable.Repeat("\t- Ein kurzer Satz.\n", filler)));
+            sb.Append($"\t- ![Bild](../assets/bild.png)\n\t  id:: {target}\n\t- Siehe (({target})).\n");
+            var bytes = ExportA5OrPrint(PdfSamples.Load(sb.ToString(), Path.Combine(dir.Path, "pages", "Buch.md")), print).Bytes;
+
+            var reference = int.Parse(Regex.Match(string.Join(" ", PageTexts(bytes)), @"\(S\. (\d+)\)").Groups[1].Value);
+            using var pdf = PdfDocument.Open(bytes);
+            var actual = pdf.GetPages().Single(p => p.GetImages().Any()).Number;
+            Assert.True(reference == actual, $"Book {filler}: the reference says {reference}, the picture is on {actual}");
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void PageCount_WithoutHeadings(bool print)
+    {
+        var (bytes, report) = ExportA5OrPrint(PdfSamples.Load("title:: Leer\ntype:: book\n\n- Nur ein Absatz\n"), print);
+
+        using var pdf = PdfDocument.Open(bytes);
+        Assert.Equal(print ? 3 : 2, pdf.NumberOfPages);
+        Assert.Equal(pdf.NumberOfPages, report.PageCount);
+    }
+
+    [Fact]
+    public void SimplePdf_WithoutPatterns_DoesNotWarn()
+    {
+        using var stream = new MemoryStream();
+        var book = LongWordsBook();
+        var report = new QuestPdfExporter(() => null).Export(book, VaultRootOf(book), null, new PdfOptions(PdfPageSize.A5), stream);
+
+        Assert.DoesNotContain(HyphenationWarning, report.Warnings);
+    }
+
+    /// <summary>The start and end of each stroked straight segment on the page, in PDF points from the bottom left.</summary>
+    private static List<(double X1, double Y1, double X2, double Y2)> StrokedLines(Page page) =>
+    [
+        .. page.Paths.Where(path => path.IsStroked)
+            .SelectMany(path => path)
+            .SelectMany(subpath => subpath.Commands.OfType<UglyToad.PdfPig.Core.PdfSubpath.Line>())
+            .Select(line => (line.From.X, line.From.Y, line.To.X, line.To.Y)),
+    ];
+
+    [Fact]
+    public void CropMarks_EightStrokesAtTheTrimCorners()
+    {
+        // 120 x 190 mm, 3 mm bleed, marks: the trim edge lies 10 mm inside the sheet edge.
+        var bytes = ExportPrint(PdfSamples.Load(PdfSamples.SpecBookWithTwoChapters), new PrintLayout(120, 190, 3, true)).Bytes;
+        var offset = 10 * Mm;
+        var (width, height) = (140 * Mm, 210 * Mm);
+        var expected = new List<(double, double, double, double)>();
+        foreach (var (x, outX) in new[] { (offset, -1), (width - offset, 1) })
+        {
+            foreach (var (y, outY) in new[] { (offset, -1), (height - offset, 1) })
+            {
+                // In line with the trim edges, from 3 mm to 8 mm away from the corner: outside the bleed.
+                expected.Add((x + outX * 3 * Mm, y, x + outX * 8 * Mm, y));
+                expected.Add((x, y + outY * 3 * Mm, x, y + outY * 8 * Mm));
+            }
+        }
+
+        using var pdf = PdfDocument.Open(bytes);
+        foreach (var page in new[] { pdf.GetPage(1), pdf.GetPage(pdf.NumberOfPages) })
+        {
+            var lines = StrokedLines(page);
+            Assert.Equal(8, lines.Count);
+            Assert.All(expected, e => Assert.Contains(lines, l =>
+                (Near(l.X1, e.Item1) && Near(l.Y1, e.Item2) && Near(l.X2, e.Item3) && Near(l.Y2, e.Item4))
+                || (Near(l.X1, e.Item3) && Near(l.Y1, e.Item4) && Near(l.X2, e.Item1) && Near(l.Y2, e.Item2))));
+        }
+
+        static bool Near(double a, double b) => Math.Abs(a - b) < 0.1;
+    }
+
+    [Fact]
+    public void CropMarks_NoneWithoutMarks()
+    {
+        var bytes = ExportPrint(PdfSamples.Load(PdfSamples.SpecBookWithTwoChapters), new PrintLayout(120, 190, 3)).Bytes;
+
+        using var pdf = PdfDocument.Open(bytes);
+        Assert.Empty(StrokedLines(pdf.GetPage(1)));
+        Assert.Empty(StrokedLines(pdf.GetPage(pdf.NumberOfPages)));
     }
 
     [Fact]

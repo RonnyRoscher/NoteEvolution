@@ -212,7 +212,8 @@ public sealed class QuestPdfExporter : IPdfExporter
 
     /// <summary>
     /// Two 0.25 pt lines at each trim corner, 5 mm long, in line with the trim edges and starting at the bleed
-    /// distance from the corner, so they stay outside the bleed.
+    /// distance from the corner, so they stay outside the bleed. fill="none": with the SVG default fill, each line is
+    /// also drawn a second time as a hairline (line width 0).
     /// </summary>
     private static string CropMarks(PrintGeometry geometry, Size size)
     {
@@ -231,7 +232,7 @@ public sealed class QuestPdfExporter : IPdfExporter
         return svg.Append("</svg>").ToString();
 
         void Line(float x1, float y1, float x2, float y2) => svg.Append(FormattableString.Invariant(
-            $"<line x1=\"{x1}\" y1=\"{y1}\" x2=\"{x2}\" y2=\"{y2}\" stroke=\"black\" stroke-width=\"0.25\"/>"));
+            $"<line x1=\"{x1}\" y1=\"{y1}\" x2=\"{x2}\" y2=\"{y2}\" fill=\"none\" stroke=\"black\" stroke-width=\"0.25\"/>"));
     }
 
     private static void ComposeTitlePage(ColumnDescriptor column, PdfContent content, float scale)
@@ -322,9 +323,10 @@ public sealed class QuestPdfExporter : IPdfExporter
                     // Full text width, but never taller than the page: tall images shrink instead of failing. Without
                     // EnsureSpace the area-fitting image would also shrink to whatever is left of the current page.
                     // The caption is part of one unbreakable item with its picture, which therefore leaves room for it;
-                    // a caption longer than that room shrinks into it instead of failing the layout.
+                    // a caption longer than that room shrinks into it instead of failing the layout. The section is
+                    // inside EnsureSpace and ShowEntire (see the paragraph above).
                     var reserve = image.Caption.Length > 0 ? contentHeight / 5 : 0;
-                    Anchored(column.Item(), image).PaddingBottom(8).EnsureSpace(contentHeight / 4).ShowEntire().Column(picture =>
+                    Anchored(column.Item().PaddingBottom(8).EnsureSpace(contentHeight / 4).ShowEntire(), image).Column(picture =>
                     {
                         picture.Item().AlignCenter().MaxHeight(contentHeight - 8 - reserve).Image(image.Image).FitArea();
                         if (image.Caption.Length > 0)
@@ -416,6 +418,7 @@ public sealed class QuestPdfExporter : IPdfExporter
     }
 
     private static void ComposeHeading(ColumnDescriptor column, HeadingElement heading, float size, float before, float after) =>
-        column.Item().Section(heading.SectionId).EnsureSpace(size * 6)
+        // The section inside EnsureSpace, so a heading moved to the next page is found there (see ComposeBody).
+        column.Item().EnsureSpace(size * 6).Section(heading.SectionId)
             .PaddingTop(before).PaddingBottom(after).Text(heading.Title).FontSize(size).Bold();
 }

@@ -61,7 +61,10 @@ internal sealed class Hyphenator
         return new Hyphenator(table, maxLength);
     }
 
-    /// <summary>The text with U+00AD at every allowed break inside its words; everything else unchanged.</summary>
+    /// <summary>
+    /// The text with U+00AD at every allowed break inside its words; everything else unchanged. Internet addresses
+    /// ("https://…", "www.…") are left as they are.
+    /// </summary>
     public string Hyphenate(string text)
     {
         if (text.Length < MinWordLength)
@@ -71,6 +74,13 @@ internal sealed class Hyphenator
         var i = 0;
         while (i < text.Length)
         {
+            if (IsInternetAddressAt(text, i, out var end))
+            {
+                result.Append(text, i, end - i);
+                i = end;
+                continue;
+            }
+
             if (!char.IsLetter(text[i]))
             {
                 result.Append(text[i++]);
@@ -93,6 +103,21 @@ internal sealed class Hyphenator
             AppendHyphenated(result, text.AsSpan(start, length));
         }
         return result.ToString();
+    }
+
+    /// <summary>
+    /// Whether a whitespace-delimited token starts at <paramref name="start"/> that is an internet address (it contains
+    /// "://" or starts with "www."); such a token is not hyphenated. <paramref name="end"/> is where the token ends.
+    /// </summary>
+    private static bool IsInternetAddressAt(string text, int start, out int end)
+    {
+        end = start;
+        if (char.IsWhiteSpace(text[start]) || (start > 0 && !char.IsWhiteSpace(text[start - 1])))
+            return false;
+        while (end < text.Length && !char.IsWhiteSpace(text[end]))
+            end++;
+        var token = text.AsSpan(start, end - start);
+        return token.Contains("://", StringComparison.Ordinal) || token.StartsWith("www.", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool IsDigitOrSoftHyphen(char c) => char.IsDigit(c) || c == SoftHyphen;

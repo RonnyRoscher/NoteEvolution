@@ -87,6 +87,33 @@ public class HyphenatorTests
     }
 
     [Fact]
+    public void Hyphenate_InternetAddressesStay()
+    {
+        const string input =
+            "Siehe https://beispiel.org/verzeichnis/silbentrennung und WWW.Silbentrennung.example sowie " +
+            "www.silbentrennung.example zur Silbentrennung.";
+        var result = German.Hyphenate(input);
+
+        var tokens = result.Split(' ');
+        Assert.Equal("https://beispiel.org/verzeichnis/silbentrennung", tokens[1]);
+        Assert.Equal("WWW.Silbentrennung.example", tokens[3]);
+        Assert.Equal("www.silbentrennung.example", tokens[5]);
+        Assert.Equal("Sil|ben|tren|nung.", Show(tokens[7]));
+        Assert.Equal(input, result.Replace("­", ""));
+    }
+
+    [Fact]
+    public void FromPatterns_KeepsTheMinimumLettersAroundABreak()
+    {
+        var hyphenator = Hyphenator.FromPatterns(["a1b", "b1a"]);
+
+        // The patterns allow a break around every "a"; at least 2 letters stay on the left, 3 on the right.
+        Assert.Equal("abbbbb", Show(hyphenator.Hyphenate("abbbbb")));
+        Assert.Equal("bbbbab", Show(hyphenator.Hyphenate("bbbbab")));
+        Assert.Equal("bbb|a|bbb", Show(hyphenator.Hyphenate("bbbabbb")));
+    }
+
+    [Fact]
     public void FromPatterns_UsesTheGivenPatterns()
     {
         var hyphenator = Hyphenator.FromPatterns(["a1b"]);
