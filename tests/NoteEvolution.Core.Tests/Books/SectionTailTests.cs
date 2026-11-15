@@ -181,6 +181,139 @@ public class SectionTailTests
         Assert.Equal(WithTail, Serialize(withoutTail));
     }
 
+    /// <summary>"A-i" is A's read tail on A's indentation; the outline shows it as A's sibling.</summary>
+    private const string TailAsSibling =
+        "type:: book\n\n" +
+        "- # Eins\n" +
+        "\t- ## A\n" +
+        "\t- ### A-i\n" +
+        "\t- ## B\n";
+
+    /// <summary>A-i as a sibling of A at A's level, after A.</summary>
+    private const string AIAfterA =
+        "type:: book\n\n" +
+        "- # Eins\n" +
+        "\t- ## A\n" +
+        "\t- ## A-i\n" +
+        "\t- ## B\n";
+
+    [Fact]
+    public void MoveSection_SamePlaceOtherLevel_Relevels()
+    {
+        var book = Load(TailAsSibling);
+
+        // Headings of "Eins" without A-i: [A, B]; before B is A-i's own place, but its level there is 2.
+        OutlineEditor.MoveSection(book, KeyOf(book, "A-i"), KeyOf(book, "Eins"), 1);
+
+        Assert.Equal(AIAfterA, Serialize(book));
+    }
+
+    [Fact]
+    public void MoveSectionAfter_NodeIsTheAnchorsLastTailHeading_GetsTheAnchorsLevel()
+    {
+        var book = Load(TailAsSibling);
+
+        OutlineEditor.MoveSectionAfter(book, KeyOf(book, "A-i"), KeyOf(book, "A"));
+
+        Assert.Equal(AIAfterA, Serialize(book));
+
+        // The same with A-i nested under A, which reads the same.
+        var nested = Load(TailAsSibling.Replace("\t- ### A-i\n", "\t\t- ### A-i\n"));
+        OutlineEditor.MoveSectionAfter(nested, KeyOf(nested, "A-i"), KeyOf(nested, "A"));
+
+        Assert.Equal(AIAfterA, Serialize(nested));
+    }
+
+    [Fact]
+    public void MoveSection_RootSectionWithRootTail_AppendixStaysLast()
+    {
+        const string text =
+            "type:: book\n\n" +
+            "- # Eins\n" +
+            "- Text eins\n" +
+            "- ## Eins-A\n" +
+            "- # Zwei\n" +
+            "- Text zwei\n" +
+            "- # Glossar\n" +
+            "  anhang:: glossar\n" +
+            "\t- Begriff\n";
+        var book = Load(text);
+
+        // Root headings without Eins: [Eins-A, Zwei, Glossar]; the end means before the appendix.
+        OutlineEditor.MoveSection(book, KeyOf(book, "Eins"), Guid.Empty, 3);
+
+        Assert.Equal(
+            "type:: book\n\n" +
+            "- # Zwei\n" +
+            "- Text zwei\n" +
+            "- # Eins\n" +
+            "\t- Text eins\n" +
+            "\t- ## Eins-A\n" +
+            "- # Glossar\n" +
+            "  anhang:: glossar\n" +
+            "\t- Begriff\n",
+            Serialize(book));
+
+        // Zwei's tail stops at the appendix: only "Text zwei" goes along.
+        var first = Load(text);
+        OutlineEditor.MoveSection(first, KeyOf(first, "Zwei"), Guid.Empty, 0);
+
+        Assert.Equal(
+            "type:: book\n\n" +
+            "- # Zwei\n" +
+            "\t- Text zwei\n" +
+            "- # Eins\n" +
+            "- Text eins\n" +
+            "- ## Eins-A\n" +
+            "- # Glossar\n" +
+            "  anhang:: glossar\n" +
+            "\t- Begriff\n",
+            Serialize(first));
+    }
+
+    [Fact]
+    public void MoveSection_TailHeadingWithSubHeadings_LevelsAndLimit()
+    {
+        var book = Load(
+            "type:: book\n\n" +
+            "- # Eins\n" +
+            "\t- ## A\n" +
+            "\t- ### A1\n" +
+            "\t\t- #### A1x\n" +
+            "\t\t\t- Text\n" +
+            "- # Zwei\n");
+
+        OutlineEditor.MoveSection(book, KeyOf(book, "A"), Guid.Empty, 2);
+
+        Assert.Equal(
+            "type:: book\n\n" +
+            "- # Eins\n" +
+            "- # Zwei\n" +
+            "- # A\n" +
+            "\t- ## A1\n" +
+            "\t\t- ### A1x\n" +
+            "\t\t\t- Text\n",
+            Serialize(book));
+
+        // Under I (level 4): A 5, A1 6, and A1's sub-heading A1x would reach 7.
+        const string deep =
+            "type:: book\n\n" +
+            "- # Eins\n" +
+            "\t- ## A\n" +
+            "\t- ### A1\n" +
+            "\t\t- #### A1x\n" +
+            "- # F\n" +
+            "\t- ## G\n" +
+            "\t\t- ### H\n" +
+            "\t\t\t- #### I\n";
+        var refused = Load(deep);
+
+        Assert.Throws<ArgumentException>(() => OutlineEditor.MoveSection(refused, KeyOf(refused, "A"), KeyOf(refused, "I"), 0));
+
+        Assert.False(refused.Page.IsDirty);
+        Assert.Equal(deep, Serialize(refused));
+    }
+
     [Fact]
     public void MoveSection_IntoItsReadTail_Refused_FileUnchanged()
     {

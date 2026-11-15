@@ -286,6 +286,34 @@ public class ManuscriptEditorTests
     }
 
     [Fact]
+    public void Indent_TailWouldExceedLevel6_CanIndentFalse()
+    {
+        // "## A" alone would become level 3; its read tail B..E nested below it would reach level 7.
+        const string text =
+            "type:: book\n\n- # Eins\n\t- ## P\n\t- ## A\n\t- ### B\n\t- #### C\n\t- ##### D\n\t- ###### E\n";
+        var book = Load(text);
+
+        Assert.False(ManuscriptEditor.CanIndent(book, KeyOf(book, "## A")));
+        Assert.Throws<ArgumentException>(() => ManuscriptEditor.Indent(book, KeyOf(book, "## A")));
+
+        Assert.False(book.Page.IsDirty);
+        Assert.Equal(text, Serialize(book));
+    }
+
+    [Fact]
+    public void Indent_TakesTheReadTailAlong()
+    {
+        var book = Load("type:: book\n\n- # Eins\n\t- ## P\n\t- ## A\n\t- Text a\n\t- ### A1\n\t\t- Text A1\n");
+
+        Assert.True(ManuscriptEditor.CanIndent(book, KeyOf(book, "## A")));
+        ManuscriptEditor.Indent(book, KeyOf(book, "## A"));
+
+        Assert.Equal(
+            "type:: book\n\n- # Eins\n\t- ## P\n\t\t- ### A\n\t\t\t- Text a\n\t\t\t- #### A1\n\t\t\t\t- Text A1\n",
+            Serialize(book));
+    }
+
+    [Fact]
     public void Outdent_PlacedDirectlyAfterFormerParentSection()
     {
         var book = Load(Text);

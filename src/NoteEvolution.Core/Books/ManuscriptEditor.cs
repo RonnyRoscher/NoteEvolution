@@ -149,7 +149,7 @@ public static partial class ManuscriptEditor
         book.FindNode(headingKey) is { Block: not null } node
         && !book.IsInAppendix(headingKey)
         && PreviousSameLevel(node) is { } previous
-        && previous.Level + OutlineEditor.Height(node) <= OutlineEditor.MaxLevel;
+        && previous.Level + OutlineEditor.HeightWithTail(book, node, OutlineEditor.ReadTail(book, headingKey)) <= OutlineEditor.MaxLevel;
 
     /// <summary>Whether <see cref="Outdent"/> is possible; <c>false</c> for an unknown key.</summary>
     public static bool CanOutdent(Book book, Guid headingKey) =>

@@ -62,7 +62,9 @@ public static class OutlineEditor
     /// text blocks of the new parent keep their place in the file. Every heading in the moved subtree gets the level
     /// <c>new parent level + 1 + depth below the moved heading</c>; only the <c>#</c> prefix changes. At the root, an
     /// index after the last section of the book's text means before the first appendix section. A target that is the
-    /// section's own place (directly before or after its tail headings in its parent) changes nothing, the tail included.
+    /// section's own place (directly before or after its tail headings in its parent) changes nothing, the tail included,
+    /// if every heading of the section already has the level the move gives it; otherwise the section stays at its place
+    /// and is moved there as anywhere else (tail nested, levels set).
     /// </summary>
     /// <exception cref="ArgumentException">
     /// Unknown heading or parent, either in the appendix, the new parent is the node itself or inside its subtree or its
@@ -93,14 +95,20 @@ public static class OutlineEditor
             // Among the headings without the node, its own place is from the first to after the last tail heading.
             var own = newParent.Children.TakeWhile(child => child != node).Count();
             var tailHeadings = tail.Count(block => book.FindNode(block.Key) is not null);
-            if (index == own || index == own + tailHeadings)
-            {
-                return;
-            }
-
             if (index > own && index < own + tailHeadings)
             {
                 throw new ArgumentException("A section cannot be moved into its own section.", nameof(index));
+            }
+
+            if (index == own || index == own + tailHeadings)
+            {
+                if (HasLevels(node, newParent.Level + 1))
+                {
+                    return;
+                }
+
+                // Its own place at another level: stay there (after the tail headings, which are nested) and relevel.
+                index = own + tailHeadings;
             }
         }
 
@@ -157,7 +165,7 @@ public static class OutlineEditor
     /// <see cref="ManuscriptEditor.Place"/> stops, and then ends the chain with its own last children; a text block leaves
     /// the chain as it is.
     /// </summary>
-    private static int HeightWithTail(Book book, OutlineNode node, IReadOnlyList<Block> tail)
+    internal static int HeightWithTail(Book book, OutlineNode node, IReadOnlyList<Block> tail)
     {
         var open = new List<OutlineNode>();
         AddOpenChain(open, node);
@@ -182,6 +190,10 @@ public static class OutlineEditor
 
         return height;
     }
+
+    /// <summary>Whether <see cref="Relevel"/> with <paramref name="level"/> would rewrite nothing in the subtree.</summary>
+    private static bool HasLevels(OutlineNode node, int level) =>
+        node.Level == level && node.Children.All(child => HasLevels(child, level + 1));
 
     /// <summary>Adds <paramref name="node"/> and the chain of its last items that are headings.</summary>
     private static void AddOpenChain(List<OutlineNode> open, OutlineNode node)
