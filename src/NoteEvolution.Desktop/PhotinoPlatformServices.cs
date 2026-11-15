@@ -27,12 +27,41 @@ public sealed class PhotinoPlatformServices(IStringLocalizer<Strings> strings) :
     public async Task<string?> PickSaveFileAsync(string suggestedName)
     {
         var extension = Path.GetExtension(suggestedName);
+        var folder = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+        var window = RequireWindow();
+        if (OperatingSystem.IsWindows())
+        {
+            // Let the click handler's render go out before the modal dialog blocks.
+            await Task.Yield();
+            var chosen = ShowWindowsSaveDialog(window, folder, suggestedName, extension);
+            return string.IsNullOrEmpty(chosen) ? null : chosen;
+        }
+
         (string Name, string[] Extensions)[] filters = string.IsNullOrEmpty(extension)
             ? []
             : [(extension.TrimStart('.').ToUpperInvariant(), ["*" + extension])];
-        var defaultPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), suggestedName);
-        var path = await RequireWindow().ShowSaveFileAsync(strings["SaveFileTitle"], defaultPath, filters);
-        return string.IsNullOrEmpty(path) ? null : path;
+
+        // Photino's dialog does not open for a default path that names a file which does not exist yet, so it gets
+        // the suggested file only if there is one, and the folder otherwise.
+        var suggested = Path.Combine(folder, suggestedName);
+        var path = await window.ShowSaveFileAsync(strings["SaveFileTitle"], File.Exists(suggested) ? suggested : folder, filters);
+        if (string.IsNullOrEmpty(path))
+        {
+            return null;
+        }
+
+        return Path.HasExtension(path) ? path : path + extension;
+    }
+
+    /// <summary>The system dialog on the window's thread, as Photino's own dialogs run.</summary>
+    [System.Runtime.Versioning.SupportedOSPlatform("windows")]
+    private string? ShowWindowsSaveDialog(PhotinoWindow window, string folder, string suggestedName, string extension)
+    {
+        string? result = null;
+        var owner = window.WindowHandle;
+        var title = strings["SaveFileTitle"].Value;
+        window.Invoke(() => result = WindowsSaveDialog.Show(owner, title, folder, suggestedName, extension));
+        return result;
     }
 
     public async Task<string?> PickImageFileAsync()

@@ -335,12 +335,14 @@
             // The flush may have saved (and so replaced) the book view.
             if (State.Session?.Vault is not { } vault || vault.FindBook(State.CurrentBook.LinkName) is not { } book)
             {
+                Logger.LogWarning("PDF export: the book {Book} is not in the vault any more", State.CurrentBook?.LinkName);
                 return;
             }
 
             var path = await Platform.PickSaveFileAsync($"{FileName(book.Title, L["PdfDefaultName"])}.pdf");
             if (path is null)
             {
+                Logger.LogInformation("PDF export: no file chosen");
                 return;
             }
 
