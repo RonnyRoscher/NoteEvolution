@@ -19,6 +19,26 @@ namespace NoteEvolution.UI.State;
 /// </summary>
 public sealed record AppendixPick(AppendixKind Kind, Guid? EntryKey, string? Locator);
 
+/// <summary>Where a dragged range is dropped.</summary>
+public abstract record RangeDrop
+{
+    private RangeDrop()
+    {
+    }
+
+    /// <summary>In an editor, on the element with this key (heading, text block or detail); null: above the first element.</summary>
+    public sealed record InEditor(Guid? ElementKey) : RangeDrop;
+
+    /// <summary>On a heading of an outline (Guid.Empty = prologue).</summary>
+    public sealed record OnSection(Guid SectionKey) : RangeDrop;
+
+    /// <summary>In front of a heading of an outline.</summary>
+    public sealed record BeforeSection(Guid SectionKey) : RangeDrop;
+
+    /// <summary>At the end of an outline.</summary>
+    public sealed record AtEnd : RangeDrop;
+}
+
 /// <summary>
 /// The structure commands of the manuscript (spec 3) on the element at the editor cursor
 /// (<see cref="AppState.CurrentElement"/>), and Merge and Wrap on the marked range (<see cref="AppState.CurrentRange"/>,
@@ -1053,6 +1073,264 @@ public static class ManuscriptCommands
 
             state.Notify();
         }
+    }
+
+    /// <summary>
+    /// Moves the head of the marked range (<see cref="AppState.MovableRangeHead"/>) with everything below it to
+    /// <paramref name="drop"/> (Markierung verschieben, spec 5): a heading with its section and its read tail
+    /// (<see cref="OutlineEditor.MoveSectionAfter"/> in an editor, <see cref="OutlineEditor.MoveSection"/> on an outline),
+    /// a text block with its details (<see cref="ManuscriptEditor.MoveTextBlocks"/>), a detail with its deeper details
+    /// (<see cref="ManuscriptEditor.MoveDetail"/>; onto a heading it becomes a text block). A text block or detail
+    /// dropped before a heading or at the end of an outline does nothing. In the same order as
+    /// <see cref="MoveTextBlocksAsync"/>: every editor saves its text first, text one could not save refuses the move,
+    /// a read-only book or an open conflict refuses it too, and a failed save shows its message. A section that would
+    /// get a heading deeper than level 6 shows <c>MoveRangeTooDeep</c>; a target inside the moved section, a target
+    /// that is no longer in the book or any other refusal shows <c>OutlineMoveInvalid</c>; nothing changes then. A drop
+    /// at the place the range already has changes nothing. The page is saved with one <see cref="StructureUndo"/>
+    /// (<paramref name="undoDescription"/>), which restores the file byte for byte (also the dates a detail made a text
+    /// block got). Whatever happens, the book view is taken from the vault again; after a move the head is revealed in
+    /// the active view (the caller makes the view it was dropped in active first) and is the current element with range
+    /// level 0; <see cref="AppState.Notify"/> is raised.
+    /// </summary>
+    /// <param name="head">The head of the dragged range, as the book had it when the drag started.</param>
+    /// <returns>The message to show, or <c>null</c> if the range was moved (or nothing changed) without remark.</returns>
+    public static async Task<AdoptMessage?> MoveRangeAsync(
+        AppState state, BookElement head, RangeDrop drop, string undoDescription, ILogger logger)
+    {
+        ArgumentNullException.ThrowIfNull(head);
+        ArgumentNullException.ThrowIfNull(drop);
+        Guid? reveal = null;
+        try
+        {
+            if (head.Kind != ElementKind.Heading && drop is RangeDrop.BeforeSection or RangeDrop.AtEnd)
+            {
+                // No target for a text block or a detail.
+                return null;
+            }
+
+            var (message, session, book) = await PrepareAsync(state, logger);
+            if (session is null || book is null)
+            {
+                return message;
+            }
+
+            var invalid = new AdoptMessage("OutlineMoveInvalid", true);
+            if (BookElements.Find(book, head.Key) != head)
+            {
+                // The head is gone or another kind of element since the drag started (e.g. a change by another program).
+                return invalid;
+            }
+
+            var (move, refusal) = head.Kind switch
+            {
+                ElementKind.Heading => SectionMove(book, head.Key, drop),
+                ElementKind.TextBlock => TextBlockMove(book, head.Key, drop),
+                _ => DetailMove(book, head.Key, drop, session.Clock.Now),
+            };
+            if (move is null)
+            {
+                return refusal is null ? null : new AdoptMessage(refusal, true);
+            }
+
+            var page = book.Page;
+            var before = PageStructureSnapshot.Capture(page);
+            try
+            {
+                if (!move())
+                {
+                    return null;
+                }
+            }
+            catch (ArgumentOutOfRangeException ex)
+            {
+                // Not expected: the index is computed from the book.
+                logger.LogWarning(ex, "Moving the range was refused");
+                return invalid;
+            }
+            catch (ArgumentException ex) when (head.Kind == ElementKind.Heading)
+            {
+                // Every other refusal of a section move (unknown or appendix target, a target inside the section) was
+                // checked before; what the core still refuses is a heading deeper than level 6.
+                logger.LogInformation(ex, "Moving the section was refused");
+                return new AdoptMessage("MoveRangeTooDeep", true);
+            }
+            catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+            {
+                // Refused before anything changed.
+                logger.LogWarning(ex, "Moving the range was refused");
+                return invalid;
+            }
+
+            if (!session.TrySave(page, out var error))
+            {
+                return SaveFailed(session, page, error);
+            }
+
+            session.Undo.Push(new StructureUndo(undoDescription, session, page.FilePath, before, PageStructureSnapshot.Capture(page)));
+            reveal = head.Key;
+            return null;
+        }
+        finally
+        {
+            state.RefreshBook();
+            if (reveal is { } key)
+            {
+                state.RevealElement(key);
+            }
+
+            state.Notify();
+        }
+    }
+
+    /// <summary>
+    /// The move of the section <paramref name="key"/> to <paramref name="drop"/>, or why there is none: <c>null</c> for a
+    /// drop in front of itself (its own place), <c>OutlineMoveInvalid</c> for a target unknown, in the appendix or inside
+    /// the section (<see cref="IsInOwnSection"/>). What the core refuses after these checks is the level limit.
+    /// </summary>
+    private static (Func<bool>? Move, string? Refusal) SectionMove(Book book, Guid key, RangeDrop drop)
+    {
+        const string invalid = "OutlineMoveInvalid";
+        switch (drop)
+        {
+            case RangeDrop.InEditor { ElementKey: var elementKey }:
+            {
+                // The section the drop lies in; a heading is its own section, above the first element the prologue.
+                var anchor = Guid.Empty;
+                if (elementKey is { } elementAt)
+                {
+                    if (BookElements.Find(book, elementAt) is not { } element)
+                    {
+                        return (null, invalid);
+                    }
+
+                    anchor = BookElements.SectionOf(book, element);
+                }
+
+                return anchor != Guid.Empty && IsInOwnSection(book, key, anchor)
+                    ? (null, invalid)
+                    : (() => Changes(book, () => OutlineEditor.MoveSectionAfter(book, key, anchor)), null);
+            }
+
+            case RangeDrop.OnSection { SectionKey: var sectionKey }:
+            {
+                if (!IsTextSection(book, sectionKey) || (sectionKey != Guid.Empty && IsInOwnSection(book, key, sectionKey)))
+                {
+                    return (null, invalid);
+                }
+
+                var last = book.FindNode(sectionKey)!.Children.Count(child => child.Key != key);
+                return (() => Changes(book, () => OutlineEditor.MoveSection(book, key, sectionKey, last)), null);
+            }
+
+            case RangeDrop.BeforeSection { SectionKey: var sectionKey }:
+            {
+                if (sectionKey == key)
+                {
+                    return (null, null);
+                }
+
+                if (sectionKey == Guid.Empty || !IsTextSection(book, sectionKey) || IsInOwnSection(book, key, sectionKey))
+                {
+                    return (null, invalid);
+                }
+
+                var parent = book.FindNode(sectionKey)!.Parent!;
+                if (parent.Block is not null && IsInOwnSection(book, key, parent.Key))
+                {
+                    return (null, invalid);
+                }
+
+                var index = parent.Children.Where(child => child.Key != key).ToList().FindIndex(child => child.Key == sectionKey);
+                return (() => Changes(book, () => OutlineEditor.MoveSection(book, key, parent.Key, index)), null);
+            }
+
+            default:
+            {
+                // The end of the outline: the last top-level section (the core keeps it before the appendix).
+                var last = book.Root.Children.Count(child => child.Key != key);
+                return (() => Changes(book, () => OutlineEditor.MoveSection(book, key, Guid.Empty, last)), null);
+            }
+        }
+    }
+
+    /// <summary>
+    /// The move of the text block <paramref name="key"/> to <paramref name="drop"/>: on a heading in an editor the first
+    /// text block of its section, on a text block or one of its details after that whole text block, above the first
+    /// element the first of the prologue; on an outline's heading the end of its text (as the outline moves dragged
+    /// text blocks). An element no longer in the book refuses it.
+    /// </summary>
+    private static (Func<bool>? Move, string? Refusal) TextBlockMove(Book book, Guid key, RangeDrop drop)
+    {
+        InsertPosition? position = drop switch
+        {
+            RangeDrop.InEditor { ElementKey: null } => new InsertPosition.SectionStart(Guid.Empty),
+            RangeDrop.InEditor { ElementKey: { } at } => BookElements.Find(book, at) switch
+            {
+                null => null,
+                { Kind: ElementKind.Heading } => new InsertPosition.SectionStart(at),
+                var element => new InsertPosition.After(BookElements.TextBlockOf(book, element)!.Key),
+            },
+            RangeDrop.OnSection { SectionKey: var sectionKey } => new InsertPosition.SectionEnd(sectionKey),
+            _ => null,
+        };
+        return position is null
+            ? (null, "OutlineMoveInvalid")
+            : (() => ManuscriptEditor.MoveTextBlocks(book, [key], position), null);
+    }
+
+    /// <summary>
+    /// The move of the detail <paramref name="key"/> to <paramref name="drop"/> (spec 5.3): on a heading in an editor
+    /// the first text block of its section, on a text block its first sub-point, on a detail after it at its depth,
+    /// above the first element the first text block of the prologue; on an outline's heading its last text block.
+    /// </summary>
+    private static (Func<bool>? Move, string? Refusal) DetailMove(Book book, Guid key, RangeDrop drop, DateTimeOffset now)
+    {
+        DetailTarget? target = drop switch
+        {
+            RangeDrop.InEditor { ElementKey: null } => new DetailTarget.SectionStart(Guid.Empty),
+            RangeDrop.InEditor { ElementKey: { } at } => BookElements.Find(book, at)?.Kind switch
+            {
+                null => null,
+                ElementKind.Heading => new DetailTarget.SectionStart(at),
+                ElementKind.TextBlock => new DetailTarget.FirstOf(at),
+                _ => new DetailTarget.After(at),
+            },
+            RangeDrop.OnSection { SectionKey: var sectionKey } => new DetailTarget.SectionEnd(sectionKey),
+            _ => null,
+        };
+        return target is null
+            ? (null, "OutlineMoveInvalid")
+            : (() => ManuscriptEditor.MoveDetail(book, key, target, now), null);
+    }
+
+    /// <summary>Runs a section move, which reports no change itself: whether the page changed.</summary>
+    private static bool Changes(Book book, Action move)
+    {
+        move();
+        return book.Page.IsDirty;
+    }
+
+    /// <summary>Whether <paramref name="sectionKey"/> is a section of the book's text (the root included), not of the appendix.</summary>
+    private static bool IsTextSection(Book book, Guid sectionKey) =>
+        sectionKey == Guid.Empty || sectionKey == book.Root.Key || BookElements.Find(book, sectionKey) is { Kind: ElementKind.Heading };
+
+    /// <summary>
+    /// Whether the heading <paramref name="sectionKey"/> is the section <paramref name="headKey"/> itself, lies below it
+    /// or in its read tail (<see cref="OutlineEditor.ReadTail"/>), or below a tail block: the targets the core refuses
+    /// as part of the moved section.
+    /// </summary>
+    private static bool IsInOwnSection(Book book, Guid headKey, Guid sectionKey)
+    {
+        var tail = OutlineEditor.ReadTail(book, headKey);
+        for (var block = book.FindNode(sectionKey)?.Block; block is not null; block = block.Parent)
+        {
+            if (block.Key == headKey || tail.Contains(block))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>

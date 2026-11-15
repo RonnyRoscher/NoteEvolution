@@ -511,6 +511,14 @@
   <data name="OutlineMoveInvalid" xml:space="preserve">
     <value>Dort kann keine Überschrift eingefügt werden (nicht in sich selbst, höchstens sechs Ebenen).</value>
   </data>
+  <data name="MoveRangeTooDeep" xml:space="preserve">
+    <value>Der Abschnitt würde tiefer als Ebene 6.</value>
+    <comment>Hinweis, wenn ein markierter Abschnitt nicht verschoben wird, weil eine seiner Überschriften tiefer als Ebene 6 käme</comment>
+  </data>
+  <data name="UndoMoveRange" xml:space="preserve">
+    <value>Bereich verschieben</value>
+    <comment>Name der Aktion für „Rückgängig“ nach dem Verschieben des markierten Bereichs an seinem Griff</comment>
+  </data>
   <data name="OutlineSaveFailed" xml:space="preserve">
     <value>Die Änderung konnte nicht gespeichert werden. Die Gliederung zeigt wieder den Stand der Datei.</value>
   </data>

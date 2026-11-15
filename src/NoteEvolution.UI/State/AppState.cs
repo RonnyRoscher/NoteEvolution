@@ -356,6 +356,39 @@ public sealed class AppState
     public IReadOnlyList<Guid>? DraggedTextBlockKeys { get; set; }
 
     /// <summary>
+    /// The head of the marked range being dragged by its grip (<see cref="MovableRangeHead"/> when the drag started),
+    /// shared by both halves of the split view; <c>null</c> otherwise. A change raises <see cref="Notify"/>, so both
+    /// halves' outlines can show their drop hints, and drop them again when it ends.
+    /// </summary>
+    public BookElement? DraggedRange
+    {
+        get => _draggedRange;
+        set
+        {
+            if (value != _draggedRange)
+            {
+                _draggedRange = value;
+                Notify();
+            }
+        }
+    }
+
+    private BookElement? _draggedRange;
+
+    /// <summary>
+    /// The head of the marked range (<see cref="CurrentRange"/>) if its grip can move it
+    /// (<see cref="ManuscriptCommands.MoveRangeAsync"/>): <c>null</c> without a book or a head (the whole book), for an
+    /// element of the appendix or the prologue's pseudo section (no element of the book's text), with an open conflict
+    /// for the book or when it is read-only.
+    /// </summary>
+    public BookElement? MovableRangeHead =>
+        Session is { } session && CurrentBook is { Page.IsReadOnly: false } book
+        && !session.HasOpenConflict(book.Page.FilePath)
+        && CurrentRange?.Head is { } head && BookElements.Find(book, head.Key) == head
+            ? head
+            : null;
+
+    /// <summary>
     /// Set after a text was adopted from the "Relevant" tab: the tab keeps its list while the cursor stays in the area
     /// around that text, and clears this once it leaves it. Another <see cref="Session"/> clears it too.
     /// </summary>
