@@ -58,6 +58,125 @@ public static partial class ManuscriptEditor
         return true;
     }
 
+    /// <summary>
+    /// Moves the detail <paramref name="detailKey"/> with all details below it to <paramref name="target"/> (spec 5.3);
+    /// the deeper details keep their distance to it. To <see cref="DetailTarget.FirstOf"/> or
+    /// <see cref="DetailTarget.After"/> only the place changes: its lines stay as they are apart from the indentation
+    /// (<c>id::</c>, <c>source::</c>, status), nothing is stamped. The detail's own text block is a
+    /// <see cref="DetailTarget.FirstOf"/> target as well: a later sub-point moves to the front, the first one is already
+    /// there. To <see cref="DetailTarget.SectionStart"/> or <see cref="DetailTarget.SectionEnd"/> it becomes a text block
+    /// (of any depth) as <see cref="OutdentDetail"/> makes one (<see cref="BecomeTextBlock"/>), its deeper details its
+    /// details; the details after it stay in its old text block.
+    /// </summary>
+    /// <returns>Whether the page changed: a target that is the place the detail already has changes nothing.</returns>
+    /// <exception cref="ArgumentException">
+    /// Unknown detail or target, one in the appendix, or a target that is the detail itself or one below it; nothing is
+    /// changed.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">The page is read-only; nothing is changed.</exception>
+    public static bool MoveDetail(Book book, Guid detailKey, DetailTarget target, DateTimeOffset now)
+    {
+        ArgumentNullException.ThrowIfNull(book);
+        ArgumentNullException.ThrowIfNull(target);
+        var element = BookElements.Find(book, detailKey) is { Kind: ElementKind.Detail } found
+            ? found
+            : throw new ArgumentException("No detail of the manuscript has this key.", nameof(detailKey));
+        var detail = BlockOf(book, element);
+        var textBlock = BookElements.TextBlockOf(book, element)!.Block;
+        var page = book.Page;
+
+        switch (target)
+        {
+            case DetailTarget.FirstOf first:
+            {
+                var receiving = !book.IsInAppendix(first.TextBlockKey) && book.FindTextBlock(first.TextBlockKey) is { } text
+                    ? text.Block
+                    : throw new ArgumentException("No text block of the manuscript has this key.", nameof(target));
+                return MoveAmongDetails(page, detail, receiving, 0);
+            }
+
+            case DetailTarget.After after:
+            {
+                var anchor = BookElements.Find(book, after.DetailKey) is { Kind: ElementKind.Detail } detailElement
+                    ? BlockOf(book, detailElement)
+                    : throw new ArgumentException("No detail of the manuscript has this key.", nameof(target));
+                for (var block = anchor; block is not null; block = block.Parent)
+                {
+                    if (block == detail)
+                    {
+                        throw new ArgumentException("A detail is not moved after itself or a detail below it.", nameof(target));
+                    }
+                }
+
+                var parent = anchor.Parent!;
+                var others = parent.Children.Where(child => child != detail).ToList();
+                return MoveAmongDetails(page, detail, parent, others.IndexOf(anchor) + 1);
+            }
+
+            case DetailTarget.SectionStart start:
+                return MoveToSection(book, detail, textBlock, new InsertPosition.SectionStart(start.SectionKey), now);
+
+            case DetailTarget.SectionEnd end:
+                return MoveToSection(book, detail, textBlock, new InsertPosition.SectionEnd(end.SectionKey), now);
+
+            default:
+                throw new ArgumentException("Unknown target.", nameof(target));
+        }
+    }
+
+    /// <summary>Puts <paramref name="detail"/> of <paramref name="textBlock"/> at <paramref name="position"/> as a text block of its own.</summary>
+    private static bool MoveToSection(Book book, Block detail, Block textBlock, InsertPosition position, DateTimeOffset now)
+    {
+        // Resolved first: an unknown section or one of the appendix is refused before anything changes.
+        var (parent, index) = LinkService.Resolve(book, position);
+        EnsureWritable(book.Page);
+        book.Page.MoveBlock(detail, parent, index);
+        BecomeTextBlock(detail, textBlock, now);
+        return true;
+    }
+
+    /// <summary>
+    /// Moves <paramref name="detail"/> to <paramref name="index"/> among the details of <paramref name="parent"/> other
+    /// than itself; its place already: nothing changes.
+    /// </summary>
+    private static bool MoveAmongDetails(Page page, Block detail, Block parent, int index)
+    {
+        if (detail.Parent == parent && IndexIn(parent.Children, detail) == index)
+        {
+            return false;
+        }
+
+        EnsureWritable(page);
+        page.MoveBlock(detail, parent, index);
+        return true;
+    }
+
+    /// <summary>
+    /// Treats <paramref name="detail"/>, which stands as a text block now, as one made from a detail of
+    /// <paramref name="formerTextBlock"/> (Einordnen spec 4): a first line that would read as a heading is escaped, so it
+    /// stays text; it gets both dates (<c>updated::</c> only if it has <c>created::</c>), the former text block
+    /// <c>updated::</c>. Everything else stays: its own <c>id::</c>, <c>source::</c> and <c>#notiz</c>, and the former
+    /// text block's <c>source::</c> with that one.
+    /// </summary>
+    private static void BecomeTextBlock(Block detail, Block formerTextBlock, DateTimeOffset now)
+    {
+        if (HeadingText.AsTextBlockContent(detail.Content, shownUnescaped: true) is var escaped && escaped != detail.Content)
+        {
+            detail.SetContent(escaped);
+        }
+
+        StampAsTextBlock(detail, now);
+        BlockDates.StampChanged(formerTextBlock, now);
+    }
+
+    private static void EnsureWritable(Page page)
+    {
+        if (page.IsReadOnly)
+        {
+            throw new InvalidOperationException("The page is read-only.");
+        }
+    }
+
     /// <summary>Whether <paramref name="blocks"/> already follow <paramref name="anchor"/> (none: the start) in this order.</summary>
     private static bool AlreadyThere(IReadOnlyList<Block> siblings, Block? anchor, List<Block> blocks)
     {

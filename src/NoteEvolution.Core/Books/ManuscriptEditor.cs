@@ -433,21 +433,13 @@ public static partial class ManuscriptEditor
         }
 
         var following = textBlock.Children.SkipWhile(child => child != detail).Skip(1).ToList();
-
-        // As a text block a first line "# …" would read as a heading: escaped, it shows as it did.
-        if (HeadingText.AsTextBlockContent(detail.Content, shownUnescaped: true) is var escaped && escaped != detail.Content)
-        {
-            detail.SetContent(escaped);
-        }
-
         page.MoveBlock(detail, textBlock.Parent, IndexOf(page, textBlock) + 1);
         foreach (var sibling in following)
         {
             page.MoveBlock(sibling, detail, detail.Children.Count);
         }
 
-        StampAsTextBlock(detail, now);
-        BlockDates.StampChanged(textBlock, now);
+        BecomeTextBlock(detail, textBlock, now);
         return detailKey;
     }
 
