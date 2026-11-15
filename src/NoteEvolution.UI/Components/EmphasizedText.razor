@@ -1,0 +1,25 @@
+@using NoteEvolution.Core.Text
+@* A note's text with **bold** and *italic* shown as such (InlineMarkdown); everything else stays plain text. *@
+@foreach (var run in InlineMarkdown.Parse(Text))
+{
+    if (run.Bold && run.Italic)
+    {
+        <strong><em>@run.Text</em></strong>
+    }
+    else if (run.Bold)
+    {
+        <strong>@run.Text</strong>
+    }
+    else if (run.Italic)
+    {
+        <em>@run.Text</em>
+    }
+    else
+    {
+        @run.Text
+    }
+}
+
+@code {
+    [Parameter, EditorRequired] public string Text { get; set; } = "";
+}

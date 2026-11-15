@@ -35,7 +35,7 @@
         <div class="ne-note-context">@string.Join(" › ", Note.ContextPath)</div>
     }
     <div class="@BoxClass(range, Note.Block, "ne-note-body")">
-        <div class="@BlockClass(range, Note.Block, UsedTextClass(Note.Block, "ne-note-text"))" @onclick="() => SelectAsync(Note.Block)">@Note.Block.Content</div>
+        <div class="@BlockClass(range, Note.Block, UsedTextClass(Note.Block, "ne-note-text"))" @onclick="() => SelectAsync(Note.Block)"><EmphasizedText Text="@Note.Block.Content" /></div>
         @* In a day the status marks stand at the right of the text; elsewhere they stay in the head. *@
         @if (InDay)
         {
@@ -309,7 +309,7 @@
             {
                 <div @key="child.Key" class="@BoxClass(range, child, "ne-note-child")">
                     <div class="@BlockClass(range, child, "ne-note-child-row")" @onclick="() => SelectAsync(child)">
-                        <span class="@UsedTextClass(child, "ne-note-child-text")">@child.Content</span>
+                        <span class="@UsedTextClass(child, "ne-note-child-text")"><EmphasizedText Text="@child.Content" /></span>
                         <UsedMark Block="child" />
                     </div>
                     @Bar(range, child, ownOnly: true)
