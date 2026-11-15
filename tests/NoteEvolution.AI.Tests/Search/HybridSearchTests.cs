@@ -33,6 +33,9 @@ public sealed class HybridSearchTests
         public bool Ready { get; set; } = true;
         public bool EmbedFails { get; set; }
         public List<Guid> Ranked { get; } = [];
+
+        /// <summary>The similarity of a ranked note; 1 if none is given.</summary>
+        public Dictionary<Guid, float> Scores { get; } = [];
         public List<string> Embedded { get; } = [];
         public List<(float[] Query, int K)> NearestCalls { get; } = [];
 
@@ -48,7 +51,7 @@ public sealed class HybridSearchTests
         public IReadOnlyList<(Guid Key, float Score)> Nearest(float[] query, int k, Func<Guid, bool> include)
         {
             NearestCalls.Add((query, k));
-            return [.. Ranked.Where(include).Take(k).Select(key => (key, 1f))];
+            return [.. Ranked.Where(include).Take(k).Select(key => (key, Scores.GetValueOrDefault(key, 1f)))];
         }
 
         public float[]? VectorOf(Guid noteKey) => null;
@@ -90,64 +93,86 @@ public sealed class HybridSearchTests
         public void Dispose() => _vault.Dispose();
     }
 
-    private static double Rrf(params int[] ranks) => ranks.Sum(r => 1.0 / (60 + r));
-
     [Fact]
-    public void Rrf_CombinesBothLists_DocInBothRanksFirst()
+    public void NotesWithTheWordsComeFirst_ThenTheSimilarOnes()
     {
         using var f = new Fixture();
-        f.Text.Hits.AddRange([new(f.A, 9.0), new(f.B, 5.0), new(f.C, 1.0)]);
-        f.Index.Ranked.AddRange([f.C, f.D, f.B]);
+        f.Text.Hits.AddRange([new(f.A, 9.0), new(f.B, 5.0)]);
+        f.Index.Ranked.AddRange([f.C, f.B, f.D]);
 
         var hits = f.Hybrid.Search(new("wort", NoFilter));
 
-        Assert.Equal([f.C, f.B, f.A, f.D], hits.Select(h => h.NoteBlockKey));
-        Assert.Equal([Rrf(3, 1), Rrf(2, 3), Rrf(1), Rrf(2)], hits.Select(h => h.Score));
+        // B contains the words: it is not listed again as similar.
+        Assert.Equal(
+            [new SearchHit(f.A, 9.0), new SearchHit(f.B, 5.0), new SearchHit(f.C, 1f, Similar: true), new SearchHit(f.D, 1f, Similar: true)],
+            hits);
         Assert.Equal(["query: wort"], f.Index.Embedded);
-        Assert.Equal(100, Assert.Single(f.Text.Queries).Limit);
-        var call = Assert.Single(f.Index.NearestCalls);
-        Assert.Same(QueryVector, call.Query);
-        Assert.Equal(100, call.K);
+        Assert.Same(QueryVector, Assert.Single(f.Index.NearestCalls).Query);
     }
 
     [Fact]
-    public void Rrf_TiedScores_OrderedByKey_AndLimitApplied()
+    public void SimilarNotes_NeedTheThreshold()
     {
         using var f = new Fixture();
-        f.Text.Hits.Add(new(f.A, 1.0));
-        f.Index.Ranked.Add(f.B);
+        f.Index.Ranked.AddRange([f.A, f.B, f.C]);
+        f.Index.Scores[f.A] = 0.9f;
+        f.Index.Scores[f.B] = HybridSearchService.SimilarThreshold;
+        f.Index.Scores[f.C] = HybridSearchService.SimilarThreshold - 0.01f;
+
+        var hits = f.Hybrid.Search(new("wort", NoFilter));
+
+        Assert.Equal([f.A, f.B], hits.Select(h => h.NoteBlockKey));
+        Assert.All(hits, h => Assert.True(h.Similar));
+    }
+
+    [Fact]
+    public void SimilarNotes_AtMostTwenty()
+    {
+        var lines = string.Concat(Enumerable.Range(0, 30).Select(i => $"- notiz {i}\n"));
+        using var vault = TestVault.Create(("pages/Viele.md", lines));
+        var notes = new NoteRepository(vault.Open());
+        var index = new StubIndex();
+        index.Ranked.AddRange(notes.All().Select(n => n.Key));
+
+        var hits = new HybridSearchService(new StubSearch(), index, notes).Search(new("wort", NoFilter));
+
+        Assert.Equal(HybridSearchService.MaxSimilar, hits.Count);
+        Assert.Equal(index.Ranked.Take(20), hits.Select(h => h.NoteBlockKey));
+    }
+
+    [Fact]
+    public void NewestFirst_OrdersTheSimilarNotesByDate_UndatedLast()
+    {
+        using var vault = TestVault.Create(
+            ("journals/2026_01_05.md", "- januar\n"),
+            ("journals/2026_03_09.md", "- maerz\n"),
+            ("pages/Seite.md", "- ohne datum\n"));
+        var notes = new NoteRepository(vault.Open());
+        Guid Key(string text) => notes.All().Single(n => n.Block.Content == text).Key;
+        var index = new StubIndex();
+        index.Ranked.AddRange([Key("ohne datum"), Key("januar"), Key("maerz")]);
+        var text = new StubSearch();
+        var hybrid = new HybridSearchService(text, index, notes);
+
+        var newest = hybrid.Search(new("wort", NoFilter, NewestFirst: true));
+        var best = hybrid.Search(new("wort", NoFilter));
+
+        Assert.Equal([Key("maerz"), Key("januar"), Key("ohne datum")], newest.Select(h => h.NoteBlockKey));
+        Assert.Equal(index.Ranked, best.Select(h => h.NoteBlockKey));
+        // The order is asked of the full-text search too.
+        Assert.True(text.Queries[0].NewestFirst);
+    }
+
+    [Fact]
+    public void NoteWithTheWordsBeyondTheLimit_IsNotListedAsSimilar()
+    {
+        using var f = new Fixture();
+        f.Text.Hits.AddRange([new(f.A, 9.0), new(f.B, 5.0)]);
+        f.Index.Ranked.AddRange([f.B, f.C]);
 
         var hits = f.Hybrid.Search(new("wort", NoFilter, Limit: 1));
 
-        var expected = new[] { f.A, f.B }.Order().First();
-        Assert.Equal(new SearchHit(expected, Rrf(1)), Assert.Single(hits));
-    }
-
-    [Fact]
-    public void Rrf_SemanticOnlyHitIncluded()
-    {
-        using var f = new Fixture();
-        f.Index.Ranked.Add(f.D);
-
-        var hit = Assert.Single(f.Hybrid.Search(new("wort", NoFilter)));
-
-        Assert.Equal(new SearchHit(f.D, Rrf(1)), hit);
-    }
-
-    [Fact]
-    public void Filters_AppliedToSemanticHits()
-    {
-        using var f = new Fixture();
-        f.Index.Ranked.AddRange([f.Used, Guid.NewGuid(), f.A]);
-        var hideUsed = new NoteFilter(true, null, null);
-
-        var unfiltered = f.Hybrid.Search(new("wort", NoFilter));
-        var filtered = f.Hybrid.Search(new("wort", hideUsed));
-
-        // a removed (unknown) key never shows up; the used note only without the filter
-        Assert.Equal([f.Used, f.A], unfiltered.Select(h => h.NoteBlockKey));
-        Assert.Equal([f.A], filtered.Select(h => h.NoteBlockKey));
-        Assert.Equal(hideUsed, f.Text.Queries[1].Filter);
+        Assert.Equal([new SearchHit(f.A, 9.0), new SearchHit(f.C, 1f, Similar: true)], hits);
     }
 
     [Fact]
@@ -192,7 +217,7 @@ public sealed class HybridSearchTests
     }
 
     [Fact]
-    public void RealFullText_FusesWithSemanticHit()
+    public void RealFullText_ThenTheSimilarNote()
     {
         using var f = new Fixture();
         using var fullText = new FullTextSearchService();
@@ -202,8 +227,7 @@ public sealed class HybridSearchTests
 
         var hits = hybrid.Search(new("beta", NoFilter));
 
-        Assert.Equal([f.B, f.D], hits.Select(h => h.NoteBlockKey));
-        Assert.Equal([Rrf(1, 2), Rrf(1)], hits.Select(h => h.Score));
+        Assert.Equal([(f.B, false), (f.D, true)], hits.Select(h => (h.NoteBlockKey, h.Similar)));
     }
 
     [Fact]

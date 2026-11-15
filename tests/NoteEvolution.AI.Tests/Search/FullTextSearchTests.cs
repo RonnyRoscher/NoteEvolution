@@ -201,4 +201,23 @@ public class FullTextSearchTests
 
         Assert.Empty(search.Search(new("wort", All)));
     }
+
+    [Fact]
+    public void Search_NewestFirst_OrdersByDate_UndatedLast_ThenByRank()
+    {
+        using var vault = TestVault.Create(
+            ("journals/2026_01_05.md", "- wort wort wort im januar\n"),
+            ("journals/2026_03_09.md", "- ein wort im maerz\n- wort wort im maerz, besser\n"),
+            ("pages/Seite.md", "- wort wort wort wort ohne datum\n"));
+        var notes = new NoteRepository(vault.Open());
+        using var search = new FullTextSearchService();
+        search.Rebuild(notes);
+        string Text(SearchHit hit) => notes.Get(hit.NoteBlockKey)!.Block.Content;
+
+        var newest = search.Search(new("wort", new NoteFilter(false, null, null), NewestFirst: true));
+
+        Assert.Equal(
+            ["wort wort im maerz, besser", "ein wort im maerz", "wort wort wort im januar", "wort wort wort wort ohne datum"],
+            newest.Select(Text));
+    }
 }

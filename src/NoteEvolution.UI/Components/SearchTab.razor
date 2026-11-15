@@ -5,7 +5,8 @@
 @inject TimeProvider Time
 @inject IStringLocalizer<Strings> L
 
-@* The "Suche" tab: a search box whose query is committed 300 ms after the last keystroke, and the hits as note cards. *@
+@* The "Suche" tab: a search box whose query is committed 300 ms after the last keystroke, and the hits as note cards:
+   the notes with the words, newest first, then under a title the notes that are only similar in meaning. *@
 <div class="ne-search">
     <input class="ne-search-input" type="search" value="@_text" placeholder="@L["NotesSearchPlaceholder"]"
            aria-label="@L["NotesSearchLabel"]" @oninput="OnInput" />
@@ -18,11 +19,18 @@
         <div class="ne-search-empty">@L["NotesSearchEmpty"]</div>
     }
     <div class="ne-search-list">
+        @{ var similarTitleShown = false; }
         @foreach (var hit in _hits)
         {
             // Read live (not kept): a page replaced after an external change gives new views.
             if (State.Session?.Notes.Get(hit.Key) is { } note)
             {
+                if (hit.Similar && !similarTitleShown)
+                {
+                    similarTitleShown = true;
+                    <div class="ne-search-similar-title" title="@L["NotesSearchSimilarTitle"]">@L["NotesSearchSimilar"]</div>
+                }
+
                 <NoteCard @key="hit.Key" Note="note" Percent="hit.Percent" />
             }
         }
@@ -36,7 +44,8 @@
     private CancellationTokenSource? _pending;
     private string _text = "";
     private (string Query, NoteFilter Filter, int Revision)? _last;
-    private List<(Guid Key, int Percent)> _hits = [];
+    /// <summary>The notes with the words (no percent), then the similar ones with their similarity in percent.</summary>
+    private List<(Guid Key, int? Percent, bool Similar)> _hits = [];
 
     /// <summary>The notes in <see cref="_hits"/> only because their "Wohin damit?" list is open (see <see cref="WhereToPins"/>).</summary>
     private HashSet<Guid> _keptOnly = [];
@@ -101,16 +110,18 @@
     /// <summary>Searches again; a card with an open "Wohin damit?" list stays where it is (see <see cref="WhereToPins"/>).</summary>
     private void Run()
     {
-        List<(Guid Key, int Percent)> hits = [];
+        List<(Guid Key, int? Percent, bool Similar)> hits = [];
         if (State.Session is { } session && !string.IsNullOrWhiteSpace(Query))
         {
-            var found = session.Search.Search(new SearchQuery(Query, Filter));
-            var best = found.Count > 0 ? found.Max(hit => hit.Score) : 0;
-            hits = [.. found.Select(hit => (hit.NoteBlockKey, Percent(hit.Score, best)))];
+            var found = session.Search.Search(new SearchQuery(Query, Filter, NewestFirst: true));
+            hits = [.. found.Select(hit => (hit.NoteBlockKey, hit.Similar ? SimilarityPercent(hit.Score) : (int?)null, hit.Similar))];
         }
 
         (_hits, _keptOnly) = WhereToPins.Merge(_hits, hits, hit => hit.Key, State.WhereToOpenNotes);
     }
+
+    /// <summary>A cosine similarity in percent.</summary>
+    internal static int SimilarityPercent(double similarity) => (int)Math.Clamp(Math.Round(similarity * 100), 0, 100);
 
     /// <summary>The score in percent of the best hit's (the best is 100 %); all 100 if no score is positive.</summary>
     internal static int Percent(double score, double best) =>

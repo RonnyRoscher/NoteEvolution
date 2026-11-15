@@ -601,6 +601,12 @@
   <data name="NotesSearchHint" xml:space="preserve">
     <value>Gib einen Suchbegriff ein.</value>
   </data>
+  <data name="NotesSearchSimilar" xml:space="preserve">
+    <value>Ähnliche Notizen</value>
+  </data>
+  <data name="NotesSearchSimilarTitle" xml:space="preserve">
+    <value>Diese Notizen enthalten die Suchwörter nicht, ähneln dem Suchtext aber in der Bedeutung. Die Prozentzahl ist die Ähnlichkeit.</value>
+  </data>
   <data name="NotesSearchEmpty" xml:space="preserve">
     <value>Keine passenden Notizen.</value>
   </data>

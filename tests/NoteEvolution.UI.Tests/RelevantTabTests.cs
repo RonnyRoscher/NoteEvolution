@@ -489,15 +489,23 @@ public class RelevantTabTests : UiTestContext
         cut.WaitForElement(".ne-search-input").Input("Gitarre");
         Time.Advance(TimeSpan.FromMilliseconds(300));
 
-        // Full text alone finds the 15 music notes; the hybrid search adds the notes that only fit by meaning.
+        // The 15 music notes contain the word; a note that only fits by meaning follows under the title, with its
+        // similarity in percent, and only if it is similar enough.
         Assert.IsType<HybridSearchService>(session.Search);
         cut.WaitForState(() => cut.FindAll(".ne-search-list .ne-note-card").Count > 0);
-        var texts = cut.FindAll(".ne-search-list .ne-note-card > .ne-note-body > .ne-note-text")
-            .Select(e => e.TextContent.Trim())
-            .ToList();
-        Assert.Contains(Music, texts[0]);
-        Assert.True(texts.Count > 15);
-        Assert.Contains(texts, t => t.StartsWith("Schlaf", StringComparison.Ordinal) || t.StartsWith("Suppe", StringComparison.Ordinal));
+        var list = cut.Find(".ne-search-list");
+        var cards = list.QuerySelectorAll(".ne-note-card").ToList();
+        var withWords = cards.TakeWhile(card => card.QuerySelector(".ne-note-score") is null).ToList();
+        Assert.Equal(15, withWords.Count);
+        Assert.All(withWords, card => Assert.Contains(Music, card.QuerySelector(".ne-note-text")!.TextContent));
+        var similar = cards.Skip(15).ToList();
+        Assert.Equal(similar.Count > 0 ? 1 : 0, list.QuerySelectorAll(".ne-search-similar-title").Length);
+        Assert.All(similar, card =>
+        {
+            Assert.DoesNotContain(Music, card.QuerySelector(".ne-note-text")!.TextContent);
+            var percent = int.Parse(card.QuerySelector(".ne-note-score")!.TextContent.Split(' ')[0]);
+            Assert.True(percent >= 84, $"similar note below the threshold: {percent} %");
+        });
     }
 }
 

@@ -3001,3 +3001,12 @@ html, body {
     font-family: var(--font-text);
     overflow-wrap: anywhere;
 }
+/* The title above the notes that are only similar in meaning to the search text. */
+.ne-search-similar-title {
+    margin: 14px 0 6px;
+    padding-top: 8px;
+    border-top: 1px solid var(--ne-border, #ccc);
+    font-size: 0.85em;
+    font-weight: 600;
+    opacity: 0.75;
+}
