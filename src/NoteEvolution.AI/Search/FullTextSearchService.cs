@@ -58,7 +58,10 @@ public sealed class FullTextSearchService : ISearchService, IDisposable
         }
     }
 
-    /// <summary>Hits best first; <see cref="SearchHit.Score"/> is the negated bm25 rank, so higher is better.</summary>
+    /// <summary>
+    /// Hits best first, or newest first (then best) if the query asks for it; <see cref="SearchHit.Score"/> is the
+    /// negated bm25 rank, so higher is better.
+    /// </summary>
     public IReadOnlyList<SearchHit> Search(SearchQuery query)
     {
         var match = FtsQuery.Build(query.Text);
@@ -69,7 +72,7 @@ public sealed class FullTextSearchService : ISearchService, IDisposable
         if (query.Filter.HideUsed) sql.Append(" AND meta.is_used = 0");
         if (query.Filter.From is not null) sql.Append(" AND meta.date >= $from");
         if (query.Filter.To is not null) sql.Append(" AND meta.date <= $to");
-        sql.Append(" ORDER BY rank LIMIT $limit");
+        sql.Append(query.NewestFirst ? " ORDER BY meta.date IS NULL, meta.date DESC, rank LIMIT $limit" : " ORDER BY rank LIMIT $limit");
 
         lock (_gate)
         {

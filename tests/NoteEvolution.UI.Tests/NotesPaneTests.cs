@@ -198,7 +198,7 @@ public class NotesPaneTests : UiTestContext
     }
 
     [Fact]
-    public async Task NotesPane_Search_ScoresAreNormalizedToBestHit()
+    public async Task NotesPane_Search_NotesWithTheWordsShowNoScore()
     {
         using var tv = Create();
         await OpenAlphaAsync(tv);
@@ -206,10 +206,27 @@ public class NotesPaneTests : UiTestContext
 
         Search(cut, "Gedächtnis");
 
-        var scores = cut.FindAll(".ne-note-score").Select(e => e.TextContent).ToList();
-        Assert.Equal(5, scores.Count);
-        Assert.Equal("100 %", scores[0]);
-        Assert.All(scores, s => Assert.Matches(@"^\d{1,3} %$", s));
+        Assert.Equal(5, cut.FindAll(".ne-search-list .ne-note-card").Count);
+        Assert.Empty(cut.FindAll(".ne-note-score"));
+        Assert.Empty(cut.FindAll(".ne-search-similar-title"));
+    }
+
+    [Fact]
+    public async Task NotesPane_Search_NewestFirst_UndatedLast()
+    {
+        using var tv = TestVault.Create(
+            ("pages/Buch - Alpha.md", "title:: Alpha\ntype:: book\n\n- # Eins\n\t- Text\n"),
+            ("journals/2026_01_05.md", "- Suchwort Suchwort Suchwort im Januar\n"),
+            ("journals/2026_03_09.md", "- ein Suchwort im März\n"),
+            ("pages/Seite.md", "- Suchwort Suchwort Suchwort Suchwort ohne Datum\n"));
+        await OpenAlphaAsync(tv);
+        var cut = Render<NotesPane>();
+
+        Search(cut, "Suchwort");
+
+        Assert.Equal(
+            ["ein Suchwort im März", "Suchwort Suchwort Suchwort im Januar", "Suchwort Suchwort Suchwort Suchwort ohne Datum"],
+            cut.FindAll(".ne-search-list .ne-note-card > .ne-note-body > .ne-note-text").Select(e => e.TextContent.Trim()));
     }
 
     [Fact]

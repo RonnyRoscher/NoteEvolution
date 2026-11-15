@@ -398,6 +398,12 @@ passendsten Textblöcke des Buchs) und Fundstellen-Vorschläge im `[handled]`-As
 Schreibaktion sind die Verknüpfungszeilen (`id::`, `source::`, `used-in::`) für Fundstellen, die du im Assistenten
 selbst gewählt und bestätigt hast. Ohne Modell arbeitet die App unverändert mit der Volltextsuche.
 
+**Suche:** Zuerst stehen die Notizen, die alle Suchwörter enthalten (auch als Wortanfang), von der neuesten zur
+ältesten; Notizen ohne Datum stehen am Ende. Mit Modell folgen unter „Ähnliche Notizen“ bis zu 20 Notizen, die die
+Wörter nicht enthalten, dem Suchtext aber in der Bedeutung deutlich ähneln (Ähnlichkeit ab 84 %, an der Karte
+angezeigt), ebenfalls neueste zuerst. Die Schwelle ist ein erster Schätzwert; jede Suche schreibt die höchsten
+Ähnlichkeiten ins Log, damit sie sich nachstellen lässt.
+
 - **Modelle:** du wählst eines von vier Modellen, alle quantisiert (int8), mit ONNX Runtime auf der CPU:
 
   | Modell | Download | Arbeitsspeicher ca. | Einordnung |

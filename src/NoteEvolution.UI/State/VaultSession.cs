@@ -909,7 +909,7 @@ public sealed class VaultSession : IDisposable
                 }
 
                 _aiParts = new AiParts(
-                    index, new HybridSearchService(_search, index, Notes), new RelevanceService(index), embedder, _ai.Model.Id);
+                    index, new HybridSearchService(_search, index, Notes, _logger), new RelevanceService(index), embedder, _ai.Model.Id);
             }
 
             index.StatusChanged += OnIndexStatusChanged;
