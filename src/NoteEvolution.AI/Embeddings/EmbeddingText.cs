@@ -3,6 +3,7 @@ using System.Text;
 using NoteEvolution.AI.Model;
 using NoteEvolution.Core.Books;
 using NoteEvolution.Core.Model;
+using NoteEvolution.Core.Repetitions;
 using NoteEvolution.Core.Text;
 using NoteEvolution.Core.Vaults;
 
@@ -74,6 +75,16 @@ public static class EmbeddingText
     }
 
     public static string ForSearch(string userText) => QueryPrefix + userText.Trim();
+
+    /// <summary>
+    /// The words of the compared block's paragraphs as they stand (one paragraph per line, paragraphs without words left
+    /// out), as a query: both blocks of a pair are embedded in the same role.
+    /// </summary>
+    public static string ForRepetition(ComparedBlock block) =>
+        QueryPrefix + Join(block.Words
+            .GroupBy(word => word.Paragraph)
+            .Select(words => string.Join(' ', words.Select(word =>
+                block.Paragraphs[word.Paragraph].Plain.Substring(word.Start, word.Length)))));
 
     /// <summary>
     /// Maps the role marker (<see cref="QueryPrefix"/> / <see cref="PassagePrefix"/>) at the start of

@@ -1,6 +1,7 @@
 using NoteEvolution.AI.Embeddings;
 using NoteEvolution.AI.Model;
 using NoteEvolution.Core.Books;
+using NoteEvolution.Core.Repetitions;
 using NoteEvolution.Core.Vaults;
 using NoteEvolution.TestSupport;
 
@@ -160,6 +161,24 @@ public class EmbeddingTextTests
         Assert.Equal("b", EmbeddingText.ForModel("passage: b", ModelCatalog.BgeM3));
         Assert.Equal("ohne", EmbeddingText.ForModel("ohne", ModelCatalog.BgeM3));
         Assert.Equal("xquery: a", EmbeddingText.ForModel("xquery: a", ModelCatalog.BgeM3));
+    }
+
+    [Fact]
+    public void ForRepetition_QueryPrefix_WordsOfEachParagraphOnALine()
+    {
+        var block = new ComparedBlock(
+            Guid.NewGuid(),
+            [
+                new ComparedParagraph(0, [], "Eins, zwei: drei."),
+                new ComparedParagraph(1, [], "--"),
+                new ComparedParagraph(1, [], "Vier fünf"),
+            ],
+            [
+                new ComparedWord(0, 0, 4, "eins"), new ComparedWord(0, 6, 4, "zwei"), new ComparedWord(0, 12, 4, "drei"),
+                new ComparedWord(2, 0, 4, "vier"), new ComparedWord(2, 5, 4, "fünf"),
+            ]);
+
+        Assert.Equal("query: Eins zwei drei\nVier fünf", EmbeddingText.ForRepetition(block));
     }
 
     [Fact]

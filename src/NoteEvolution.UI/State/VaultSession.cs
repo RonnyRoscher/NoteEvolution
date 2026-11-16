@@ -11,6 +11,7 @@ using NoteEvolution.Core.Assistants;
 using NoteEvolution.Core.Books;
 using NoteEvolution.Core.Links;
 using NoteEvolution.Core.Model;
+using NoteEvolution.Core.Repetitions;
 using NoteEvolution.Core.Storage;
 using NoteEvolution.Core.Vaults;
 using NoteEvolution.UI.History;
@@ -123,6 +124,17 @@ public sealed class VaultSession : IDisposable
     /// <summary>The current book's coverage, computed while an owner watches it.</summary>
     private readonly CoverageTracker _coverage;
 
+    /// <summary>The repetitions of the shown book, computed in the background.</summary>
+    private readonly RepetitionTracker _repetitions;
+
+    /// <summary>The book blocks' vectors (<c>book-vectors.db</c>), opened once the semantic index exists; guarded by <see cref="_bookVectorsGate"/>.</summary>
+    private VectorCache? _bookVectors;
+
+    /// <summary>The book blocks' vector cache could not be opened (or the session closed): the repetitions stay literal.</summary>
+    private bool _bookVectorsUnavailable;
+
+    private readonly object _bookVectorsGate = new();
+
     private VaultSession(
         string root, IClock clock, ILogger logger, TimeProvider timeProvider, Func<Action, Task> dispatch, AiRuntime? ai,
         LanguageModelRuntime? language, ISystemMonitor? monitor)
@@ -152,6 +164,9 @@ public sealed class VaultSession : IDisposable
         _noteStatus = new NoteStatusTracker(timeProvider, logger, language is not null, () => _understanding, () => _aiParts?.Index,
             Dispatch);
         _coverage = new CoverageTracker(timeProvider, logger, dispatch, vault, Notes, () => _focusBook, () => _understanding);
+        AcceptedRepetitions = new AcceptedRepetitions(vault.Root);
+        _repetitions = new RepetitionTracker(logger, dispatch, AcceptedRepetitions,
+            ai is null ? null : text => Semantic?.EmbedQuery(text), BookVectors, ai?.Model.Id ?? string.Empty);
         Watcher.ExternalChange += OnWatcherChange;
         if (_ai is not null)
         {
@@ -386,6 +401,74 @@ public sealed class VaultSession : IDisposable
     /// a change while nobody watches is computed once someone does again. Call it on the UI thread.
     /// </summary>
     public void WatchCoverage(object owner, bool visible) => _coverage.Watch(owner, visible);
+
+    /// <summary>
+    /// The repetitions of <paramref name="book"/> (spec 4) as computed for this very snapshot; <see cref="RepetitionSet.Empty"/>
+    /// until they are. The shown book is analysed when it is switched to, saved or replaced. Call it on the UI thread.
+    /// </summary>
+    public RepetitionSet RepetitionsOf(Book? book) => _repetitions.Of(book);
+
+    /// <summary><see cref="RepetitionsOf"/> changed for a book; raised on the UI thread.</summary>
+    public event Action? RepetitionsChanged
+    {
+        add => _repetitions.Changed += value;
+        remove => _repetitions.Changed -= value;
+    }
+
+    /// <summary>The repetitions the user accepted as intended (<c>.noteevolution/repetitions.json</c>).</summary>
+    public AcceptedRepetitions AcceptedRepetitions { get; }
+
+    /// <summary>Analyses <paramref name="book"/>'s repetitions in the background. Call it on the UI thread.</summary>
+    internal void ScheduleRepetitions(Book book) => _repetitions.Schedule(book);
+
+    /// <summary>The accepted repetitions changed: the sets are built again, without embedding. Call it on the UI thread.</summary>
+    internal void RefreshRepetitions() => _repetitions.Refresh();
+
+    /// <summary>For tests: completes when every repetition analysis started so far has ended.</summary>
+    internal Task RepetitionsIdle() => _repetitions.WhenIdle();
+
+    /// <summary>On the UI thread: analyses the shown book's repetitions (both halves show the current book).</summary>
+    private void ScheduleShownRepetitions(string? replacedPath = null)
+    {
+        if (IsDisposed || _focusBook is not { } name || Vault.FindBook(name) is not { } book
+            || (replacedPath is not null && !string.Equals(book.Page.FilePath, replacedPath, StringComparison.OrdinalIgnoreCase)))
+        {
+            return;
+        }
+
+        _repetitions.Schedule(book);
+    }
+
+    /// <summary>
+    /// The book blocks' vector cache, opened on first use once the semantic index exists; null before, after a failure
+    /// to open it and after <see cref="Dispose"/>. Called in the background.
+    /// </summary>
+    private VectorCache? BookVectors()
+    {
+        if (_aiParts is not { } parts)
+        {
+            return null;
+        }
+
+        lock (_bookVectorsGate)
+        {
+            if (_bookVectorsUnavailable || IsDisposed)
+            {
+                return null;
+            }
+
+            try
+            {
+                return _bookVectors ??= VectorCache.Open(Vault.Root, parts.EmbedModel, "book-vectors.db");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "The book blocks' vector cache could not be opened");
+                _bookVectorsUnavailable = true;
+                return null;
+            }
+        }
+    }
 
     /// <summary>The AI's state for this vault: the runtime's (model missing, downloading, load failed) or the index's.</summary>
     public AiStatus AiStatus
@@ -712,6 +795,15 @@ public sealed class VaultSession : IDisposable
             _focusTimer?.Dispose();
             _noteStatus.Dispose();
             _coverage.Dispose();
+            _repetitions.Dispose();
+        }
+
+        // After the tracker cancelled its analyses (one still embedding ends at its next step without the cache).
+        lock (_bookVectorsGate)
+        {
+            _bookVectorsUnavailable = true;
+            _bookVectors?.Dispose();
+            _bookVectors = null;
         }
 
         // The open stands are stored while the database is still open.
@@ -915,6 +1007,9 @@ public sealed class VaultSession : IDisposable
             index.StatusChanged += OnIndexStatusChanged;
             Dispatch(StartIndexing, "the start of the semantic indexing");
             Dispatch(UpdateUnderstanding, "the start of the language model");
+
+            // The shown book was analysed literal only so far: now its blocks can be embedded.
+            Dispatch(() => ScheduleShownRepetitions(), "the repetitions of the shown book");
         }
         catch (Exception ex)
         {
@@ -1266,6 +1361,10 @@ public sealed class VaultSession : IDisposable
         if (bookChanged)
         {
             _coverage.Schedule();
+            if (book is not null)
+            {
+                _repetitions.Schedule(book);
+            }
         }
 
         lock (_gate)
@@ -1791,6 +1890,10 @@ public sealed class VaultSession : IDisposable
     {
         _pagesStamp = new object();
         _coverage.Schedule();
+
+        // A save or an external change of the shown book: analysed from its new snapshot (the vault is read on the UI thread).
+        var path = page.FilePath;
+        Dispatch(() => ScheduleShownRepetitions(path), "the repetitions of " + path);
     }
 
     /// <summary>Called on any thread; never throws.</summary>

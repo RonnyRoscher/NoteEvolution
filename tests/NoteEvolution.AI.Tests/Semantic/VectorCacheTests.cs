@@ -159,6 +159,24 @@ public sealed class VectorCacheTests : IDisposable
     }
 
     [Fact]
+    public void Open_WithFileName_UsesThatFile_AndKeepsVectorsApart()
+    {
+        using (var books = VectorCache.Open(_vault, Model, "book-vectors.db"))
+        using (var notes = VectorCache.Open(_vault, Model))
+        {
+            books.Put([(H("a"), "book.md", [1f, 2f])]);
+            notes.Put([(H("b"), "note.md", [3f])]);
+
+            Assert.Empty(books.Get([H("b")]));
+            Assert.Empty(notes.Get([H("a")]));
+        }
+
+        Assert.True(File.Exists(Path.Combine(_vault, ".noteevolution", "book-vectors.db")));
+        using var reopened = VectorCache.Open(_vault, Model, "book-vectors.db");
+        Assert.Equal([1f, 2f], reopened.Get([H("a")])[H("a")]);
+    }
+
+    [Fact]
     public async Task Cache_ConcurrentUse_DoesNotFail()
     {
         using var cache = VectorCache.Open(_vault, Model);

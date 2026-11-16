@@ -1,6 +1,7 @@
 using System.Text;
 using Microsoft.Extensions.Time.Testing;
 using NoteEvolution.AI.Search;
+using NoteEvolution.Core.Repetitions;
 using NoteEvolution.Core.Storage;
 using NoteEvolution.Core.Vaults;
 using NoteEvolution.TestSupport;
@@ -204,6 +205,44 @@ public class VaultSessionTests
 
         Assert.Null(error);
         Assert.Equal($"- Vertrauen wächst\n  id:: {NoteId}\n- Neu\n", tv.Read("journals/2026_03_01.md"));
+    }
+
+    [Fact]
+    public async Task Repetitions_ShownBook_AnalysedOnSwitchAndSave_LiteralOnlyWithoutAi()
+    {
+        const string run = "eins zwei drei vier fuenf sechs sieben acht neun";
+        using var tv = TestVault.Create(
+            ("pages/Buch - Alpha.md", $"title:: Alpha\ntype:: book\n\n- # Eins\n\t- alpha {run}\n\t- beta {run}\n"),
+            ("pages/Buch - Beta.md", $"title:: Beta\ntype:: book\n\n- # Eins\n\t- gamma {run}\n"));
+        using var session = await Open(tv);
+        var changes = 0;
+        session.RepetitionsChanged += () => changes++;
+        var alpha = session.Vault.FindBook("Buch - Alpha")!;
+
+        session.SetFocus(alpha, alpha.Root.Key);
+        await session.RepetitionsIdle();
+
+        var set = session.RepetitionsOf(alpha);
+        Assert.Equal(RepetitionKind.Literal, Assert.Single(set.All).Kind);
+        Assert.Equal((0, 0, true), (set.Embedded, set.Total, set.Complete));
+        Assert.Equal(1, changes);
+
+        // Saving another book does not analyse the shown one again; saving the shown one does, from its new snapshot.
+        var beta = session.Vault.FindBook("Buch - Beta")!;
+        session.Writer.Save(beta.Page);
+        await session.RepetitionsIdle();
+        Assert.Equal(1, changes);
+
+        alpha.Page.Roots[0].Children[1].SetContent("beta ganz anders als vorher und ohne gemeinsame Worte");
+        session.Writer.Save(alpha.Page);
+        await session.RepetitionsIdle();
+
+        var saved = session.Vault.FindBook("Buch - Alpha")!;
+        Assert.NotSame(alpha, saved);
+        Assert.True(session.RepetitionsOf(saved).IsFor(saved));
+        Assert.Empty(session.RepetitionsOf(saved).All);
+        Assert.Same(RepetitionSet.Empty, session.RepetitionsOf(alpha));
+        Assert.Equal(2, changes);
     }
 
     [Fact]

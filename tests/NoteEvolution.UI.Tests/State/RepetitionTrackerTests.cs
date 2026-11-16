@@ -1,0 +1,357 @@
+using System.Collections.Concurrent;
+using System.Text;
+using Microsoft.Extensions.Logging;
+using NoteEvolution.AI.Semantic;
+using NoteEvolution.Core.Books;
+using NoteEvolution.Core.Format;
+using NoteEvolution.Core.Model;
+using NoteEvolution.Core.Repetitions;
+using NoteEvolution.TestSupport;
+using NoteEvolution.UI.State;
+
+namespace NoteEvolution.UI.Tests.State;
+
+public sealed class RepetitionTrackerTests : IDisposable
+{
+    private const string Model = "test-model";
+
+    private static readonly Guid IdA = Guid.Parse("11111111-1111-1111-1111-111111111111");
+    private static readonly Guid IdB = Guid.Parse("22222222-2222-2222-2222-222222222222");
+
+    // A and B share a literal run (eins … neun); C and D mean the same (their fake vectors are equal); E stands alone.
+    private const string TextA = "alpha eins zwei drei vier fuenf sechs sieben acht neun";
+    private const string TextB = "beta eins zwei drei vier fuenf sechs sieben acht neun";
+    private const string TextC = "gamma rot gruen blau gelb weiss schwarz braun";
+    private const string TextD = "delta hund katze maus vogel fisch pferd kuh";
+    private const string TextE = "epsilon berg tal fluss see meer insel strand";
+
+    private readonly TestVault _vault = TestVault.Create();
+    private readonly ListLogger _logger = new();
+    private readonly FakeEmbed _embed = new();
+    private readonly List<RepetitionTracker> _trackers = [];
+    private VectorCache? _cache;
+
+    public void Dispose()
+    {
+        foreach (var tracker in _trackers)
+        {
+            tracker.Dispose();
+        }
+
+        _cache?.Dispose();
+        _vault.Dispose();
+    }
+
+    private RepetitionTracker NewTracker(bool withEmbedder = true, AcceptedRepetitions? accepted = null)
+    {
+        var tracker = new RepetitionTracker(
+            _logger,
+            action =>
+            {
+                action();
+                return Task.CompletedTask;
+            },
+            accepted ?? new AcceptedRepetitions(_vault.Root),
+            withEmbedder ? _embed.Embed : null,
+            () => _cache ??= VectorCache.Open(_vault.Root, Model, "book-vectors.db"),
+            Model);
+        _trackers.Add(tracker);
+        return tracker;
+    }
+
+    private static Page Parse() => LogseqParser.Parse(
+        "Buch - Test.md",
+        Encoding.UTF8.GetBytes(
+            "type:: book\n\n" +
+            $"- # Eins\n\t- {TextA}\n\t  id:: {IdA}\n\t- {TextB}\n\t  id:: {IdB}\n" +
+            $"- # Zwei\n\t- {TextC}\n\t- {TextD}\n\t- {TextE}\n"));
+
+    /// <summary>The page edited in place: the block that starts with <paramref name="marker"/> gets a new text, same key.</summary>
+    private static Book Edit(Page page, string marker, string text)
+    {
+        var book = Book.Load(page);
+        book.FindTextBlock(Key(book, marker))!.Block.SetContent(text);
+        return Book.Load(page);
+    }
+
+    private static Guid Key(Book book, string marker) =>
+        ComparisonText.Of(book).Single(block => block.Paragraphs[0].Plain.StartsWith(marker, StringComparison.Ordinal)).Key;
+
+    private static IEnumerable<(RepetitionKind, Guid, Guid)> Pairs(RepetitionSet set) =>
+        set.All.Select(r => (r.Kind, r.A, r.B));
+
+    [Fact]
+    public async Task Schedule_PublishesLiteralPairs_BeforeEmbeddingEnds()
+    {
+        var gate = _embed.Hold("alpha");
+        var tracker = NewTracker();
+        var changes = 0;
+        tracker.Changed += () => changes++;
+        var book = Book.Load(Parse());
+
+        tracker.Schedule(book);
+        await gate.Entered;
+
+        var set = tracker.Of(book);
+        Assert.Equal([(RepetitionKind.Literal, Key(book, "alpha"), Key(book, "beta"))], Pairs(set));
+        Assert.False(set.Complete);
+        Assert.True(set.Embedded < set.Total);
+        Assert.Equal(5, set.Total);
+        Assert.True(changes >= 1);
+
+        gate.Release();
+        await tracker.WhenIdle();
+        Assert.True(tracker.Of(book).Complete);
+    }
+
+    [Fact]
+    public async Task Schedule_Finishes_WithSemanticPairs_AndComplete()
+    {
+        var tracker = NewTracker();
+        var book = Book.Load(Parse());
+
+        tracker.Schedule(book);
+        await tracker.WhenIdle();
+
+        var set = tracker.Of(book);
+        Assert.True(set.Complete);
+        Assert.Equal(5, set.Embedded);
+        Assert.Equal(5, set.Total);
+        Assert.Equal(
+            [
+                (RepetitionKind.Literal, Key(book, "alpha"), Key(book, "beta")),
+                (RepetitionKind.Semantic, Key(book, "gamma"), Key(book, "delta")),
+            ],
+            Pairs(set));
+        Assert.Equal(5, _embed.Calls);
+        Assert.All(_embed.Texts, text => Assert.StartsWith("query: ", text));
+    }
+
+    [Fact]
+    public async Task NearPair_IsLoggedOncePerSession()
+    {
+        var tracker = NewTracker();
+        var page = Parse();
+
+        tracker.Schedule(Book.Load(page));
+        await tracker.WhenIdle();
+        tracker.Schedule(Book.Load(page));
+        await tracker.WhenIdle();
+
+        var line = Assert.Single(_logger.Messages, m => m.StartsWith("Repetition candidate", StringComparison.Ordinal));
+        Assert.Equal(
+            "Repetition candidate 1.000 listed=True: \"gamma rot gruen blau gelb weiss schwarz…\" ~ \"delta hund katze maus vogel fisch pferd…\"",
+            line);
+    }
+
+    [Fact]
+    public async Task SecondRun_EmbedsOnlyChangedBlocks()
+    {
+        var tracker = NewTracker();
+        var page = Parse();
+        tracker.Schedule(Book.Load(page));
+        await tracker.WhenIdle();
+        Assert.Equal(5, _embed.Calls);
+
+        var edited = Edit(page, "epsilon", "epsilon wolke regen schnee wind sturm nebel blitz");
+        tracker.Schedule(edited);
+        await tracker.WhenIdle();
+
+        Assert.Equal(6, _embed.Calls);
+        Assert.True(tracker.Of(edited).Complete);
+
+        // After a restart the cached vectors are used again: nothing is embedded.
+        var restarted = NewTracker();
+        restarted.Schedule(Book.Load(page));
+        await restarted.WhenIdle();
+        Assert.Equal(6, _embed.Calls);
+    }
+
+    [Fact]
+    public async Task BlockEditedWhileEmbedding_OldVectorIsNotUsedForNewText()
+    {
+        var gate = _embed.Hold("delta");
+        var tracker = NewTracker();
+        var page = Parse();
+        var before = Book.Load(page);
+
+        tracker.Schedule(before);
+        await gate.Entered;
+        var after = Edit(page, "delta", "zeta hund katze maus vogel fisch pferd kuh");
+        Assert.Equal(Key(before, "delta"), Key(after, "zeta"));
+        tracker.Schedule(after);
+        gate.Release();
+        await tracker.WhenIdle();
+
+        var set = tracker.Of(after);
+        Assert.True(set.Complete);
+        Assert.DoesNotContain(set.All, r => r.Kind == RepetitionKind.Semantic);
+        Assert.Contains(_embed.Texts, text => text.StartsWith("query: zeta", StringComparison.Ordinal));
+        Assert.Same(RepetitionSet.Empty, tracker.Of(before));
+    }
+
+    [Fact]
+    public async Task EmbedNull_LeavesBlockOut_AndLogsOnce()
+    {
+        _embed.Failing.Add("epsilon");
+        var tracker = NewTracker();
+        var page = Parse();
+
+        tracker.Schedule(Book.Load(page));
+        await tracker.WhenIdle();
+        var book = Book.Load(page);
+        tracker.Schedule(book);
+        await tracker.WhenIdle();
+
+        var set = tracker.Of(book);
+        Assert.True(set.Complete);
+        Assert.Equal(4, set.Embedded);
+        Assert.Equal(1, _embed.CallsFor("epsilon"));
+        Assert.Single(_logger.Warnings);
+        Assert.Contains(set.All, r => r.Kind == RepetitionKind.Semantic);
+    }
+
+    [Fact]
+    public async Task NoEmbedder_OnlyLiteral_AndComplete()
+    {
+        var tracker = NewTracker(withEmbedder: false);
+        var book = Book.Load(Parse());
+
+        tracker.Schedule(book);
+        await tracker.WhenIdle();
+
+        var set = tracker.Of(book);
+        Assert.Equal([(RepetitionKind.Literal, Key(book, "alpha"), Key(book, "beta"))], Pairs(set));
+        Assert.Equal(0, set.Embedded);
+        Assert.Equal(0, set.Total);
+        Assert.True(set.Complete);
+        Assert.Null(_cache);
+    }
+
+    [Fact]
+    public async Task Of_OtherSnapshot_IsEmpty_UntilComputed()
+    {
+        var tracker = NewTracker();
+        var page = Parse();
+        var first = Book.Load(page);
+        tracker.Schedule(first);
+        await tracker.WhenIdle();
+
+        var second = Book.Load(page);
+        Assert.Same(RepetitionSet.Empty, tracker.Of(second));
+        Assert.Same(RepetitionSet.Empty, tracker.Of(null));
+        Assert.True(tracker.Of(first).IsFor(first));
+
+        tracker.Schedule(second);
+        await tracker.WhenIdle();
+
+        Assert.True(tracker.Of(second).IsFor(second));
+        Assert.Same(RepetitionSet.Empty, tracker.Of(first));
+    }
+
+    [Fact]
+    public async Task Refresh_AfterAccept_MarksPairAccepted_WithoutEmbedding()
+    {
+        var accepted = new AcceptedRepetitions(_vault.Root);
+        var tracker = NewTracker(accepted: accepted);
+        var book = Book.Load(Parse());
+        tracker.Schedule(book);
+        await tracker.WhenIdle();
+        Assert.False(tracker.Of(book).All.Single(r => r.Kind == RepetitionKind.Literal).Accepted);
+        var changes = 0;
+        tracker.Changed += () => changes++;
+
+        accepted.Set(book.LinkName, IdA, IdB, accepted: true, new HashSet<Guid> { IdA, IdB });
+        tracker.Refresh();
+
+        var set = tracker.Of(book);
+        Assert.True(set.IsFor(book));
+        Assert.True(set.All.Single(r => r.Kind == RepetitionKind.Literal).Accepted);
+        Assert.Empty(set.Of(Key(book, "alpha")));
+        Assert.Equal(5, _embed.Calls);
+        Assert.Equal(1, changes);
+    }
+
+    /// <summary>
+    /// Embeds by the first word of the text (after the role prefix): "gamma" and "delta" give the same vector, every other
+    /// word its own one. Can hold a call until released and fail for given words.
+    /// </summary>
+    private sealed class FakeEmbed
+    {
+        private readonly ConcurrentDictionary<string, Gate> _gates = new();
+        private int _calls;
+
+        public ConcurrentQueue<string> Texts { get; } = new();
+
+        public ConcurrentBag<string> Failing { get; } = [];
+
+        public int Calls => Volatile.Read(ref _calls);
+
+        public int CallsFor(string word) => Texts.Count(text => Word(text) == word);
+
+        public Gate Hold(string word) => _gates[word] = new Gate();
+
+        public float[]? Embed(string text)
+        {
+            Interlocked.Increment(ref _calls);
+            Texts.Enqueue(text);
+            var word = Word(text);
+            if (_gates.TryRemove(word, out var gate))
+            {
+                gate.Wait();
+            }
+
+            if (Failing.Contains(word))
+            {
+                return null;
+            }
+
+            var vector = new float[Words.Length];
+            vector[Array.IndexOf(Words, word == "delta" ? "gamma" : word)] = 1f;
+            return vector;
+        }
+
+        private static readonly string[] Words = ["alpha", "beta", "gamma", "epsilon", "zeta"];
+
+        private static string Word(string text) => text["query: ".Length..].Split(' ', '\n')[0];
+    }
+
+    private sealed class Gate
+    {
+        private readonly TaskCompletionSource _entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _released = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task Entered => _entered.Task;
+
+        public void Release() => _released.SetResult();
+
+        public void Wait()
+        {
+            _entered.SetResult();
+            _released.Task.Wait();
+        }
+    }
+
+    private sealed class ListLogger : ILogger
+    {
+        public ConcurrentQueue<string> Messages { get; } = new();
+
+        public ConcurrentQueue<string> Warnings { get; } = new();
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            var message = formatter(state, exception);
+            Messages.Enqueue(message);
+            if (logLevel >= LogLevel.Warning)
+            {
+                Warnings.Enqueue(message);
+            }
+        }
+    }
+}
