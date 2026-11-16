@@ -86,6 +86,12 @@ public sealed class UiSettings
     /// <summary>The outline shows a coverage bar next to each heading (spec 6.2).</summary>
     public bool ShowCoverage { get; set; }
 
+    /// <summary>
+    /// The editor marks text blocks that repeat elsewhere with "≈ n" at their right edge (repetitions spec 6); the section
+    /// bar's counter is shown either way. Components that show it follow a change when <see cref="AppState.Notify"/> is called.
+    /// </summary>
+    public bool ShowRepetitions { get; set; } = true;
+
     /// <summary>The way a note was adopted last; the note cards' "Übernehmen" button adopts and is labelled this way.</summary>
     public AdoptVariant LastAdoptVariant { get; set; } = AdoptVariant.AtCursor;
 

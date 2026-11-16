@@ -1,5 +1,6 @@
 @using NoteEvolution.Core.Books
 @using NoteEvolution.Core.Links
+@using NoteEvolution.Core.Repetitions
 @using NoteEvolution.Core.Vaults
 @using NoteEvolution.UI.Editor
 @implements IEditorCallbacks
@@ -10,6 +11,7 @@
 @inject IStringLocalizer<Strings> L
 @inject ILogger<EditorPane> Logger
 @inject IPlatformServices Platform
+@inject UiSettings Settings
 
 @* The book text (spec 7): the whole book as manuscript in the TipTap editor. Every change is saved 1000 ms after the
    last one by reconciling the editor's document into the book page (BookTextSaver). The cursor element sets the
@@ -45,7 +47,8 @@
                     OnAppendixPick="OnAppendixPicked" CitationLocator="@(_citationEdit?.Locator)" CitationEdit="_citationEdit"
                     OnCitationSave="SaveCitationAsync" OnCitationCancel="CancelCitationEdit"
                     ImageCaption="@(_imageEdit?.Caption)" ImageEdit="_imageEdit" OnImageCaptionSave="SaveImageCaptionAsync"
-                    OnImageCaptionCancel="CancelImageEdit" OnInsertImage="InsertImageFromFileAsync" OnMark="Editor.ToggleMarkAsync" />
+                    OnImageCaptionCancel="CancelImageEdit" OnInsertImage="InsertImageFromFileAsync" OnMark="Editor.ToggleMarkAsync"
+                    ExpandRepetitions="_expandRepetitions" />
     }
 </div>
 
@@ -72,6 +75,15 @@
 
     /// <summary>The dates labels the editor shows, by text block key (spec "Blockdaten" 3).</summary>
     private Dictionary<Guid, BlockDateLabel?> _shownDates = [];
+
+    /// <summary>
+    /// The repetition marks the editor shows (repetitions spec 6): the number per text block, without the blocks that have
+    /// none. Like the dates they are no part of the document: a new document has none until they are pushed again.
+    /// </summary>
+    private Dictionary<Guid, int> _shownRepetitions = [];
+
+    /// <summary>A click on a repetition mark asked the section bar to open its list; reset after the render that passed it on.</summary>
+    private bool _expandRepetitions;
 
     /// <summary>The cross references of the text the editor shows (spec 2.3), as last loaded or pushed.</summary>
     private ShownRefs _shownRefs = new([], []);
@@ -167,6 +179,8 @@
     {
         if (!firstRender)
         {
+            // The bar took the request with the render that is over now.
+            _expandRepetitions = false;
             return;
         }
 
@@ -563,6 +577,23 @@
         State.Notify();
     }
 
+    /// <summary>
+    /// A click on the "≈ n" mark of a text block makes it the element at the cursor, as a cross reference's target is
+    /// (<see cref="OnReferenceClicked"/>), and opens the section bar's list of repetitions for it. The editor's own
+    /// cursor stays where it is until the reveal has moved it.
+    /// </summary>
+    public async Task OnRepetitionMarkClicked(Guid textBlockKey)
+    {
+        if (State.CurrentBook?.FindTextBlock(textBlockKey) is null || !await ActivateAsync())
+        {
+            return;
+        }
+
+        _expandRepetitions = true;
+        State.JumpTo(textBlockKey);
+        State.Notify();
+    }
+
     /// <summary>Removes the note from the block's sources and the usage from the note, after saving the pending text.</summary>
     public Task OnChipRemoved(Guid textBlockKey, Guid noteId) => RemoveSourceAsync(textBlockKey, noteId);
 
@@ -774,6 +805,7 @@
             _session.PagesChanged += OnPagesChanged;
             _session.ConflictsChanged += OnConflictsChanged;
             _session.ExternalChangeStarting += OnExternalChangeStarting;
+            _session.RepetitionsChanged += OnRepetitionsChanged;
         }
     }
 
@@ -784,6 +816,7 @@
             _session.PagesChanged -= OnPagesChanged;
             _session.ConflictsChanged -= OnConflictsChanged;
             _session.ExternalChangeStarting -= OnExternalChangeStarting;
+            _session.RepetitionsChanged -= OnRepetitionsChanged;
         }
     }
 
@@ -876,6 +909,7 @@
             // Before the cross references: a citation typed as text becomes a node before its inner reference could.
             await ShowAppendixAsync(AppendixOf(fresh, book), book, ownSave);
             await ShowRefLabelsAsync(fresh, book);
+            await ShowRepetitionsAsync(book);
             StateHasChanged();
             await RevealPendingAsync();
             return;
@@ -896,6 +930,7 @@
                 remoteImageText: path => L["ImageRemote", path].Value);
             await Editor.SetDocumentAsync(json, _showChips, keepCursor: sameTarget);
             _shownDates = dates;
+            _shownRepetitions = [];
             _shownRefs = refs;
             // The document shows the labels; the editor keeps the marks it had (they are no part of the document).
             _shownAppendix = appendix with { Marks = _shownAppendix.Marks };
@@ -912,6 +947,7 @@
         _saver.Shown = new ShownText(session, book.LinkName, fresh);
         _shownChips = _showChips;
         _saver.ReloadNeeded = false;
+        await ShowRepetitionsAsync(book);
         if (sameTarget)
         {
             FollowCursorSection();
@@ -998,6 +1034,81 @@
         _showChips = e.Value is true;
         await SyncAsync();
     }
+
+    /// <summary>
+    /// Gives the editor the repetition marks of <paramref name="book"/> (repetitions spec 6) if they differ from what it
+    /// shows: the number of repetitions per text block, none when the switch is off. While the book's snapshot is not
+    /// analysed yet the marks stay as they are. A failed push is tried again with the next one.
+    /// </summary>
+    private async Task ShowRepetitionsAsync(Book book)
+    {
+        var counts = new Dictionary<Guid, int>();
+        if (Settings.ShowRepetitions)
+        {
+            var set = State.Session?.RepetitionsOf(book) ?? RepetitionSet.Empty;
+            if (!set.IsFor(book))
+            {
+                return;
+            }
+
+            foreach (var key in set.All.Where(r => !r.Accepted).SelectMany(r => new[] { r.A, r.B }).Distinct())
+            {
+                counts[key] = set.Of(key).Count;
+            }
+        }
+
+        if (counts.Count == _shownRepetitions.Count && counts.All(c => _shownRepetitions.GetValueOrDefault(c.Key) == c.Value))
+        {
+            return;
+        }
+
+        try
+        {
+            await Editor.SetBlockRepetitionsAsync(counts);
+            _shownRepetitions = counts;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Showing the repetitions in the editor failed");
+        }
+    }
+
+    /// <summary>
+    /// The analysis of the shown book changed: the section bar counts anew, and the editor gets the new marks (in turn
+    /// with loading and saving, which reset what it shows).
+    /// </summary>
+    private void OnRepetitionsChanged() => _ = InvokeAsync(async () =>
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        StateHasChanged();
+        if (!_ready)
+        {
+            return;
+        }
+
+        await _gate.WaitAsync();
+        try
+        {
+            var shown = _saver.Shown;
+            if (!_disposed && State.Session is { } session && shown is not null && ReferenceEquals(shown.Session, session)
+                && session.Vault.FindBook(shown.BookLink) is { } book)
+            {
+                await ShowRepetitionsAsync(book);
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Updating the repetitions in the editor failed");
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    });
 
     /// <summary>The dates each text block of the snapshot shows at its top right (spec "Blockdaten" 3).</summary>
     private Dictionary<Guid, BlockDateLabel?> DatesOf(SectionSnapshot snapshot, Book book) =>

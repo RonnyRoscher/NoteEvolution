@@ -117,8 +117,6 @@
 </Modal>
 
 @code {
-    private const int ExcerptLength = 60;
-
     private static readonly (RepetitionKind Kind, string Heading)[] Groups =
     [
         (RepetitionKind.Literal, "RepGroupLiteral"),
@@ -357,8 +355,7 @@
     private static IEnumerable<OutlineNode> Chapters(Book? book) =>
         book?.Root.Children.Where(c => c.AppendixKind == AppendixKind.None) ?? [];
 
-    private string TitleOf(OutlineNode section) =>
-        section.Title.Length > 0 ? section.Title : L["OutlineUntitled"].Value;
+    private string TitleOf(OutlineNode section) => RepetitionPlace.TitleOf(section, L);
 
     /// <summary>The titles of the section the block is in, from the chapter down; empty for the text before the first heading.</summary>
     private string PathOf(Book book, Guid key)
@@ -373,13 +370,7 @@
     }
 
     /// <summary>"Abschnitt › Textanfang": the block's own section and the start of its text.</summary>
-    private string PlaceOf(Book? book, Guid key)
-    {
-        var start = _set.Block(key)?.Paragraphs[0].Plain is { } plain ? Excerpt.FirstLine(plain, ExcerptLength) : "";
-        return book?.FindTextBlock(key)?.Section is { Parent: not null } section
-            ? $"{TitleOf(section)}{ManuscriptEditor.SectionPathSeparator}{start}"
-            : start;
-    }
+    private string PlaceOf(Book? book, Guid key) => RepetitionPlace.Of(book, _set, key, L);
 
     private static HashSet<Guid> TextBlockKeys(OutlineNode section)
     {

@@ -57,6 +57,14 @@ const datesAttribute = {
     parseHTML: () => null,
 };
 
+// How many repetitions the book has for a text block (shown as "≈ n" at its right edge). Like the dates it comes from
+// the book, is only shown, is set by setBlockRepetitions and is gone with the next document.
+const repetitionsAttribute = {
+    default: 0,
+    rendered: false,
+    parseHTML: () => 0,
+};
+
 // textBlock comes first: it is the default node where the document needs one.
 const Doc = Node.create({
     name: 'doc',
@@ -734,12 +742,18 @@ class TextBlockView {
         this.dates = document.createElement('span');
         this.dates.className = 'ne-block-dates';
         this.dates.contentEditable = 'false';
+        // Below the dates (both float right); a click reports the block to .NET and is no concern of the editor.
+        this.repetitions = document.createElement('button');
+        this.repetitions.type = 'button';
+        this.repetitions.className = 'ne-block-rep';
+        this.repetitions.setAttribute('contenteditable', 'false');
+        this.repetitions.addEventListener('click', () => this.options.onRepetitionClicked(this.node.attrs.key));
         this.contentDOM = document.createElement('div');
         this.contentDOM.className = 'ne-block-content';
         this.chips = document.createElement('div');
         this.chips.className = 'ne-chips';
         this.chips.contentEditable = 'false';
-        this.dom.append(handle, this.dates, this.contentDOM, this.chips);
+        this.dom.append(handle, this.dates, this.repetitions, this.contentDOM, this.chips);
         this.render();
     }
 
@@ -754,7 +768,7 @@ class TextBlockView {
     }
 
     render(sourcesChanged = true) {
-        const { key, sources, status, dates, datesTitle } = this.node.attrs;
+        const { key, sources, status, dates, datesTitle, repetitions } = this.node.attrs;
         this.dom.setAttribute('data-key', key ?? '');
         this.dom.toggleAttribute('data-has-sources', (sources ?? []).length > 0);
         if (status) {
@@ -773,6 +787,15 @@ class TextBlockView {
             this.dates.title = datesTitle;
         } else if (!datesTitle && this.dates.hasAttribute('title')) {
             this.dates.removeAttribute('title');
+        }
+        const count = repetitions ?? 0;
+        if (this.repetitions.hidden !== !(count > 0)) {
+            this.repetitions.hidden = !(count > 0);
+        }
+        const mark = count > 0 ? `≈ ${count}` : '';
+        if (this.repetitions.textContent !== mark) {
+            this.repetitions.textContent = mark;
+            this.repetitions.title = count > 0 ? `${count} Wiederholungen` : '';
         }
         if (!sourcesChanged) {
             return;
@@ -798,7 +821,7 @@ class TextBlockView {
     }
 
     stopEvent(event) {
-        return this.chips.contains(event.target);
+        return this.chips.contains(event.target) || this.repetitions.contains(event.target);
     }
 
     ignoreMutation(mutation) {
@@ -811,7 +834,7 @@ const TextBlock = Node.create({
     content: 'para+',
     draggable: true,
     addOptions() {
-        return { onChipClicked: () => {}, onChipRemoved: () => {} };
+        return { onChipClicked: () => {}, onChipRemoved: () => {}, onRepetitionClicked: () => {} };
     },
     addAttributes() {
         return {
@@ -826,6 +849,7 @@ const TextBlock = Node.create({
             status: statusAttribute,
             dates: datesAttribute,
             datesTitle: datesAttribute,
+            repetitions: repetitionsAttribute,
         };
     },
     parseHTML() {
@@ -1087,7 +1111,7 @@ function normalize(transactions, oldState, newState) {
         if (key !== node.attrs.key) {
             const splitFrom = node.type.name === 'textBlock' && node.attrs.key ? node.attrs.key : node.attrs.splitFrom;
             tr.setNodeMarkup(offset, undefined, node.type.name === 'textBlock'
-                ? { ...node.attrs, key, splitFrom, status: null, dates: null, datesTitle: null }
+                ? { ...node.attrs, key, splitFrom, status: null, dates: null, datesTitle: null, repetitions: 0 }
                 : { ...node.attrs, key });
         }
         if (node.type.name !== 'textBlock') {
@@ -1421,7 +1445,7 @@ const MarkedNodes = Extension.create({
     },
 });
 
-// Marks the transactions of setBlockDates and setRefLabels: they only show what the book holds and are not reported
+// Marks the transactions of setBlockDates, setBlockRepetitions and setRefLabels: they only show what the book holds and are not reported
 // as an edit.
 const shownOnlyKey = 'neShownOnly';
 
@@ -1621,7 +1645,7 @@ function dropElement(view, event) {
 
 /**
  * Creates the editor in host. dotnet receives DocumentChanged(json), CursorChanged(kind, key, textBlockKey, offset),
- * EditorFocused() (whenever the editor gets the focus, before the cursor report that may follow), SectionCommand(name), SectionBoxMoved(barTop, visible), ChipClicked(noteId), ChipRemoved(blockKey, noteId),
+ * EditorFocused() (whenever the editor gets the focus, before the cursor report that may follow), SectionCommand(name), SectionBoxMoved(barTop, visible), ChipClicked(noteId), ChipRemoved(blockKey, noteId), RepetitionClicked(blockKey),
  * ReferenceClicked(id), NoteDropped(afterKey, elementKey) (a drop from outside the editors: a note card or the marked range, see dropTarget and dropElement), BlocksDragStarted(keysJson), BlocksDragEnded(), BlocksDropped(keysJson, afterKey) (text blocks dragged from the other editor), UndoRequested() (Ctrl+Z with nothing to undo in the editor), PersonClicked(id), SourceClicked(id), CitationEdit(id, key, offset),
  * LoadImage(path) (returns a Promise of { src, error }: a data URL of the picture, or the text to show instead),
  * ImageEdit(key, offset) (a double click on an image, key and offset of the image's text as CitationEdit has them), ImagePasted(base64, mime) (an image in the clipboard; the paste changes nothing in the document) and
@@ -1729,6 +1753,7 @@ export function createEditor(host, dotnet, options = {}) {
             TextBlock.configure({
                 onChipClicked: noteId => call('ChipClicked', noteId),
                 onChipRemoved: (blockKey, noteId) => call('ChipRemoved', blockKey, noteId),
+                onRepetitionClicked: blockKey => call('RepetitionClicked', blockKey),
             }),
             Para,
             Text,
@@ -1955,6 +1980,26 @@ export function createEditor(host, dotnet, options = {}) {
                 const datesTitle = item?.datesTitle ?? null;
                 if (item && (dates !== node.attrs.dates || datesTitle !== node.attrs.datesTitle)) {
                     tr.setNodeMarkup(offset, undefined, { ...node.attrs, dates, datesTitle });
+                }
+            });
+            if (tr.docChanged) {
+                editor.view.dispatch(tr.setMeta('addToHistory', false).setMeta(shownOnlyKey, true));
+            }
+        },
+        /**
+         * Sets the repetition marks: counts is an object from text block key to the number of repetitions the block is
+         * in; 0 or a missing key takes the mark away. The document, the cursor and the undo history stay; no change is
+         * reported. Unknown keys are ignored.
+         */
+        setBlockRepetitions(counts) {
+            const tr = editor.state.tr;
+            editor.state.doc.forEach((node, offset) => {
+                if (node.type.name !== 'textBlock') {
+                    return;
+                }
+                const count = counts?.[node.attrs.key] ?? 0;
+                if (count !== (node.attrs.repetitions ?? 0)) {
+                    tr.setNodeMarkup(offset, undefined, { ...node.attrs, repetitions: count });
                 }
             });
             if (tr.docChanged) {

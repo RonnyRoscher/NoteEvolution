@@ -119,6 +119,29 @@ public class EditorInteropTests
     }
 
     [Fact]
+    public async Task SetBlockRepetitions_Serializes_KeyToCount()
+    {
+        var interop = await InitAsync();
+
+        await interop.SetBlockRepetitionsAsync(new Dictionary<Guid, int> { [Guid.Parse(Key)] = 2, [Guid.Parse(BlockKey)] = 1 });
+        await interop.SetBlockRepetitionsAsync(new Dictionary<Guid, int>());
+
+        var payloads = _js.Calls.Where(c => c.Method == "setBlockRepetitions").Select(c => JsonSerializer.Serialize(c.Args.Single())).ToArray();
+        Assert.Equal([$$"""{"{{Key}}":2,"{{BlockKey}}":1}""", "{}"], payloads);
+    }
+
+    [Fact]
+    public async Task RepetitionClicked_ParsesTheKey_BadKeyIgnored()
+    {
+        var interop = await InitAsync();
+
+        await interop.RepetitionClicked(BlockKey);
+        await interop.RepetitionClicked("broken");
+
+        Assert.Equal([Guid.Parse(BlockKey)], _callbacks.RepetitionMarks);
+    }
+
+    [Fact]
     public async Task SetMarked_Serializes_KeysAndOwnTextOnly()
     {
         var interop = await InitAsync();
@@ -297,6 +320,14 @@ public class EditorInteropTests
         public Task OnChipClicked(Guid noteId) => Task.CompletedTask;
 
         public Task OnChipRemoved(Guid textBlockKey, Guid noteId) => Task.CompletedTask;
+
+        public List<Guid> RepetitionMarks { get; } = [];
+
+        public Task OnRepetitionMarkClicked(Guid textBlockKey)
+        {
+            RepetitionMarks.Add(textBlockKey);
+            return Task.CompletedTask;
+        }
 
         public List<Guid> References { get; } = [];
 

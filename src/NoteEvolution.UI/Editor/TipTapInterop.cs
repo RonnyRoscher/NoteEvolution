@@ -55,6 +55,11 @@ public sealed class TipTapInterop(IJSRuntime js, AppState state) : IEditorIntero
             "setBlockDates",
             [dates.Select(d => new { key = d.Key.ToString("D"), dates = d.Value?.Text, datesTitle = d.Value?.Title }).ToArray()]);
 
+    /// <summary>Passes the counts to the script as an object from the block's key to its count.</summary>
+    public async Task SetBlockRepetitionsAsync(IReadOnlyDictionary<Guid, int> counts) =>
+        await Initialized.InvokeVoidAsync(
+            "setBlockRepetitions", [counts.ToDictionary(c => c.Key.ToString("D"), c => c.Value)]);
+
     /// <summary>Passes the labels to the script as an array of <c>{ id, label, title, missing, foreign }</c>.</summary>
     public async Task SetRefLabelsAsync(IReadOnlyDictionary<Guid, RefLabel> labels) =>
         await Initialized.InvokeVoidAsync(
@@ -168,6 +173,10 @@ public sealed class TipTapInterop(IJSRuntime js, AppState state) : IEditorIntero
     [JSInvokable]
     public Task ChipClicked(string noteId) =>
         _callbacks is not null && Guid.TryParse(noteId, out var id) ? _callbacks.OnChipClicked(id) : Task.CompletedTask;
+
+    [JSInvokable]
+    public Task RepetitionClicked(string textBlockKey) =>
+        _callbacks is not null && Guid.TryParse(textBlockKey, out var key) ? _callbacks.OnRepetitionMarkClicked(key) : Task.CompletedTask;
 
     [JSInvokable]
     public Task ChipRemoved(string textBlockKey, string noteId) =>

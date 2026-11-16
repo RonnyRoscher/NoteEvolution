@@ -1514,6 +1514,35 @@ html, body {
     display: none;
 }
 
+/*
+ * The repetition mark „≈ n“ (setBlockRepetitions) sits at the right edge below the dates, in the flow so that the first
+ * lines wrap around it like around the dates. A click on it marks the block and opens the section bar's list.
+ */
+.ne-block-rep {
+    float: right;
+    clear: right;
+    margin-left: 8px;
+    padding: 0 6px;
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    background: transparent;
+    font-family: var(--font-ui);
+    font-size: 11px;
+    line-height: 1.5;
+    color: var(--fg-muted);
+    cursor: pointer;
+    user-select: none;
+}
+
+.ne-block-rep:hover {
+    background: var(--hint-bg);
+    color: var(--fg);
+}
+
+.ne-block-rep[hidden] {
+    display: none;
+}
+
 /* Beside the dates a narrow column would break the first line's words (ProseMirror wraps with break-word). */
 @container (max-width: 480px) {
     .ne-block-dates {
@@ -1521,6 +1550,16 @@ html, body {
         display: block;
         margin-left: 0;
         text-align: right;
+    }
+
+    .ne-block-rep {
+        float: none;
+        display: block;
+        margin: 0 0 0 auto;
+    }
+
+    .ne-block-rep[hidden] {
+        display: none;
     }
 }
 
@@ -1883,7 +1922,8 @@ html, body {
 
 .ne-sec-buttons button,
 .ne-sec-sources,
-.ne-sec-backrefs {
+.ne-sec-backrefs,
+.ne-sec-reps {
     white-space: nowrap;
 }
 
@@ -1950,6 +1990,37 @@ html, body {
 
 .ne-sec-no-sources {
     color: var(--fg-muted);
+}
+
+/* The repetitions of the marked range sit left of the back references; their list opens upwards like the others. */
+.ne-sec-reps-area {
+    position: relative;
+}
+
+/* A row of the list: the kind („wörtlich“ or n %), then the two places, each cut off at the end of its line. */
+.ne-shell .ne-sec-rep {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    column-gap: 8px;
+    border: none;
+    background: transparent;
+    text-align: left;
+}
+
+.ne-shell .ne-sec-rep:hover {
+    background: var(--hint-bg);
+}
+
+.ne-sec-rep-kind {
+    grid-row: span 2;
+    align-self: center;
+    color: var(--fg-muted);
+}
+
+.ne-sec-rep-place {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
 }
 
 /* The list opens upwards: below the bar may be the bottom of the window. */

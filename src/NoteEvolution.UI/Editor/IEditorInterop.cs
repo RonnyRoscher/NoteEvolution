@@ -125,6 +125,9 @@ public interface IEditorCallbacks
     /// <summary>The × of a source chip was clicked.</summary>
     Task OnChipRemoved(Guid textBlockKey, Guid noteId);
 
+    /// <summary>The "≈ n" mark at the right edge of a text block was clicked.</summary>
+    Task OnRepetitionMarkClicked(Guid textBlockKey);
+
     /// <summary>A cross reference was clicked; <paramref name="targetId"/> is the <c>id::</c> it refers to.</summary>
     Task OnReferenceClicked(Guid targetId);
 
@@ -233,6 +236,14 @@ public interface IEditorInterop : IAsyncDisposable
     /// editor does not show are ignored.
     /// </summary>
     Task SetBlockDatesAsync(IReadOnlyDictionary<Guid, BlockDateLabel?> dates);
+
+    /// <summary>
+    /// Sets the repetition marks ("≈ n") of the shown text blocks by key: a block that is missing (or has 0) has none,
+    /// so the map is the whole set and an empty one removes all marks. Like <see cref="SetBlockDatesAsync"/> this is shown
+    /// state only: no <see cref="IEditorCallbacks.OnDocumentChanged"/>, no undo step, the cursor stays; the marks are gone
+    /// with the next document (<see cref="SetDocumentAsync"/>). Keys the editor does not show are ignored.
+    /// </summary>
+    Task SetBlockRepetitionsAsync(IReadOnlyDictionary<Guid, int> counts);
 
     /// <summary>
     /// Sets the labels of the shown cross references by target id without replacing the document (spec 2.3
