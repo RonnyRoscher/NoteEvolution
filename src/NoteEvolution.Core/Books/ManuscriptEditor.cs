@@ -1091,6 +1091,59 @@ public static partial class ManuscriptEditor
     }
 
     /// <summary>
+    /// Appends a cross reference to <paramref name="targetKey"/> at the end of the own text of the text block
+    /// <paramref name="textBlockKey"/> (before its sub-points), separated by one space (none if the own text is empty).
+    /// Rules as <see cref="InsertReference"/>: the target gets an <c>id::</c> if it has none, without a date; the
+    /// referring block gets <c>updated::</c>.
+    /// </summary>
+    /// <exception cref="ArgumentException">As <see cref="InsertReference"/>: unknown block, or the block refers to itself.</exception>
+    /// <exception cref="InvalidOperationException">A block has no place for properties (an open code fence); nothing is changed.</exception>
+    public static void AppendReference(Book book, Guid textBlockKey, Guid targetKey, DateTimeOffset now)
+    {
+        var element = ReferringElement(book, textBlockKey);
+        var target = (book.FindNode(targetKey)?.Block ?? book.FindTextBlock(targetKey)?.Block)
+                     ?? throw new ArgumentException("The target is not a heading or text block of the book.", nameof(targetKey));
+        if (targetKey == textBlockKey)
+        {
+            throw new ArgumentException("An element cannot refer to itself.", nameof(targetKey));
+        }
+
+        var content = BlockOf(book, element).Content;
+        Insert(book, element, content.Length, now, target, () =>
+            (content.Length == 0 ? "" : " ") + BlockRefs.Format(target.EnsureId()));
+    }
+
+    /// <summary>Whether the own text or a sub-point of the text block <paramref name="textBlockKey"/> holds a reference to <paramref name="targetKey"/>'s id.</summary>
+    public static bool RefersTo(Book book, Guid textBlockKey, Guid targetKey)
+    {
+        var target = book.FindNode(targetKey)?.Block ?? book.FindTextBlock(targetKey)?.Block;
+        if (target?.Id is not { } id || book.FindTextBlock(textBlockKey)?.Block is not { } block)
+        {
+            return false;
+        }
+
+        return Subtree(block).Any(b => BlockRefs.Find(b.Content).Any(r => r.Id == id));
+    }
+
+    /// <summary>Gives both text blocks an <c>id::</c> if they have none (no <c>updated::</c>); returns the two ids.</summary>
+    /// <exception cref="ArgumentException">A key is that of no text block of the book.</exception>
+    /// <exception cref="InvalidOperationException">A block has no place for properties (an open code fence); nothing is changed.</exception>
+    public static (Guid A, Guid B) EnsureIds(Book book, Guid textBlockA, Guid textBlockB)
+    {
+        var blockA = book.FindTextBlock(textBlockA)?.Block
+                     ?? throw new ArgumentException("Not a text block of the book.", nameof(textBlockA));
+        var blockB = book.FindTextBlock(textBlockB)?.Block
+                     ?? throw new ArgumentException("Not a text block of the book.", nameof(textBlockB));
+        Guid a = default, b = default;
+        Changing([blockA, blockB], () =>
+        {
+            a = blockA.EnsureId();
+            b = blockB.EnsureId();
+        });
+        return (a, b);
+    }
+
+    /// <summary>
     /// Inserts <paramref name="markdown"/> (e.g. a reference to a person <c>((id))</c> or a source citation
     /// <c>{{quelle ((id))}}</c>) into the text of the text block or detail <paramref name="elementKey"/>, at
     /// <paramref name="offset"/> in its content, as <see cref="InsertReference"/> inserts a cross reference: clamped to
