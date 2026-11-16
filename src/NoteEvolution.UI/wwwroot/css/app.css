@@ -522,6 +522,8 @@ html, body {
     justify-content: space-between;
     gap: 6px;
     flex: none;
+    /* Two toggles beside the label do not fit a narrow outline column: they wrap into a second line. */
+    flex-wrap: wrap;
 }
 
 /* "Gliederung" below the "Zuletzt geändert" list, styled as a pane title. */
