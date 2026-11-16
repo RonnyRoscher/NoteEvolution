@@ -199,7 +199,8 @@ public static class ManuscriptCommands
     /// <summary>
     /// Appends a reference from the text block <paramref name="from"/> to the text block <paramref name="to"/>
     /// (<see cref="ManuscriptEditor.AppendReference"/>), with <paramref name="both"/> also one from <paramref name="to"/>
-    /// to <paramref name="from"/>, in one saved change with one undo action (<paramref name="undoDescription"/>). The
+    /// to <paramref name="from"/>, in one saved change with one undo action (<paramref name="undoDescription"/>); a
+    /// direction that exists already is skipped, and with none left nothing changes. The
     /// editor saves its text first (<see cref="PrepareAsync"/>). A block that is no longer in the book shows
     /// <c>RepetitionGone</c> and changes nothing.
     /// </summary>
@@ -220,10 +221,22 @@ public static class ManuscriptCommands
                 return RepetitionGone;
             }
 
+            // A direction that exists already is not appended again; with nothing left the file stays as it is.
+            var forward = !ManuscriptEditor.RefersTo(book, from, to);
+            var back = both && !ManuscriptEditor.RefersTo(book, to, from);
+            if (!forward && !back)
+            {
+                return null;
+            }
+
             return RunStatus(session, book, () =>
             {
-                ManuscriptEditor.AppendReference(book, from, to, session.Clock.Now);
-                if (both)
+                if (forward)
+                {
+                    ManuscriptEditor.AppendReference(book, from, to, session.Clock.Now);
+                }
+
+                if (back)
                 {
                     ManuscriptEditor.AppendReference(book, to, from, session.Clock.Now);
                 }
@@ -262,6 +275,7 @@ public static class ManuscriptCommands
                 return RepetitionGone;
             }
 
+            var idsSaved = false;
             if (blockA.Id is null || blockB.Id is null)
             {
                 message = RunStatus(session, book, () =>
@@ -273,16 +287,25 @@ public static class ManuscriptCommands
                 {
                     return message;
                 }
+
+                idsSaved = true;
             }
 
-            var liveIds = book.Page.AllBlocks().Where(block => book.FindTextBlock(block.Key) is not null).Select(block => block.Id).OfType<Guid>().ToHashSet();
+            var liveIds = new HashSet<Guid>();
+            CollectTextBlockIds(book.Root, liveIds);
             try
             {
                 session.AcceptedRepetitions.Set(book.LinkName, blockA.Id!.Value, blockB.Id!.Value, accepted, liveIds);
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
+                // Everything stays as it was: the ids this command just saved are taken back, with their undo step.
                 logger.LogWarning(ex, "Writing the accepted repetitions failed");
+                if (idsSaved && !session.TryUndo(out var undoError))
+                {
+                    logger.LogError(undoError, "Taking back the ids after a failed write of the accepted repetitions failed");
+                }
+
                 return new AdoptMessage("SectionCommandFailed", true);
             }
 
@@ -299,20 +322,55 @@ public static class ManuscriptCommands
     /// <summary>
     /// Shows the text block <paramref name="a"/> in the upper and <paramref name="b"/> in the lower half of the split
     /// view, each revealed and marked (<see cref="AppState.RevealElement"/> acts on the active half, so each half is
-    /// made active in turn); the lower half stays active. A half whose editor could not save its text stays as it is.
+    /// made active in turn); the lower half stays active. A block that is no longer in the book shows
+    /// <c>RepetitionGone</c> and changes nothing (no split). A half that cannot be made active (the editor of the
+    /// active one holds text it could not save) gets no reveal, and the second reveal is not done either.
     /// </summary>
-    public static async Task OpenRepetitionAsync(AppState state, Guid a, Guid b)
+    /// <returns>The message to show, or <c>null</c> if the pair was shown (or there is no book).</returns>
+    public static async Task<AdoptMessage?> OpenRepetitionAsync(AppState state, Guid a, Guid b)
     {
+        if (state.CurrentBook is not { } book)
+        {
+            return null;
+        }
+
+        if (book.FindTextBlock(a) is null || book.FindTextBlock(b) is null)
+        {
+            return RepetitionGone;
+        }
+
         state.SetSplit(true);
         await state.ActivateAsync(state.Views[0]);
-        state.RevealElement(a);
-        await state.ActivateAsync(state.Views[1]);
-        state.RevealElement(b);
+        if (ReferenceEquals(state.ActiveView, state.Views[0]))
+        {
+            state.RevealElement(a);
+            await state.ActivateAsync(state.Views[1]);
+            if (ReferenceEquals(state.ActiveView, state.Views[1]))
+            {
+                state.RevealElement(b);
+            }
+        }
+
         state.Notify();
+        return null;
     }
 
-    /// <summary>The refusal of an action on a repetition whose block is gone.</summary>
-    private static readonly AdoptMessage RepetitionGone = new("RepetitionGone", true);
+    /// <summary>Adds the ids of all text blocks in <paramref name="node"/> and below it to <paramref name="ids"/>.</summary>
+    private static void CollectTextBlockIds(OutlineNode node, HashSet<Guid> ids)
+    {
+        foreach (var item in node.Items)
+        {
+            switch (item)
+            {
+                case TextBlock { Block.Id: { } id }:
+                    ids.Add(id);
+                    break;
+                case OutlineNode child:
+                    CollectTextBlockIds(child, ids);
+                    break;
+            }
+        }
+    }
 
     /// <summary>
     /// Inserts a reference to the appendix entry <paramref name="entryKey"/> (its <see cref="Block.Key"/>) at the cursor
@@ -1311,6 +1369,9 @@ public static class ManuscriptCommands
             state.Notify();
         }
     }
+
+    /// <summary>The refusal of an action on a repetition whose block is gone.</summary>
+    private static readonly AdoptMessage RepetitionGone = new("RepetitionGone", true);
 
     /// <summary>The refusal of a heading's move: a target in its own section or in the appendix.</summary>
     private const string OutlineMoveInvalid = "OutlineMoveInvalid";

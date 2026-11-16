@@ -212,4 +212,96 @@ public class RepetitionCommandsTests : UiTestContext
         Assert.Equal(third, State.Views[1].Cursor!.Key);
         Assert.Equal(KeyOf("# Zwei"), State.Views[1].CurrentSectionKey);
     }
+
+    [Fact]
+    public async Task Accept_StoreCannotBeWritten_TakesTheIdsBack_NoUndoStepRemains()
+    {
+        var vault = await OpenAsync();
+        // A directory where the store file belongs: writing it fails.
+        Directory.CreateDirectory(Path.Combine(vault.Root, ".noteevolution", "repetitions.json"));
+
+        var message = await AcceptAsync("Erster Text", "Zweiter Text", accepted: true);
+
+        Assert.Equal(new AdoptMessage("SectionCommandFailed", true), message);
+        AssertSameBesidesNewIds(BookText, vault.Read(BookPath));
+        Assert.False(Session.Undo.CanUndo);
+        Assert.Empty(Accepted());
+    }
+
+    [Fact]
+    public async Task Accept_IdsCannotBeSaved_StoreUntouched_FileUnchanged()
+    {
+        var vault = await OpenAsync();
+        var path = Path.Combine(vault.Root, BookPath);
+        // A read-only file cannot be replaced: saving the ids fails.
+        File.SetAttributes(path, FileAttributes.ReadOnly);
+
+        AdoptMessage? message;
+        try
+        {
+            message = await AcceptAsync("Erster Text", "Zweiter Text", accepted: true);
+        }
+        finally
+        {
+            File.SetAttributes(path, FileAttributes.Normal);
+        }
+
+        Assert.NotNull(message);
+        Assert.Equal(BookText, vault.Read(BookPath));
+        Assert.False(Session.Undo.CanUndo);
+        Assert.Empty(Accepted());
+        Assert.False(File.Exists(Path.Combine(vault.Root, ".noteevolution", "repetitions.json")));
+    }
+
+    [Fact]
+    public async Task AppendReference_ExistingDirectionIsSkipped_NothingLeft_NothingChanges()
+    {
+        var vault = await OpenAsync();
+        var first = KeyOf("Erster Text");
+        var second = KeyOf("Zweiter Text");
+        var pushed = 0;
+        Session.Undo.Pushed += _ => pushed++;
+        await AppendAsync("Erster Text", "Zweiter Text", both: false);
+
+        // Only the way back is missing: one step, and the first block still refers once.
+        Assert.Null(await ManuscriptCommands.AppendReferenceAsync(State, first, second, both: true, "x", NullLogger.Instance));
+        Assert.Equal(2, pushed);
+        Assert.True(ManuscriptEditor.RefersTo(Book, second, first));
+        var text = vault.Read(BookPath);
+        Assert.Single(System.Text.RegularExpressions.Regex.Matches(Book.Page.AllBlocks().Single(b => b.Key == first).Content, @"\(\("));
+
+        // Both exist: nothing to append, no change, no undo step.
+        Assert.Null(await ManuscriptCommands.AppendReferenceAsync(State, first, second, both: true, "x", NullLogger.Instance));
+        Assert.Equal(text, vault.Read(BookPath));
+        Assert.Equal(2, pushed);
+    }
+
+    [Fact]
+    public async Task Open_BlockGone_NoSplit_ReturnsMessage()
+    {
+        await OpenAsync();
+
+        var message = await ManuscriptCommands.OpenRepetitionAsync(State, KeyOf("Erster Text"), Guid.NewGuid());
+
+        Assert.Equal(new AdoptMessage("RepetitionGone", true), message);
+        Assert.False(State.IsSplit);
+        Assert.Null(State.Views[0].PendingReveal);
+    }
+
+    [Fact]
+    public async Task Open_FirstHalfCannotBeActivated_SecondRevealIsNotDoneInIt()
+    {
+        await OpenAsync();
+        State.SetSplit(true);
+        await State.ActivateAsync(State.Views[1]);
+        // The lower half holds text it could not save: the upper half cannot become active.
+        State.Views[1].HasFailedEditorText = () => true;
+        var third = KeyOf("Dritter Text");
+
+        Assert.Null(await ManuscriptCommands.OpenRepetitionAsync(State, KeyOf("Erster Text"), third));
+
+        Assert.Same(State.Views[1], State.ActiveView);
+        Assert.NotEqual(third, State.Views[1].PendingReveal);
+        Assert.Null(State.Views[0].PendingReveal);
+    }
 }

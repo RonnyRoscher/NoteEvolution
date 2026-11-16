@@ -102,4 +102,57 @@ public class AcceptedRepetitionsTests
         Assert.False(store.Contains("Zwei", A, B));
         Assert.Empty(store.Of("Zwei"));
     }
+
+    private static void MakeStoreUnwritable(string root)
+    {
+        // A directory where the file belongs: writing it fails.
+        var path = Path.Combine(root, ".noteevolution", "repetitions.json");
+        File.Delete(path);
+        Directory.CreateDirectory(path);
+    }
+
+    [Fact]
+    public void Set_Accept_WriteFails_StateStaysAsBefore_AlsoInANewCall()
+    {
+        using var dir = new TempDir();
+        var store = new AcceptedRepetitions(dir.Path);
+        store.Set("Buch", A, B, true, Live(A, B, C));
+        MakeStoreUnwritable(dir.Path);
+
+        Assert.ThrowsAny<Exception>(() => store.Set("Buch", A, C, true, Live(A, B, C)));
+
+        Assert.Equal([(A, B)], store.Of("Buch").ToArray());
+        Assert.False(store.Contains("Buch", A, C));
+        Assert.False(store.Contains("Buch", C, A));
+        Assert.True(store.Contains("Buch", A, B));
+    }
+
+    [Fact]
+    public void Set_Unaccept_WriteFails_StateStaysAsBefore()
+    {
+        using var dir = new TempDir();
+        var store = new AcceptedRepetitions(dir.Path);
+        store.Set("Buch", A, B, true, Live(A, B));
+        MakeStoreUnwritable(dir.Path);
+
+        Assert.ThrowsAny<Exception>(() => store.Set("Buch", A, B, false, Live(A, B)));
+
+        Assert.True(store.Contains("Buch", A, B));
+    }
+
+    [Fact]
+    public void Set_WriteFails_PairsDroppedAsDeadComeBack_AndANewBookStaysAbsent()
+    {
+        using var dir = new TempDir();
+        var store = new AcceptedRepetitions(dir.Path);
+        store.Set("Buch", A, B, true, Live(A, B));
+        MakeStoreUnwritable(dir.Path);
+
+        // C is live, A and B are not: the pair would be dropped, but the write fails.
+        Assert.ThrowsAny<Exception>(() => store.Set("Buch", C, C, true, Live(C)));
+        Assert.ThrowsAny<Exception>(() => store.Set("Neu", A, B, true, Live(A, B)));
+
+        Assert.True(store.Contains("Buch", A, B));
+        Assert.Empty(store.Of("Neu"));
+    }
 }

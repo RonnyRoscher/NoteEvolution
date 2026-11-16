@@ -33,16 +33,18 @@ public sealed class AcceptedRepetitions(string vaultRoot)
         }
     }
 
-    /// <summary>Adds or removes the pair and writes the file; pairs of <paramref name="bookName"/> naming an id not in <paramref name="liveIds"/> are dropped.</summary>
+    /// <summary>
+    /// Adds or removes the pair and writes the file; pairs of <paramref name="bookName"/> naming an id not in
+    /// <paramref name="liveIds"/> are dropped. If writing fails the pairs are as they were before the call and the
+    /// exception is passed on.
+    /// </summary>
     public void Set(string bookName, Guid idA, Guid idB, bool accepted, IReadOnlySet<Guid> liveIds)
     {
         lock (_gate)
         {
-            if (!Books.TryGetValue(bookName, out var pairs))
-            {
-                pairs = [];
-                Books[bookName] = pairs;
-            }
+            var before = Books.TryGetValue(bookName, out var existing) ? new HashSet<(Guid, Guid)>(existing) : null;
+            var pairs = existing ?? [];
+            Books[bookName] = pairs;
 
             pairs.RemoveWhere(p => !liveIds.Contains(p.Item1) || !liveIds.Contains(p.Item2));
             var pair = Normalize(idA, idB);
@@ -55,7 +57,23 @@ public sealed class AcceptedRepetitions(string vaultRoot)
                 pairs.Remove(pair);
             }
 
-            Write();
+            try
+            {
+                Write();
+            }
+            catch
+            {
+                if (before is null)
+                {
+                    Books.Remove(bookName);
+                }
+                else
+                {
+                    Books[bookName] = before;
+                }
+
+                throw;
+            }
         }
     }
 
