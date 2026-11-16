@@ -95,6 +95,13 @@ entscheidet das Element unter dem Mauszeiger (nach den Regeln unten). Die Gliede
 Ziehen von Abschnitten und Textblöcken. Ausgegraut ist der Griff bei einem offenen Konflikt, im gesperrten Editor, im Anhang und wenn der ganze
 Vorspann oder das ganze Buch markiert ist.
 
+**Beim Ziehen:** Solange etwas gezogen wird (Griff, Textblock am farbigen Balken, Notizkarte), scrollt der Editor,
+wenn der Mauszeiger in den oberen oder unteren 60 px seines sichtbaren Bereichs steht, umso schneller, je näher am
+Rand. In der geteilten Ansicht scrollt die Hälfte, über der der Zeiger steht. Die Leiste unter der Markierung ist
+währenddessen blass und lässt die Maus durch: Ein Ablegen landet immer im Text darunter. In einer sehr schmalen Spalte,
+in der die umgebrochene Leiste höher wäre als der Editor, beginnt sie nie oberhalb des Editors; ihr unterer Teil ist
+dann abgeschnitten.
+
 - **Abschnitt:** Im Editor abgelegt kommt er auf dieselbe Ebene wie der Abschnitt, in dem er losgelassen wird, und
   steht direkt hinter dessen ganzem Inhalt; im Vorspann oder vor der ersten Überschrift losgelassen wird er der erste
   Abschnitt der obersten Ebene. In der Gliederung wie beim Ziehen dort: auf einer Überschrift ihr letzter

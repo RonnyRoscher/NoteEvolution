@@ -1855,6 +1855,15 @@ html, body {
     display: none;
 }
 
+/*
+ * While anything is dragged (the editor sets ne-dragging on the document element) the bar is pale and lets the
+ * pointer through: a drop lands on the text below it, also where a bar wrapped into many lines covers the editor.
+ */
+.ne-dragging .ne-section-bar {
+    opacity: 0.35;
+    pointer-events: none;
+}
+
 .ne-sec-buttons,
 .ne-sec-sources-area {
     display: flex;

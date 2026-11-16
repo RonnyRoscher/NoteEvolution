@@ -1448,6 +1448,109 @@ function visibleArea(scroller) {
 const editorViews = new Set();
 
 /**
+ * How fast a pane showing top..bottom (client coordinates) scrolls while something is dragged with the pointer at y,
+ * in px per second: negative (up) in the top zone, positive (down) in the bottom zone, faster towards the edge
+ * (min at the zone's inner end, max at the edge), 0 elsewhere. A zone is at most a third of the pane.
+ */
+export function dragScrollSpeed(y, top, bottom, zone = 60, min = 240, max = 1200) {
+    if (y < top || y > bottom) {
+        return 0;
+    }
+    const size = Math.min(zone, (bottom - top) / 3);
+    const speed = distance => (distance < size ? min + (max - min) * (1 - distance / size) : 0);
+    return speed(bottom - y) - speed(y - top);
+}
+
+/** The scrolling of an editor's pane during a drag: { scroller, speed, at (time of the last dragover), frame }. */
+let dragScroll = null;
+let dragHelpersInstalled = false;
+
+function stopDragScroll() {
+    dragScroll = null;
+}
+
+/** Scrolls the pane under the dragging pointer frame by frame; ends when the drag events stop coming (a resting pointer raises one every 350 ms or so; 1 s without one is the end). */
+function dragScrollFrame() {
+    // The same clock as the dragover's time (a frame's own timestamp may have another origin).
+    const now = performance.now();
+    const state = dragScroll;
+    if (!state || state.speed === 0 || now - state.at > 1000 || !state.scroller.isConnected) {
+        dragScroll = null;
+        return;
+    }
+    // The first frame only takes the time; a long frame counts as 50 ms at most.
+    const elapsed = state.frame === undefined ? 0 : Math.min(now - state.frame, 50);
+    state.frame = now;
+    state.scroller.scrollTop += state.speed * elapsed / 1000;
+    requestAnimationFrame(dragScrollFrame);
+}
+
+/** A dragover anywhere: the editor pane under the pointer scrolls while the pointer is in its top or bottom zone. */
+function dragScrollOver(event) {
+    let found = null;
+    for (const view of editorViews) {
+        if (!view.dom.isConnected) {
+            continue;
+        }
+        const scroller = scrollParent(view.dom);
+        const whole = scroller === document.scrollingElement || scroller === document.documentElement;
+        const rect = whole ? null : scroller.getBoundingClientRect();
+        if (rect && (event.clientX < rect.left || event.clientX > rect.right)) {
+            continue;
+        }
+        const area = visibleArea(scroller);
+        const speed = dragScrollSpeed(event.clientY, area.top, area.bottom);
+        if (speed !== 0) {
+            found = { scroller, speed };
+            break;
+        }
+    }
+    if (!found) {
+        dragScroll = null;
+        return;
+    }
+    const running = dragScroll !== null;
+    const same = running && dragScroll.scroller === found.scroller;
+    dragScroll = { ...found, at: performance.now(), frame: same ? dragScroll.frame : undefined };
+    if (!running) {
+        requestAnimationFrame(dragScrollFrame);
+    }
+}
+
+/**
+ * Once for the page: while anything is dragged, the document element has the class ne-dragging (the section bar then
+ * lets the pointer through, so a drop lands on the text below it) and the editor panes scroll at their edges. The
+ * class is set after the drag started (changing the source while dragstart runs can cancel the drag) and leaves with
+ * dragend, a drop, or the next mouse move without a button (a drag whose source was removed raises no dragend).
+ */
+function installDragHelpers() {
+    if (dragHelpersInstalled) {
+        return;
+    }
+    dragHelpersInstalled = true;
+    const root = document.documentElement;
+    let pending = 0;
+    const end = () => {
+        clearTimeout(pending);
+        pending = 0;
+        root.classList.remove('ne-dragging');
+        stopDragScroll();
+    };
+    document.addEventListener('dragstart', () => {
+        clearTimeout(pending);
+        pending = setTimeout(() => root.classList.add('ne-dragging'));
+    }, true);
+    document.addEventListener('dragover', dragScrollOver, true);
+    document.addEventListener('dragend', end, true);
+    document.addEventListener('drop', end, true);
+    document.addEventListener('mousemove', event => {
+        if (event.buttons === 0 && (pending || root.classList.contains('ne-dragging'))) {
+            end();
+        }
+    }, true);
+}
+
+/**
  * The keys of the whole text blocks a drag carries (a slice of complete text blocks, as dragging blocks by their bar
  * gives), or null for anything else (text inside a block, a heading).
  */
@@ -1575,7 +1678,12 @@ export function createEditor(host, dotnet, options = {}) {
         const top = first && lastCursor !== undefined ? first.getBoundingClientRect().top : Infinity;
         const bottom = last && lastCursor !== undefined ? last.getBoundingClientRect().bottom : -Infinity;
         const visible = bottom > top && bottom > area.top && top < area.bottom;
-        const barTop = visible ? Math.min(bottom, area.bottom - barHeight) - pane.getBoundingClientRect().top : 0;
+        // A bar wrapped into more lines than the pane is high (a very narrow column) cannot be shown whole: it then
+        // keeps half the pane, so it never starts above the pane (where its grip would be out of reach) and stays
+        // right below the marking where that leaves room.
+        const paneHeight = area.bottom - area.top;
+        const kept = barHeight <= paneHeight ? barHeight : paneHeight / 2;
+        const barTop = visible ? Math.min(bottom, area.bottom - kept) - pane.getBoundingClientRect().top : 0;
         if (lastBox && lastBox.visible === visible && Math.abs(lastBox.barTop - barTop) < 1) {
             return;
         }
@@ -1728,6 +1836,7 @@ export function createEditor(host, dotnet, options = {}) {
     });
 
     editorViews.add(editor.view);
+    installDragHelpers();
 
     // Scrolling (of any pane; the frame and the 1 px check keep that cheap) and resizing move the box too.
     document.addEventListener('scroll', scheduleBox, { capture: true, passive: true });
