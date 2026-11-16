@@ -2188,6 +2188,10 @@
   <data name="NoteDragTitle" xml:space="preserve">
     <value>Ins Buch ziehen</value>
   </data>
+  <data name="SectionDragTitle" xml:space="preserve">
+    <value>Markierten Bereich verschieben</value>
+    <comment>Tooltip des Griffs „⠿“ vorn in der Leiste unter der Markierung</comment>
+  </data>
   <data name="SectionHistory" xml:space="preserve">
     <value>Historie</value>
   </data>

@@ -44,6 +44,17 @@
         var noteCount = links.Select(row => row.Link.NoteId).Distinct().Count();
         var backRefs = BackRefsOf(book, element);
         <div class="ne-sec-buttons">
+            @* The grip drags the head of the marked range with everything below it into an editor or an outline
+               (Markierung verschieben, spec 4). The drag's start raises a notification that renders the bar again;
+               the browser cancels a drag whose source node is removed, so the grip is keyed and only its attributes
+               change. Greyed out and not draggable while there is nothing to move. *@
+            @{
+                var movable = Locked ? null : State.MovableRangeHead;
+            }
+            <span @key="GripKey" class="@(movable is null ? "ne-sec-drag ne-sec-drag-disabled" : "ne-sec-drag")"
+                  draggable="@(movable is null ? "false" : "true")" role="img" aria-disabled="@(movable is null ? "true" : "false")"
+                  title="@L["SectionDragTitle"]" aria-label="@L["SectionDragTitle"]"
+                  @ondragstart="StartRangeDrag" @ondragend="EndRangeDrag">⠿</span>
             @* Moving the range changes no file, so it stays possible while the book is locked. *@
             <button type="button" class="ne-range-up" title="@L["RangeUpTitle"]" disabled="@(!State.CanRangeUp)"
                     @onclick="() => OnCommand.InvokeAsync(SectionCommand.RangeUp)">@L["RangeUp"]</button>
@@ -472,6 +483,24 @@
             _imageFocusPending = false;
             await _imageInput.FocusAsync();
         }
+    }
+
+    /// <summary>The grip's key: the same element stays while the bar renders during its drag.</summary>
+    private const string GripKey = "ne-sec-drag";
+
+    /// <summary>
+    /// The grip's drag starts: the head of the marked range is recorded as dragged (<see cref="AppState.DraggedRange"/>),
+    /// read now, so a drop moves what was marked when the drag began; nothing while it cannot be moved.
+    /// </summary>
+    private void StartRangeDrag()
+    {
+        State.DraggedRange = Locked ? null : State.MovableRangeHead;
+    }
+
+    /// <summary>The grip's drag ended (dropped anywhere, or given up).</summary>
+    private void EndRangeDrag()
+    {
+        State.DraggedRange = null;
     }
 
     /// <summary>Opens the search for a cross reference target (closing an appendix picker), or closes it.</summary>

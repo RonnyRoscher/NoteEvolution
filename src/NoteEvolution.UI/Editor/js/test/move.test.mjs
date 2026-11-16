@@ -93,6 +93,7 @@ test('Without a drag in another editor a drop is a note', () => {
 
     drop(lower.editor.view);
 
-    assert.deepEqual(lower.calls.filter(([m]) => m === 'BlocksDropped' || m === 'NoteDropped'), [['NoteDropped', C]]);
+    // After the block the note goes after, the element under the pointer (for a marked range dragged by its grip).
+    assert.deepEqual(lower.calls.filter(([m]) => m === 'BlocksDropped' || m === 'NoteDropped'), [['NoteDropped', C, C]]);
     lower.close();
 });

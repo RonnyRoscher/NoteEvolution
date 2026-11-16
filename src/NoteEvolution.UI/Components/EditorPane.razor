@@ -659,6 +659,30 @@
         StateHasChanged();
     }
 
+    /// <summary>
+    /// Moves the marked range dragged by the grip of the section bar (<see cref="AppState.DraggedRange"/>, from either
+    /// half) onto the element it was dropped on (<see cref="ManuscriptCommands.MoveRangeAsync"/> with
+    /// <see cref="RangeDrop.InEditor"/>) and shows its message. The drag is over with the drop: it is cleared at once
+    /// (the grip may be gone after the move and not report the drag's end). This view becomes the active one first, so
+    /// the moved head is revealed in it. Without a dragged range nothing happens.
+    /// </summary>
+    public async Task OnRangeDropped(Guid? elementKey)
+    {
+        if (State.DraggedRange is not { } head)
+        {
+            return;
+        }
+
+        State.DraggedRange = null;
+        if (!await ActivateAsync())
+        {
+            return;
+        }
+
+        _saver.Message = await ManuscriptCommands.MoveRangeAsync(State, head, new RangeDrop.InEditor(elementKey), L["UndoMoveRange"], Logger);
+        StateHasChanged();
+    }
+
     /// <summary>Ctrl+Z with nothing to undo in the editor: the undo of the header (<see cref="AppState.RequestUndo"/>).</summary>
     public Task OnUndoRequested()
     {

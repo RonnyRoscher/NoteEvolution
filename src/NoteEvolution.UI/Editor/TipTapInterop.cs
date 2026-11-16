@@ -180,15 +180,26 @@ public sealed class TipTapInterop(IJSRuntime js, AppState state) : IEditorIntero
         _callbacks is not null && Guid.TryParse(targetId, out var id) ? _callbacks.OnReferenceClicked(id) : Task.CompletedTask;
 
     /// <summary>
-    /// Something was dropped into the editor from outside. Only a note card counts: it records itself in
-    /// <see cref="AppState.DraggedNoteKey"/> while it is dragged (R27); anything else (a file, text from another
-    /// program) is ignored.
+    /// Something was dropped into the editor from outside. The marked range dragged by the grip of the section bar
+    /// (<see cref="AppState.DraggedRange"/>) goes onto the element under the pointer (<paramref name="elementKey"/>);
+    /// else only a note card counts: it records itself in <see cref="AppState.DraggedNoteKey"/> while it is dragged
+    /// (R27) and goes after <paramref name="afterKey"/>; anything else (a file, text from another program) is ignored.
     /// </summary>
     [JSInvokable]
-    public Task NoteDropped(string? afterKey) =>
-        _callbacks is not null && state.DraggedNoteKey is { } noteKey
-            ? _callbacks.OnNoteDropped(noteKey, ParseOrNull(afterKey))
-            : Task.CompletedTask;
+    public Task NoteDropped(string? afterKey, string? elementKey)
+    {
+        if (_callbacks is null)
+        {
+            return Task.CompletedTask;
+        }
+
+        if (state.DraggedRange is not null)
+        {
+            return _callbacks.OnRangeDropped(ParseOrNull(elementKey));
+        }
+
+        return state.DraggedNoteKey is { } noteKey ? _callbacks.OnNoteDropped(noteKey, ParseOrNull(afterKey)) : Task.CompletedTask;
+    }
 
     /// <summary>
     /// Whole text blocks are dragged out of this editor (<paramref name="keysJson"/>: their keys as a JSON array): recorded

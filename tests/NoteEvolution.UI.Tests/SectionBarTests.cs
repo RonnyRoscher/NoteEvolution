@@ -459,6 +459,69 @@ public class SectionBarTests : UiTestContext
     }
 
     [Fact]
+    public async Task Grip_DraggableWithAMovableHead_DisabledWithout()
+    {
+        var cut = await RenderAsync();
+        await MoveToAsync(cut, "Erster Text");
+
+        // The grip comes first in the bar's buttons.
+        cut.WaitForAssertion(() => Assert.Equal("true", cut.Find(".ne-section-bar .ne-sec-drag").GetAttribute("draggable")));
+        var grip = cut.Find(".ne-sec-drag");
+        Assert.Contains("ne-sec-drag", cut.Find(".ne-sec-buttons").FirstElementChild!.ClassList);
+        Assert.Equal("⠿", grip.TextContent);
+        Assert.Equal("Markierten Bereich verschieben", grip.GetAttribute("title"));
+        Assert.Equal(Text("SectionDragTitle"), grip.GetAttribute("aria-label"));
+        Assert.DoesNotContain("ne-sec-drag-disabled", grip.ClassList);
+
+        // The whole book has no head to move.
+        cut.Find(".ne-range-up").Click();
+        cut.Find(".ne-range-up").Click();
+        cut.WaitForAssertion(() => Assert.Equal("false", cut.Find(".ne-sec-drag").GetAttribute("draggable")));
+        Assert.Contains("ne-sec-drag-disabled", cut.Find(".ne-sec-drag").ClassList);
+        Assert.Equal("true", cut.Find(".ne-sec-drag").GetAttribute("aria-disabled"));
+        cut.Find(".ne-sec-drag").DragStart();
+        Assert.Null(State.DraggedRange);
+    }
+
+    [Fact]
+    public async Task Grip_DisabledOnConflict()
+    {
+        var cut = await RenderAsync();
+        var session = State.Session!;
+        await MoveToAsync(cut, "# Zwei");
+        cut.WaitForAssertion(() => Assert.Equal("true", cut.Find(".ne-sec-drag").GetAttribute("draggable")));
+
+        var path = Path.Combine(_vault.Root, BookPath);
+        await cut.InvokeAsync(() =>
+        {
+            OutlineEditor.Rename(Book, KeyOf("# Zwei"), "Zwei lokal");
+            File.WriteAllText(path, BookText.Replace("- # Zwei\n", "- # Zwei extern\n"));
+            session.HandleExternalChange(path);
+        });
+
+        cut.WaitForAssertion(() => Assert.Equal("false", cut.Find(".ne-sec-drag").GetAttribute("draggable")));
+    }
+
+    [Fact]
+    public async Task Grip_DragStartSetsTheDraggedRange_DragEndClearsIt()
+    {
+        var cut = await RenderAsync();
+        await MoveToAsync(cut, "Ein Detail");
+        cut.Find(".ne-range-up").Click();
+        cut.WaitForAssertion(() => Assert.Equal("true", cut.Find(".ne-sec-drag").GetAttribute("draggable")));
+
+        // The range head is what moves: the text block whose detail has the cursor.
+        cut.Find(".ne-sec-drag").DragStart();
+        Assert.Equal(BookElements.Find(Book, KeyOf("Erster Text")), State.DraggedRange);
+
+        // The rendering the drag's start caused keeps the grip (the browser would cancel the drag of a removed node).
+        cut.WaitForAssertion(() => Assert.Equal("true", cut.Find(".ne-sec-drag").GetAttribute("draggable")));
+
+        cut.Find(".ne-sec-drag").DragEnd();
+        Assert.Null(State.DraggedRange);
+    }
+
+    [Fact]
     public async Task NoGermanLiterals_InSectionBar()
     {
         Services.AddSingleton<IStringLocalizer<Strings>>(new KeyLocalizer());
