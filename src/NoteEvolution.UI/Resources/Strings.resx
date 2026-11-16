@@ -519,6 +519,18 @@
     <value>Dorthin lässt sich der markierte Bereich nicht verschieben.</value>
     <comment>Hinweis, wenn ein markierter Textblock oder Unterpunkt dort nicht abgelegt werden kann, oder wenn der markierte Bereich oder die Ablagestelle seit Ziehbeginn verschwunden ist</comment>
   </data>
+  <data name="UndoAppendReference" xml:space="preserve">
+    <value>Verweis einfügen</value>
+    <comment>Name der Aktion für „Rückgängig“ nach dem Anhängen eines Verweises im Wiederholungen-Assistenten</comment>
+  </data>
+  <data name="UndoRepetitionAccepted" xml:space="preserve">
+    <value>Wiederholung als gewollt abhaken</value>
+    <comment>Name der Aktion für „Rückgängig“, wenn beim Abhaken einer Wiederholung Block-IDs in die Buchdatei geschrieben wurden</comment>
+  </data>
+  <data name="RepetitionGone" xml:space="preserve">
+    <value>Diese Stelle gibt es nicht mehr.</value>
+    <comment>Hinweis, wenn ein Block eines Wiederholungs-Paars seit der Analyse verschwunden ist</comment>
+  </data>
   <data name="UndoMoveRange" xml:space="preserve">
     <value>Bereich verschieben</value>
     <comment>Name der Aktion für „Rückgängig“ nach dem Verschieben des markierten Bereichs an seinem Griff</comment>
