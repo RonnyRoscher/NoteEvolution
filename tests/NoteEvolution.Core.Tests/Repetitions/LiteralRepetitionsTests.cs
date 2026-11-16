@@ -104,6 +104,19 @@ public class LiteralRepetitionsTests
     }
 
     [Fact]
+    public void PhraseTwiceInA_OnceInB_OnePairWithoutOverlappingRuns()
+    {
+        var phrase = W("s", 0, 8);
+
+        var pair = Assert.Single(Pairs(
+            $"{phrase} {W("a", 0, 2)} {phrase}",
+            $"{W("b", 0, 2)} {phrase}"));
+
+        // Both occurrences in A match the one in B; only one run is kept, so nothing overlaps in A or in B.
+        Assert.Equal(new SharedRun(0, 2, 8), Assert.Single(pair.Runs));
+    }
+
+    [Fact]
     public void Boilerplate_In50Blocks_ListsEachPairOnce_Fast()
     {
         const string boilerplate = "wir danken allen die zu diesem Projekt beigetragen haben und";
