@@ -1,0 +1,395 @@
+@using NoteEvolution.Core.Books
+@using NoteEvolution.Core.Repetitions
+@implements IDisposable
+@inject AppState State
+@inject IStringLocalizer<Strings> L
+@inject ILogger<RepetitionsDialog> Logger
+
+@* „Wiederholungen“ of the current book (repetitions spec 5), opened from the assistants menu or from the section bar: the
+   pairs in two groups on the left, the selected pair side by side on the right (the earlier place left). The dialog never
+   writes by itself; its buttons call the commands of ManuscriptCommands and it stays open after them. *@
+@{
+    Refresh();
+    var book = State.CurrentBook;
+    var selected = SelectedPair();
+    var canChange = ManuscriptCommands.CanChangeRepetition(State);
+}
+<Modal Title="@L["RepetitionsTitle"]" CssClass="ne-rep" OnClose="OnClose">
+<ChildContent>
+    @if (_error is not null)
+    {
+        <p class="ne-dialog-error" role="alert">@_error</p>
+    }
+    <div class="ne-rep-filters">
+        <label>@L["RepChapter"]
+            <select class="ne-rep-chapter" value="@(_chapter?.ToString() ?? "")" @onchange="OnChapterChanged">
+                <option value="">@L["RepAllChapters"]</option>
+                @foreach (var chapter in Chapters(book))
+                {
+                    <option value="@chapter.Key">@TitleOf(chapter)</option>
+                }
+            </select>
+        </label>
+        <label>
+            <input type="checkbox" class="ne-rep-show-accepted" checked="@_showAccepted" @onchange="OnShowAcceptedChanged" />
+            @L["RepShowAccepted"]
+        </label>
+    </div>
+    <div class="ne-rep-body">
+        <div class="ne-rep-list">
+            @if (!_pending && !_set.Complete)
+            {
+                <p class="ne-dialog-hint ne-rep-hint-progress">@L["RepProgress", _set.Embedded, _set.Total]</p>
+            }
+            @if (State.Session?.Semantic is null)
+            {
+                <p class="ne-dialog-hint ne-rep-hint-ai">@L["RepNeedsAi"]</p>
+            }
+            @if (!_pending && _visible.Count == 0)
+            {
+                <p class="ne-rep-empty">@L["RepNone"]</p>
+            }
+            @foreach (var (kind, heading) in Groups)
+            {
+                var entries = _visible.Where(r => r.Kind == kind).ToList();
+                if (entries.Count == 0)
+                {
+                    continue;
+                }
+
+                <h3 class="ne-rep-group ne-rep-group-@kind.ToString().ToLowerInvariant()">@L[heading, CountText(entries.Count(r => !r.Accepted))]</h3>
+                <ul class="ne-rep-items">
+                    @foreach (var repetition in entries)
+                    {
+                        var current = selected is { } s && Same(repetition, (s.A, s.B));
+                        <li>
+                            <button type="button" class="@ItemClass(repetition, current)"
+                                    @onclick="() => Select(repetition)">
+                                <span class="ne-rep-place">@PlaceOf(book, repetition.A)</span>
+                                <span class="ne-rep-place">@PlaceOf(book, repetition.B)</span>
+                                <span class="ne-rep-strength">@StrengthOf(repetition)</span>
+                                @if (repetition.Accepted)
+                                {
+                                    <span class="ne-rep-badge">@L["RepAccept"]</span>
+                                }
+                            </button>
+                        </li>
+                    }
+                </ul>
+            }
+        </div>
+        <div class="ne-rep-detail">
+            @if (selected is { } pair && book is not null)
+            {
+                <div class="ne-rep-sides">
+                    @foreach (var (key, other, left) in new[] { (pair.A, pair.B, true), (pair.B, pair.A, false) })
+                    {
+                        var compared = _set.Block(key);
+                        var exists = ManuscriptEditor.RefersTo(book, key, other);
+                        var ranges = pair.Runs.Select(run => left ? (run.StartA, run.Words) : (run.StartB, run.Words)).ToList();
+                        <div class="ne-rep-side">
+                            <div class="ne-rep-path">@PathOf(book, key)</div>
+                            @if (compared is not null)
+                            {
+                                <RepetitionText Block="compared" Ranges="ranges" />
+                            }
+                            <button type="button" class="ne-rep-ref" disabled="@(exists || _busy || !canChange)" title="@(exists ? ExistsTitle : null)"
+                                    @onclick="() => AppendAsync(key, other, false)">@L["RepAppendReference"]</button>
+                        </div>
+                    }
+                </div>
+            }
+            <div class="ne-rep-actions">
+                <button type="button" class="ne-rep-both"
+                        disabled="@(selected is null || _busy || !canChange || BothRefer(book, selected))"
+                        @onclick="() => AppendAsync(selected!.A, selected.B, true)">@L["RepBoth"]</button>
+                <button type="button" class="ne-rep-accept" disabled="@(selected is null || _busy || !canChange)"
+                        @onclick="() => AcceptAsync(selected!)">@(selected?.Accepted == true ? L["RepUnaccept"] : L["RepAccept"])</button>
+                <button type="button" class="ne-rep-open" disabled="@(selected is null || _busy)"
+                        @onclick="() => OpenAsync(selected!)">@L["RepOpen"]</button>
+            </div>
+        </div>
+    </div>
+</ChildContent>
+<Footer>
+    <button type="button" class="ne-rep-close" @onclick="OnClose">@L["Close"]</button>
+</Footer>
+</Modal>
+
+@code {
+    private const int ExcerptLength = 60;
+
+    private static readonly (RepetitionKind Kind, string Heading)[] Groups =
+    [
+        (RepetitionKind.Literal, "RepGroupLiteral"),
+        (RepetitionKind.Semantic, "RepGroupSemantic"),
+    ];
+
+    /// <summary>The set the list shows: that of the current book, or the last one of the same book while the new snapshot is analysed.</summary>
+    private RepetitionSet _set = RepetitionSet.Empty;
+
+    /// <summary>The book (link name) <see cref="_set"/> belongs to.</summary>
+    private string? _setBook;
+
+    /// <summary>The book was changed and its analysis is not there yet: nothing is concluded from the (old or empty) set.</summary>
+    private bool _pending = true;
+
+    /// <summary>The entries of the list: filtered by the chapter and the switch, literal ones first.</summary>
+    private IReadOnlyList<Repetition> _visible = [];
+
+    /// <summary>The selected pair by its two keys, as the user chose it or as <see cref="Start"/> named it.</summary>
+    private (Guid A, Guid B)? _selected;
+
+    /// <summary>What is selected when the selected pair is no longer listed (after "Gewollt"): its neighbour in the list.</summary>
+    private (Guid A, Guid B)? _after;
+
+    private Guid? _chapter;
+
+    private bool _showAccepted;
+
+    private string? _error;
+
+    private bool _busy;
+
+    private VaultSession? _subscribed;
+
+    /// <summary>The pair of text blocks (keys, in either order) to select at the start; <c>null</c>: the first entry.</summary>
+    [Parameter] public (Guid A, Guid B)? Start { get; set; }
+
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    protected override void OnInitialized()
+    {
+        _selected = Start;
+        _subscribed = State.Session;
+        if (_subscribed is not null)
+        {
+            _subscribed.RepetitionsChanged += OnRepetitionsChanged;
+        }
+    }
+
+    public void Dispose()
+    {
+        if (_subscribed is not null)
+        {
+            _subscribed.RepetitionsChanged -= OnRepetitionsChanged;
+        }
+    }
+
+    private void OnRepetitionsChanged() => _ = InvokeAsync(StateHasChanged);
+
+    /// <summary>
+    /// Reads the repetitions of the current book (on every render) and works out the list and the selection: the selected
+    /// pair stays while it is listed, else its neighbour from before the action, else the first entry.
+    /// </summary>
+    private void Refresh()
+    {
+        var book = State.CurrentBook;
+        var set = State.Session?.RepetitionsOf(book) ?? RepetitionSet.Empty;
+        if (book is null)
+        {
+            _set = RepetitionSet.Empty;
+            _setBook = null;
+            _pending = false;
+        }
+        else if (set.IsFor(book))
+        {
+            _set = set;
+            _setBook = book.LinkName;
+            _pending = false;
+        }
+        else
+        {
+            _pending = true;
+            if (!string.Equals(_setBook, book.LinkName, StringComparison.OrdinalIgnoreCase))
+            {
+                _set = RepetitionSet.Empty;
+            }
+        }
+
+        var chapter = _chapter is { } key ? book?.FindNode(key) : null;
+        if (_chapter is not null && chapter is null && !_pending)
+        {
+            _chapter = null;
+        }
+
+        var keys = chapter is null ? null : TextBlockKeys(chapter);
+        _visible =
+        [
+            .. _set.All.Where(r => (_showAccepted || !r.Accepted) && (keys is null || keys.Contains(r.A) || keys.Contains(r.B))),
+        ];
+
+        if (_pending)
+        {
+            return;
+        }
+
+        var current = _selected is { } selected ? _visible.FirstOrDefault(r => Same(r, selected)) : null;
+        if (current is null)
+        {
+            current = _after is { } after ? _visible.FirstOrDefault(r => Same(r, after)) : null;
+            current ??= _visible.FirstOrDefault();
+            _after = null;
+        }
+
+        _selected = current is null ? null : (current.A, current.B);
+    }
+
+    private string ExistsTitle => L["RepReferenceExists"].Value;
+
+    private static string ItemClass(Repetition repetition, bool selected) =>
+        "ne-rep-item" + (selected ? " ne-rep-selected" : "") + (repetition.Accepted ? " ne-rep-accepted" : "");
+
+    private Task AppendAsync(Guid from, Guid to, bool both) =>
+        RunAsync(() => ManuscriptCommands.AppendReferenceAsync(State, from, to, both, L["UndoAppendReference"], Logger));
+
+    private Task AcceptAsync(Repetition repetition) =>
+        RunAsync(() => ManuscriptCommands.SetRepetitionAcceptedAsync(
+            State, repetition.A, repetition.B, !repetition.Accepted, L["UndoRepetitionAccepted"], Logger));
+
+    private Repetition? SelectedPair() =>
+        _selected is { } selected ? _visible.FirstOrDefault(r => Same(r, selected)) : null;
+
+    /// <summary>Whether the repetition is between the two blocks, in either order.</summary>
+    private static bool Same(Repetition repetition, (Guid A, Guid B) pair) =>
+        (repetition.A == pair.A && repetition.B == pair.B) || (repetition.A == pair.B && repetition.B == pair.A);
+
+    private void Select(Repetition repetition)
+    {
+        _selected = (repetition.A, repetition.B);
+        _after = null;
+        _error = null;
+    }
+
+    private void OnChapterChanged(ChangeEventArgs e) =>
+        _chapter = Guid.TryParse(e.Value?.ToString(), out var key) ? key : null;
+
+    private void OnShowAcceptedChanged(ChangeEventArgs e) => _showAccepted = e.Value is true;
+
+    /// <summary>
+    /// Runs a command of the assistant; the pair that follows the selected one is kept in case the command takes the
+    /// pair out of the list. The command's message (a failure, or "Diese Stelle gibt es nicht mehr.") is shown.
+    /// </summary>
+    private async Task RunAsync(Func<Task<AdoptMessage?>> command)
+    {
+        if (_busy)
+        {
+            return;
+        }
+
+        _busy = true;
+        _error = null;
+        _after = NeighbourOfSelected();
+        try
+        {
+            var message = await command();
+            _error = message is null ? null : L[message.Key].Value;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    /// <summary>"Im Buch öffnen": the dialog closes when both places are shown; otherwise it stays with the message.</summary>
+    private async Task OpenAsync(Repetition repetition)
+    {
+        if (_busy)
+        {
+            return;
+        }
+
+        _busy = true;
+        _error = null;
+        try
+        {
+            var message = await ManuscriptCommands.OpenRepetitionAsync(State, repetition.A, repetition.B);
+            if (message is null)
+            {
+                await OnClose.InvokeAsync();
+            }
+            else
+            {
+                _error = L[message.Key].Value;
+            }
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    /// <summary>The next entry after the selected one in the list, or the one before it at the end; <c>null</c> if it is the only one.</summary>
+    private (Guid A, Guid B)? NeighbourOfSelected()
+    {
+        var index = _selected is { } selected ? _visible.ToList().FindIndex(r => Same(r, selected)) : -1;
+        if (index < 0)
+        {
+            return null;
+        }
+
+        var neighbour = index + 1 < _visible.Count ? _visible[index + 1] : index > 0 ? _visible[index - 1] : null;
+        return neighbour is null ? null : (neighbour.A, neighbour.B);
+    }
+
+    private static bool BothRefer(Book? book, Repetition? pair) =>
+        book is not null && pair is not null
+        && ManuscriptEditor.RefersTo(book, pair.A, pair.B) && ManuscriptEditor.RefersTo(book, pair.B, pair.A);
+
+    private string CountText(int count) => _set.Complete ? count.ToString() : $"{count} …";
+
+    private string StrengthOf(Repetition repetition) => repetition.Kind == RepetitionKind.Literal
+        ? L["RepWords", repetition.Words].Value
+        : L["RepPercent", (int)Math.Round(repetition.Score * 100)].Value;
+
+    /// <summary>The chapters (headings of the top level) of the book; the appendix is not compared.</summary>
+    private static IEnumerable<OutlineNode> Chapters(Book? book) =>
+        book?.Root.Children.Where(c => c.AppendixKind == AppendixKind.None) ?? [];
+
+    private string TitleOf(OutlineNode section) =>
+        section.Title.Length > 0 ? section.Title : L["OutlineUntitled"].Value;
+
+    /// <summary>The titles of the section the block is in, from the chapter down; empty for the text before the first heading.</summary>
+    private string PathOf(Book book, Guid key)
+    {
+        var titles = new List<string>();
+        for (var section = book.FindTextBlock(key)?.Section; section?.Parent is not null; section = section.Parent)
+        {
+            titles.Insert(0, TitleOf(section));
+        }
+
+        return string.Join(ManuscriptEditor.SectionPathSeparator, titles);
+    }
+
+    /// <summary>"Abschnitt › Textanfang": the block's own section and the start of its text.</summary>
+    private string PlaceOf(Book? book, Guid key)
+    {
+        var start = _set.Block(key)?.Paragraphs[0].Plain is { } plain ? Excerpt.FirstLine(plain, ExcerptLength) : "";
+        return book?.FindTextBlock(key)?.Section is { Parent: not null } section
+            ? $"{TitleOf(section)}{ManuscriptEditor.SectionPathSeparator}{start}"
+            : start;
+    }
+
+    private static HashSet<Guid> TextBlockKeys(OutlineNode section)
+    {
+        var keys = new HashSet<Guid>();
+        Collect(section, keys);
+        return keys;
+
+        static void Collect(OutlineNode node, HashSet<Guid> keys)
+        {
+            foreach (var item in node.Items)
+            {
+                switch (item)
+                {
+                    case TextBlock text:
+                        keys.Add(text.Key);
+                        break;
+                    case OutlineNode child:
+                        Collect(child, keys);
+                        break;
+                }
+            }
+        }
+    }
+}
