@@ -331,9 +331,14 @@
         await Changed.InvokeAsync();
     }
 
-    /// <summary>The handle drags the range: its head, without its sub-points at level −1 (the drop adopts exactly the range).</summary>
+    /// <summary>
+    /// The handle drags the range: its head, without its sub-points at level −1 (the drop adopts exactly the range). A
+    /// range of the book a grip drag left behind (<see cref="AppState.DraggedRange"/>) is cleared, so the editor's drop
+    /// adopts the note and does not move that range.
+    /// </summary>
     private void StartDrag(Block head)
     {
+        State.DraggedRange = null;
         State.DraggedNoteKey = head.Key;
         State.DraggedNoteOwnOnly = Range.OwnOnly;
         State.DraggedNoteFromRelevant = FromRelevant;

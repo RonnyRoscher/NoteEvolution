@@ -412,8 +412,13 @@ else
         }
     }
 
+    /// <summary>
+    /// A heading's drag starts: recorded as the dragged section. A range a grip drag left behind (its end never reached
+    /// Blazor) is cleared, so the drop moves this section and not that range.
+    /// </summary>
     internal void DragStart(OutlineNode node)
     {
+        State.DraggedRange = null;
         if (node.Block is not null && Editable)
         {
             State.DraggedSectionKey = node.Key;
@@ -479,7 +484,7 @@ else
         State.DraggedRange = null;
         _dropHint = null;
         _error = null;
-        if ((head.Kind != ElementKind.Heading && drop is RangeDrop.BeforeSection or RangeDrop.AtEnd) || !await ActivateAsync())
+        if (!ManuscriptCommands.HasRangeTarget(head.Kind, drop) || !await ActivateAsync())
         {
             StateHasChanged();
             return;

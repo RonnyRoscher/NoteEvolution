@@ -90,16 +90,19 @@ verschieben“). Wer daran zieht, verschiebt, was markiert ist: eine Überschrif
 Textblock mit seinen Unterpunkten, einen Unterpunkt mit allen tieferen Unterpunkten. Das gilt auch, wenn die
 Markierung mit ▼ auf das Element allein verkleinert ist. Ablegen lässt es sich im selben Editor, im Editor der anderen
 Hälfte und auf der Gliederung beider Hälften; danach ist der verschobene Bereich in der Hälfte markiert, in der er
-abgelegt wurde. Während des Ziehens zeigen Editor und Gliederung die Ablagestelle wie beim Ziehen von Textblöcken und
-Abschnitten. Ausgegraut ist der Griff bei einem offenen Konflikt, im gesperrten Editor, im Anhang und wenn der ganze
+abgelegt wurde. Über dem Editor zeigt sich beim Ziehen nur die übliche Einfügemarke; wohin der Bereich kommt,
+entscheidet das Element unter dem Mauszeiger (nach den Regeln unten). Die Gliederung zeigt die Ablagestelle wie beim
+Ziehen von Abschnitten und Textblöcken. Ausgegraut ist der Griff bei einem offenen Konflikt, im gesperrten Editor, im Anhang und wenn der ganze
 Vorspann oder das ganze Buch markiert ist.
 
 - **Abschnitt:** Im Editor abgelegt kommt er auf dieselbe Ebene wie der Abschnitt, in dem er losgelassen wird, und
   steht direkt hinter dessen ganzem Inhalt; im Vorspann oder vor der ersten Überschrift losgelassen wird er der erste
   Abschnitt der obersten Ebene. In der Gliederung wie beim Ziehen dort: auf einer Überschrift ihr letzter
-  Unterabschnitt, vor einer Überschrift davor auf deren Ebene, am Ende der letzte Abschnitt der obersten Ebene. Alle
-  Überschriften im Abschnitt ändern ihre Ebene um denselben Betrag. Würde eine tiefer als Ebene 6, wird nicht
-  verschoben („Der Abschnitt würde tiefer als Ebene 6.“). In den eigenen Abschnitt und in den Anhang geht es nicht.
+  Unterabschnitt, vor einer Überschrift davor auf deren Ebene, am Ende der letzte Abschnitt der obersten Ebene. Jede
+  Überschrift im Abschnitt bekommt die Ebene, die ihrer neuen Tiefe entspricht; eine übersprungene Ebene wird dabei
+  geschlossen (`###` direkt unter `#` wird `##`). Würde eine tiefer als Ebene 6, wird nicht verschoben („Der Abschnitt
+  würde tiefer als Ebene 6.“). In den eigenen Abschnitt und in den Anhang geht es nicht. Ein Textblock, der in der Datei hinter einer Überschrift auf derselben Einrückung
+  steht, gehört dabei zu deren Abschnitt, so wie das Buch ihn liest.
 - **Textblock:** Er bleibt Textblock. Im Editor steht er hinter dem Textblock, über dem er losgelassen wird (auch über
   einem von dessen Unterpunkten: dann hinter dem ganzen Block), auf einer Überschrift als erster Textblock ihres
   Abschnitts. Auf einer Überschrift der Gliederung landet er am Ende ihres Textes; vor einer Überschrift oder am Ende
@@ -109,6 +112,11 @@ Vorspann oder das ganze Buch markiert ist.
   Überschrift abgelegt wird er ein eigener Textblock (im Editor der erste des Abschnitts, in der Gliederung der
   letzte); wie beim „Ausrücken“ bekommt er neue Daten und keine Quellen. Seine tieferen Unterpunkte behalten ihren
   Abstand zu ihm. Auf sich selbst oder einen eigenen tieferen Unterpunkt geht es nicht.
+
+Wo ein Textblock oder Unterpunkt nicht hin kann, erscheint „Dorthin lässt sich der markierte Bereich nicht
+verschieben.“; ebenso, wenn sich das Buch während des Ziehens von außen geändert hat und der gezogene Bereich oder die
+Ablagestelle nicht mehr da ist. Jede andere äußere Änderung bleibt erhalten, verschoben wird im Buch, wie es beim
+Ablegen ist.
 
 Ein Abschnitt nimmt beim Verschieben alles mit, was im Buch unter seiner Überschrift zu lesen ist, auch wenn es in der
 Datei nicht unter ihr eingerückt ist (Textblöcke und tiefere Überschriften, die in der Datei auf derselben Einrückung
@@ -178,7 +186,7 @@ Cursor:
 | Textblock | wird letzter Unterpunkt des Textblocks direkt davor im selben Abschnitt, mit seinen Unterpunkten | nicht möglich |
 | Unterpunkt der ersten Stufe | eine Stufe tiefer, unter den Unterpunkt davor | wird eigener Textblock direkt hinter seinem Textblock; die folgenden Unterpunkte werden seine |
 | tieferer Unterpunkt | eine Stufe tiefer | eine Stufe höher |
-| Überschrift | eine Ebene tiefer, unter die Überschrift ihrer Ebene davor | eine Ebene höher; was danach im Abschnitt stand, kommt mit |
+| Überschrift | eine Ebene tiefer, unter die Überschrift ihrer Ebene davor; was im Buch unter ihr zu lesen ist, kommt mit (auch Blöcke, die in der Datei auf ihrer Einrückung folgen) | eine Ebene höher; was danach im Abschnitt stand, kommt mit |
 
 Ein neuer Textblock bekommt neue Daten und keine Quellen (`source::` bleibt am alten Block, der `updated::` bekommt).
 Verweise auf einen eingerückten Textblock zeigen danach auf den Textblock, der ihn aufnimmt. Was nicht geht, ist

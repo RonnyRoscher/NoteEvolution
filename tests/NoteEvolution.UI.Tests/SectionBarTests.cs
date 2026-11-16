@@ -522,6 +522,48 @@ public class SectionBarTests : UiTestContext
     }
 
     [Fact]
+    public async Task Grip_DragStart_ClearsTheOtherDrags()
+    {
+        var cut = await RenderAsync();
+        await MoveToAsync(cut, "Zweiter Text");
+        cut.WaitForAssertion(() => Assert.Equal("true", cut.Find(".ne-sec-drag").GetAttribute("draggable")));
+
+        // Drags whose end never reached Blazor: a section of the outline, text blocks of the editor, a note card.
+        State.DraggedSectionKey = KeyOf("# Zwei");
+        State.DraggedTextBlockKeys = [KeyOf("Dritter Text")];
+        State.DraggedNoteKey = Guid.NewGuid();
+        State.DraggedNoteOwnOnly = true;
+        State.DraggedNoteFromRelevant = true;
+
+        cut.Find(".ne-sec-drag").DragStart();
+
+        Assert.Equal(BookElements.Find(Book, KeyOf("Zweiter Text")), State.DraggedRange);
+        Assert.Null(State.DraggedSectionKey);
+        Assert.Null(State.DraggedTextBlockKeys);
+        Assert.Null(State.DraggedNoteKey);
+        Assert.False(State.DraggedNoteOwnOnly);
+        Assert.False(State.DraggedNoteFromRelevant);
+    }
+
+    [Fact]
+    public async Task Grip_NotDraggableWhileTheBarIsLocked()
+    {
+        await OpenSessionAsync(_vault);
+        State.Cursor = CursorOf("Zweiter Text");
+        var element = BookElements.Find(Book, KeyOf("Zweiter Text"))!;
+        Assert.NotNull(State.MovableRangeHead);
+
+        // E.g. the other half's editor holds text it could not save: the bar is locked, the book itself is writable.
+        var cut = Render<SectionBar>(p => p.Add(b => b.Element, element).Add(b => b.Visible, true).Add(b => b.Locked, true));
+
+        var grip = cut.Find(".ne-sec-drag");
+        Assert.Equal("false", grip.GetAttribute("draggable"));
+        Assert.Contains("ne-sec-drag-disabled", grip.ClassList);
+        grip.DragStart();
+        Assert.Null(State.DraggedRange);
+    }
+
+    [Fact]
     public async Task NoGermanLiterals_InSectionBar()
     {
         Services.AddSingleton<IStringLocalizer<Strings>>(new KeyLocalizer());

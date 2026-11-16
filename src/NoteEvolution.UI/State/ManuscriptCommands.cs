@@ -1081,12 +1081,15 @@ public static class ManuscriptCommands
     /// (<see cref="OutlineEditor.MoveSectionAfter"/> in an editor, <see cref="OutlineEditor.MoveSection"/> on an outline),
     /// a text block with its details (<see cref="ManuscriptEditor.MoveTextBlocks"/>), a detail with its deeper details
     /// (<see cref="ManuscriptEditor.MoveDetail"/>; onto a heading it becomes a text block). A text block or detail
-    /// dropped before a heading or at the end of an outline does nothing. In the same order as
+    /// dropped before a heading or at the end of an outline does nothing (<see cref="HasRangeTarget"/>). In the same order as
     /// <see cref="MoveTextBlocksAsync"/>: every editor saves its text first, text one could not save refuses the move,
     /// a read-only book or an open conflict refuses it too, and a failed save shows its message. A section that would
-    /// get a heading deeper than level 6 shows <c>MoveRangeTooDeep</c>; a target inside the moved section, a target
-    /// that is no longer in the book or any other refusal shows <c>OutlineMoveInvalid</c>; nothing changes then. A drop
-    /// at the place the range already has changes nothing. The page is saved with one <see cref="StructureUndo"/>
+    /// get a heading deeper than level 6 shows <c>MoveRangeTooDeep</c>; a section's target inside the section itself or
+    /// in the appendix shows <c>OutlineMoveInvalid</c>; any refusal of a text block or a detail, and a head or a drop
+    /// element that is no longer in the book, shows <c>MoveRangeInvalid</c>; nothing changes then. The move is computed
+    /// on the book as it is at the drop: a change by another program since the drag started is no refusal as long as
+    /// the head is the same kind of element and the drop element is still there. A drop at the place the range already
+    /// has changes nothing (also on a page that held unsaved changes before). The page is saved with one <see cref="StructureUndo"/>
     /// (<paramref name="undoDescription"/>), which restores the file byte for byte (also the dates a detail made a text
     /// block got). Whatever happens, the book view is taken from the vault again; after a move the head is revealed in
     /// the active view (the caller makes the view it was dropped in active first) and is the current element with range
@@ -1102,9 +1105,8 @@ public static class ManuscriptCommands
         Guid? reveal = null;
         try
         {
-            if (head.Kind != ElementKind.Heading && drop is RangeDrop.BeforeSection or RangeDrop.AtEnd)
+            if (!HasRangeTarget(head.Kind, drop))
             {
-                // No target for a text block or a detail.
                 return null;
             }
 
@@ -1114,11 +1116,13 @@ public static class ManuscriptCommands
                 return message;
             }
 
-            var invalid = new AdoptMessage("OutlineMoveInvalid", true);
+            // The move is computed on the book as it is now (a change by another program merged in since the drag
+            // started included); refused only when the head is gone or another kind of element, or the drop element gone.
+            var gone = new AdoptMessage(MoveRangeInvalid, true);
+            var invalid = head.Kind == ElementKind.Heading ? new AdoptMessage(OutlineMoveInvalid, true) : gone;
             if (BookElements.Find(book, head.Key) != head)
             {
-                // The head is gone or another kind of element since the drag started (e.g. a change by another program).
-                return invalid;
+                return gone;
             }
 
             var (move, refusal) = head.Kind switch
@@ -1182,14 +1186,29 @@ public static class ManuscriptCommands
         }
     }
 
+    /// <summary>The refusal of a heading's move: a target in its own section or in the appendix.</summary>
+    private const string OutlineMoveInvalid = "OutlineMoveInvalid";
+
+    /// <summary>The refusal of a text block's or a detail's move, and of a head or a drop element that is gone.</summary>
+    private const string MoveRangeInvalid = "MoveRangeInvalid";
+
+    /// <summary>
+    /// Whether <paramref name="drop"/> is a target for a dragged range whose head is of <paramref name="headKind"/>: a text
+    /// block or a detail has none before a heading or at the end of an outline, where its drop does nothing.
+    /// </summary>
+    public static bool HasRangeTarget(ElementKind headKind, RangeDrop drop) =>
+        headKind == ElementKind.Heading || drop is not (RangeDrop.BeforeSection or RangeDrop.AtEnd);
+
     /// <summary>
     /// The move of the section <paramref name="key"/> to <paramref name="drop"/>, or why there is none: <c>null</c> for a
-    /// drop in front of itself (its own place), <c>OutlineMoveInvalid</c> for a target unknown, in the appendix or inside
-    /// the section (<see cref="IsInOwnSection"/>). What the core refuses after these checks is the level limit.
+    /// drop in front of itself (its own place), <c>MoveRangeInvalid</c> for a drop element or target that is gone,
+    /// <c>OutlineMoveInvalid</c> for a target in the appendix or inside the section (<see cref="IsInOwnSection"/>). In an
+    /// editor the target is the section the book reads the drop element in (<see cref="OutlineEditor.ReadSectionOf"/>):
+    /// a text block on a heading's indentation after it belongs to that heading. What the core refuses after these
+    /// checks is the level limit.
     /// </summary>
     private static (Func<bool>? Move, string? Refusal) SectionMove(Book book, Guid key, RangeDrop drop)
     {
-        const string invalid = "OutlineMoveInvalid";
         switch (drop)
         {
             case RangeDrop.InEditor { ElementKey: var elementKey }:
@@ -1198,24 +1217,29 @@ public static class ManuscriptCommands
                 var anchor = Guid.Empty;
                 if (elementKey is { } elementAt)
                 {
-                    if (BookElements.Find(book, elementAt) is not { } element)
+                    if (BookElements.Find(book, elementAt) is null)
                     {
-                        return (null, invalid);
+                        return (null, MoveRangeInvalid);
                     }
 
-                    anchor = BookElements.SectionOf(book, element);
+                    anchor = OutlineEditor.ReadSectionOf(book, elementAt);
                 }
 
                 return anchor != Guid.Empty && IsInOwnSection(book, key, anchor)
-                    ? (null, invalid)
+                    ? (null, OutlineMoveInvalid)
                     : (() => Changes(book, () => OutlineEditor.MoveSectionAfter(book, key, anchor)), null);
             }
 
             case RangeDrop.OnSection { SectionKey: var sectionKey }:
             {
+                if (book.FindNode(sectionKey) is null)
+                {
+                    return (null, MoveRangeInvalid);
+                }
+
                 if (!IsTextSection(book, sectionKey) || (sectionKey != Guid.Empty && IsInOwnSection(book, key, sectionKey)))
                 {
-                    return (null, invalid);
+                    return (null, OutlineMoveInvalid);
                 }
 
                 var last = book.FindNode(sectionKey)!.Children.Count(child => child.Key != key);
@@ -1229,15 +1253,20 @@ public static class ManuscriptCommands
                     return (null, null);
                 }
 
+                if (sectionKey != Guid.Empty && book.FindNode(sectionKey) is null)
+                {
+                    return (null, MoveRangeInvalid);
+                }
+
                 if (sectionKey == Guid.Empty || !IsTextSection(book, sectionKey) || IsInOwnSection(book, key, sectionKey))
                 {
-                    return (null, invalid);
+                    return (null, OutlineMoveInvalid);
                 }
 
                 var parent = book.FindNode(sectionKey)!.Parent!;
                 if (parent.Block is not null && IsInOwnSection(book, key, parent.Key))
                 {
-                    return (null, invalid);
+                    return (null, OutlineMoveInvalid);
                 }
 
                 var index = parent.Children.Where(child => child.Key != key).ToList().FindIndex(child => child.Key == sectionKey);
@@ -1274,7 +1303,7 @@ public static class ManuscriptCommands
             _ => null,
         };
         return position is null
-            ? (null, "OutlineMoveInvalid")
+            ? (null, MoveRangeInvalid)
             : (() => ManuscriptEditor.MoveTextBlocks(book, [key], position), null);
     }
 
@@ -1299,15 +1328,19 @@ public static class ManuscriptCommands
             _ => null,
         };
         return target is null
-            ? (null, "OutlineMoveInvalid")
+            ? (null, MoveRangeInvalid)
             : (() => ManuscriptEditor.MoveDetail(book, key, target, now), null);
     }
 
-    /// <summary>Runs a section move, which reports no change itself: whether the page changed.</summary>
+    /// <summary>
+    /// Runs a section move, which reports no change itself: whether it changed the page (compared with the page before
+    /// it, so a page that held a change before is no reason to save).
+    /// </summary>
     private static bool Changes(Book book, Action move)
     {
+        var before = PageStructureSnapshot.Capture(book.Page);
         move();
-        return book.Page.IsDirty;
+        return !before.Matches(book.Page);
     }
 
     /// <summary>Whether <paramref name="sectionKey"/> is a section of the book's text (the root included), not of the appendix.</summary>
@@ -1317,7 +1350,9 @@ public static class ManuscriptCommands
     /// <summary>
     /// Whether the heading <paramref name="sectionKey"/> is the section <paramref name="headKey"/> itself, lies below it
     /// or in its read tail (<see cref="OutlineEditor.ReadTail"/>), or below a tail block: the targets the core refuses
-    /// as part of the moved section.
+    /// as part of the moved section. For a drop in an editor <paramref name="sectionKey"/> is the section the book reads
+    /// the drop element in (<see cref="OutlineEditor.ReadSectionOf"/>), so a text block of the section's own tail is
+    /// part of it as well.
     /// </summary>
     private static bool IsInOwnSection(Book book, Guid headKey, Guid sectionKey)
     {

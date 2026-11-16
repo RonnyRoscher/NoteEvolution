@@ -60,8 +60,10 @@ Hälften, das Ende der Gliederung.
   losgelassen, wird er der erste Abschnitt der obersten Ebene.
 - **In der Gliederung abgelegt:** wie heute (auf: letzter Unterabschnitt; vor: davor, gleiche Ebene; Ende: letzter
   Abschnitt der obersten Ebene).
-- Alle Überschriften im Abschnitt verschieben ihre Ebene um denselben Betrag. Würde eine tiefer als Ebene 6, wird
-  nicht verschoben; es erscheint der Hinweis „Der Abschnitt würde tiefer als Ebene 6“.
+- Jede Überschrift im Abschnitt bekommt die Ebene, die ihrer neuen Tiefe entspricht (Ebene des Ziels plus Tiefe unter
+  der verschobenen Überschrift). Eine übersprungene Ebene im Abschnitt wird dabei geschlossen (`###` direkt unter `#`
+  wird `##`). Würde eine tiefer als Ebene 6, wird nicht verschoben; es erscheint der Hinweis „Der Abschnitt würde
+  tiefer als Ebene 6“.
 - Nicht möglich: in den eigenen Abschnitt hinein, in den Anhang. Ablegen an der Stelle, an der er schon steht, ändert
   nichts.
 
@@ -97,7 +99,11 @@ Hälften, das Ende der Gliederung.
 
 - Schlägt das Speichern fehl, bleibt das Buch unverändert und die Kopfzeile zeigt die Meldung, wie bei den anderen
   Strukturbefehlen.
-- Hat sich das Buch zwischen Ziehbeginn und Ablegen geändert (äußere Änderung), wird nicht verschoben, mit Hinweis.
+- Hat sich das Buch zwischen Ziehbeginn und Ablegen geändert (äußere Änderung), wird im Buch verschoben, wie es beim
+  Ablegen ist; die äußere Änderung bleibt erhalten. Nicht verschoben wird nur, wenn der gezogene Bereichskopf nicht
+  mehr da ist oder eine andere Art Element geworden ist oder das Element, auf dem abgelegt wurde, nicht mehr da ist;
+  dann erscheint der Hinweis „Dorthin lässt sich der markierte Bereich nicht verschieben.“ und die Datei bleibt
+  unverändert.
 - Ablegen außerhalb eines Ziels ändert nichts.
 
 ## 8. Nicht enthalten

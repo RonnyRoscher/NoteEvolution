@@ -91,7 +91,7 @@ public class MoveDetailTests
     {
         var book = Load();
 
-        Move(book, "D1a", b => new DetailTarget.After(KeyOf(b, "T1")));
+        Assert.True(Move(book, "D1a", b => new DetailTarget.After(KeyOf(b, "T1"))));
 
         var after = Book.Load(book.Page);
         var drei = TextBlockOf(after, "Text drei");
@@ -100,7 +100,7 @@ public class MoveDetailTests
 
         // Deeper as well: D2 below D1 at the depth of D1a, its D2a one deeper.
         var down = Load();
-        Move(down, "D2", b => new DetailTarget.After(KeyOf(b, "D1a")));
+        Assert.True(Move(down, "D2", b => new DetailTarget.After(KeyOf(b, "D1a"))));
 
         var eins = TextBlockOf(Book.Load(down.Page), "Text eins");
         Assert.Equal(["D1", "D1a", "D1a1", "D2", "D2a", "D3"], eins.Paragraphs.Select(p => p.Text));
@@ -179,6 +179,63 @@ public class MoveDetailTests
         var prologue = Load(text);
         Assert.True(Move(prologue, "Unten", p => new DetailTarget.SectionEnd(Guid.Empty)));
         Assert.StartsWith(head + "- Vorspann\n- Unten\n", Serialize(prologue));
+    }
+
+    private static string Stamp => BlockDates.Format(Now);
+
+    private static string EinsHeadUpdated => EinsHead.Replace("2026-03-01 10:00", Stamp);
+
+    [Fact]
+    public void MoveDetail_AfterAnAncestorDetail_AtItsDepthAfterItsSubtree()
+    {
+        var book = Load();
+
+        Assert.True(Move(book, "D1a1", b => new DetailTarget.After(KeyOf(b, "D1"))));
+
+        Assert.Equal(Start + EinsHead + "\t\t- D1\n\t\t\t- D1a\n\t\t- D1a1\n" + D2Tree + D3 + Zwei + Z1 + Tail, Serialize(book));
+    }
+
+    [Fact]
+    public void MoveDetail_SectionStartOfThePrologue_FirstTextBlockOfTheBook()
+    {
+        var book = Load();
+
+        Assert.True(Move(book, "D3", _ => new DetailTarget.SectionStart(Guid.Empty)));
+
+        Assert.Equal(
+            "type:: book\n\n- D3\n" + $"  created:: {Stamp}\n" + $"  updated:: {Stamp}\n" + "- Vorspann\n- # Eins\n" + EinsHeadUpdated
+            + D1Tree + D2Tree + Zwei + Z1 + Tail,
+            Serialize(book));
+    }
+
+    [Fact]
+    public void MoveDetail_ToASectionWithoutTextBlocks_ItsOnlyTextBlock()
+    {
+        var expected = Start + EinsHeadUpdated + D1Tree + D2Tree + Zwei + Z1
+                       + "- # Zwei\n\t- Text drei\n\t\t- T1\n\t- ## Zwei-A\n\t\t- D3\n" + $"\t\t  created:: {Stamp}\n" + $"\t\t  updated:: {Stamp}\n"
+                       + Glossar;
+        var start = Load();
+        var end = Load();
+
+        Assert.True(Move(start, "D3", b => new DetailTarget.SectionStart(KeyOf(b, "## Zwei-A"))));
+        Assert.True(Move(end, "D3", b => new DetailTarget.SectionEnd(KeyOf(b, "## Zwei-A"))));
+
+        Assert.Equal(expected, Serialize(start));
+        Assert.Equal(expected, Serialize(end));
+    }
+
+    [Fact]
+    public void MoveDetail_ToASectionOfTheAppendixOrAnUnknownOne_RefusedAsTarget()
+    {
+        var book = Load();
+
+        Assert.Equal("target", Assert.Throws<ArgumentException>(() => Move(book, "D1", b => new DetailTarget.SectionStart(KeyOf(b, "# Glossar")))).ParamName);
+        Assert.Equal("target", Assert.Throws<ArgumentException>(() => Move(book, "D1", b => new DetailTarget.SectionEnd(KeyOf(b, "# Glossar")))).ParamName);
+        Assert.Equal("target", Assert.Throws<ArgumentException>(() => Move(book, "D1", _ => new DetailTarget.SectionStart(Guid.NewGuid()))).ParamName);
+        Assert.Equal("target", Assert.Throws<ArgumentException>(() => Move(book, "D1", b => new DetailTarget.SectionEnd(KeyOf(b, "Text zwei")))).ParamName);
+
+        Assert.Equal(Text, Serialize(book));
+        Assert.False(book.Page.IsDirty);
     }
 
     [Fact]

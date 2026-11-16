@@ -201,6 +201,19 @@ public class EditorInteropTests
     }
 
     [Fact]
+    public async Task BlocksDragStarted_ClearsAStaleDraggedRange()
+    {
+        var interop = await InitAsync();
+
+        // A grip drag whose end never reached Blazor: the text blocks dragged now must not move that range.
+        _state.DraggedRange = new BookElement(ElementKind.Heading, Guid.Parse(BlockKey));
+        await interop.BlocksDragStarted($"[\"{Key}\"]");
+
+        Assert.Null(_state.DraggedRange);
+        Assert.Equal([Guid.Parse(Key)], _state.DraggedTextBlockKeys);
+    }
+
+    [Fact]
     public async Task Init_PassesBarHeight_RevealAndSetDocumentReachTheEditor()
     {
         var interop = await InitAsync();

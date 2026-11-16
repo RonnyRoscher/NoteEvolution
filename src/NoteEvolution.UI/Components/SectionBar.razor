@@ -490,10 +490,17 @@
 
     /// <summary>
     /// The grip's drag starts: the head of the marked range is recorded as dragged (<see cref="AppState.DraggedRange"/>),
-    /// read now, so a drop moves what was marked when the drag began; nothing while it cannot be moved.
+    /// read now, so a drop moves what was marked when the drag began; nothing while it cannot be moved. What other drags
+    /// left behind (a section of an outline, text blocks of an editor, a note card; their end never reached Blazor) is
+    /// cleared, so no drop handler takes it instead.
     /// </summary>
     private void StartRangeDrag()
     {
+        State.DraggedSectionKey = null;
+        State.DraggedTextBlockKeys = null;
+        State.DraggedNoteKey = null;
+        State.DraggedNoteOwnOnly = false;
+        State.DraggedNoteFromRelevant = false;
         State.DraggedRange = Locked ? null : State.MovableRangeHead;
     }
 

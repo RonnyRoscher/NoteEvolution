@@ -154,6 +154,65 @@ public class MoveRangeTests : UiTestContext
     public Task MoveRange_Heading_BeforeItself_Nothing() =>
         AssertNothingAsync("## Eins-A", () => BeforeSection("## Eins-A"));
 
+    [Fact]
+    public Task MoveRange_Heading_InEditorAtThePlaceItHas_Nothing() =>
+        AssertNothingAsync("# Zwei", () => InEditor("Zweiter Text"));
+
+    /// <summary>"Tail Text" stands on the indentation of "# Eins" after it: the book reads it (and its detail) under Eins.</summary>
+    private const string TailBook =
+        Head + "- # Null\n" + "- # Eins\n" + "- Tail Text\n" + "\t- Tail Detail\n" + "- # Zwei\n" + "- # Drei\n";
+
+    [Fact]
+    public async Task MoveRange_Heading_InEditorOnATailTextBlock_AfterTheReadSection()
+    {
+        var vault = await OpenAsync(TailBook);
+
+        Assert.Null(await MoveAsync("# Drei", InEditor("Tail Text")));
+
+        Assert.Equal(Head + "- # Null\n" + "- # Eins\n" + "- Tail Text\n" + "\t- Tail Detail\n" + "- # Drei\n" + "- # Zwei\n", vault.Read(BookPath));
+        Assert.Equal(Undo, State.Session!.Undo.NextDescription);
+    }
+
+    [Fact]
+    public async Task MoveRange_Heading_InEditorOnADetailOfATailTextBlock_AfterTheReadSection()
+    {
+        var vault = await OpenAsync(TailBook);
+
+        Assert.Null(await MoveAsync("# Drei", InEditor("Tail Detail")));
+
+        Assert.Equal(Head + "- # Null\n" + "- # Eins\n" + "- Tail Text\n" + "\t- Tail Detail\n" + "- # Drei\n" + "- # Zwei\n", vault.Read(BookPath));
+    }
+
+    [Fact]
+    public async Task MoveRange_Heading_InEditorOnItsOwnTailText_Refused()
+    {
+        var vault = await OpenAsync(TailBook);
+        var invalid = new AdoptMessage("OutlineMoveInvalid", true);
+
+        Assert.Equal(invalid, await MoveAsync("# Eins", InEditor("Tail Text")));
+        Assert.Equal(invalid, await MoveAsync("# Eins", InEditor("Tail Detail")));
+
+        Assert.Equal(TailBook, vault.Read(BookPath));
+        Assert.False(State.Session!.Undo.CanUndo);
+    }
+
+    [Fact]
+    public async Task MoveRange_Heading_InEditorOnItsOwnTailText_Nested_Refused()
+    {
+        // "A Tail" is read under "## A" (nested in K); "Nach Tief" under "## Tief", a tail heading of "# Eins".
+        const string nested =
+            Head + "- # K\n" + "\t- ## A\n" + "\t- A Tail\n" + "\t- ## B\n" + "- # Eins\n" + "- ## Tief\n" + "\t- Tief Text\n" + "- Nach Tief\n" + "- # Zwei\n";
+        var vault = await OpenAsync(nested);
+        var invalid = new AdoptMessage("OutlineMoveInvalid", true);
+
+        Assert.Equal(invalid, await MoveAsync("## A", InEditor("A Tail")));
+        Assert.Equal(invalid, await MoveAsync("# Eins", InEditor("Nach Tief")));
+        Assert.Equal(invalid, await MoveAsync("## Tief", InEditor("Nach Tief")));
+
+        Assert.Equal(nested, vault.Read(BookPath));
+        Assert.False(State.Session!.Undo.CanUndo);
+    }
+
     // --- A text block (spec 5.2) ---
 
     [Fact]
@@ -328,11 +387,155 @@ public class MoveRangeTests : UiTestContext
         Assert.Equal(invalid, await MoveAsync("# Eins", InEditor("# Eins")));
         Assert.Equal(invalid, await MoveAsync("# Eins", BeforeSection("## Eins-A")));
 
-        // A detail onto one of its own deeper details.
-        Assert.Equal(invalid, await MoveAsync("Detail A", InEditor("Tiefer A")));
+        // A detail onto one of its own deeper details: the neutral message, not one about headings.
+        Assert.Equal(new AdoptMessage("MoveRangeInvalid", true), await MoveAsync("Detail A", InEditor("Tiefer A")));
+        Assert.Equal("Dorthin lässt sich der markierte Bereich nicht verschieben.", Text("MoveRangeInvalid"));
 
         Assert.Equal(BookText, vault.Read(BookPath));
         Assert.False(State.Session!.Undo.CanUndo);
+    }
+
+    [Fact]
+    public async Task MoveRange_DropElementGone_Refused()
+    {
+        var vault = await OpenAsync();
+        var invalid = new AdoptMessage("MoveRangeInvalid", true);
+
+        foreach (var head in new[] { "# Zwei", "Zweiter Text", "Detail B" })
+        {
+            Assert.Equal(invalid, await MoveAsync(head, new RangeDrop.InEditor(Guid.NewGuid())));
+            Assert.Equal(invalid, await MoveAsync(head, new RangeDrop.OnSection(Guid.NewGuid())));
+        }
+
+        Assert.Equal(invalid, await MoveAsync("# Zwei", new RangeDrop.BeforeSection(Guid.NewGuid())));
+        Assert.Equal(BookText, vault.Read(BookPath));
+        Assert.False(State.Session!.Undo.CanUndo);
+    }
+
+    /// <summary>Rewrites the book file as another program would and lets the session take the change.</summary>
+    private void ChangeExternally(TestVault vault, string text)
+    {
+        var path = Path.Combine(vault.Root, BookPath);
+        File.WriteAllText(path, text);
+        State.Session!.HandleExternalChange(path);
+        Assert.False(State.Session.HasOpenConflict(path));
+    }
+
+    [Fact]
+    public async Task MoveRange_HeadGoneAfterAnExternalChange_Refused_FileUnchanged()
+    {
+        var vault = await OpenAsync();
+        var head = ElementOf("Zweiter Text");
+        var external = BookText.Replace(Zweiter, "");
+        ChangeExternally(vault, external);
+        State.RefreshBook();
+
+        var message = await ManuscriptCommands.MoveRangeAsync(State, head, InEditor("Dritter Text"), Undo, NullLogger.Instance);
+
+        Assert.Equal(new AdoptMessage("MoveRangeInvalid", true), message);
+        Assert.Equal(external, vault.Read(BookPath));
+        Assert.False(State.Session!.Undo.CanUndo);
+    }
+
+    [Fact]
+    public async Task MoveRange_ExternalChangeElsewhere_MovesInTheNewBook()
+    {
+        var vault = await OpenAsync();
+        var head = ElementOf("Zweiter Text");
+        ChangeExternally(vault, BookText.Replace("\t- Dritter Text\n", "\t- Dritter Text extern\n"));
+        State.RefreshBook();
+
+        var message = await ManuscriptCommands.MoveRangeAsync(State, head, InEditor("Dritter Text extern"), Undo, NullLogger.Instance);
+
+        Assert.Null(message);
+        Assert.Equal(Head + Vorspann + EinsHead + Erster + ErsterDetails + EinsA + "- # Zwei\n\t- Dritter Text extern\n" + Zweiter, vault.Read(BookPath));
+        Assert.Equal(Undo, State.Session!.Undo.NextDescription);
+    }
+
+    [Fact]
+    public async Task MoveRange_SaveFails_BookUnchanged_ShowsTheMessage()
+    {
+        var vault = await OpenAsync();
+        var path = Path.Combine(vault.Root, BookPath);
+
+        // A read-only file cannot be replaced: the write fails after its retries.
+        File.SetAttributes(path, FileAttributes.ReadOnly);
+        AdoptMessage? message;
+        try
+        {
+            message = await MoveAsync("Zweiter Text", InEditor("Dritter Text"));
+        }
+        finally
+        {
+            File.SetAttributes(path, FileAttributes.Normal);
+        }
+
+        Assert.Equal(new AdoptMessage("SectionCommandFailed", true), message);
+        Assert.Equal(BookText, vault.Read(BookPath));
+        Assert.Equal(
+            ["Erster Text", "Zweiter Text"],
+            State.Session!.Vault.FindBook(Book.LinkName)!.Root.Children.First().TextBlocks.Select(t => t.Text));
+        Assert.False(State.Session.Undo.CanUndo);
+    }
+
+    [Fact]
+    public async Task MoveRange_PageAlreadyDirty_AMoveThatChangesNothing_SavesNothing()
+    {
+        var vault = await OpenAsync();
+        var session = State.Session!;
+
+        // A change of the page in memory that is not saved yet.
+        session.Vault.FindBook(Book.LinkName)!.Page.AllBlocks().Single(b => b.Content == "Vorspann Text").SetContent("Vorspann lokal");
+
+        Assert.Null(await MoveAsync("# Zwei", InEditor("Zweiter Text")));
+
+        Assert.Equal(BookText, vault.Read(BookPath));
+        Assert.False(session.Undo.CanUndo);
+    }
+
+    private const string Note = "7f3a91c2-4b1d-4e8a-9c3f-1a2b3c4d5e6f";
+
+    private const string TextId = "6650a1c2-1b7e-4c1d-9a0f-2b3c4d5e6f70";
+
+    private const string DetailId = "6650a1c2-1b7e-4c1d-9a0f-2b3c4d5e6f71";
+
+    /// <summary>"Erster Text" and its "Detail A" carry an id and a source.</summary>
+    private const string LinkedEins =
+        "- # Eins\n" +
+        "\t- Erster Text\n" +
+        $"\t  id:: {TextId}\n" +
+        $"\t  source:: (({Note}))\n" +
+        "\t\t- Detail A\n" +
+        $"\t\t  id:: {DetailId}\n" +
+        $"\t\t  source:: (({Note}))\n" +
+        "\t\t- Detail B\n";
+
+    private const string LinkedBook = Head + LinkedEins + "- # Zwei\n\t- Dritter Text\n";
+
+    [Fact]
+    public async Task MoveRange_KeepsIdAndSourceLinesOfTheMovedBlocks()
+    {
+        // A section, a text block and a detail: their id:: and source:: lines go along unchanged.
+        await AssertLinkedAsync("# Eins", () => new RangeDrop.AtEnd(), Head + "- # Zwei\n\t- Dritter Text\n" + LinkedEins);
+        await AssertLinkedAsync(
+            "Erster Text", () => InEditor("Dritter Text"),
+            Head + "- # Eins\n- # Zwei\n\t- Dritter Text\n" + LinkedEins["- # Eins\n".Length..]);
+        await AssertLinkedAsync(
+            "Detail A", () => InEditor("Dritter Text"),
+            Head + "- # Eins\n" + "\t- Erster Text\n" + $"\t  id:: {TextId}\n" + $"\t  source:: (({Note}))\n" + "\t\t- Detail B\n"
+            + "- # Zwei\n\t- Dritter Text\n" + "\t\t- Detail A\n" + $"\t\t  id:: {DetailId}\n" + $"\t\t  source:: (({Note}))\n");
+
+        async Task AssertLinkedAsync(string head, Func<RangeDrop> drop, string expected)
+        {
+            var vault = TestVault.Create((BookPath, LinkedBook), ("journals/2026_09_15.md", $"- Notiz\n  id:: {Note}\n"));
+            _vaults.Add(vault);
+            State.Session?.Dispose();
+            await OpenSessionAsync(vault);
+
+            Assert.Null(await MoveAsync(head, drop()));
+
+            AssertSameBesidesNewIds(expected, vault.Read(BookPath));
+        }
     }
 
     [Fact]

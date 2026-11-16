@@ -63,7 +63,7 @@ public static class OutlineEditor
     /// <c>new parent level + 1 + depth below the moved heading</c>; only the <c>#</c> prefix changes. At the root, an
     /// index after the last section of the book's text means before the first appendix section. A target that is the
     /// section's own place (directly before or after its tail headings in its parent) changes nothing, the tail included,
-    /// if every heading of the section already has the level the move gives it; otherwise the section stays at its place
+    /// if every heading of the section, those of its tail included, already has the level the move gives it; otherwise the section stays at its place
     /// and is moved there as anywhere else (tail nested, levels set).
     /// </summary>
     /// <exception cref="ArgumentException">
@@ -102,7 +102,7 @@ public static class OutlineEditor
 
             if (index == own || index == own + tailHeadings)
             {
-                if (HasLevels(node, newParent.Level + 1))
+                if (HasLevels(book, node, tail, newParent.Level + 1))
                 {
                     return;
                 }
@@ -191,6 +191,45 @@ public static class OutlineEditor
         return height;
     }
 
+    /// <summary>
+    /// Whether moving the section to <paramref name="level"/> would rewrite no heading: neither one nested below it nor
+    /// one of its <paramref name="tail"/>, each at the level it gets once the tail is nested (<see cref="NestTail"/>, as
+    /// <see cref="HeightWithTail"/> places it), so a skipped level is closed up alike in the flat and the nested shape.
+    /// </summary>
+    private static bool HasLevels(Book book, OutlineNode node, IReadOnlyList<Block> tail, int level)
+    {
+        if (!HasLevels(node, level))
+        {
+            return false;
+        }
+
+        var open = new List<OutlineNode>();
+        AddOpenChain(open, node);
+        foreach (var block in tail)
+        {
+            if (book.FindNode(block.Key) is not { } heading)
+            {
+                continue;
+            }
+
+            var parentIndex = 0;
+            while (parentIndex + 1 < open.Count && open[parentIndex + 1].Level < heading.Level)
+            {
+                parentIndex++;
+            }
+
+            if (!HasLevels(heading, level + parentIndex + 1))
+            {
+                return false;
+            }
+
+            open.RemoveRange(parentIndex + 1, open.Count - parentIndex - 1);
+            AddOpenChain(open, heading);
+        }
+
+        return true;
+    }
+
     /// <summary>Whether <see cref="Relevel"/> with <paramref name="level"/> would rewrite nothing in the subtree.</summary>
     private static bool HasLevels(OutlineNode node, int level) =>
         node.Level == level && node.Children.All(child => HasLevels(child, level + 1));
@@ -234,6 +273,36 @@ public static class OutlineEditor
                 .TakeWhile(block => book.FindNode(block.Key) is not { } heading
                                     || (heading.Level > node.Level && heading.AppendixKind == AppendixKind.None)),
         ];
+    }
+
+    /// <summary>
+    /// The section in which the book reads the element <paramref name="elementKey"/>: a heading is its own section; a
+    /// text block or a detail is read in the section of the nearest heading before its text block under the same parent
+    /// whose <see cref="ReadTail"/> holds the text block (the file puts it on that heading's indentation after it, also
+    /// after a deeper tail heading), else in the section its text block is nested in (the root's key for the prologue).
+    /// </summary>
+    /// <exception cref="ArgumentException">No element of the book's text has this key (unknown, or in the appendix).</exception>
+    public static Guid ReadSectionOf(Book book, Guid elementKey)
+    {
+        var element = BookElements.Find(book, elementKey)
+                      ?? throw new ArgumentException("No element of the book's text has this key.", nameof(elementKey));
+        if (element.Kind == ElementKind.Heading)
+        {
+            return elementKey;
+        }
+
+        var textBlock = BookElements.TextBlockOf(book, element)!;
+        var siblings = (textBlock.Block.Parent?.Children ?? book.Page.Roots).ToList();
+        for (var i = siblings.IndexOf(textBlock.Block) - 1; i >= 0; i--)
+        {
+            if (book.FindNode(siblings[i].Key) is { Block: not null } heading && !book.IsInAppendix(heading.Key)
+                && ReadTail(book, heading.Key).Contains(textBlock.Block))
+            {
+                return heading.Key;
+            }
+        }
+
+        return textBlock.Section.Key;
     }
 
     /// <summary>Moves the section to the same level as <paramref name="anchorSectionKey"/>, directly after it

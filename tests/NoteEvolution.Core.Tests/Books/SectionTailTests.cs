@@ -518,4 +518,87 @@ public class SectionTailTests
         Assert.False(book.Page.IsDirty);
         Assert.Equal(Anchors, Serialize(book));
     }
+
+    [Fact]
+    public void MoveSection_SamePlace_FlatSkippedLevelInTheTail_RelevelsLikeTheNestedShape()
+    {
+        // "### Tief" skips a level below "# Eins": nested under it or on its indentation, the book reads the same.
+        const string expected = "type:: book\n\n- # Eins\n\t- ## Tief\n\t\t- Tief Text\n- # Zwei\n";
+        foreach (var text in new[]
+                 {
+                     "type:: book\n\n- # Eins\n\t- ### Tief\n\t\t- Tief Text\n- # Zwei\n",
+                     "type:: book\n\n- # Eins\n- ### Tief\n\t- Tief Text\n- # Zwei\n",
+                 })
+        {
+            var book = Load(text);
+
+            OutlineEditor.MoveSection(book, KeyOf(book, "Eins"), Guid.Empty, 0);
+
+            Assert.Equal(expected, Serialize(book));
+        }
+
+        // A flat tail heading that already has the level nesting gives it changes nothing.
+        const string fitting = "type:: book\n\n- # Eins\n- ## Tief\n\t- Tief Text\n- # Zwei\n";
+        var unchanged = Load(fitting);
+        OutlineEditor.MoveSection(unchanged, KeyOf(unchanged, "Eins"), Guid.Empty, 0);
+        Assert.False(unchanged.Page.IsDirty);
+        Assert.Equal(fitting, Serialize(unchanged));
+    }
+
+    /// <summary>Text blocks on a heading's indentation after it, also after a deeper tail heading, and nested ones.</summary>
+    private const string ReadSections =
+        "type:: book\n\n" +
+        "- Vorspann\n" +
+        "- # Eins\n" +
+        "- Tail eins\n" +
+        "\t- Tail detail\n" +
+        "- ## Tief\n" +
+        "\t- Tief Text\n" +
+        "- Nach Tief\n" +
+        "- # Zwei\n" +
+        "\t- Zwei Text\n" +
+        "\t- ## Zwei-A\n" +
+        "\t- Zwei-A Tail\n" +
+        "\t\t- Zwei-A Tail detail\n" +
+        "- # Glossar\n" +
+        "  anhang:: glossar\n" +
+        "\t- Begriff\n";
+
+    private static Guid BlockKey(Book book, string content) => book.Page.AllBlocks().Single(b => b.Content == content).Key;
+
+    [Fact]
+    public void ReadSectionOf_TheSectionTheBookReadsTheElementIn()
+    {
+        var book = Load(ReadSections);
+
+        Guid Of(string content) => OutlineEditor.ReadSectionOf(book, BlockKey(book, content));
+
+        // A heading is its own section; the prologue's text block is read in the root.
+        Assert.Equal(KeyOf(book, "Eins"), Of("# Eins"));
+        Assert.Equal(KeyOf(book, "Tief"), Of("## Tief"));
+        Assert.Equal(book.Root.Key, Of("Vorspann"));
+
+        // On the heading's indentation after it: the heading's section, also for a detail of such a text block.
+        Assert.Equal(KeyOf(book, "Eins"), Of("Tail eins"));
+        Assert.Equal(KeyOf(book, "Eins"), Of("Tail detail"));
+
+        // After a deeper tail heading: the nearest one; nested under it: the heading it is nested in.
+        Assert.Equal(KeyOf(book, "Tief"), Of("Nach Tief"));
+        Assert.Equal(KeyOf(book, "Tief"), Of("Tief Text"));
+
+        // Nested in a section: the same, one level down.
+        Assert.Equal(KeyOf(book, "Zwei"), Of("Zwei Text"));
+        Assert.Equal(KeyOf(book, "Zwei-A"), Of("Zwei-A Tail"));
+        Assert.Equal(KeyOf(book, "Zwei-A"), Of("Zwei-A Tail detail"));
+    }
+
+    [Fact]
+    public void ReadSectionOf_UnknownOrAppendix_Refused()
+    {
+        var book = Load(ReadSections);
+
+        Assert.Throws<ArgumentException>(() => OutlineEditor.ReadSectionOf(book, Guid.NewGuid()));
+        Assert.Throws<ArgumentException>(() => OutlineEditor.ReadSectionOf(book, BlockKey(book, "Begriff")));
+        Assert.Throws<ArgumentException>(() => OutlineEditor.ReadSectionOf(book, BlockKey(book, "# Glossar")));
+    }
 }

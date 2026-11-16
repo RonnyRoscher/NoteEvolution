@@ -203,11 +203,13 @@ public sealed class TipTapInterop(IJSRuntime js, AppState state) : IEditorIntero
 
     /// <summary>
     /// Whole text blocks are dragged out of this editor (<paramref name="keysJson"/>: their keys as a JSON array): recorded
-    /// in <see cref="AppState.DraggedTextBlockKeys"/>, so the other half's outline can take them.
+    /// in <see cref="AppState.DraggedTextBlockKeys"/>, so the other half's outline can take them. A range a grip drag left
+    /// behind (<see cref="AppState.DraggedRange"/>, its end never reached Blazor) is cleared, so it is not moved instead.
     /// </summary>
     [JSInvokable]
     public Task BlocksDragStarted(string keysJson)
     {
+        state.DraggedRange = null;
         state.DraggedTextBlockKeys = ParseKeys(keysJson);
         return Task.CompletedTask;
     }

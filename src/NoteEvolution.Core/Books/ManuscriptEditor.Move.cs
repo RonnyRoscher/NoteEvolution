@@ -114,13 +114,29 @@ public static partial class ManuscriptEditor
             }
 
             case DetailTarget.SectionStart start:
+                CheckTextSection(book, start.SectionKey, nameof(target));
                 return MoveToSection(book, detail, textBlock, new InsertPosition.SectionStart(start.SectionKey), now);
 
             case DetailTarget.SectionEnd end:
+                CheckTextSection(book, end.SectionKey, nameof(target));
                 return MoveToSection(book, detail, textBlock, new InsertPosition.SectionEnd(end.SectionKey), now);
 
             default:
                 throw new ArgumentException("Unknown target.", nameof(target));
+        }
+    }
+
+    /// <summary>Refuses a target section that is unknown or in the appendix (the root, the prologue, is one of the book's text).</summary>
+    private static void CheckTextSection(Book book, Guid sectionKey, string paramName)
+    {
+        if (book.FindNode(sectionKey) is null)
+        {
+            throw new ArgumentException("No section of the book has this key.", paramName);
+        }
+
+        if (book.IsInAppendix(sectionKey))
+        {
+            throw new ArgumentException("A detail is not moved into the appendix.", paramName);
         }
     }
 

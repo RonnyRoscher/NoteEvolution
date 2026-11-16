@@ -515,6 +515,10 @@
     <value>Der Abschnitt würde tiefer als Ebene 6.</value>
     <comment>Hinweis, wenn ein markierter Abschnitt nicht verschoben wird, weil eine seiner Überschriften tiefer als Ebene 6 käme</comment>
   </data>
+  <data name="MoveRangeInvalid" xml:space="preserve">
+    <value>Dorthin lässt sich der markierte Bereich nicht verschieben.</value>
+    <comment>Hinweis, wenn ein markierter Textblock oder Unterpunkt dort nicht abgelegt werden kann, oder wenn der markierte Bereich oder die Ablagestelle seit Ziehbeginn verschwunden ist</comment>
+  </data>
   <data name="UndoMoveRange" xml:space="preserve">
     <value>Bereich verschieben</value>
     <comment>Name der Aktion für „Rückgängig“ nach dem Verschieben des markierten Bereichs an seinem Griff</comment>
