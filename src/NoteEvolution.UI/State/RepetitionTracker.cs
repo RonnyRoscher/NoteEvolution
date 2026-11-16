@@ -93,6 +93,33 @@ internal sealed class RepetitionTracker : IDisposable
         }
     }
 
+    /// <summary>For tests: runs on the analysis's thread before each set is built and published (it may block).</summary>
+    internal Action? BeforePublish { get; set; }
+
+    /// <summary>
+    /// What to show for <paramref name="book"/>: the set computed for this very snapshot (pending while it is not
+    /// <see cref="RepetitionSet.Complete"/>), else the last published set of the same page, pending until the snapshot is
+    /// computed (block keys survive a save from the editor, so it still counts the right blocks). Nothing known: the
+    /// empty set, not pending. Call it on the UI thread.
+    /// </summary>
+    public (RepetitionSet Set, bool Pending) Shown(Book? book)
+    {
+        if (book is null)
+        {
+            return (RepetitionSet.Empty, false);
+        }
+
+        lock (_gate)
+        {
+            if (!_computed.TryGetValue(book.Page.FilePath, out var computed))
+            {
+                return (RepetitionSet.Empty, false);
+            }
+
+            return computed.Set.IsFor(book) ? (computed.Set, !computed.Set.Complete) : (computed.Set, true);
+        }
+    }
+
     /// <summary>Analyses <paramref name="book"/> in the background; replaces a running analysis of the same page. Call it on the UI thread.</summary>
     public void Schedule(Book book)
     {
@@ -349,6 +376,7 @@ internal sealed class RepetitionTracker : IDisposable
                 version = _acceptedVersion;
             }
 
+            BeforePublish?.Invoke();
             var set = Build(computed);
             lock (_gate)
             {

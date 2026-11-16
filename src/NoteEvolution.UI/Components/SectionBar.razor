@@ -44,9 +44,8 @@
         var links = LinksOf(book, range);
         var noteCount = links.Select(row => row.Link.NoteId).Distinct().Count();
         var backRefs = BackRefsOf(book, element);
-        var repetitionSet = State.Session?.RepetitionsOf(book) ?? RepetitionSet.Empty;
-        var rangeKeys = range.TextBlockKeys.ToHashSet();
-        var repetitionCount = repetitionSet.Count(rangeKeys);
+        var (repetitionSet, repetitionsPending) = State.Session?.RepetitionsShown(book) ?? (RepetitionSet.Empty, false);
+        var repetitionCount = RepetitionCountOf(repetitionSet);
         <div class="ne-sec-buttons">
             @* The grip drags the head of the marked range with everything below it into an editor or an outline
                (Markierung verschieben, spec 4). The drag's start raises a notification that renders the bar again;
@@ -192,11 +191,11 @@
             {
                 <span class="ne-sec-reps-area">
                     <button type="button" class="ne-sec-reps" aria-expanded="@(_repExpanded ? "true" : "false")"
-                            @onclick="() => _repExpanded = !_repExpanded">@L["SectionRepetitions", repetitionSet.Complete ? repetitionCount.ToString() : $"{repetitionCount} …"]</button>
+                            @onclick="() => _repExpanded = !_repExpanded">@L["SectionRepetitions", repetitionsPending ? $"{repetitionCount} …" : repetitionCount.ToString()]</button>
                     @if (_repExpanded)
                     {
                         <div class="ne-sec-source-list ne-sec-rep-list">
-                            @foreach (var repetition in repetitionSet.In(rangeKeys))
+                            @foreach (var repetition in repetitionSet.In(_repKeySet))
                             {
                                 <button type="button" class="ne-sec-rep" @onclick="() => ShowRepetition(repetition)">
                                     <span class="ne-sec-rep-kind">@(repetition.Kind == RepetitionKind.Literal ? L["RepetitionLiteral"].Value : L["RepPercent", (int)Math.Round(repetition.Score * 100)].Value)</span>
@@ -300,6 +299,24 @@
     private Guid? _repHead;
 
     private Guid[] _repKeys = [];
+
+    private HashSet<Guid> _repKeySet = [];
+
+    /// <summary>The set <see cref="_repCount"/> was counted for (with <see cref="_repKeySet"/>); counting is not repeated per render.</summary>
+    private RepetitionSet? _repCountSet;
+
+    private int _repCount;
+
+    private int RepetitionCountOf(RepetitionSet set)
+    {
+        if (!ReferenceEquals(_repCountSet, set))
+        {
+            _repCount = set.Count(_repKeySet);
+            _repCountSet = set;
+        }
+
+        return _repCount;
+    }
 
     /// <summary>The element the list of references was opened for.</summary>
     private Guid? _backKey;
@@ -490,6 +507,8 @@
             _repExpanded = false;
             _repHead = range?.Head?.Key;
             _repKeys = rangeKeys;
+            _repKeySet = [.. rangeKeys];
+            _repCountSet = null;
         }
 
         if (ExpandRepetitions)

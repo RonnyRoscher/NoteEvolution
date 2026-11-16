@@ -136,12 +136,12 @@ public sealed class FakeEditorInterop : IEditorInterop, IDisposable
         return Task.CompletedTask;
     }
 
-    /// <summary>The counts passed to <see cref="SetBlockRepetitionsAsync"/>, in order.</summary>
-    public List<IReadOnlyDictionary<Guid, int>> BlockRepetitions { get; } = [];
+    /// <summary>The marks passed to <see cref="SetBlockRepetitionsAsync"/>, in order.</summary>
+    public List<IReadOnlyDictionary<Guid, RepetitionMark>> BlockRepetitions { get; } = [];
 
-    public Task SetBlockRepetitionsAsync(IReadOnlyDictionary<Guid, int> counts)
+    public Task SetBlockRepetitionsAsync(IReadOnlyDictionary<Guid, RepetitionMark> marks)
     {
-        BlockRepetitions.Add(new Dictionary<Guid, int>(counts));
+        BlockRepetitions.Add(new Dictionary<Guid, RepetitionMark>(marks));
         return Task.CompletedTask;
     }
 

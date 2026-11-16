@@ -46,7 +46,7 @@ public class EditorPaneRepetitionTests : UiTestContext
 
     private Guid KeyOf(string start) => Book.Page.AllBlocks().Single(b => b.Content.StartsWith(start, StringComparison.Ordinal)).Key;
 
-    private IReadOnlyDictionary<Guid, int> LastCounts => Editor.BlockRepetitions[^1];
+    private IReadOnlyDictionary<Guid, int> LastCounts => Editor.BlockRepetitions[^1].ToDictionary(m => m.Key, m => m.Value.Count);
 
     private async Task<IRenderedComponent<EditorPane>> RenderAsync()
     {
@@ -68,6 +68,8 @@ public class EditorPaneRepetitionTests : UiTestContext
         Assert.Equal(
             new Dictionary<Guid, int> { [KeyOf("alpha")] = 1, [KeyOf("beta")] = 1, [KeyOf("gamma")] = 1, [KeyOf("delta")] = 1 },
             LastCounts);
+        // The tooltip is localized here, not in the script.
+        Assert.Equal(Text("BlockRepetitionsTitle", 1), Editor.BlockRepetitions[^1][KeyOf("alpha")].Title);
         var sent = Editor.BlockRepetitions.Count;
 
         // „Gewollt“ for alpha~beta changes the set: the new counts are sent.

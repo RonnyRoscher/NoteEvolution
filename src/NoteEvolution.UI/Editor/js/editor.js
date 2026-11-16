@@ -65,6 +65,13 @@ const repetitionsAttribute = {
     parseHTML: () => 0,
 };
 
+// The localized tooltip of the mark, formatted by .NET.
+const repetitionsTitleAttribute = {
+    default: null,
+    rendered: false,
+    parseHTML: () => null,
+};
+
 // textBlock comes first: it is the default node where the document needs one.
 const Doc = Node.create({
     name: 'doc',
@@ -768,7 +775,7 @@ class TextBlockView {
     }
 
     render(sourcesChanged = true) {
-        const { key, sources, status, dates, datesTitle, repetitions } = this.node.attrs;
+        const { key, sources, status, dates, datesTitle, repetitions, repetitionsTitle } = this.node.attrs;
         this.dom.setAttribute('data-key', key ?? '');
         this.dom.toggleAttribute('data-has-sources', (sources ?? []).length > 0);
         if (status) {
@@ -795,7 +802,11 @@ class TextBlockView {
         const mark = count > 0 ? `≈ ${count}` : '';
         if (this.repetitions.textContent !== mark) {
             this.repetitions.textContent = mark;
-            this.repetitions.title = count > 0 ? `${count} Wiederholungen` : '';
+        }
+        const title = count > 0 ? repetitionsTitle ?? '' : '';
+        if (this.repetitions.title !== title) {
+            this.repetitions.title = title;
+            this.repetitions.setAttribute('aria-label', title);
         }
         if (!sourcesChanged) {
             return;
@@ -850,6 +861,7 @@ const TextBlock = Node.create({
             dates: datesAttribute,
             datesTitle: datesAttribute,
             repetitions: repetitionsAttribute,
+            repetitionsTitle: repetitionsTitleAttribute,
         };
     },
     parseHTML() {
@@ -1111,7 +1123,7 @@ function normalize(transactions, oldState, newState) {
         if (key !== node.attrs.key) {
             const splitFrom = node.type.name === 'textBlock' && node.attrs.key ? node.attrs.key : node.attrs.splitFrom;
             tr.setNodeMarkup(offset, undefined, node.type.name === 'textBlock'
-                ? { ...node.attrs, key, splitFrom, status: null, dates: null, datesTitle: null, repetitions: 0 }
+                ? { ...node.attrs, key, splitFrom, status: null, dates: null, datesTitle: null, repetitions: 0, repetitionsTitle: null }
                 : { ...node.attrs, key });
         }
         if (node.type.name !== 'textBlock') {
@@ -1987,19 +1999,20 @@ export function createEditor(host, dotnet, options = {}) {
             }
         },
         /**
-         * Sets the repetition marks: counts is an object from text block key to the number of repetitions the block is
-         * in; 0 or a missing key takes the mark away. The document, the cursor and the undo history stay; no change is
+         * Sets the repetition marks: marks is an object from text block key to { count, title } (the number of
+         * repetitions the block is in and the tooltip, localized by .NET); 0 or a missing key takes the mark away. The document, the cursor and the undo history stay; no change is
          * reported. Unknown keys are ignored.
          */
-        setBlockRepetitions(counts) {
+        setBlockRepetitions(marks) {
             const tr = editor.state.tr;
             editor.state.doc.forEach((node, offset) => {
                 if (node.type.name !== 'textBlock') {
                     return;
                 }
-                const count = counts?.[node.attrs.key] ?? 0;
-                if (count !== (node.attrs.repetitions ?? 0)) {
-                    tr.setNodeMarkup(offset, undefined, { ...node.attrs, repetitions: count });
+                const count = marks?.[node.attrs.key]?.count ?? 0;
+                const title = count > 0 ? marks[node.attrs.key].title ?? null : null;
+                if (count !== (node.attrs.repetitions ?? 0) || title !== (node.attrs.repetitionsTitle ?? null)) {
+                    tr.setNodeMarkup(offset, undefined, { ...node.attrs, repetitions: count, repetitionsTitle: title });
                 }
             });
             if (tr.docChanged) {

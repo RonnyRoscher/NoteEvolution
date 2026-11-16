@@ -55,10 +55,10 @@ public sealed class TipTapInterop(IJSRuntime js, AppState state) : IEditorIntero
             "setBlockDates",
             [dates.Select(d => new { key = d.Key.ToString("D"), dates = d.Value?.Text, datesTitle = d.Value?.Title }).ToArray()]);
 
-    /// <summary>Passes the counts to the script as an object from the block's key to its count.</summary>
-    public async Task SetBlockRepetitionsAsync(IReadOnlyDictionary<Guid, int> counts) =>
+    /// <summary>Passes the marks to the script as an object from the block's key to <c>{ count, title }</c>.</summary>
+    public async Task SetBlockRepetitionsAsync(IReadOnlyDictionary<Guid, RepetitionMark> marks) =>
         await Initialized.InvokeVoidAsync(
-            "setBlockRepetitions", [counts.ToDictionary(c => c.Key.ToString("D"), c => c.Value)]);
+            "setBlockRepetitions", [marks.ToDictionary(m => m.Key.ToString("D"), m => new { count = m.Value.Count, title = m.Value.Title })]);
 
     /// <summary>Passes the labels to the script as an array of <c>{ id, label, title, missing, foreign }</c>.</summary>
     public async Task SetRefLabelsAsync(IReadOnlyDictionary<Guid, RefLabel> labels) =>

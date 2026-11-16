@@ -35,6 +35,9 @@ function block(key, text) {
     return { type: 'textBlock', attrs: { key }, content: [{ type: 'para', attrs: { key: null }, content: [{ type: 'text', text }] }] };
 }
 
+/** A mark as .NET sends it: the count and the localized title. */
+const mark = count => ({ count, title: `${count} Titel` });
+
 const docJson = () => JSON.stringify({ type: 'doc', content: [block(A, 'Erster Text'), block(B, 'Zweiter Text')] });
 
 /** An editor with two text blocks; calls holds what it reported to .NET. */
@@ -57,10 +60,12 @@ test('setBlockRepetitions shows ≈ n on the block and hides it for 0', () => {
     const selection = s.editor.state.selection.toJSON();
     assert.equal(s.markOf(A).hidden, true);
 
-    s.api.setBlockRepetitions({ [A]: 3 });
+    s.api.setBlockRepetitions({ [A]: mark(3) });
 
     assert.equal(s.markOf(A).textContent, '≈ 3');
-    assert.equal(s.markOf(A).title, '3 Wiederholungen');
+    // The title comes from .NET (localized); the script has no text of its own.
+    assert.equal(s.markOf(A).title, '3 Titel');
+    assert.equal(s.markOf(A).getAttribute('aria-label'), '3 Titel');
     assert.equal(s.markOf(A).hidden, false);
     assert.equal(s.markOf(A).getAttribute('contenteditable'), 'false');
     assert.equal(s.markOf(B).hidden, true);
@@ -70,7 +75,7 @@ test('setBlockRepetitions shows ≈ n on the block and hides it for 0', () => {
     assert.deepEqual(s.editor.state.selection.toJSON(), selection);
 
     // 0 or a key that is absent takes the mark away again.
-    s.api.setBlockRepetitions({ [A]: 0, [B]: 1 });
+    s.api.setBlockRepetitions({ [A]: mark(0), [B]: mark(1) });
     assert.equal(s.markOf(A).hidden, true);
     assert.equal(s.markOf(B).textContent, '≈ 1');
     s.api.setBlockRepetitions({});
@@ -83,7 +88,7 @@ test('a click on the mark reports RepetitionClicked with the block key and chang
     const s = setUp();
     s.editor.commands.setTextSelection(4);
     const selection = s.editor.state.selection.toJSON();
-    s.api.setBlockRepetitions({ [A]: 2, [B]: 5 });
+    s.api.setBlockRepetitions({ [A]: mark(2), [B]: mark(5) });
 
     s.markOf(B).dispatchEvent(new window.MouseEvent('mousedown', { bubbles: true, cancelable: true }));
     s.markOf(B).dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true }));
@@ -99,7 +104,7 @@ test('an undo after a text edit reverts only the text, not the marks set after i
     s.editor.commands.insertContentAt(4, 'X');
     assert.equal(undoDepth(s.editor.state), 1);
 
-    s.api.setBlockRepetitions({ [A]: 4 });
+    s.api.setBlockRepetitions({ [A]: mark(4) });
     assert.equal(undoDepth(s.editor.state), 1);
 
     assert.equal(s.editor.commands.undo(), true);
@@ -111,21 +116,21 @@ test('an undo after a text edit reverts only the text, not the marks set after i
 
 test('the marks do not survive setDocument: they show again only when sent again', () => {
     const s = setUp();
-    s.api.setBlockRepetitions({ [A]: 3 });
+    s.api.setBlockRepetitions({ [A]: mark(3) });
     assert.equal(s.markOf(A).hidden, false);
 
     s.api.setDocument(docJson(), false, false);
     assert.equal(s.markOf(A).hidden, true);
     assert.equal(s.markOf(A).textContent, '');
 
-    s.api.setBlockRepetitions({ [A]: 3 });
+    s.api.setBlockRepetitions({ [A]: mark(3) });
     assert.equal(s.markOf(A).textContent, '≈ 3');
     s.done();
 });
 
 test('a block copied from a marked one carries no mark', () => {
     const s = setUp();
-    s.api.setBlockRepetitions({ [A]: 3 });
+    s.api.setBlockRepetitions({ [A]: mark(3) });
     const copy = block(A, 'Kopie');
     // The copy is pasted after the original: its key is taken, so it gets a new one and no mark.
     s.editor.commands.insertContentAt(s.editor.state.doc.content.size, copy);

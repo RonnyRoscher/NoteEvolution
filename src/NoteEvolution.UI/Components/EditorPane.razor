@@ -80,7 +80,7 @@
     /// The repetition marks the editor shows (repetitions spec 6): the number per text block, without the blocks that have
     /// none. Like the dates they are no part of the document: a new document has none until they are pushed again.
     /// </summary>
-    private Dictionary<Guid, int> _shownRepetitions = [];
+    private Dictionary<Guid, RepetitionMark> _shownRepetitions = [];
 
     /// <summary>A click on a repetition mark asked the section bar to open its list; reset after the render that passed it on.</summary>
     private bool _expandRepetitions;
@@ -1042,7 +1042,7 @@
     /// </summary>
     private async Task ShowRepetitionsAsync(Book book)
     {
-        var counts = new Dictionary<Guid, int>();
+        var counts = new Dictionary<Guid, RepetitionMark>();
         if (Settings.ShowRepetitions)
         {
             var set = State.Session?.RepetitionsOf(book) ?? RepetitionSet.Empty;
@@ -1053,7 +1053,8 @@
 
             foreach (var key in set.All.Where(r => !r.Accepted).SelectMany(r => new[] { r.A, r.B }).Distinct())
             {
-                counts[key] = set.Of(key).Count;
+                var count = set.Of(key).Count;
+                counts[key] = new RepetitionMark(count, L["BlockRepetitionsTitle", count].Value);
             }
         }
 

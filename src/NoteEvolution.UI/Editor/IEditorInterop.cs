@@ -238,12 +238,12 @@ public interface IEditorInterop : IAsyncDisposable
     Task SetBlockDatesAsync(IReadOnlyDictionary<Guid, BlockDateLabel?> dates);
 
     /// <summary>
-    /// Sets the repetition marks ("≈ n") of the shown text blocks by key: a block that is missing (or has 0) has none,
+    /// Sets the repetition marks ("≈ n", with their localized tooltip) of the shown text blocks by key: a block that is missing (or has count 0) has none,
     /// so the map is the whole set and an empty one removes all marks. Like <see cref="SetBlockDatesAsync"/> this is shown
     /// state only: no <see cref="IEditorCallbacks.OnDocumentChanged"/>, no undo step, the cursor stays; the marks are gone
     /// with the next document (<see cref="SetDocumentAsync"/>). Keys the editor does not show are ignored.
     /// </summary>
-    Task SetBlockRepetitionsAsync(IReadOnlyDictionary<Guid, int> counts);
+    Task SetBlockRepetitionsAsync(IReadOnlyDictionary<Guid, RepetitionMark> marks);
 
     /// <summary>
     /// Sets the labels of the shown cross references by target id without replacing the document (spec 2.3

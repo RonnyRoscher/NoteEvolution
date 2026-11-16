@@ -409,6 +409,20 @@ public sealed class VaultSession : IDisposable
     /// </summary>
     public RepetitionSet RepetitionsOf(Book? book) => _repetitions.Of(book);
 
+    /// <summary>
+    /// The repetitions to show for <paramref name="book"/>: its own set once computed (pending while the semantic part is
+    /// not complete), until then the last set of the same page, pending. The set is empty, not pending, when there is none.
+    /// Call it on the UI thread.
+    /// </summary>
+    public (RepetitionSet Set, bool Pending) RepetitionsShown(Book? book) => _repetitions.Shown(book);
+
+    /// <summary>For tests: runs on the analysis's thread before each set is published; it may block.</summary>
+    internal Action? BeforeRepetitionsPublished
+    {
+        get => _repetitions.BeforePublish;
+        set => _repetitions.BeforePublish = value;
+    }
+
     /// <summary><see cref="RepetitionsOf"/> changed for a book; raised on the UI thread.</summary>
     public event Action? RepetitionsChanged
     {

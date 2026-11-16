@@ -177,6 +177,41 @@ public class SectionBarRepetitionTests : UiTestContext
     }
 
     [Fact]
+    public async Task Saving_KeepsCounterAndList_WithEllipsis_UntilTheNewSnapshotIsAnalysed()
+    {
+        var cut = await RenderAsync();
+        await MoveToAsync(cut, "alpha");
+        cut.WaitForAssertion(() => Assert.Equal("Wiederholungen: 1", cut.Find(".ne-sec-reps").TextContent.Trim()));
+        cut.Find(".ne-sec-reps").Click();
+        var session = State.Session!;
+        using var gate = new ManualResetEventSlim();
+        try
+        {
+            // The analysis of the saved snapshot waits: the block keys survive the save, so the last set still counts.
+            session.BeforeRepetitionsPublished = () => gate.Wait();
+            Book.Page.AllBlocks().First(b => b.Content.StartsWith("alpha", StringComparison.Ordinal)).SetContent($"alpha neu {RunX}");
+            session.Writer.Save(Book.Page);
+            await cut.InvokeAsync(() =>
+            {
+                State.RefreshBook();
+                State.Notify();
+            });
+
+            cut.WaitForAssertion(() => Assert.True(session.RepetitionsShown(Book).Pending));
+            cut.WaitForAssertion(() => Assert.Equal("Wiederholungen: 1 …", cut.Find(".ne-sec-reps").TextContent.Trim()));
+            Assert.Single(cut.FindAll(".ne-sec-rep-list"));
+        }
+        finally
+        {
+            session.BeforeRepetitionsPublished = null;
+            gate.Set();
+        }
+
+        await session.RepetitionsIdle();
+        cut.WaitForAssertion(() => Assert.Equal("Wiederholungen: 1", cut.Find(".ne-sec-reps").TextContent.Trim()));
+    }
+
+    [Fact]
     public async Task Expanded_ListsCounterparts_ClickOpensAssistantAtPair()
     {
         var cut = await RenderAsync(Cross);

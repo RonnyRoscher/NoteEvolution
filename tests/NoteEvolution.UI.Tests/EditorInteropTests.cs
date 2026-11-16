@@ -123,11 +123,12 @@ public class EditorInteropTests
     {
         var interop = await InitAsync();
 
-        await interop.SetBlockRepetitionsAsync(new Dictionary<Guid, int> { [Guid.Parse(Key)] = 2, [Guid.Parse(BlockKey)] = 1 });
-        await interop.SetBlockRepetitionsAsync(new Dictionary<Guid, int>());
+        await interop.SetBlockRepetitionsAsync(new Dictionary<Guid, RepetitionMark> { [Guid.Parse(Key)] = new(2, "zwei"), [Guid.Parse(BlockKey)] = new(1, "eins") });
+        await interop.SetBlockRepetitionsAsync(new Dictionary<Guid, RepetitionMark>());
 
         var payloads = _js.Calls.Where(c => c.Method == "setBlockRepetitions").Select(c => JsonSerializer.Serialize(c.Args.Single())).ToArray();
-        Assert.Equal([$$"""{"{{Key}}":2,"{{BlockKey}}":1}""", "{}"], payloads);
+        Assert.Equal(
+            [$$$"""{"{{{Key}}}":{"count":2,"title":"zwei"},"{{{BlockKey}}}":{"count":1,"title":"eins"}}""", "{}"], payloads);
     }
 
     [Fact]
