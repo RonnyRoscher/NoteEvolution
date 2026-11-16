@@ -41,7 +41,7 @@
             {
                 <p class="ne-dialog-hint ne-rep-hint-progress">@L["RepProgress", _set.Embedded, _set.Total]</p>
             }
-            @if (State.Session?.Semantic is null)
+            @if (State.Session?.AiStatus.State is AiState.Off or AiState.ModelMissing or AiState.Failed)
             {
                 <p class="ne-dialog-hint ne-rep-hint-ai">@L["RepNeedsAi"]</p>
             }
@@ -63,7 +63,7 @@
                     {
                         var current = selected is { } s && Same(repetition, (s.A, s.B));
                         <li>
-                            <button type="button" class="@ItemClass(repetition, current)"
+                            <button type="button" class="@ItemClass(repetition, current)" aria-current="@(current ? "true" : null)"
                                     @onclick="() => Select(repetition)">
                                 <span class="ne-rep-place">@PlaceOf(book, repetition.A)</span>
                                 <span class="ne-rep-place">@PlaceOf(book, repetition.B)</span>
@@ -142,6 +142,9 @@
 
     /// <summary>What is selected when the selected pair is no longer listed (after "Gewollt"): its neighbour in the list.</summary>
     private (Guid A, Guid B)? _after;
+
+    /// <summary>The set the list showed when <see cref="_after"/> was taken; a different one means the action took effect.</summary>
+    private RepetitionSet? _afterSet;
 
     private Guid? _chapter;
 
@@ -232,6 +235,13 @@
             _after = null;
         }
 
+        // Once the analysis after the action arrived, the neighbour has served (or was not needed).
+        if (!ReferenceEquals(_set, _afterSet))
+        {
+            _after = null;
+            _afterSet = null;
+        }
+
         _selected = current is null ? null : (current.A, current.B);
     }
 
@@ -241,11 +251,11 @@
         "ne-rep-item" + (selected ? " ne-rep-selected" : "") + (repetition.Accepted ? " ne-rep-accepted" : "");
 
     private Task AppendAsync(Guid from, Guid to, bool both) =>
-        RunAsync(() => ManuscriptCommands.AppendReferenceAsync(State, from, to, both, L["UndoAppendReference"], Logger));
+        RunAsync(() => ManuscriptCommands.AppendReferenceAsync(State, from, to, both, L["UndoAppendReference"], Logger), mayRemove: false);
 
     private Task AcceptAsync(Repetition repetition) =>
         RunAsync(() => ManuscriptCommands.SetRepetitionAcceptedAsync(
-            State, repetition.A, repetition.B, !repetition.Accepted, L["UndoRepetitionAccepted"], Logger));
+            State, repetition.A, repetition.B, !repetition.Accepted, L["UndoRepetitionAccepted"], Logger), mayRemove: true);
 
     private Repetition? SelectedPair() =>
         _selected is { } selected ? _visible.FirstOrDefault(r => Same(r, selected)) : null;
@@ -270,7 +280,7 @@
     /// Runs a command of the assistant; the pair that follows the selected one is kept in case the command takes the
     /// pair out of the list. The command's message (a failure, or "Diese Stelle gibt es nicht mehr.") is shown.
     /// </summary>
-    private async Task RunAsync(Func<Task<AdoptMessage?>> command)
+    private async Task RunAsync(Func<Task<AdoptMessage?>> command, bool mayRemove)
     {
         if (_busy)
         {
@@ -279,7 +289,8 @@
 
         _busy = true;
         _error = null;
-        _after = NeighbourOfSelected();
+        _after = mayRemove ? NeighbourOfSelected() : null;
+        _afterSet = _set;
         try
         {
             var message = await command();

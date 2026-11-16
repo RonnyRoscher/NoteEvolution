@@ -5,6 +5,7 @@ using Microsoft.Extensions.Localization;
 using Microsoft.Extensions.Logging.Abstractions;
 using NoteEvolution.AI.Tests;
 using NoteEvolution.Core.Books;
+using NoteEvolution.Core.Format;
 using NoteEvolution.TestSupport;
 using NoteEvolution.UI.Components;
 using NoteEvolution.UI.Components.Dialogs;
@@ -175,6 +176,53 @@ public class RepetitionsDialogTests : UiTestContext
         Assert.Equal($"zeta {RunX}", sides[1].QuerySelector(".ne-rep-text")!.TextContent);
         Assert.Equal(RunX, Assert.Single(sides[0].QuerySelectorAll("mark.ne-rep-shared")).TextContent);
         Assert.Equal(RunX, Assert.Single(sides[1].QuerySelectorAll("mark.ne-rep-shared")).TextContent);
+    }
+
+    [Fact]
+    public async Task SharedRun_AtDifferentOffsets_IsMarkedInTheRightWordsOfEachColumn()
+    {
+        // The run starts at word 3 on the left (after three own words) and at word 2 on the right, there in the middle of a
+        // bold span: swapping the offsets of the two sides would mark other words.
+        await OpenAsync(Head + $"- # Eins\n\t- vorn hier gamma {RunX}\n\t- start **neu eins** zwei drei vier fuenf sechs sieben acht neun\n");
+
+        var cut = RenderDialog();
+
+        var sides = cut.FindAll(".ne-rep-side");
+        var left = Assert.Single(sides[0].QuerySelectorAll("mark.ne-rep-shared"));
+        var right = Assert.Single(sides[1].QuerySelectorAll("mark.ne-rep-shared"));
+        Assert.Equal(RunX, left.TextContent);
+        Assert.Equal(RunX, right.TextContent);
+        Assert.Equal("eins", right.QuerySelector("strong")!.TextContent);
+        Assert.Equal(["neu ", "eins"], sides[1].QuerySelectorAll("strong").Select(s => s.TextContent));
+        Assert.StartsWith("start neu ", sides[1].QuerySelector(".ne-rep-text")!.TextContent);
+    }
+
+    [Fact]
+    public async Task CommandMessage_ShowsInTheErrorLine_AndTheDialogStaysOpen()
+    {
+        await OpenAsync();
+        var closed = 0;
+        var cut = RenderDialog(onClose: () => closed++);
+        // The book is read again from its file: its blocks have new keys, the dialog still lists the old ones.
+        State.CurrentBook = Book.Load(LogseqParser.Parse(Book.Page.FilePath, System.Text.Encoding.UTF8.GetBytes(Simple)));
+
+        await cut.InvokeAsync(() => cut.Find(".ne-rep-open").Click());
+
+        cut.WaitForAssertion(() => Assert.Equal("Diese Stelle gibt es nicht mehr.", cut.Find(".ne-dialog-error").TextContent));
+        Assert.Equal("alert", cut.Find(".ne-dialog-error").GetAttribute("role"));
+        Assert.Equal(0, closed);
+    }
+
+    [Fact]
+    public async Task SelectedEntry_IsMarkedCurrent()
+    {
+        await OpenAsync();
+
+        var cut = RenderDialog();
+
+        var items = cut.FindAll(".ne-rep-item");
+        Assert.Equal("true", items[0].GetAttribute("aria-current"));
+        Assert.Null(items[1].GetAttribute("aria-current"));
     }
 
     [Fact]
