@@ -18,9 +18,11 @@ public class EditorInteropTests
 
     private readonly RecordingCallbacks _callbacks = new();
 
+    private readonly AppState _state = new();
+
     private async Task<TipTapInterop> InitAsync()
     {
-        var interop = new TipTapInterop(_js, new AppState());
+        var interop = new TipTapInterop(_js, _state);
         await interop.InitAsync(default, _callbacks);
         return interop;
     }
@@ -175,6 +177,43 @@ public class EditorInteropTests
     }
 
     [Fact]
+    public async Task NoteDropped_WithADraggedRange_ReportsTheRangeOnTheElement_ElseTheNote()
+    {
+        var interop = await InitAsync();
+        var note = Guid.NewGuid();
+
+        // The marked range dragged by its grip wins over a note key a drag left behind.
+        _state.DraggedNoteKey = note;
+        _state.DraggedRange = new BookElement(ElementKind.Heading, Guid.Parse(BlockKey));
+        await interop.NoteDropped(BlockKey, Key);
+        await interop.NoteDropped(null, null);
+        await interop.NoteDropped(Key, "keine-id");
+
+        _state.DraggedRange = null;
+        await interop.NoteDropped(BlockKey, Key);
+
+        // Nothing recorded as dragged: something else was dropped (a file, text from another program).
+        _state.DraggedNoteKey = null;
+        await interop.NoteDropped(BlockKey, Key);
+
+        Assert.Equal([Guid.Parse(Key), null, null], _callbacks.RangeDrops);
+        Assert.Equal([(note, (Guid?)Guid.Parse(BlockKey))], _callbacks.NoteDrops);
+    }
+
+    [Fact]
+    public async Task BlocksDragStarted_ClearsAStaleDraggedRange()
+    {
+        var interop = await InitAsync();
+
+        // A grip drag whose end never reached Blazor: the text blocks dragged now must not move that range.
+        _state.DraggedRange = new BookElement(ElementKind.Heading, Guid.Parse(BlockKey));
+        await interop.BlocksDragStarted($"[\"{Key}\"]");
+
+        Assert.Null(_state.DraggedRange);
+        Assert.Equal([Guid.Parse(Key)], _state.DraggedTextBlockKeys);
+    }
+
+    [Fact]
     public async Task Init_PassesBarHeight_RevealAndSetDocumentReachTheEditor()
     {
         var interop = await InitAsync();
@@ -267,7 +306,21 @@ public class EditorInteropTests
             return Task.CompletedTask;
         }
 
-        public Task OnNoteDropped(Guid noteBlockKey, Guid? afterTextBlockKey) => Task.CompletedTask;
+        public List<(Guid Note, Guid? After)> NoteDrops { get; } = [];
+
+        public Task OnNoteDropped(Guid noteBlockKey, Guid? afterTextBlockKey)
+        {
+            NoteDrops.Add((noteBlockKey, afterTextBlockKey));
+            return Task.CompletedTask;
+        }
+
+        public List<Guid?> RangeDrops { get; } = [];
+
+        public Task OnRangeDropped(Guid? elementKey)
+        {
+            RangeDrops.Add(elementKey);
+            return Task.CompletedTask;
+        }
 
         public Task OnBlocksDropped(IReadOnlyList<Guid> textBlockKeys, Guid? afterTextBlockKey) => Task.CompletedTask;
 

@@ -81,8 +81,50 @@ Zwischen den Hälften lässt sich verschieben: Ein Kapitel aus der einen Glieder
 (auf, vor oder hinter einem Kapitel), mit allen Unterkapiteln und Texten. Ganze Textblöcke, am farbigen Balken links
 gepackt, wandern samt Unterpunkten in den Editor der anderen Hälfte (hinter den Block, über dem sie losgelassen
 werden) oder auf eine Überschrift ihrer Gliederung (ans Ende ihres Textes). Die Blöcke behalten `id::`, Quellen und
-Datum, die Notizen bleiben unberührt; „Rückgängig“ in der Kopfzeile nimmt das Verschieben zurück. Markierter Text
-innerhalb eines Blocks wird nicht in die andere Hälfte verschoben.
+Datum, die Notizen bleiben unberührt; „Rückgängig“ in der Kopfzeile nimmt das Verschieben zurück. Mit der Maus
+markierter Text innerhalb eines Blocks wird nicht in die andere Hälfte verschoben. Wie die ganze Markierung wandert,
+steht im nächsten Absatz.
+
+**Markierung verschieben:** Vorn in der Leiste unter der Markierung steht der Griff „⠿“ (Tooltip „Markierten Bereich
+verschieben“). Wer daran zieht, verschiebt, was markiert ist: eine Überschrift mit ihrem ganzen Abschnitt, einen
+Textblock mit seinen Unterpunkten, einen Unterpunkt mit allen tieferen Unterpunkten. Das gilt auch, wenn die
+Markierung mit ▼ auf das Element allein verkleinert ist. Ablegen lässt es sich im selben Editor, im Editor der anderen
+Hälfte und auf der Gliederung beider Hälften; danach ist der verschobene Bereich in der Hälfte markiert, in der er
+abgelegt wurde. Über dem Editor zeigt sich beim Ziehen nur die übliche Einfügemarke; wohin der Bereich kommt,
+entscheidet das Element unter dem Mauszeiger (nach den Regeln unten). Die Gliederung zeigt die Ablagestelle wie beim
+Ziehen von Abschnitten und Textblöcken. Ausgegraut ist der Griff bei einem offenen Konflikt, im gesperrten Editor, im Anhang und wenn der ganze
+Vorspann oder das ganze Buch markiert ist.
+
+- **Abschnitt:** Im Editor abgelegt kommt er auf dieselbe Ebene wie der Abschnitt, in dem er losgelassen wird, und
+  steht direkt hinter dessen ganzem Inhalt; im Vorspann oder vor der ersten Überschrift losgelassen wird er der erste
+  Abschnitt der obersten Ebene. In der Gliederung wie beim Ziehen dort: auf einer Überschrift ihr letzter
+  Unterabschnitt, vor einer Überschrift davor auf deren Ebene, am Ende der letzte Abschnitt der obersten Ebene. Jede
+  Überschrift im Abschnitt bekommt die Ebene, die ihrer neuen Tiefe entspricht; eine übersprungene Ebene wird dabei
+  geschlossen (`###` direkt unter `#` wird `##`). Würde eine tiefer als Ebene 6, wird nicht verschoben („Der Abschnitt
+  würde tiefer als Ebene 6.“). In den eigenen Abschnitt und in den Anhang geht es nicht. Ein Textblock, der in der Datei hinter einer Überschrift auf derselben Einrückung
+  steht, gehört dabei zu deren Abschnitt, so wie das Buch ihn liest.
+- **Textblock:** Er bleibt Textblock. Im Editor steht er hinter dem Textblock, über dem er losgelassen wird (auch über
+  einem von dessen Unterpunkten: dann hinter dem ganzen Block), auf einer Überschrift als erster Textblock ihres
+  Abschnitts. Auf einer Überschrift der Gliederung landet er am Ende ihres Textes; vor einer Überschrift oder am Ende
+  der Gliederung abgelegt passiert nichts.
+- **Unterpunkt:** Auf dem Text eines Textblocks abgelegt wird er dessen erster Unterpunkt (erste Stufe), auf einem
+  Unterpunkt steht er direkt hinter diesem und dessen tieferen Unterpunkten, auf derselben Stufe. Auf einer
+  Überschrift abgelegt wird er ein eigener Textblock (im Editor der erste des Abschnitts, in der Gliederung der
+  letzte); wie beim „Ausrücken“ bekommt er neue Daten und keine Quellen. Seine tieferen Unterpunkte behalten ihren
+  Abstand zu ihm. Auf sich selbst oder einen eigenen tieferen Unterpunkt geht es nicht.
+
+Wo ein Textblock oder Unterpunkt nicht hin kann, erscheint „Dorthin lässt sich der markierte Bereich nicht
+verschieben.“; ebenso, wenn sich das Buch während des Ziehens von außen geändert hat und der gezogene Bereich oder die
+Ablagestelle nicht mehr da ist. Jede andere äußere Änderung bleibt erhalten, verschoben wird im Buch, wie es beim
+Ablegen ist.
+
+Ein Abschnitt nimmt beim Verschieben alles mit, was im Buch unter seiner Überschrift zu lesen ist, auch wenn es in der
+Datei nicht unter ihr eingerückt ist (Textblöcke und tiefere Überschriften, die in der Datei auf derselben Einrückung
+folgen); am Ziel steht es eingerückt unter der Überschrift. Das gilt auch für das Ziehen in der Gliederung. Die
+verschobenen Blöcke behalten `id::`, Quellen, Status und Datum (Verschieben zählt nicht als Änderung, außer beim
+Unterpunkt, der ein Textblock wird); die Notizen bleiben unberührt, Verweise gültig. „Rückgängig: Bereich verschieben“
+in der Kopfzeile nimmt jede Verschiebung zurück, auch die Einrückung der mitgenommenen Blöcke. Verschoben wird nur per
+Ziehen (keine Taste, kein Knopf), immer nur der eine markierte Bereich, und nicht von einem Buch in ein anderes.
 
 Am unteren Rand der Markierung stehen die Abschnittsknöpfe und die Quellen:
 
@@ -144,7 +186,7 @@ Cursor:
 | Textblock | wird letzter Unterpunkt des Textblocks direkt davor im selben Abschnitt, mit seinen Unterpunkten | nicht möglich |
 | Unterpunkt der ersten Stufe | eine Stufe tiefer, unter den Unterpunkt davor | wird eigener Textblock direkt hinter seinem Textblock; die folgenden Unterpunkte werden seine |
 | tieferer Unterpunkt | eine Stufe tiefer | eine Stufe höher |
-| Überschrift | eine Ebene tiefer, unter die Überschrift ihrer Ebene davor | eine Ebene höher; was danach im Abschnitt stand, kommt mit |
+| Überschrift | eine Ebene tiefer, unter die Überschrift ihrer Ebene davor; was im Buch unter ihr zu lesen ist, kommt mit (auch Blöcke, die in der Datei auf ihrer Einrückung folgen) | eine Ebene höher; was danach im Abschnitt stand, kommt mit |
 
 Ein neuer Textblock bekommt neue Daten und keine Quellen (`source::` bleibt am alten Block, der `updated::` bekommt).
 Verweise auf einen eingerückten Textblock zeigen danach auf den Textblock, der ihn aufnimmt. Was nicht geht, ist
@@ -550,6 +592,9 @@ Gliederung
 - [ ] Überschrift per Doppelklick umbenennen (Fokus im Eingabefeld), „+“ legt eine Unterüberschrift an.
 - [ ] Abschnitte per Ziehen umsortieren und einhängen (echtes Ziehen mit der Maus in WebView2); „Rückgängig“ in der
       Kopfzeile („Abschnitt verschieben“) stellt die alte Reihenfolge wieder her, ebenso nach Umbenennen und „+ Abschnitt“.
+- [ ] Ein Abschnitt, dem in der Datei Textblöcke und eine tiefere Überschrift auf derselben Einrückung folgen (im Editor
+      stehen sie unter ihm): in der Gliederung verschieben; alles kommt mit und steht am Ziel in der Datei eingerückt
+      unter der Überschrift, an der alten Stelle bleibt nichts zurück; „Rückgängig“ stellt die Datei wieder her.
 
 Editor
 - [ ] Text tippen und ca. 1 s warten: nur diese Zeile ändert sich in der Datei; der Cursor bleibt, wo er ist.
@@ -571,6 +616,14 @@ Editor
       es lehnt ab („Die Aktion konnte nicht rückgängig gemacht werden.“), der Block steht nur einmal im Buch.
 - [ ] Einen Block am farbigen Balken links seiner Markierung packen und unter ein anderes Kapitel ziehen; danach ist er in der
       Datei richtig eingerückt.
+- [ ] Markierung verschieben am Griff „⠿“ der Leiste (echtes Ziehen in WebView2), je einmal mit einer Überschrift samt
+      Abschnitt, einem Textblock mit Unterpunkten und einem Unterpunkt mit tieferen Unterpunkten: im selben Editor, in
+      den Editor der anderen Hälfte und auf eine Überschrift der Gliederung (obere und untere). Die Ablagestelle ist
+      beim Ziehen zu sehen; danach ist der Bereich in der Hälfte markiert, in der er abgelegt wurde, `id::`,
+      `source::` und Datum sind unverändert (ein Unterpunkt auf einer Überschrift wird ein Textblock mit neuen Daten
+      und ohne Quellen), „Rückgängig: Bereich verschieben“ stellt die Datei wieder her. Ein Abschnitt mit H6 darin
+      in einen Unterabschnitt gezogen: Hinweis „tiefer als Ebene 6“, nichts ändert sich. Der Griff ist im Anhang, bei
+      markiertem Vorspann und bei offenem Konflikt ausgegraut.
 - [ ] Schalter „Quellen anzeigen“ und die Randmarkierung bei Blöcken mit Quellen.
 - [ ] Fett/kursiv: Cursor in einen Absatz mit fettem und kursivem Text: graue Sterne erscheinen nur dort und
       verschwinden beim Verlassen des Absatzes und des Editors; Rücktaste direkt hinter `**` entfernt Fett; Text
@@ -716,8 +769,8 @@ Querverweise und Navigation
 - [ ] Geteilte Ansicht, verschieben: ein Kapitel aus der oberen Gliederung auf ein Kapitel der unteren ziehen; einen
       Textblock mit Unterpunkten am Balken aus dem oberen in den unteren Editor ziehen (beide Hälften zeigen danach den
       neuen Stand, `source::`/`used-in::` unverändert, „Rückgängig“ holt ihn zurück); einen Textblock auf eine
-      Überschrift der anderen Gliederung ziehen (landet am Ende ihres Textes). Markierten Text hinüberziehen: nichts
-      passiert.
+      Überschrift der anderen Gliederung ziehen (landet am Ende ihres Textes). Mit der Maus markierten Text
+      hinüberziehen: nichts passiert.
 - [ ] PDF: ein Verweis steht als „→ Titel (S. n)“ mit richtiger Seitenzahl; Klick auf Titel und Seitenzahl springt
       im PDF-Betrachter zur Stelle.
 - [ ] Systemanzeige: „App“ entspricht etwa NoteEvolution plus `ollama*.exe` und `llama-server.exe` im Task-Manager

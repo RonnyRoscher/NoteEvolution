@@ -152,6 +152,7 @@ public class OutlineEditorTests
         var book = Load(Outline);
 
         // "Eins-A" (level 2, with level-3 child) becomes the first child of "Zwei-A" (level 2) -> level 3 / 4.
+        // "Text nach A" reads as part of it (its read tail) and goes along, under the deepest open heading "Eins-A-i".
         OutlineEditor.MoveSection(book, KeyOf(book, "Eins-A"), KeyOf(book, "Zwei-A"), 0);
 
         Assert.Equal(
@@ -159,7 +160,6 @@ public class OutlineEditorTests
             "- Vorspann\n" +
             "- # Eins\n" +
             "\t- Text eins\n" +
-            "\t- Text nach A\n" +
             "\t- ## Eins-B\n" +
             "\t\t- Text B\n" +
             "- # Zwei\n" +
@@ -169,7 +169,8 @@ public class OutlineEditorTests
             "\t\t  collapsed:: true\n" +
             "\t\t\t- Text A\n" +
             "\t\t\t- #### Eins-A-i\n" +
-            "\t\t\t\t- tief\n",
+            "\t\t\t\t- tief\n" +
+            "\t\t\t\t- Text nach A\n",
             Serialize(book));
         var reloaded = Book.Load(book.Page);
         Assert.Equal(3, reloaded.FindNode(KeyOf(book, "Eins-A"))!.Level);
@@ -188,7 +189,7 @@ public class OutlineEditorTests
         Assert.Equal(["Eins", "Eins-A", "Zwei"], reloaded.Root.Children.Select(c => c.Title));
         Assert.Equal(1, reloaded.FindNode(KeyOf(book, "Eins-A"))!.Level);
         Assert.Equal(2, reloaded.FindNode(KeyOf(book, "Eins-A-i"))!.Level);
-        Assert.Contains("- # Eins-A\n  collapsed:: true\n\t- Text A\n\t- ## Eins-A-i\n\t\t- tief\n- # Zwei\n", Serialize(book));
+        Assert.Contains("- # Eins-A\n  collapsed:: true\n\t- Text A\n\t- ## Eins-A-i\n\t\t- tief\n\t\t- Text nach A\n- # Zwei\n", Serialize(book));
     }
 
     [Fact]
@@ -205,12 +206,13 @@ public class OutlineEditorTests
             after);
         Assert.Equal((0, 2), Diff(Outline.Replace("\t- ## Eins-B\n\t\t- Text B\n", ""), after));
 
-        // Moving into a deeper parent re-indents the subtree and rewrites only the heading lines of the subtree.
+        // Moving into a deeper parent re-indents the subtree and rewrites only the lines of the subtree and of the
+        // read tail "Text nach A" that goes along.
         var book2 = Load(Outline);
         OutlineEditor.MoveSection(book2, KeyOf(book2, "Eins-A"), KeyOf(book2, "Zwei-A"), 0);
         var (removed, added) = LineDiff.Changed(Encoding.UTF8.GetBytes(Outline), Encoding.UTF8.GetBytes(Serialize(book2)));
-        Assert.Equal(5, removed.Count);
-        Assert.Equal(5, added.Count);
+        Assert.Equal(6, removed.Count);
+        Assert.Equal(6, added.Count);
     }
 
     [Fact]

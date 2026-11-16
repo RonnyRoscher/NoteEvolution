@@ -394,6 +394,23 @@ public class NoteCardTests : UiTestContext
     }
 
     [Fact]
+    public async Task NoteCard_DragStart_ClearsAStaleDraggedRange()
+    {
+        using var tv = Create();
+        var session = await OpenAlphaAsync(tv);
+        var note = Note(session, "Gedächtnis braucht");
+        var cut = RenderCard(note);
+        cut.ClickBlock("Gedächtnis braucht");
+
+        // A grip drag of the section bar whose end never reached Blazor: the note's drop must not move that range.
+        State.DraggedRange = new NoteEvolution.Core.Books.BookElement(NoteEvolution.Core.Books.ElementKind.Heading, Guid.NewGuid());
+        cut.Find(".ne-note-drag").DragStart();
+
+        Assert.Null(State.DraggedRange);
+        Assert.Equal(note.Key, State.DraggedNoteKey);
+    }
+
+    [Fact]
     public async Task NoteCard_NoGermanLiterals()
     {
         // Every UI text comes out as its resource key; note data (text, date, page name, context) is excluded.

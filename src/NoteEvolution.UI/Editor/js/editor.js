@@ -1444,10 +1444,6 @@ function visibleArea(scroller) {
     return { top: Math.max(rect.top, 0), bottom: Math.min(rect.bottom, window.innerHeight) };
 }
 
-/**
- * The key of the text block or heading after which a note dropped at the event's position goes, or null for the
- * start of the view.
- */
 /** The views of the editors shown now (two in the split view): a drop asks the others whether a block comes from them. */
 const editorViews = new Set();
 
@@ -1465,6 +1461,10 @@ function draggedBlockKeys(dragging) {
     return keys.every(key => key) ? keys : null;
 }
 
+/**
+ * The key of the text block or heading after which a note dropped at the event's position goes, or null for the
+ * start of the view.
+ */
 function dropTarget(view, event) {
     const doc = view.state.doc;
     let index = -1;
@@ -1480,10 +1480,45 @@ function dropTarget(view, event) {
     return index >= 0 ? doc.child(index).attrs.key : null;
 }
 
+/** Whether the top of the node at pos is at or above the event's position. */
+function startsAbove(view, pos, event) {
+    const dom = view.nodeDOM(pos);
+    return Boolean(dom && dom.getBoundingClientRect && event.clientY >= dom.getBoundingClientRect().top);
+}
+
+/**
+ * The key of the innermost element under the event's position, where a marked range dragged by its grip lands: a
+ * sub-point (a paragraph of depth > 0, it has its own key), else the text block (its own text) or the heading; null
+ * above the first element. The element is the last one whose top is at or above the pointer, so a gap belongs to the
+ * element above it.
+ */
+function dropElement(view, event) {
+    const doc = view.state.doc;
+    let found = null;
+    doc.forEach((node, offset) => {
+        if (startsAbove(view, offset, event)) {
+            found = { node, offset };
+        }
+    });
+    if (!found) {
+        return null;
+    }
+    const { node, offset } = found;
+    let key = node.attrs.key;
+    if (node.type.name === 'textBlock') {
+        node.forEach((para, paraOffset) => {
+            if (startsAbove(view, offset + 1 + paraOffset, event)) {
+                key = para.attrs.depth > 0 && para.attrs.key ? para.attrs.key : node.attrs.key;
+            }
+        });
+    }
+    return key ?? null;
+}
+
 /**
  * Creates the editor in host. dotnet receives DocumentChanged(json), CursorChanged(kind, key, textBlockKey, offset),
  * EditorFocused() (whenever the editor gets the focus, before the cursor report that may follow), SectionCommand(name), SectionBoxMoved(barTop, visible), ChipClicked(noteId), ChipRemoved(blockKey, noteId),
- * ReferenceClicked(id), NoteDropped(afterKey), BlocksDragStarted(keysJson), BlocksDragEnded(), BlocksDropped(keysJson, afterKey) (text blocks dragged from the other editor), UndoRequested() (Ctrl+Z with nothing to undo in the editor), PersonClicked(id), SourceClicked(id), CitationEdit(id, key, offset),
+ * ReferenceClicked(id), NoteDropped(afterKey, elementKey) (a drop from outside the editors: a note card or the marked range, see dropTarget and dropElement), BlocksDragStarted(keysJson), BlocksDragEnded(), BlocksDropped(keysJson, afterKey) (text blocks dragged from the other editor), UndoRequested() (Ctrl+Z with nothing to undo in the editor), PersonClicked(id), SourceClicked(id), CitationEdit(id, key, offset),
  * LoadImage(path) (returns a Promise of { src, error }: a data URL of the picture, or the text to show instead),
  * ImageEdit(key, offset) (a double click on an image, key and offset of the image's text as CitationEdit has them), ImagePasted(base64, mime) (an image in the clipboard; the paste changes nothing in the document) and
  * GlossaryClicked(entryKey). options.citeClickDelay is how long a click on a citation waits for a double click (ms). options.barHeight is the height of the section bar C# shows at the marking box's bottom
@@ -1666,7 +1701,10 @@ export function createEditor(host, dotnet, options = {}) {
                         }
                         return true;
                     }
-                    call('NoteDropped', dropTarget(view, event));
+                    // From outside the editors: a note card, or the marked range dragged by the grip of the section bar
+                    // (it starts outside ProseMirror, so no view is dragging). C# tells them apart by what it records
+                    // as dragged; a range lands on the element under the pointer.
+                    call('NoteDropped', dropTarget(view, event), dropElement(view, event));
                     return true;
                 },
             },

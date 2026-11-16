@@ -136,6 +136,13 @@ public interface IEditorCallbacks
     Task OnNoteDropped(Guid noteBlockKey, Guid? afterTextBlockKey);
 
     /// <summary>
+    /// The marked range dragged by the grip of the section bar (<see cref="NoteEvolution.UI.State.AppState.DraggedRange"/>) was dropped
+    /// into the editor: <paramref name="elementKey"/> is the innermost element under the pointer (a detail, else the
+    /// text block or heading), or <c>null</c> above the first element.
+    /// </summary>
+    Task OnRangeDropped(Guid? elementKey);
+
+    /// <summary>
     /// Whole text blocks dragged out of the other editor of the split view were dropped into this one, to be moved
     /// there with their details; <paramref name="afterTextBlockKey"/> as for <see cref="OnNoteDropped"/>.
     /// </summary>

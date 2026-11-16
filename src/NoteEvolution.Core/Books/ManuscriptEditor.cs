@@ -149,7 +149,7 @@ public static partial class ManuscriptEditor
         book.FindNode(headingKey) is { Block: not null } node
         && !book.IsInAppendix(headingKey)
         && PreviousSameLevel(node) is { } previous
-        && previous.Level + OutlineEditor.Height(node) <= OutlineEditor.MaxLevel;
+        && previous.Level + OutlineEditor.HeightWithTail(book, node, OutlineEditor.ReadTail(book, headingKey)) <= OutlineEditor.MaxLevel;
 
     /// <summary>Whether <see cref="Outdent"/> is possible; <c>false</c> for an unknown key.</summary>
     public static bool CanOutdent(Book book, Guid headingKey) =>
@@ -433,21 +433,13 @@ public static partial class ManuscriptEditor
         }
 
         var following = textBlock.Children.SkipWhile(child => child != detail).Skip(1).ToList();
-
-        // As a text block a first line "# …" would read as a heading: escaped, it shows as it did.
-        if (HeadingText.AsTextBlockContent(detail.Content, shownUnescaped: true) is var escaped && escaped != detail.Content)
-        {
-            detail.SetContent(escaped);
-        }
-
         page.MoveBlock(detail, textBlock.Parent, IndexOf(page, textBlock) + 1);
         foreach (var sibling in following)
         {
             page.MoveBlock(sibling, detail, detail.Children.Count);
         }
 
-        StampAsTextBlock(detail, now);
-        BlockDates.StampChanged(textBlock, now);
+        BecomeTextBlock(detail, textBlock, now);
         return detailKey;
     }
 

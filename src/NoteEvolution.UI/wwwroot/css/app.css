@@ -1878,6 +1878,19 @@ html, body {
     white-space: nowrap;
 }
 
+/* The grip that drags the marked range (as the handle of the notes bar); greyed out like the buttons while nothing can move. */
+.ne-sec-drag {
+    padding: 0 4px;
+    color: var(--fg-muted);
+    cursor: grab;
+    user-select: none;
+}
+
+.ne-sec-drag-disabled {
+    opacity: 0.45;
+    cursor: default;
+}
+
 /* The status selection stands among the buttons and is greyed out like them (on a heading, or when locked). */
 .ne-shell .ne-sec-status {
     padding: 3px 6px;

@@ -192,6 +192,26 @@ public class IndentTextTests
     }
 
     [Fact]
+    public void OutdentDetail_TextLikeAHeading_StaysText()
+    {
+        const string deep = "# Kein Titel";
+        var loaded = Load(Head + "- # A\n\t- Text\n\t\t- " + deep + "\n\t\t\t- Unten\n");
+        var escaped = HeadingText.AsTextBlockContent(deep, shownUnescaped: true);
+        Assert.NotEqual(deep, escaped);
+
+        ManuscriptEditor.OutdentDetail(loaded, KeyOf(loaded, deep), Now);
+
+        var stamp = BlockDates.Format(Now);
+        Assert.Equal(
+            Head + "- # A\n\t- Text\n" + $"\t  updated:: {stamp}\n" + "\t- " + escaped + "\n" + $"\t  created:: {stamp}\n" + $"\t  updated:: {stamp}\n"
+            + "\t\t- Unten\n",
+            Serialize(loaded));
+        var after = Book.Load(loaded.Page);
+        Assert.Equal(["Text", escaped], after.Root.AllTextBlocks().Select(t => t.Block.Content));
+        Assert.Single(after.Root.Children);
+    }
+
+    [Fact]
     public void OutdentDetail_SourceStaysOnOldBlock()
     {
         var loaded = Load(
