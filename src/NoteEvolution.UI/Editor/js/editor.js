@@ -1461,7 +1461,7 @@ export function dragScrollSpeed(y, top, bottom, zone = 60, min = 240, max = 1200
     return speed(bottom - y) - speed(y - top);
 }
 
-/** The scrolling of an editor's pane during a drag: { scroller, speed, at (time of the last dragover), frame }. */
+/** The scrolling of a pane (editor or outline) during a drag: { scroller, speed, at (time of the last dragover), frame }. */
 let dragScroll = null;
 let dragHelpersInstalled = false;
 
@@ -1485,14 +1485,15 @@ function dragScrollFrame() {
     requestAnimationFrame(dragScrollFrame);
 }
 
-/** A dragover anywhere: the editor pane under the pointer scrolls while the pointer is in its top or bottom zone. */
+/**
+ * A dragover anywhere: the pane under the pointer (an editor's pane, or the tree of an outline, .ne-outline-scroll)
+ * scrolls while the pointer is in its top or bottom zone.
+ */
 function dragScrollOver(event) {
     let found = null;
-    for (const view of editorViews) {
-        if (!view.dom.isConnected) {
-            continue;
-        }
-        const scroller = scrollParent(view.dom);
+    const scrollers = [...editorViews].filter(view => view.dom.isConnected).map(view => scrollParent(view.dom));
+    scrollers.push(...document.querySelectorAll('.ne-outline-scroll'));
+    for (const scroller of scrollers) {
         const whole = scroller === document.scrollingElement || scroller === document.documentElement;
         const rect = whole ? null : scroller.getBoundingClientRect();
         if (rect && (event.clientX < rect.left || event.clientX > rect.right)) {

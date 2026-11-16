@@ -131,3 +131,24 @@ test('the document is marked while something is dragged', async () => {
     fire('mousemove', 0, 0, 0);
     assert.ok(!root.classList.contains('ne-dragging'));
 });
+
+test('the tree of an outline scrolls too, only with the pointer over it', async () => {
+    open();
+    const tree = document.createElement('div');
+    tree.className = 'ne-outline-scroll';
+    tree.getBoundingClientRect = () => ({ top: 100, bottom: 600, left: 500, right: 700, width: 200, height: 500, x: 500, y: 100 });
+    let top = 300;
+    Object.defineProperty(tree, 'scrollTop', { get: () => top, set: value => { top = value; } });
+    document.body.appendChild(tree);
+    fire('dragover', 600, 590);
+    await wait(120);
+    assert.ok(tree.scrollTop > 300, `scrolled down: ${tree.scrollTop}`);
+    fire('dragover', 600, 105);
+    await wait(120);
+    const up = tree.scrollTop;
+    fire('dragend');
+    fire('dragover', 800, 590);
+    await wait(100);
+    assert.equal(tree.scrollTop, up);
+    fire('dragend');
+});

@@ -97,7 +97,8 @@ Vorspann oder das ganze Buch markiert ist.
 
 **Beim Ziehen:** Solange etwas gezogen wird (Griff, Textblock am farbigen Balken, Notizkarte), scrollt der Editor,
 wenn der Mauszeiger in den oberen oder unteren 60 px seines sichtbaren Bereichs steht, umso schneller, je näher am
-Rand. In der geteilten Ansicht scrollt die Hälfte, über der der Zeiger steht. Die Leiste unter der Markierung ist
+Rand. In der geteilten Ansicht scrollt die Hälfte, über der der Zeiger steht. Ebenso scrollt der Baum der Gliederung,
+wenn der Zeiger an seinem oberen oder unteren Rand steht. Die Leiste unter der Markierung ist
 währenddessen blass und lässt die Maus durch: Ein Ablegen landet immer im Text darunter. In einer sehr schmalen Spalte,
 in der die umgebrochene Leiste höher wäre als der Editor, beginnt sie nie oberhalb des Editors; ihr unterer Teil ist
 dann abgeschnitten.
