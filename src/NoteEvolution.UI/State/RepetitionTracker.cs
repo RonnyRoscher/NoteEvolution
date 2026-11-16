@@ -23,6 +23,7 @@ internal sealed class RepetitionTracker : IDisposable
     private readonly Func<string, float[]?>? _embed;
     private readonly Func<VectorCache?> _cache;
     private readonly string _modelId;
+    private readonly Func<bool> _mayEmbed;
 
     // Everything below under _gate.
     private readonly object _gate = new();
@@ -45,14 +46,22 @@ internal sealed class RepetitionTracker : IDisposable
     /// <summary>Raised by <see cref="Refresh"/>: a set built from accepted pairs read before must be built again.</summary>
     private int _acceptedVersion;
 
+    /// <summary>The cache failed once in this session: logged, later failures are not.</summary>
+    private bool _cacheFailureLogged;
+
     private bool _disposed;
 
     /// <param name="dispatch">Runs an action on the UI thread.</param>
     /// <param name="embed">Embeds one text that carries its role prefix, null on failure; null without AI.</param>
     /// <param name="cache">The book blocks' vector cache; null while the semantic part cannot run (it is literal only then).</param>
     /// <param name="modelId">The embedding model, part of the text hash.</param>
+    /// <param name="mayEmbed">
+    /// Whether blocks may be embedded now (the notes' index is not busy); asked before each block. While it says no,
+    /// an analysis publishes what the cache already holds and stops; the owner schedules again once it may. Always yes
+    /// when null.
+    /// </param>
     public RepetitionTracker(ILogger logger, Func<Action, Task> dispatch, AcceptedRepetitions accepted,
-        Func<string, float[]?>? embed, Func<VectorCache?> cache, string modelId)
+        Func<string, float[]?>? embed, Func<VectorCache?> cache, string modelId, Func<bool>? mayEmbed = null)
     {
         _logger = logger;
         _dispatch = dispatch;
@@ -60,6 +69,7 @@ internal sealed class RepetitionTracker : IDisposable
         _embed = embed;
         _cache = cache;
         _modelId = modelId;
+        _mayEmbed = mayEmbed ?? (() => true);
     }
 
     /// <summary>A set changed; raised on the UI thread (through the dispatcher).</summary>
@@ -104,6 +114,23 @@ internal sealed class RepetitionTracker : IDisposable
             _runs[path] = run;
             _tasks.RemoveAll(task => task.IsCompleted);
             _tasks.Add(Task.Run(() => AnalyseAsync(book, path, name, run.Token)));
+        }
+    }
+
+    /// <summary>
+    /// Cancels the running analyses of every page that is not one of <paramref name="shown"/>; what they computed and
+    /// cached stays. Call it on the UI thread.
+    /// </summary>
+    public void CancelExcept(IReadOnlyCollection<Book> shown)
+    {
+        var keep = shown.Select(book => book.Page.FilePath).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        lock (_gate)
+        {
+            foreach (var path in _runs.Keys.Where(path => !keep.Contains(path)).ToList())
+            {
+                _runs.Remove(path, out var run);
+                run!.Cancel();
+            }
         }
     }
 
@@ -172,8 +199,9 @@ internal sealed class RepetitionTracker : IDisposable
     }
 
     /// <summary>
-    /// The literal pairs, published with the vectors already cached; then the missing blocks embedded one by one (each
-    /// stored at once), published again every <see cref="PublishEvery"/> blocks and at the end. Never throws.
+    /// The literal pairs first; then the same with the vectors already cached; then, while <c>mayEmbed</c> allows it,
+    /// the missing blocks embedded one by one (each stored at once), published again every <see cref="PublishEvery"/>
+    /// blocks and at the end. A failing cache leaves the run literal only (reading) or the block out (storing). Never throws.
     /// </summary>
     private async Task AnalyseAsync(Book book, string path, string name, CancellationToken token)
     {
@@ -181,18 +209,44 @@ internal sealed class RepetitionTracker : IDisposable
         {
             var blocks = ComparisonText.Of(book);
             var literal = LiteralRepetitions.Find(blocks);
+            var literalOnly = new Computed(book, name, blocks, literal, [], 0, 0, RepetitionSet.Empty);
             var embed = _embed;
-            var cache = embed is null ? null : _cache();
-            if (embed is null || cache is null)
+            if (embed is null)
             {
-                await PublishAsync(path, new Computed(book, name, blocks, literal, [], 0, 0, RepetitionSet.Empty), token);
+                await PublishAsync(path, literalOnly, token);
                 return;
             }
 
             var texts = blocks.Select(EmbeddingText.ForRepetition).ToArray();
             var hashes = texts.Select(text => EmbeddingText.Hash(_modelId, text)).ToArray();
-            var known = new Dictionary<string, float[]>(cache.Get(hashes));
+            var known = new Dictionary<string, float[]>();
             await PublishAsync(path, Compute(book, name, blocks, literal, hashes, known), token);
+
+            VectorCache? cache;
+            try
+            {
+                cache = _cache();
+                foreach (var (hash, vector) in cache?.Get(hashes) ?? new Dictionary<string, float[]>())
+                {
+                    known[hash] = vector;
+                }
+            }
+            catch (Exception ex) when (!token.IsCancellationRequested)
+            {
+                LogCacheFailure(ex);
+                cache = null;
+            }
+
+            if (cache is null)
+            {
+                await PublishAsync(path, literalOnly, token);
+                return;
+            }
+
+            if (known.Count > 0)
+            {
+                await PublishAsync(path, Compute(book, name, blocks, literal, hashes, known), token);
+            }
 
             var sincePublished = 0;
             for (var i = 0; i < blocks.Count; i++)
@@ -203,16 +257,30 @@ internal sealed class RepetitionTracker : IDisposable
                 }
 
                 token.ThrowIfCancellationRequested();
+                if (!_mayEmbed())
+                {
+                    break; // the notes' index is busy: scheduled again once it is ready
+                }
+
                 var vector = embed(texts[i]);
                 token.ThrowIfCancellationRequested();
                 if (vector is { Length: > 0 })
                 {
-                    cache.Put([(hashes[i], path, vector)]);
-                    known[hashes[i]] = vector;
+                    try
+                    {
+                        cache.Put([(hashes[i], path, vector)]);
+                        known[hashes[i]] = vector;
+                    }
+                    catch (Exception ex) when (!token.IsCancellationRequested)
+                    {
+                        LogCacheFailure(ex);
+                        MarkFailed(hashes[i]);
+                    }
                 }
-                else
+                else if (MarkFailed(hashes[i]))
                 {
-                    Fail(hashes[i], blocks[i]);
+                    _logger.LogWarning("Embedding a block for the repetitions failed; it is left out: \"{Block}\"",
+                        Excerpt.FirstLine(blocks[i].Paragraphs[0].Plain, 40));
                 }
 
                 if (++sincePublished == PublishEvery)
@@ -314,18 +382,28 @@ internal sealed class RepetitionTracker : IDisposable
         }
     }
 
-    private void Fail(string hash, ComparedBlock block)
+    /// <summary>Leaves the text out for this session; true if it was not left out before.</summary>
+    private bool MarkFailed(string hash)
     {
         lock (_gate)
         {
-            if (!_failed.Add(hash))
+            return _failed.Add(hash);
+        }
+    }
+
+    private void LogCacheFailure(Exception ex)
+    {
+        lock (_gate)
+        {
+            if (_cacheFailureLogged)
             {
                 return;
             }
+
+            _cacheFailureLogged = true;
         }
 
-        _logger.LogWarning("Embedding a block for the repetitions failed; it is left out: \"{Block}\"",
-            Excerpt.FirstLine(block.Paragraphs[0].Plain, 40));
+        _logger.LogError(ex, "The book blocks' vector cache failed; the repetitions go on without it");
     }
 
     private void LogNear(ComparedBlock a, string hashA, ComparedBlock b, string hashB, float score, bool listed)
@@ -352,7 +430,15 @@ internal sealed class RepetitionTracker : IDisposable
             }
         }
 
-        Changed?.Invoke();
+        try
+        {
+            Changed?.Invoke();
+        }
+        catch (Exception ex)
+        {
+            // A failing view must not end the analysis that raised it.
+            _logger.LogError(ex, "Handling the repetitions' change failed");
+        }
     }
 
     /// <summary>Raises <see cref="Changed"/> through the dispatcher without waiting; never throws, a failure is logged.</summary>

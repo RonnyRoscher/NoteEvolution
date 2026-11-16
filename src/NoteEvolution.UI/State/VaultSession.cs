@@ -166,7 +166,8 @@ public sealed class VaultSession : IDisposable
         _coverage = new CoverageTracker(timeProvider, logger, dispatch, vault, Notes, () => _focusBook, () => _understanding);
         AcceptedRepetitions = new AcceptedRepetitions(vault.Root);
         _repetitions = new RepetitionTracker(logger, dispatch, AcceptedRepetitions,
-            ai is null ? null : text => Semantic?.EmbedQuery(text), BookVectors, ai?.Model.Id ?? string.Empty);
+            ai is null ? null : text => Semantic?.EmbedQuery(text), BookVectors, ai?.Model.Id ?? string.Empty,
+            () => Semantic?.Status.State == SemanticState.Ready);
         Watcher.ExternalChange += OnWatcherChange;
         if (_ai is not null)
         {
@@ -436,7 +437,20 @@ public sealed class VaultSession : IDisposable
             return;
         }
 
-        _repetitions.Schedule(book);
+        ScheduleRepetitionsOfShown(book);
+    }
+
+    /// <summary>
+    /// Analyses the shown book (null: none) and cancels the analyses of the pages no half shows any more; what they
+    /// computed and cached stays.
+    /// </summary>
+    private void ScheduleRepetitionsOfShown(Book? shown)
+    {
+        _repetitions.CancelExcept(shown is null ? [] : [shown]);
+        if (shown is not null)
+        {
+            _repetitions.Schedule(shown);
+        }
     }
 
     /// <summary>
@@ -1007,9 +1021,6 @@ public sealed class VaultSession : IDisposable
             index.StatusChanged += OnIndexStatusChanged;
             Dispatch(StartIndexing, "the start of the semantic indexing");
             Dispatch(UpdateUnderstanding, "the start of the language model");
-
-            // The shown book was analysed literal only so far: now its blocks can be embedded.
-            Dispatch(() => ScheduleShownRepetitions(), "the repetitions of the shown book");
         }
         catch (Exception ex)
         {
@@ -1046,7 +1057,17 @@ public sealed class VaultSession : IDisposable
     {
         _noteStatus.Schedule(embeddings: true);
         RaiseAiStatusChanged();
+
+        // The repetitions embed only behind the notes' index: once it is ready (again), the shown book goes on.
+        var ready = _aiParts?.Index.Status.State == SemanticState.Ready;
+        if (Interlocked.Exchange(ref _indexReady, ready ? 1 : 0) == 0 && ready)
+        {
+            Dispatch(() => ScheduleShownRepetitions(), "the repetitions of the shown book");
+        }
     }
+
+    /// <summary>1 while the notes' index last reported <see cref="SemanticState.Ready"/>; for <see cref="OnIndexStatusChanged"/>.</summary>
+    private int _indexReady;
 
     /// <summary>Raised on the thread that replaced the page (the UI thread, or the opening's thread).</summary>
     private void OnPageReplaced(Page page) => SchedulePageIndex(page.FilePath);
@@ -1361,10 +1382,7 @@ public sealed class VaultSession : IDisposable
         if (bookChanged)
         {
             _coverage.Schedule();
-            if (book is not null)
-            {
-                _repetitions.Schedule(book);
-            }
+            ScheduleRepetitionsOfShown(book);
         }
 
         lock (_gate)

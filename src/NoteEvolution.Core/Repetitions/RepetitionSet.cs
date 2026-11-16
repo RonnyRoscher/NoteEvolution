@@ -90,7 +90,10 @@ public sealed class RepetitionSet
     /// <summary>Blocks that have a vector.</summary>
     public int Embedded { get; }
 
-    /// <summary>Compared blocks.</summary>
+    /// <summary>
+    /// Compared blocks that are to have a vector: without those whose embedding failed (they are left out until their
+    /// text changes); 0 when there is no embedder, so a literal-only set counts as complete.
+    /// </summary>
     public int Total { get; }
 
     public bool Complete => Embedded >= Total;

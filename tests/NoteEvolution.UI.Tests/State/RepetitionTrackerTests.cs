@@ -31,6 +31,9 @@ public sealed class RepetitionTrackerTests : IDisposable
     private readonly List<RepetitionTracker> _trackers = [];
     private VectorCache? _cache;
 
+    /// <summary>What the trackers' <c>mayEmbed</c> answers: whether the note index is ready.</summary>
+    private volatile bool _indexReady = true;
+
     public void Dispose()
     {
         foreach (var tracker in _trackers)
@@ -54,13 +57,14 @@ public sealed class RepetitionTrackerTests : IDisposable
             accepted ?? new AcceptedRepetitions(_vault.Root),
             withEmbedder ? _embed.Embed : null,
             () => _cache ??= VectorCache.Open(_vault.Root, Model, "book-vectors.db"),
-            Model);
+            Model,
+            () => _indexReady);
         _trackers.Add(tracker);
         return tracker;
     }
 
-    private static Page Parse() => LogseqParser.Parse(
-        "Buch - Test.md",
+    private static Page Parse(string file = "Buch - Test.md") => LogseqParser.Parse(
+        file,
         Encoding.UTF8.GetBytes(
             "type:: book\n\n" +
             $"- # Eins\n\t- {TextA}\n\t  id:: {IdA}\n\t- {TextB}\n\t  id:: {IdB}\n" +
@@ -191,6 +195,161 @@ public sealed class RepetitionTrackerTests : IDisposable
     }
 
     [Fact]
+    public async Task BlockEditedAfterItsVectorWasStored_CountsAsMissing_UntilEmbeddedAgain()
+    {
+        var tracker = NewTracker();
+        var page = Parse();
+        var before = Book.Load(page);
+        tracker.Schedule(before);
+        await tracker.WhenIdle();
+        Assert.Contains((RepetitionKind.Semantic, Key(before, "gamma"), Key(before, "delta")), Pairs(tracker.Of(before)));
+
+        // The old text's vector is stored under the old text's hash: the new text has none until it is embedded.
+        _indexReady = false;
+        var after = Edit(page, "delta", "zeta hund katze maus vogel fisch pferd kuh");
+        tracker.Schedule(after);
+        await tracker.WhenIdle();
+
+        var waiting = tracker.Of(after);
+        Assert.Equal((4, 5, false), (waiting.Embedded, waiting.Total, waiting.Complete));
+        Assert.DoesNotContain(waiting.All, r => r.Kind == RepetitionKind.Semantic);
+
+        _indexReady = true;
+        tracker.Schedule(after);
+        await tracker.WhenIdle();
+
+        var done = tracker.Of(after);
+        Assert.True(done.Complete);
+        Assert.DoesNotContain(done.All, r => r.Kind == RepetitionKind.Semantic);
+        Assert.Equal(1, _embed.CallsFor("zeta"));
+    }
+
+    [Fact]
+    public async Task NoteIndexNotReady_EmbedsNothing_UntilScheduledWhenReady()
+    {
+        _indexReady = false;
+        var tracker = NewTracker();
+        var book = Book.Load(Parse());
+
+        tracker.Schedule(book);
+        await tracker.WhenIdle();
+
+        var waiting = tracker.Of(book);
+        Assert.Equal(0, _embed.Calls);
+        Assert.Equal([(RepetitionKind.Literal, Key(book, "alpha"), Key(book, "beta"))], Pairs(waiting));
+        Assert.Equal((0, 5, false), (waiting.Embedded, waiting.Total, waiting.Complete));
+
+        _indexReady = true;
+        tracker.Schedule(book);
+        await tracker.WhenIdle();
+
+        Assert.Equal(5, _embed.Calls);
+        Assert.True(tracker.Of(book).Complete);
+        Assert.Contains(tracker.Of(book).All, r => r.Kind == RepetitionKind.Semantic);
+    }
+
+    [Fact]
+    public async Task NoteIndexBusyAgain_StopsEmbedding_UntilScheduledWhenReady()
+    {
+        _embed.OnEmbed = word =>
+        {
+            if (word == "beta")
+            {
+                _indexReady = false; // e.g. a saved page is embedded again
+            }
+        };
+        var tracker = NewTracker();
+        var book = Book.Load(Parse());
+
+        tracker.Schedule(book);
+        await tracker.WhenIdle();
+
+        Assert.Equal(2, _embed.Calls);
+        Assert.Equal((2, 5, false), (tracker.Of(book).Embedded, tracker.Of(book).Total, tracker.Of(book).Complete));
+
+        _indexReady = true;
+        tracker.Schedule(book);
+        await tracker.WhenIdle();
+
+        Assert.Equal(5, _embed.Calls);
+        Assert.True(tracker.Of(book).Complete);
+    }
+
+    [Fact]
+    public async Task CacheGetThrows_KeepsLiteralPairs_LogsOnce()
+    {
+        _cache = VectorCache.Open(_vault.Root, Model, "book-vectors.db");
+        _cache.Dispose();
+        var tracker = NewTracker();
+        var page = Parse();
+
+        tracker.Schedule(Book.Load(page));
+        await tracker.WhenIdle();
+        var book = Book.Load(page);
+        tracker.Schedule(book);
+        await tracker.WhenIdle();
+
+        var set = tracker.Of(book);
+        Assert.Equal([(RepetitionKind.Literal, Key(book, "alpha"), Key(book, "beta"))], Pairs(set));
+        Assert.True(set.Complete);
+        Assert.Equal(0, _embed.Calls);
+        Assert.Single(_logger.Warnings);
+    }
+
+    [Fact]
+    public async Task CachePutThrows_BlockLeftOut_RunGoesOn()
+    {
+        _embed.OnEmbed = _ => _cache!.Dispose();
+        var tracker = NewTracker();
+        var book = Book.Load(Parse());
+
+        tracker.Schedule(book);
+        await tracker.WhenIdle();
+
+        var set = tracker.Of(book);
+        Assert.Equal(5, _embed.Calls);
+        Assert.True(set.IsFor(book));
+        Assert.True(set.Complete);
+        Assert.Contains(set.All, r => r.Kind == RepetitionKind.Literal);
+        Assert.Single(_logger.Warnings);
+    }
+
+    [Fact]
+    public async Task ThrowingChangedSubscriber_DoesNotAbortTheAnalysis()
+    {
+        var tracker = NewTracker();
+        tracker.Changed += () => throw new InvalidOperationException("Kaputt.");
+        var book = Book.Load(Parse());
+
+        tracker.Schedule(book);
+        await tracker.WhenIdle();
+
+        Assert.True(tracker.Of(book).Complete);
+        Assert.Equal(5, tracker.Of(book).Embedded);
+        Assert.NotEmpty(_logger.Warnings);
+    }
+
+    [Fact]
+    public async Task CancelExcept_StopsAnalysesOfPagesNoLongerShown()
+    {
+        var gate = _embed.Hold("alpha");
+        var tracker = NewTracker();
+        var first = Book.Load(Parse("Buch - Eins.md"));
+        var second = Book.Load(Parse("Buch - Zwei.md"));
+
+        tracker.Schedule(first);
+        await gate.Entered;
+        tracker.CancelExcept([second]);
+        tracker.Schedule(second);
+        gate.Release();
+        await tracker.WhenIdle();
+
+        Assert.Equal(6, _embed.Calls); // the first book's run ended after its blocked call
+        Assert.False(tracker.Of(first).Complete);
+        Assert.True(tracker.Of(second).Complete);
+    }
+
+    [Fact]
     public async Task EmbedNull_LeavesBlockOut_AndLogsOnce()
     {
         _embed.Failing.Add("epsilon");
@@ -289,6 +448,9 @@ public sealed class RepetitionTrackerTests : IDisposable
 
         public int CallsFor(string word) => Texts.Count(text => Word(text) == word);
 
+        /// <summary>Called with the first word on every call.</summary>
+        public Action<string>? OnEmbed { get; set; }
+
         public Gate Hold(string word) => _gates[word] = new Gate();
 
         public float[]? Embed(string text)
@@ -296,6 +458,7 @@ public sealed class RepetitionTrackerTests : IDisposable
             Interlocked.Increment(ref _calls);
             Texts.Enqueue(text);
             var word = Word(text);
+            OnEmbed?.Invoke(word);
             if (_gates.TryRemove(word, out var gate))
             {
                 gate.Wait();
