@@ -199,7 +199,7 @@ internal sealed class RepetitionTracker : IDisposable
     }
 
     /// <summary>
-    /// The literal pairs first; then the same with the vectors already cached; then, while <c>mayEmbed</c> allows it,
+    /// The literal pairs with the vectors already cached, published once; then, while <c>mayEmbed</c> allows it,
     /// the missing blocks embedded one by one (each stored at once), published again every <see cref="PublishEvery"/>
     /// blocks and at the end. A failing cache leaves the run literal only (reading) or the block out (storing). Never throws.
     /// </summary>
@@ -220,8 +220,6 @@ internal sealed class RepetitionTracker : IDisposable
             var texts = blocks.Select(EmbeddingText.ForRepetition).ToArray();
             var hashes = texts.Select(text => EmbeddingText.Hash(_modelId, text)).ToArray();
             var known = new Dictionary<string, float[]>();
-            await PublishAsync(path, Compute(book, name, blocks, literal, hashes, known), token);
-
             VectorCache? cache;
             try
             {
@@ -243,10 +241,8 @@ internal sealed class RepetitionTracker : IDisposable
                 return;
             }
 
-            if (known.Count > 0)
-            {
-                await PublishAsync(path, Compute(book, name, blocks, literal, hashes, known), token);
-            }
+            // One first set: the literal pairs with what the cache already holds.
+            await PublishAsync(path, Compute(book, name, blocks, literal, hashes, known), token);
 
             var sincePublished = 0;
             for (var i = 0; i < blocks.Count; i++)
@@ -259,7 +255,7 @@ internal sealed class RepetitionTracker : IDisposable
                 token.ThrowIfCancellationRequested();
                 if (!_mayEmbed())
                 {
-                    break; // the notes' index is busy: scheduled again once it is ready
+                    break; // the notes' index is busy: scheduled again once it is settled
                 }
 
                 var vector = embed(texts[i]);

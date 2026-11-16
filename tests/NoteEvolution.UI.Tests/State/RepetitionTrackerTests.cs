@@ -225,6 +225,58 @@ public sealed class RepetitionTrackerTests : IDisposable
     }
 
     [Fact]
+    public async Task FullyCachedBook_PublishesOnce_Complete()
+    {
+        var page = Parse();
+        var first = NewTracker();
+        first.Schedule(Book.Load(page));
+        await first.WhenIdle();
+
+        var restarted = NewTracker();
+        var changes = 0;
+        restarted.Changed += () => changes++;
+        var book = Book.Load(page);
+        restarted.Schedule(book);
+        await restarted.WhenIdle();
+
+        Assert.Equal(1, changes);
+        Assert.True(restarted.Of(book).Complete);
+        Assert.Equal(5, _embed.Calls);
+    }
+
+    [Theory]
+    [InlineData(SemanticState.Ready, true)]
+    [InlineData(SemanticState.Failed, true)]
+    [InlineData(SemanticState.Indexing, false)]
+    [InlineData(SemanticState.Off, false)]
+    [InlineData(null, false)]
+    public void Session_MayEmbedRepetitions_OnceTheNoteIndexIsSettled(SemanticState? state, bool may)
+    {
+        // A failed note index does not block the repetitions: each block embeds or is left out, so the set completes.
+        Assert.Equal(may, VaultSession.MayEmbedRepetitions(state));
+    }
+
+    [Fact]
+    public async Task NoteIndexFailed_EmbedderFailing_CompletesWithBlocksLeftOut()
+    {
+        foreach (var word in new[] { "alpha", "beta", "gamma", "delta", "epsilon" })
+        {
+            _embed.Failing.Add(word);
+        }
+
+        var tracker = NewTracker(); // mayEmbed answers yes, as the session does for a failed note index
+        var book = Book.Load(Parse());
+
+        tracker.Schedule(book);
+        await tracker.WhenIdle();
+
+        var set = tracker.Of(book);
+        Assert.Equal(5, _embed.Calls);
+        Assert.Equal((0, 0, true), (set.Embedded, set.Total, set.Complete));
+        Assert.Contains(set.All, r => r.Kind == RepetitionKind.Literal);
+    }
+
+    [Fact]
     public async Task NoteIndexNotReady_EmbedsNothing_UntilScheduledWhenReady()
     {
         _indexReady = false;

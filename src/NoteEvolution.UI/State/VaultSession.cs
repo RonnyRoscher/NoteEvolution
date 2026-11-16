@@ -167,7 +167,7 @@ public sealed class VaultSession : IDisposable
         AcceptedRepetitions = new AcceptedRepetitions(vault.Root);
         _repetitions = new RepetitionTracker(logger, dispatch, AcceptedRepetitions,
             ai is null ? null : text => Semantic?.EmbedQuery(text), BookVectors, ai?.Model.Id ?? string.Empty,
-            () => Semantic?.Status.State == SemanticState.Ready);
+            () => MayEmbedRepetitions(Semantic?.Status.State));
         Watcher.ExternalChange += OnWatcherChange;
         if (_ai is not null)
         {
@@ -1058,16 +1058,23 @@ public sealed class VaultSession : IDisposable
         _noteStatus.Schedule(embeddings: true);
         RaiseAiStatusChanged();
 
-        // The repetitions embed only behind the notes' index: once it is ready (again), the shown book goes on.
-        var ready = _aiParts?.Index.Status.State == SemanticState.Ready;
-        if (Interlocked.Exchange(ref _indexReady, ready ? 1 : 0) == 0 && ready)
+        // The repetitions embed only behind the notes' index: once it is settled (again), the shown book goes on.
+        var settled = MayEmbedRepetitions(_aiParts?.Index.Status.State);
+        if (Interlocked.Exchange(ref _indexSettled, settled ? 1 : 0) == 0 && settled)
         {
             Dispatch(() => ScheduleShownRepetitions(), "the repetitions of the shown book");
         }
     }
 
-    /// <summary>1 while the notes' index last reported <see cref="SemanticState.Ready"/>; for <see cref="OnIndexStatusChanged"/>.</summary>
-    private int _indexReady;
+    /// <summary>1 while the notes' index last reported a settled state (<see cref="MayEmbedRepetitions"/>); for <see cref="OnIndexStatusChanged"/>.</summary>
+    private int _indexSettled;
+
+    /// <summary>
+    /// Whether the repetitions may embed book blocks: once the notes' index is ready, or failed (then each block embeds
+    /// or is left out, so the set still completes); not while it indexes or does not exist.
+    /// </summary>
+    internal static bool MayEmbedRepetitions(SemanticState? noteIndex) =>
+        noteIndex is SemanticState.Ready or SemanticState.Failed;
 
     /// <summary>Raised on the thread that replaced the page (the UI thread, or the opening's thread).</summary>
     private void OnPageReplaced(Page page) => SchedulePageIndex(page.FilePath);
