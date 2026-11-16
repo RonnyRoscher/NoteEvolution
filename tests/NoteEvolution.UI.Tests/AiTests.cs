@@ -106,6 +106,45 @@ public class AiTests : UiTestContext
     }
 
     [Fact]
+    public async Task StatusLine_ShowsRepetitionProgress_WhileIncomplete_NotWhenComplete()
+    {
+        const string run = "eins zwei drei vier fuenf sechs sieben acht neun";
+        var vault = TestVault.Create(
+            ("pages/Buch - Alpha.md", $"title:: Alpha\ntype:: book\n\n- # Eins\n\t- alpha {run}\n\t- beta {run}\n"));
+        _vaults.Add(vault);
+        var embedder = new FakeEmbedder();
+        var session = await OpenWithAiAsync(vault, embedder);
+        await session.RepetitionsIdle();
+        var cut = Render<HeaderBar>();
+        Assert.Equal(Text("AiLocal"), cut.Find(".ne-ai").TextContent.Trim());
+        using var gate = new ManualResetEventSlim();
+        try
+        {
+            // The edited block's vector waits: the analysis of the current book is not complete.
+            embedder.OnEmbed = (_, ct) => gate.Wait(ct);
+            State.CurrentBook!.Page.AllBlocks().First(b => b.Content.StartsWith("alpha", StringComparison.Ordinal)).SetContent($"alpha neu {run}");
+            session.Writer.Save(State.CurrentBook!.Page);
+            await cut.InvokeAsync(() =>
+            {
+                State.RefreshBook();
+                State.Notify();
+            });
+
+            cut.WaitForAssertion(
+                () => Assert.EndsWith(" · Wiederholungen: 1/2 Blöcke", cut.Find(".ne-ai").TextContent.Trim()),
+                TimeSpan.FromSeconds(20));
+            Assert.StartsWith(Text("AiLocal"), cut.Find(".ne-ai").TextContent);
+        }
+        finally
+        {
+            gate.Set();
+        }
+
+        await session.RepetitionsIdle();
+        cut.WaitForAssertion(() => Assert.Equal(Text("AiLocal"), cut.Find(".ne-ai").TextContent.Trim()));
+    }
+
+    [Fact]
     public async Task Open_ModelMissing_ShowsDialog_NotNowRemembered()
     {
         var tv = Vault();

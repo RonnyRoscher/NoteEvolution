@@ -397,15 +397,24 @@
     /// <summary>The open vault's AI status; without one the runtime's (model missing, downloading).</summary>
     private AiStatus AiStatusNow => State.Session?.AiStatus ?? _ai?.Status ?? AiStatus.Off;
 
-    private string AiText(AiStatus ai) => ai.State switch
+    private string AiText(AiStatus ai) => (ai.State switch
     {
-        AiState.Ready => L["AiLocal"],
-        AiState.Indexing => L["AiIndexing", ai.Done, ai.Total],
-        AiState.ModelMissing => L["AiModelMissing"],
-        AiState.Downloading => L["AiDownloading"],
-        AiState.Failed => L["AiFailed"],
-        _ => L["AiOff"],
-    };
+        AiState.Ready => L["AiLocal"].Value,
+        AiState.Indexing => L["AiIndexing", ai.Done, ai.Total].Value,
+        AiState.ModelMissing => L["AiModelMissing"].Value,
+        AiState.Downloading => L["AiDownloading"].Value,
+        AiState.Failed => L["AiFailed"].Value,
+        _ => L["AiOff"].Value,
+    }) + RepetitionProgress();
+
+    /// <summary>
+    /// " · Wiederholungen: n/m Blöcke" while the analysis of the current book is not complete (repetitions spec 4); nothing
+    /// otherwise, also without an analysis (no book, no embedder).
+    /// </summary>
+    private string RepetitionProgress() =>
+        State.Session?.RepetitionsShown(State.CurrentBook).Set is { Complete: false } set
+            ? L["AiRepetitionsProgress", set.Embedded, set.Total].Value
+            : "";
 
     /// <summary>Undo is refused while a conflict is open (R26): it writes pages directly.</summary>
     private bool CanUndo => _session is { HasAnyOpenConflict: false } session && session.Undo.CanUndo;
@@ -452,6 +461,7 @@
             _session.Undo.Pushed += OnUndoPushed;
             _session.ConflictsChanged += OnSessionChanged;
             _session.AiStatusChanged += OnSessionChanged;
+            _session.RepetitionsChanged += OnSessionChanged;
             _session.UnderstandingChanged += OnSessionChanged;
             _session.NoteStatusChanged += OnSessionChanged;
             _session.HistoryProblemChanged += OnSessionChanged;
@@ -466,6 +476,7 @@
             _session.Undo.Pushed -= OnUndoPushed;
             _session.ConflictsChanged -= OnSessionChanged;
             _session.AiStatusChanged -= OnSessionChanged;
+            _session.RepetitionsChanged -= OnSessionChanged;
             _session.UnderstandingChanged -= OnSessionChanged;
             _session.NoteStatusChanged -= OnSessionChanged;
             _session.HistoryProblemChanged -= OnSessionChanged;

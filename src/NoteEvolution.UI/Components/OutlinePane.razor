@@ -2,6 +2,7 @@
 @using NoteEvolution.Core.Format
 @using NoteEvolution.Core.Links
 @using NoteEvolution.Core.Model
+@using NoteEvolution.Core.Repetitions
 @using NoteEvolution.Core.Storage
 @using Microsoft.JSInterop
 @implements IDisposable
@@ -20,6 +21,7 @@
 else
 {
     _warnings = WarningsByNode(book);
+    _repetitions = Settings.ShowRepetitions ? _session?.RepetitionsShown(book) : null;
     <div class="ne-outline-pane">
         <RecentChangesList Height="Settings.RecentListHeight" Collapsed="Settings.RecentListCollapsed" CollapsedChanged="SetRecentListCollapsed"
                            BeforeJump="ActivateAsync" />
@@ -31,6 +33,8 @@ else
             <div class="ne-outline-label">@L["Outline"]</div>
             <button type="button" class="ne-outline-coverage-toggle" aria-pressed="@(Settings.ShowCoverage ? "true" : "false")"
                     @onclick="ToggleCoverage">@L["OutlineCoverageToggle"]</button>
+            <button type="button" class="ne-outline-repetitions-toggle" aria-pressed="@(Settings.ShowRepetitions ? "true" : "false")"
+                    @onclick="ToggleRepetitions">@L["OutlineRepetitionsToggle"]</button>
         </div>
         @if (_error is not null)
         {
@@ -227,6 +231,58 @@ else
         UpdateWatch();
     }
 
+    /// <summary>The repetitions shown for the rendered book, or null when the switch is off (set while rendering).</summary>
+    private (RepetitionSet Set, bool Pending)? _repetitions;
+
+    /// <summary>
+    /// What a row shows for the repetitions of <paramref name="node"/>: the not accepted pairs with a block in the section
+    /// and its sub-sections, and whether the analysis is still running; null when switched off or there are none. While a
+    /// saved book is analysed anew the set still belongs to the old snapshot's nodes, so the blocks are counted by their
+    /// keys, which survive a save.
+    /// </summary>
+    internal (int Count, bool Pending)? RepetitionsOf(OutlineNode node)
+    {
+        if (_repetitions is not { } shown)
+        {
+            return null;
+        }
+
+        // The prologue row stands for the text before the first heading only, as its word count does.
+        var count = node.Block is null
+            ? shown.Set.Count(node.TextBlocks.Select(textBlock => textBlock.Key).ToHashSet())
+            : shown.Set.IsFor(State.CurrentBook)
+                ? shown.Set.CountIn(node)
+                : shown.Set.Count(SectionTextBlockKeys(node));
+        return count > 0 ? (count, shown.Pending) : null;
+    }
+
+    /// <summary>The keys of the text blocks of a section and its sub-sections (the appendix is not part of a section's text).</summary>
+    private static HashSet<Guid> SectionTextBlockKeys(OutlineNode node)
+    {
+        var keys = new HashSet<Guid>();
+        void Walk(OutlineNode section)
+        {
+            keys.UnionWith(section.TextBlocks.Select(textBlock => textBlock.Key));
+            foreach (var child in section.Children.Where(child => child.AppendixKind == AppendixKind.None))
+            {
+                Walk(child);
+            }
+        }
+
+        Walk(node);
+        return keys;
+    }
+
+    /// <summary>The switch controls the marks in the editors and the counts here; the editors resend their marks.</summary>
+    private void ToggleRepetitions()
+    {
+        Settings.ShowRepetitions = !Settings.ShowRepetitions;
+        SaveSettings();
+        State.Notify();
+    }
+
+    private void OnRepetitionsChanged() => _ = InvokeAsync(StateHasChanged);
+
     /// <summary>Collapses or expands the "Zuletzt geändert" list (kept in <c>ui.json</c>); its height stays as it is.</summary>
     private void SetRecentListCollapsed(bool collapsed)
     {
@@ -294,6 +350,7 @@ else
         {
             _session.ConflictsChanged += OnConflictsChanged;
             _session.CoverageChanged += OnCoverageChanged;
+            _session.RepetitionsChanged += OnRepetitionsChanged;
         }
 
         UpdateWatch();
@@ -305,6 +362,7 @@ else
         {
             _session.ConflictsChanged -= OnConflictsChanged;
             _session.CoverageChanged -= OnCoverageChanged;
+            _session.RepetitionsChanged -= OnRepetitionsChanged;
         }
     }
 

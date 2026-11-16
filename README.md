@@ -397,6 +397,27 @@ Silbentrennung. Nach dem Export zeigt der Dialog die Seitenzahl, die Books on De
 letzten Einstellungen merkt sich die App. Grenzen: Die einzige letzte Zeile eines Absatzes kann allein auf einer neuen
 Seite stehen; das PDF ist kein PDF/X und enthält weder TrimBox noch BleedBox.
 
+**Wiederholungen:** Die App findet Stellen, die ein Buch doppelt enthält. Wörtlich ist ein Paar, wenn zwei Textblöcke
+mindestens 8 gleiche Wörter in Folge teilen (Groß- und Kleinschreibung und Satzzeichen zählen nicht). Inhaltlich
+ähnlich ist es, wenn die Bedeutung nach dem lokalen KI-Modell zu mindestens 0,90 übereinstimmt; je Block zählen
+höchstens drei Gegenstellen, und ein wörtliches Paar steht nicht zusätzlich in dieser Gruppe. Nicht verglichen werden
+Blöcke mit Status „Relevant“ oder „Bemerkung“, der Anhang, Überschriften, Bildblöcke und Blöcke mit weniger als 8
+Wörtern. Die Analyse läuft im Hintergrund: nach dem Öffnen des Buchs, nach jedem Speichern und nach jeder
+übernommenen äußeren Änderung der Datei, hinter dem Index der Notizen. Solange Blöcke noch nicht eingebettet sind,
+steht hinter den Zahlen ein „…“ und die Statuszeile zeigt „Wiederholungen: n/m Blöcke“. Ohne lokale KI gibt es nur
+die wörtlichen Paare. Angezeigt werden sie an drei Stellen. Der Assistent „Wiederholungen“ (Menü „Assistenten“) listet
+beide Gruppen und zeigt das gewählte Paar nebeneinander mit den gemeinsamen Folgen; dort setzt „Verweis einfügen“ einen
+Querverweis auf den anderen Block (auch „In beide Richtungen“), „Gewollt“ nimmt das Paar aus Liste und Zählung, und
+„Im Buch öffnen“ zeigt beide Stellen in der geteilten Ansicht. In der Leiste unter der Markierung steht „Wiederholungen:
+n“ für den markierten Bereich; ein Klick listet die Gegenstellen. Am Block steht am rechten Rand „≈ n“, und die
+Gliederung zeigt je Überschrift „≈ n“ samt Unterabschnitten. Der Schalter „Wiederholungen anzeigen“ neben „Abdeckung
+anzeigen“ blendet Randmarkierung und Gliederungszahlen gemeinsam aus; die Einstellung wird gemerkt, der Zähler in der
+Leiste bleibt. „Gewollt“ liegt in `.noteevolution/repetitions.json` im Vault, je Buch als Paare von Block-IDs; ein
+Block ohne `id::` bekommt beim Abhaken eine. Ein Paar bleibt gewollt, auch wenn die Blöcke umgeschrieben werden.
+Grenzen: Bei langen Blöcken liest das Modell etwa die ersten 500 Wortteile, inhaltlich zählt dort der Anfang. Verglichen
+wird nur innerhalb eines Buchs, nicht zwischen Büchern. Im PDF erscheint nichts davon. Verweise, Quellenangaben und
+Bilder stehen nicht in der Gegenüberstellung.
+
 ## Änderungshistorie
 
 Jeder Textblock mit `id::` hat einen Verlauf früherer Fassungen. Er liegt in `<vault>/.noteevolution/history.db`, nicht
@@ -696,6 +717,11 @@ Assistenten und Prüfung
 - [ ] `[handled]`-Assistent: der ganze Notiztext steht da; eine Stelle wählen zeigt ihren Text und Abschnitt daneben.
 - [ ] Journal: „nicht relevant“ bei einem Tag setzen und wieder entfernen: die Datei ist danach unverändert; mit einem
       anderen Buch gesetzt bleibt der Eintrag des ersten Buchs erhalten; „später“ unabhängig davon. Filter blenden aus.
+- [ ] Wiederholungen: ein Buch mit einer wörtlichen und einer umformulierten Wiederholung; nach dem Öffnen stehen
+      „≈“ am Block, die Zahl in der Leiste und die Zahlen in der Gliederung, der Assistent listet beide Gruppen
+      nebeneinander; „Verweis einfügen“ setzt den Querverweis (Rückgängig nimmt ihn zurück); „Gewollt“ nimmt das Paar
+      aus Liste und Zählung, auch nach einem Neustart; der Schalter „Wiederholungen anzeigen“ blendet „≈“ und die
+      Gliederungszahlen aus, nicht den Zähler der Leiste, und bleibt nach dem Neustart.
 
 Lokale KI (Modell installiert, Test-Vault mit einigen Dutzend Notizen und einem Buch)
 - [ ] Ohne Modell: das Angebot beim Öffnen des Vaults ablehnen; die Kopfzeile zeigt „KI: Modell fehlt“, der Reiter

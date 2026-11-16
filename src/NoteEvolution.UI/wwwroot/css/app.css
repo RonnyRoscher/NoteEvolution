@@ -620,14 +620,25 @@ html, body {
     color: inherit;
 }
 
-.ne-outline-coverage-toggle {
+/* The two switches sit at the right of the head; the label takes the free space. */
+.ne-outline-head .ne-outline-label {
+    margin-right: auto;
+}
+
+.ne-outline-coverage-toggle,
+.ne-outline-repetitions-toggle {
     flex: none;
     margin: 4px 4px 0 0;
     padding: 1px 8px;
     font-size: 12px;
 }
 
-.ne-outline-coverage-toggle[aria-pressed="true"] {
+.ne-outline-reps {
+    white-space: nowrap;
+}
+
+.ne-outline-coverage-toggle[aria-pressed="true"],
+.ne-outline-repetitions-toggle[aria-pressed="true"] {
     background: var(--accent);
     color: var(--accent-fg);
 }

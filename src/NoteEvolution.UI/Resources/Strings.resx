@@ -2345,4 +2345,16 @@
     <value>Wiederholungen: {0}/{1} Blöcke …</value>
     <comment>Stand der Analyse, solange noch Blöcke nicht eingebettet sind</comment>
   </data>
+  <data name="OutlineRepetitionsToggle" xml:space="preserve">
+    <value>Wiederholungen anzeigen</value>
+    <comment>Schalter im Kopf der Gliederung: Markierungen im Text und Zahlen in der Gliederung</comment>
+  </data>
+  <data name="OutlineRepetitions" xml:space="preserve">
+    <value>≈ {0}</value>
+    <comment>Zahl der Wiederholungen eines Abschnitts in der Gliederung ({0}: Zahl, bei unvollständiger Analyse mit „ …“)</comment>
+  </data>
+  <data name="AiRepetitionsProgress" xml:space="preserve">
+    <value> · Wiederholungen: {0}/{1} Blöcke</value>
+    <comment>Zusatz zur KI-Anzeige, solange die Analyse des Buchs nicht vollständig ist</comment>
+  </data>
 </root>
