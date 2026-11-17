@@ -589,6 +589,9 @@ public sealed class AppState
     /// <summary>Someone asked for the history of a text block (see <see cref="RequestBlockHistory"/>); the shell shows it.</summary>
     public event Action<Guid>? BlockHistoryRequested;
 
+    /// <summary>Someone asked for the repetitions assistant (see <see cref="RequestRepetitions"/>); the shell shows it.</summary>
+    public event Action<(Guid A, Guid B)?>? RepetitionsRequested;
+
     /// <summary>
     /// The user chose another book (<see cref="SelectBook"/>, or back/forward into another book); the shell remembers it
     /// for the next start.
@@ -708,6 +711,12 @@ public sealed class AppState
 
     /// <summary>Asks the shell to show the history window of the text block with the key <paramref name="textBlockKey"/>.</summary>
     public void RequestBlockHistory(Guid textBlockKey) => BlockHistoryRequested?.Invoke(textBlockKey);
+
+    /// <summary>
+    /// Asks the shell to show the repetitions assistant, with the pair of text blocks (their keys, in either order) selected;
+    /// without a pair the first entry is selected.
+    /// </summary>
+    public void RequestRepetitions((Guid A, Guid B)? pair = null) => RepetitionsRequested?.Invoke(pair);
 
     /// <summary>
     /// Asks the notes pane to bring the note with the block id <paramref name="noteId"/> (the <c>id::</c> a

@@ -522,6 +522,8 @@ html, body {
     justify-content: space-between;
     gap: 6px;
     flex: none;
+    /* Two toggles beside the label do not fit a narrow outline column: they wrap into a second line. */
+    flex-wrap: wrap;
 }
 
 /* "Gliederung" below the "Zuletzt geändert" list, styled as a pane title. */
@@ -620,14 +622,25 @@ html, body {
     color: inherit;
 }
 
-.ne-outline-coverage-toggle {
+/* The two switches sit at the right of the head; the label takes the free space. */
+.ne-outline-head .ne-outline-label {
+    margin-right: auto;
+}
+
+.ne-outline-coverage-toggle,
+.ne-outline-repetitions-toggle {
     flex: none;
     margin: 4px 4px 0 0;
     padding: 1px 8px;
     font-size: 12px;
 }
 
-.ne-outline-coverage-toggle[aria-pressed="true"] {
+.ne-outline-reps {
+    white-space: nowrap;
+}
+
+.ne-outline-coverage-toggle[aria-pressed="true"],
+.ne-outline-repetitions-toggle[aria-pressed="true"] {
     background: var(--accent);
     color: var(--accent-fg);
 }
@@ -1514,6 +1527,35 @@ html, body {
     display: none;
 }
 
+/*
+ * The repetition mark „≈ n“ (setBlockRepetitions) sits at the right edge below the dates, in the flow so that the first
+ * lines wrap around it like around the dates. A click on it marks the block and opens the section bar's list.
+ */
+.ne-block-rep {
+    float: right;
+    clear: right;
+    margin-left: 8px;
+    padding: 0 6px;
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    background: transparent;
+    font-family: var(--font-ui);
+    font-size: 11px;
+    line-height: 1.5;
+    color: var(--fg-muted);
+    cursor: pointer;
+    user-select: none;
+}
+
+.ne-block-rep:hover {
+    background: var(--hint-bg);
+    color: var(--fg);
+}
+
+.ne-block-rep[hidden] {
+    display: none;
+}
+
 /* Beside the dates a narrow column would break the first line's words (ProseMirror wraps with break-word). */
 @container (max-width: 480px) {
     .ne-block-dates {
@@ -1521,6 +1563,16 @@ html, body {
         display: block;
         margin-left: 0;
         text-align: right;
+    }
+
+    .ne-block-rep {
+        float: none;
+        display: block;
+        margin: 0 0 0 auto;
+    }
+
+    .ne-block-rep[hidden] {
+        display: none;
     }
 }
 
@@ -1883,7 +1935,8 @@ html, body {
 
 .ne-sec-buttons button,
 .ne-sec-sources,
-.ne-sec-backrefs {
+.ne-sec-backrefs,
+.ne-sec-reps {
     white-space: nowrap;
 }
 
@@ -1950,6 +2003,37 @@ html, body {
 
 .ne-sec-no-sources {
     color: var(--fg-muted);
+}
+
+/* The repetitions of the marked range sit left of the back references; their list opens upwards like the others. */
+.ne-sec-reps-area {
+    position: relative;
+}
+
+/* A row of the list: the kind („wörtlich“ or n %), then the two places, each cut off at the end of its line. */
+.ne-shell .ne-sec-rep {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    column-gap: 8px;
+    border: none;
+    background: transparent;
+    text-align: left;
+}
+
+.ne-shell .ne-sec-rep:hover {
+    background: var(--hint-bg);
+}
+
+.ne-sec-rep-kind {
+    grid-row: span 2;
+    align-self: center;
+    color: var(--fg-muted);
+}
+
+.ne-sec-rep-place {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
 }
 
 /* The list opens upwards: below the bar may be the bottom of the window. */
@@ -3031,4 +3115,155 @@ html, body {
     font-size: 0.85em;
     font-weight: 600;
     opacity: 0.75;
+}
+
+/* „Wiederholungen“ (repetitions assistant): the pairs on the left, the selected pair side by side on the right. */
+.ne-modal.ne-rep {
+    width: min(1180px, 96vw);
+    height: 86vh;
+}
+
+.ne-rep .ne-modal-body {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.ne-rep-filters {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 16px;
+}
+
+.ne-rep-body {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    gap: 14px;
+}
+
+.ne-rep-list {
+    flex: 0 0 340px;
+    min-height: 0;
+    overflow-y: auto;
+    padding-right: 4px;
+}
+
+.ne-rep-items {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.ne-rep-item {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 2px 8px;
+    width: 100%;
+    padding: 5px 8px;
+    text-align: left;
+    font-family: var(--font-ui);
+    font-size: 12px;
+    color: var(--fg);
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.ne-rep-item.ne-rep-selected {
+    border-color: var(--accent);
+    box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.ne-rep-item.ne-rep-accepted {
+    color: var(--fg-muted);
+}
+
+.ne-rep-place {
+    grid-column: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ne-rep-strength {
+    grid-column: 2;
+    grid-row: 1;
+    color: var(--fg-muted);
+    white-space: nowrap;
+}
+
+.ne-rep-badge {
+    grid-column: 2;
+    grid-row: 2;
+    color: var(--fg-muted);
+    font-style: italic;
+}
+
+.ne-rep-empty {
+    color: var(--fg-muted);
+}
+
+.ne-rep-detail {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.ne-rep-sides {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+
+.ne-rep-side {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+    min-height: 0;
+}
+
+.ne-rep-path {
+    color: var(--fg-muted);
+    font-size: 12px;
+}
+
+.ne-rep-text {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 8px 10px;
+    font-family: var(--font-text);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    user-select: text;
+}
+
+.ne-rep-para {
+    margin: 0 0 6px;
+}
+
+/* The shared words: the accent colour as a wash over the text, readable in the light and the dark theme. */
+mark.ne-rep-shared {
+    color: inherit;
+    background: color-mix(in srgb, var(--accent) 30%, transparent);
+    border-radius: 2px;
+}
+
+.ne-rep-ref {
+    align-self: flex-start;
+}
+
+.ne-rep-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
 }

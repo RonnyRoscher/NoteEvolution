@@ -1,4 +1,5 @@
 @using NoteEvolution.Core.Books
+@using NoteEvolution.Core.Repetitions
 @using NoteEvolution.Core.Text
 @using NoteEvolution.Core.Vaults
 @using NoteEvolution.UI.Editor
@@ -43,6 +44,8 @@
         var links = LinksOf(book, range);
         var noteCount = links.Select(row => row.Link.NoteId).Distinct().Count();
         var backRefs = BackRefsOf(book, element);
+        var (repetitionSet, repetitionsPending) = State.Session?.RepetitionsShown(book) ?? (RepetitionSet.Empty, false);
+        var repetitionCount = RepetitionCountOf(repetitionSet);
         <div class="ne-sec-buttons">
             @* The grip drags the head of the marked range with everything below it into an editor or an outline
                (Markierung verschieben, spec 4). The drag's start raises a notification that renders the bar again;
@@ -183,6 +186,27 @@
             </select>
         </div>
         <div class="ne-sec-sources-area">
+            @* The repetitions with a block in the marked range (repetitions spec 6); there is no word for none. *@
+            @if (repetitionCount > 0)
+            {
+                <span class="ne-sec-reps-area">
+                    <button type="button" class="ne-sec-reps" aria-expanded="@(_repExpanded ? "true" : "false")"
+                            @onclick="() => _repExpanded = !_repExpanded">@L["SectionRepetitions", repetitionsPending ? $"{repetitionCount} …" : repetitionCount.ToString()]</button>
+                    @if (_repExpanded)
+                    {
+                        <div class="ne-sec-source-list ne-sec-rep-list">
+                            @foreach (var repetition in repetitionSet.In(_repKeySet))
+                            {
+                                <button type="button" class="ne-sec-rep" @onclick="() => ShowRepetition(repetition)">
+                                    <span class="ne-sec-rep-kind">@(repetition.Kind == RepetitionKind.Literal ? L["RepetitionLiteral"].Value : L["RepPercent", (int)Math.Round(repetition.Score * 100)].Value)</span>
+                                    <span class="ne-sec-rep-place">@RepetitionPlace.Of(book, repetitionSet, repetition.A, L)</span>
+                                    <span class="ne-sec-rep-place">@RepetitionPlace.Of(book, repetitionSet, repetition.B, L)</span>
+                                </button>
+                            }
+                        </div>
+                    }
+                </span>
+            }
             @* The places referring to the heading or text block at the cursor (cross references spec 2.3). *@
             @if (backRefs.Count > 0)
             {
@@ -268,6 +292,32 @@
     /// <summary>Whether the list of places referring to the element at the cursor is open.</summary>
     private bool _backExpanded;
 
+    /// <summary>Whether the list of repetitions of the marked range is open; it closes when the range changes.</summary>
+    private bool _repExpanded;
+
+    /// <summary>The range the list of repetitions belongs to: its head and its text blocks.</summary>
+    private Guid? _repHead;
+
+    private Guid[] _repKeys = [];
+
+    private HashSet<Guid> _repKeySet = [];
+
+    /// <summary>The set <see cref="_repCount"/> was counted for (with <see cref="_repKeySet"/>); counting is not repeated per render.</summary>
+    private RepetitionSet? _repCountSet;
+
+    private int _repCount;
+
+    private int RepetitionCountOf(RepetitionSet set)
+    {
+        if (!ReferenceEquals(_repCountSet, set))
+        {
+            _repCount = set.Count(_repKeySet);
+            _repCountSet = set;
+        }
+
+        return _repCount;
+    }
+
     /// <summary>The element the list of references was opened for.</summary>
     private Guid? _backKey;
 
@@ -289,6 +339,13 @@
     /// <summary>Whether the marking is in view; the bar is hidden otherwise.</summary>
     [Parameter]
     public bool Visible { get; set; }
+
+    /// <summary>
+    /// Opens the list of repetitions with this render: set by the editor when a repetition mark of a text block was clicked
+    /// (and the block became the marked range); <c>false</c> in the renders after it.
+    /// </summary>
+    [Parameter]
+    public bool ExpandRepetitions { get; set; }
 
     /// <summary>The cursor element (<see cref="AppState.CurrentElement"/>) of the current book; <c>null</c> shows nothing.</summary>
     [Parameter]
@@ -440,6 +497,23 @@
         {
             _backKey = Element?.Key;
             _backExpanded = false;
+        }
+
+        // The list of repetitions belongs to one range: it closes when the range changes, then a click on a mark may open it.
+        var range = State.CurrentRange;
+        Guid[] rangeKeys = range is null ? [] : [.. range.TextBlockKeys];
+        if (range?.Head?.Key != _repHead || !rangeKeys.SequenceEqual(_repKeys))
+        {
+            _repExpanded = false;
+            _repHead = range?.Head?.Key;
+            _repKeys = rangeKeys;
+            _repKeySet = [.. rangeKeys];
+            _repCountSet = null;
+        }
+
+        if (ExpandRepetitions)
+        {
+            _repExpanded = true;
         }
 
         if (Locked || !ManuscriptCommands.CanInsertReference(State))
@@ -705,6 +779,13 @@
     {
         _findingSources = false;
         await OnSource.InvokeAsync(noteBlockKey);
+    }
+
+    /// <summary>A row of the list of repetitions opens the assistant at its pair.</summary>
+    private void ShowRepetition(Repetition repetition)
+    {
+        _repExpanded = false;
+        State.RequestRepetitions((repetition.A, repetition.B));
     }
 
     private void RevealBackRef(CrossRefSource source)

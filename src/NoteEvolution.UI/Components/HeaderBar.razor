@@ -72,7 +72,7 @@
     }
 
     @* The commands next to undo; the indicators (read-only files, AI, language model, system meter) at the right end. *@
-    @if (OnHandledWizard.HasDelegate || OnDraftWizard.HasDelegate || OnNormalizeOutline.HasDelegate || OnDeletedBlocks.HasDelegate || OnSubPointLinks.HasDelegate)
+    @if (OnHandledWizard.HasDelegate || OnDraftWizard.HasDelegate || OnNormalizeOutline.HasDelegate || OnDeletedBlocks.HasDelegate || OnSubPointLinks.HasDelegate || OnRepetitions.HasDelegate)
     {
         <div class="ne-assistants">
             <button type="button" class="ne-assistants-toggle" disabled="@(State.Session is null)" aria-expanded="@(_assistantsOpen ? "true" : "false")"
@@ -86,6 +86,8 @@
                             @onclick="OpenNormalize">@L["AssistantNormalize"]</button>
                     <button type="button" class="ne-assistant-deleted" disabled="@(State.CurrentBook is null || !OnDeletedBlocks.HasDelegate)"
                             @onclick="OpenDeleted">@L["AssistantDeletedBlocks"]</button>
+                    <button type="button" class="ne-assistant-repetitions" disabled="@(State.CurrentBook is null || !OnRepetitions.HasDelegate)"
+                            @onclick="OpenRepetitions">@L["AssistantRepetitions"]</button>
                     <button type="button" class="ne-assistant-subpoints" @onclick="OpenSubPoints">@L["AssistantSubPoints"]</button>
                 </div>
             }
@@ -226,6 +228,9 @@
 
     /// <summary>Opens the list of the deleted blocks of the current book; its entry is disabled without a book or while unset.</summary>
     [Parameter] public EventCallback OnDeletedBlocks { get; set; }
+
+    /// <summary>Opens the repetitions assistant for the current book; its entry is disabled without a book or while unset.</summary>
+    [Parameter] public EventCallback OnRepetitions { get; set; }
 
     /// <summary>Opens „Verknüpfungen der Unterpunkte nachtragen“ (the assistants menu).</summary>
     [Parameter] public EventCallback OnSubPointLinks { get; set; }
@@ -392,15 +397,24 @@
     /// <summary>The open vault's AI status; without one the runtime's (model missing, downloading).</summary>
     private AiStatus AiStatusNow => State.Session?.AiStatus ?? _ai?.Status ?? AiStatus.Off;
 
-    private string AiText(AiStatus ai) => ai.State switch
+    private string AiText(AiStatus ai) => (ai.State switch
     {
-        AiState.Ready => L["AiLocal"],
-        AiState.Indexing => L["AiIndexing", ai.Done, ai.Total],
-        AiState.ModelMissing => L["AiModelMissing"],
-        AiState.Downloading => L["AiDownloading"],
-        AiState.Failed => L["AiFailed"],
-        _ => L["AiOff"],
-    };
+        AiState.Ready => L["AiLocal"].Value,
+        AiState.Indexing => L["AiIndexing", ai.Done, ai.Total].Value,
+        AiState.ModelMissing => L["AiModelMissing"].Value,
+        AiState.Downloading => L["AiDownloading"].Value,
+        AiState.Failed => L["AiFailed"].Value,
+        _ => L["AiOff"].Value,
+    }) + RepetitionProgress();
+
+    /// <summary>
+    /// " · Wiederholungen: n/m Blöcke" while the analysis of the current book is not complete (repetitions spec 4); nothing
+    /// otherwise, also without an analysis (no book, no embedder).
+    /// </summary>
+    private string RepetitionProgress() =>
+        State.Session?.RepetitionsShown(State.CurrentBook).Set is { Complete: false } set
+            ? L["AiRepetitionsProgress", set.Embedded, set.Total].Value
+            : "";
 
     /// <summary>Undo is refused while a conflict is open (R26): it writes pages directly.</summary>
     private bool CanUndo => _session is { HasAnyOpenConflict: false } session && session.Undo.CanUndo;
@@ -447,6 +461,7 @@
             _session.Undo.Pushed += OnUndoPushed;
             _session.ConflictsChanged += OnSessionChanged;
             _session.AiStatusChanged += OnSessionChanged;
+            _session.RepetitionsChanged += OnSessionChanged;
             _session.UnderstandingChanged += OnSessionChanged;
             _session.NoteStatusChanged += OnSessionChanged;
             _session.HistoryProblemChanged += OnSessionChanged;
@@ -461,6 +476,7 @@
             _session.Undo.Pushed -= OnUndoPushed;
             _session.ConflictsChanged -= OnSessionChanged;
             _session.AiStatusChanged -= OnSessionChanged;
+            _session.RepetitionsChanged -= OnSessionChanged;
             _session.UnderstandingChanged -= OnSessionChanged;
             _session.NoteStatusChanged -= OnSessionChanged;
             _session.HistoryProblemChanged -= OnSessionChanged;
@@ -555,6 +571,12 @@
     {
         _assistantsOpen = false;
         await OnDeletedBlocks.InvokeAsync();
+    }
+
+    private async Task OpenRepetitions()
+    {
+        _assistantsOpen = false;
+        await OnRepetitions.InvokeAsync();
     }
 
     private async Task OpenSubPoints()

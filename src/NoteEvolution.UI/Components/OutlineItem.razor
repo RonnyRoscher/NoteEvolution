@@ -10,6 +10,7 @@
     var sources = isPrologue ? Node.TextBlocks.SelectMany(text => text.AllSources).Distinct().Count() : Node.SourceCount;
     var warnings = Pane.WarningsFor(Node.Key);
     var coverage = Pane.CoverageBarOf(Node);
+    var repetitions = Pane.RepetitionsOf(Node);
 }
 
 <li class="ne-outline-item">
@@ -48,6 +49,10 @@
             @if (sources > 0)
             {
                 <span class="ne-outline-sources" title="@L["OutlineSourcesLong", sources]">@L["OutlineSources", sources]</span>
+            }
+            @if (repetitions is { } reps)
+            {
+                <span class="ne-outline-reps" title="@L["BlockRepetitionsTitle", reps.Count]">@L["OutlineRepetitions", reps.Pending ? $"{reps.Count} …" : reps.Count.ToString()]</span>
             }
             @if (coverage is not null)
             {

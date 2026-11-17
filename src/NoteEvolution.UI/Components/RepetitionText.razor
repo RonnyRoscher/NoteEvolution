@@ -1,0 +1,124 @@
+@using NoteEvolution.Core.Repetitions
+@using NoteEvolution.Core.Text
+
+@* One block of the side-by-side view of the repetitions assistant (spec 5.2): its own text and its sub-points (indented by
+   depth) with **bold** and *italic* shown as such, and the shared words marked. The text is not editable. *@
+<div class="ne-rep-text">
+    @for (var index = 0; index < Block.Paragraphs.Count; index++)
+    {
+        var paragraph = Block.Paragraphs[index];
+        <p class="ne-rep-para" style="@Indent(paragraph.Depth)">
+            @foreach (var piece in Pieces(index, paragraph))
+            {
+                if (piece.Marked)
+                {
+                    <mark class="ne-rep-shared">@foreach (var run in piece.Runs)
+                    {
+                        @Emphasized(run)
+                    }</mark>
+                }
+                else
+                {
+                    foreach (var run in piece.Runs)
+                    {
+                        @Emphasized(run)
+                    }
+                }
+            }
+        </p>
+    }
+</div>
+
+@code {
+    private const int IndentPixels = 24;
+
+    /// <summary>A stretch of a paragraph's runs that is marked as shared or not.</summary>
+    private sealed record Piece(bool Marked, List<InlineRun> Runs);
+
+    [Parameter, EditorRequired] public ComparedBlock Block { get; set; } = default!;
+
+    /// <summary>The shared stretches as word ranges of <see cref="ComparedBlock.Words"/>: first word and word count.</summary>
+    [Parameter] public IReadOnlyList<(int Start, int Words)> Ranges { get; set; } = [];
+
+    private static string? Indent(int depth) => depth == 0 ? null : $"margin-left: {depth * IndentPixels}px";
+
+    private static RenderFragment Emphasized(InlineRun run) => run switch
+    {
+        { Bold: true, Italic: true } => @<strong><em>@run.Text</em></strong>,
+        { Bold: true } => @<strong>@run.Text</strong>,
+        { Italic: true } => @<em>@run.Text</em>,
+        _ => @<text>@run.Text</text>,
+    };
+
+    /// <summary>
+    /// The character ranges of the paragraph's text that the shared word ranges cover: one per range and paragraph, from
+    /// the start of its first word to the end of its last word in that paragraph.
+    /// </summary>
+    private List<(int Start, int End)> MarkedIn(int paragraph)
+    {
+        var spans = new List<(int Start, int End)>();
+        foreach (var (first, count) in Ranges)
+        {
+            int? start = null;
+            var end = 0;
+            for (var i = first; i < first + count && i < Block.Words.Count; i++)
+            {
+                var word = Block.Words[i];
+                if (word.Paragraph != paragraph)
+                {
+                    continue;
+                }
+
+                start ??= word.Start;
+                end = word.Start + word.Length;
+            }
+
+            if (start is { } from)
+            {
+                spans.Add((from, end));
+            }
+        }
+
+        return spans;
+    }
+
+    /// <summary>
+    /// The runs of the paragraph cut at the marked ranges' edges; neighbours that are marked together (a mark across a
+    /// bold run) form one piece, so they get one <c>mark</c>.
+    /// </summary>
+    private List<Piece> Pieces(int index, ComparedParagraph paragraph)
+    {
+        var spans = MarkedIn(index);
+        var pieces = new List<Piece>();
+        var position = 0;
+        foreach (var run in paragraph.Runs)
+        {
+            var from = 0;
+            while (from < run.Text.Length)
+            {
+                var at = position + from;
+                var inside = spans.FirstOrDefault(span => span.Start <= at && at < span.End);
+                var marked = inside != default;
+                var next = marked
+                    ? inside.End
+                    : spans.Where(span => span.Start > at).Select(span => span.Start).DefaultIfEmpty(int.MaxValue).Min();
+                var length = Math.Min(run.Text.Length - from, next - at);
+                var part = run with { Text = run.Text.Substring(from, length) };
+                if (pieces.Count > 0 && pieces[^1].Marked == marked)
+                {
+                    pieces[^1].Runs.Add(part);
+                }
+                else
+                {
+                    pieces.Add(new Piece(marked, [part]));
+                }
+
+                from += length;
+            }
+
+            position += run.Text.Length;
+        }
+
+        return pieces;
+    }
+}

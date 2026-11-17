@@ -1302,6 +1302,8 @@ public class DialogTests : UiTestContext
         cut.Find(".ne-assistants-toggle").Click();
         OpenAndClose(cut, ".ne-assistant-deleted", ".ne-deleted", ".ne-deleted-close");
         cut.Find(".ne-assistants-toggle").Click();
+        OpenAndClose(cut, ".ne-assistant-repetitions", ".ne-rep", ".ne-rep-close");
+        cut.Find(".ne-assistants-toggle").Click();
         OpenAndClose(cut, ".ne-assistant-subpoints", ".ne-subpoints", ".ne-subpoints-close");
     }
 

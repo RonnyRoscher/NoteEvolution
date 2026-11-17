@@ -11,6 +11,7 @@ using NoteEvolution.Core.Assistants;
 using NoteEvolution.Core.Books;
 using NoteEvolution.Core.Links;
 using NoteEvolution.Core.Model;
+using NoteEvolution.Core.Repetitions;
 using NoteEvolution.Core.Storage;
 using NoteEvolution.Core.Vaults;
 using NoteEvolution.UI.History;
@@ -123,6 +124,17 @@ public sealed class VaultSession : IDisposable
     /// <summary>The current book's coverage, computed while an owner watches it.</summary>
     private readonly CoverageTracker _coverage;
 
+    /// <summary>The repetitions of the shown book, computed in the background.</summary>
+    private readonly RepetitionTracker _repetitions;
+
+    /// <summary>The book blocks' vectors (<c>book-vectors.db</c>), opened once the semantic index exists; guarded by <see cref="_bookVectorsGate"/>.</summary>
+    private VectorCache? _bookVectors;
+
+    /// <summary>The book blocks' vector cache could not be opened (or the session closed): the repetitions stay literal.</summary>
+    private bool _bookVectorsUnavailable;
+
+    private readonly object _bookVectorsGate = new();
+
     private VaultSession(
         string root, IClock clock, ILogger logger, TimeProvider timeProvider, Func<Action, Task> dispatch, AiRuntime? ai,
         LanguageModelRuntime? language, ISystemMonitor? monitor)
@@ -152,6 +164,12 @@ public sealed class VaultSession : IDisposable
         _noteStatus = new NoteStatusTracker(timeProvider, logger, language is not null, () => _understanding, () => _aiParts?.Index,
             Dispatch);
         _coverage = new CoverageTracker(timeProvider, logger, dispatch, vault, Notes, () => _focusBook, () => _understanding);
+        AcceptedRepetitions = new AcceptedRepetitions(
+            vault.Root, ex => logger.LogError(ex, "The accepted repetitions (repetitions.json) could not be read"));
+        _repetitions = new RepetitionTracker(logger, dispatch, AcceptedRepetitions,
+            ai is null ? null : text => Semantic?.EmbedQuery(text), BookVectors, ai?.Model.Id ?? string.Empty,
+            () => MayEmbedRepetitions(Semantic?.Status.State),
+            () => AiMayStillProvideParts(AiStatus.State));
         Watcher.ExternalChange += OnWatcherChange;
         if (_ai is not null)
         {
@@ -386,6 +404,107 @@ public sealed class VaultSession : IDisposable
     /// a change while nobody watches is computed once someone does again. Call it on the UI thread.
     /// </summary>
     public void WatchCoverage(object owner, bool visible) => _coverage.Watch(owner, visible);
+
+    /// <summary>
+    /// The repetitions of <paramref name="book"/> (spec 4) as computed for this very snapshot; <see cref="RepetitionSet.Empty"/>
+    /// until they are. The shown book is analysed when it is switched to, saved or replaced. Call it on the UI thread.
+    /// </summary>
+    public RepetitionSet RepetitionsOf(Book? book) => _repetitions.Of(book);
+
+    /// <summary>
+    /// The repetitions to show for <paramref name="book"/>: its own set once computed (pending while the semantic part is
+    /// not complete), until then the last set of the same page, pending. The set is empty, not pending, when there is none.
+    /// Call it on the UI thread.
+    /// </summary>
+    public (RepetitionSet Set, bool Pending) RepetitionsShown(Book? book) => _repetitions.Shown(book);
+
+    /// <summary>For tests: runs on the analysis's thread before each set is published; it may block.</summary>
+    internal Action? BeforeRepetitionsPublished
+    {
+        get => _repetitions.BeforePublish;
+        set => _repetitions.BeforePublish = value;
+    }
+
+    /// <summary><see cref="RepetitionsOf"/> changed for a book; raised on the UI thread.</summary>
+    public event Action? RepetitionsChanged
+    {
+        add => _repetitions.Changed += value;
+        remove => _repetitions.Changed -= value;
+    }
+
+    /// <summary>The repetitions the user accepted as intended (<c>.noteevolution/repetitions.json</c>).</summary>
+    public AcceptedRepetitions AcceptedRepetitions { get; }
+
+    /// <summary>Analyses <paramref name="book"/>'s repetitions in the background. Call it on the UI thread.</summary>
+    internal void ScheduleRepetitions(Book book) => _repetitions.Schedule(book);
+
+    /// <summary>The accepted repetitions changed: the sets are built again, without embedding. Call it on the UI thread.</summary>
+    internal void RefreshRepetitions() => _repetitions.Refresh();
+
+    /// <summary>For tests: completes when every repetition analysis started so far has ended.</summary>
+    internal Task RepetitionsIdle() => _repetitions.WhenIdle();
+
+    /// <summary>On the UI thread: analyses the shown book's repetitions (both halves show the current book).</summary>
+    private void ScheduleShownRepetitions(string? replacedPath = null)
+    {
+        if (IsDisposed || _focusBook is not { } name || Vault.FindBook(name) is not { } book
+            || (replacedPath is not null && !string.Equals(book.Page.FilePath, replacedPath, StringComparison.OrdinalIgnoreCase)))
+        {
+            return;
+        }
+
+        ScheduleRepetitionsOfShown(book);
+    }
+
+    /// <summary>
+    /// Analyses the shown book (null: none) and cancels the analyses of the pages no half shows any more; what they
+    /// computed and cached stays.
+    /// </summary>
+    private void ScheduleRepetitionsOfShown(Book? shown)
+    {
+        _repetitions.CancelExcept(shown is null ? [] : [shown]);
+        if (shown is not null)
+        {
+            _repetitions.Schedule(shown);
+        }
+    }
+
+    /// <summary>
+    /// The book blocks' vector cache, opened on first use once the semantic index exists; null before, after a failure
+    /// to open it and after <see cref="Dispose"/>. Called in the background.
+    /// </summary>
+    private VectorCache? BookVectors()
+    {
+        if (_aiParts is not { } parts)
+        {
+            return null;
+        }
+
+        lock (_bookVectorsGate)
+        {
+            if (IsDisposed)
+            {
+                return null;
+            }
+
+            // A cache that cannot be opened throws (the tracker then stays literal and complete); null only means "not yet".
+            if (_bookVectorsUnavailable)
+            {
+                throw new InvalidOperationException("The book blocks' vector cache could not be opened.");
+            }
+
+            try
+            {
+                return _bookVectors ??= VectorCache.Open(Vault.Root, parts.EmbedModel, "book-vectors.db");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "The book blocks' vector cache could not be opened");
+                _bookVectorsUnavailable = true;
+                throw;
+            }
+        }
+    }
 
     /// <summary>The AI's state for this vault: the runtime's (model missing, downloading, load failed) or the index's.</summary>
     public AiStatus AiStatus
@@ -712,6 +831,15 @@ public sealed class VaultSession : IDisposable
             _focusTimer?.Dispose();
             _noteStatus.Dispose();
             _coverage.Dispose();
+            _repetitions.Dispose();
+        }
+
+        // After the tracker cancelled its analyses (one still embedding ends at its next step without the cache).
+        lock (_bookVectorsGate)
+        {
+            _bookVectorsUnavailable = true;
+            _bookVectors?.Dispose();
+            _bookVectors = null;
         }
 
         // The open stands are stored while the database is still open.
@@ -951,7 +1079,61 @@ public sealed class VaultSession : IDisposable
     {
         _noteStatus.Schedule(embeddings: true);
         RaiseAiStatusChanged();
+
+        // The repetitions embed only behind the notes' index: once it is settled (again), the shown book goes on.
+        var settled = MayEmbedRepetitions(_aiParts?.Index.Status.State);
+        if (Interlocked.Exchange(ref _indexSettled, settled ? 1 : 0) == 0 && settled)
+        {
+            Dispatch(
+                () =>
+                {
+                    ScheduleShownRepetitions();
+                    if (!IsDisposed)
+                    {
+                        _repetitions.PruneCache(Vault.Books); // once per session; the books are read here, on the UI thread
+                    }
+                },
+                "the repetitions of the shown book");
+        }
     }
+
+    /// <summary>
+    /// Whether the AI parts (embedder, vector cache) may still come while they are missing: not when the AI is off, the model
+    /// is missing or loading/creating failed (<see cref="AiState.Off"/>, <see cref="AiState.ModelMissing"/>,
+    /// <see cref="AiState.Failed"/>: the repetitions stay literal); yes while it downloads, loads or indexes.
+    /// </summary>
+    internal static bool AiMayStillProvideParts(AiState state) =>
+        state is not (AiState.Off or AiState.ModelMissing or AiState.Failed);
+
+    /// <summary>
+    /// On the UI thread, after the AI status changed: once the AI parts are there or can no longer come, the shown book's
+    /// repetitions are analysed again, so a set that waited for them resolves (once per change into that state).
+    /// </summary>
+    private void RescheduleRepetitionsWhenSettled()
+    {
+        var resolved = _aiParts is not null || !AiMayStillProvideParts(AiStatus.State);
+        if (resolved && !_repetitionsResolved)
+        {
+            _repetitionsResolved = true;
+            ScheduleShownRepetitions();
+        }
+        else if (!resolved)
+        {
+            _repetitionsResolved = false;
+        }
+    }
+
+    private bool _repetitionsResolved;
+
+    /// <summary>1 while the notes' index last reported a settled state (<see cref="MayEmbedRepetitions"/>); for <see cref="OnIndexStatusChanged"/>.</summary>
+    private int _indexSettled;
+
+    /// <summary>
+    /// Whether the repetitions may embed book blocks: once the notes' index is ready, or failed (then each block embeds
+    /// or is left out, so the set still completes); not while it indexes or does not exist.
+    /// </summary>
+    internal static bool MayEmbedRepetitions(SemanticState? noteIndex) =>
+        noteIndex is SemanticState.Ready or SemanticState.Failed;
 
     /// <summary>Raised on the thread that replaced the page (the UI thread, or the opening's thread).</summary>
     private void OnPageReplaced(Page page) => SchedulePageIndex(page.FilePath);
@@ -1054,6 +1236,7 @@ public sealed class VaultSession : IDisposable
                 if (!IsDisposed)
                 {
                     AiStatusChanged?.Invoke();
+                    RescheduleRepetitionsWhenSettled();
                 }
             },
             "the AI status");
@@ -1266,6 +1449,7 @@ public sealed class VaultSession : IDisposable
         if (bookChanged)
         {
             _coverage.Schedule();
+            ScheduleRepetitionsOfShown(book);
         }
 
         lock (_gate)
@@ -1791,6 +1975,10 @@ public sealed class VaultSession : IDisposable
     {
         _pagesStamp = new object();
         _coverage.Schedule();
+
+        // A save or an external change of the shown book: analysed from its new snapshot (the vault is read on the UI thread).
+        var path = page.FilePath;
+        Dispatch(() => ScheduleShownRepetitions(path), "the repetitions of " + path);
     }
 
     /// <summary>Called on any thread; never throws.</summary>

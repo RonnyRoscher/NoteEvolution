@@ -21,6 +21,7 @@
                OnSettings="() => Show(Dialog.Settings)" OnShortcuts="() => Show(Dialog.Shortcuts)" OnHandledWizard="() => Show(Dialog.Handled)" OnDraftWizard="() => ShowDraft(null)"
                OnNormalizeOutline="() => Show(Dialog.Normalize)"
                OnDeletedBlocks="() => Show(Dialog.Deleted)" OnSubPointLinks="() => Show(Dialog.SubPointLinks)"
+               OnRepetitions="() => ShowRepetitions(null)"
                OnConvertPage="ShowDraft" OnToggleSplit="ToggleSplitAsync" />
 
     @if (_hintVisible)
@@ -139,6 +140,9 @@
         case Dialog.Deleted:
             <DeletedBlocksDialog OnClose="CloseDialog" />
             break;
+        case Dialog.Repetitions:
+            <RepetitionsDialog @key="_repetitionsRequest" Start="_repetitionsStart" OnClose="CloseDialog" />
+            break;
         case Dialog.History:
             <HistoryDialog @key="_historyRequest" BlockId="_historyBlockId" OnClose="CloseDialog" />
             break;
@@ -220,9 +224,36 @@
         Deleted,
         SubPointLinks,
         History,
+        Repetitions,
     }
 
     private void Show(Dialog dialog) => _dialog = dialog;
+
+    /// <summary>The pair the repetitions assistant starts with (<see cref="AppState.RequestRepetitions"/>); <c>null</c>: the first entry.</summary>
+    private (Guid A, Guid B)? _repetitionsStart;
+
+    /// <summary>Counts the requests, so each one shows the assistant anew.</summary>
+    private int _repetitionsRequest;
+
+    /// <summary>Shows the repetitions assistant with <paramref name="pair"/> (keys of two text blocks) selected.</summary>
+    private void ShowRepetitions((Guid A, Guid B)? pair)
+    {
+        _repetitionsStart = pair;
+        _repetitionsRequest++;
+        _dialog = Dialog.Repetitions;
+    }
+
+    /// <summary>Someone asked for the repetitions assistant at a pair (a bar's list entry); it needs a book.</summary>
+    private void OnRepetitionsRequested((Guid A, Guid B)? pair) => _ = InvokeAsync(() =>
+    {
+        if (State.CurrentBook is null)
+        {
+            return;
+        }
+
+        ShowRepetitions(pair);
+        StateHasChanged();
+    });
 
     /// <summary>The block whose history window is shown (<see cref="AppState.RequestBlockHistory"/>).</summary>
     private Guid _historyBlockId;
@@ -514,6 +545,7 @@
         State.AppendixDialogRequested += OnAppendixDialogRequested;
         State.NewAppendixEntryRequested += OnNewAppendixEntryRequested;
         State.BlockHistoryRequested += OnBlockHistoryRequested;
+        State.RepetitionsRequested += OnRepetitionsRequested;
         State.BookSelected += RememberBook;
         // The host page's splash screen (index.html) says what the start waits for and fades out after it (the last
         // vault is open, or there is none). It is only a display, so the start never waits for it.
@@ -551,6 +583,7 @@
         State.AppendixDialogRequested -= OnAppendixDialogRequested;
         State.NewAppendixEntryRequested -= OnNewAppendixEntryRequested;
         State.BlockHistoryRequested -= OnBlockHistoryRequested;
+        State.RepetitionsRequested -= OnRepetitionsRequested;
         State.BookSelected -= RememberBook;
         if (_subscribed is not null)
         {

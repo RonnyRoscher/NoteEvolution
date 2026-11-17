@@ -4,7 +4,7 @@ using Microsoft.Data.Sqlite;
 namespace NoteEvolution.AI.Semantic;
 
 /// <summary>
-/// Persistent cache of embeddings in <c>&lt;vault&gt;/.noteevolution/vectors.db</c>, keyed by content hash (which already
+/// Persistent cache of embeddings in <c>&lt;vault&gt;/.noteevolution/vectors.db</c> (or another file name), keyed by content hash (which already
 /// includes the model id). It only saves recomputation, so it is disposable: a file written for another model or one
 /// that is corrupt is deleted and recreated. Safe to call from several threads.
 /// </summary>
@@ -19,11 +19,12 @@ public sealed class VectorCache : IDisposable
 
     private VectorCache(SqliteConnection db) => _db = db;
 
-    public static VectorCache Open(string vaultRoot, string modelId)
+    /// <summary>Opens <c>&lt;vault&gt;/.noteevolution/&lt;fileName&gt;</c>; several files keep their vectors apart.</summary>
+    public static VectorCache Open(string vaultRoot, string modelId, string fileName = "vectors.db")
     {
         var folder = Path.Combine(vaultRoot, ".noteevolution");
         Directory.CreateDirectory(folder);
-        var path = Path.Combine(folder, "vectors.db");
+        var path = Path.Combine(folder, fileName);
 
         if (File.Exists(path))
         {

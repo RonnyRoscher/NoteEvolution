@@ -519,6 +519,18 @@
     <value>Dorthin lässt sich der markierte Bereich nicht verschieben.</value>
     <comment>Hinweis, wenn ein markierter Textblock oder Unterpunkt dort nicht abgelegt werden kann, oder wenn der markierte Bereich oder die Ablagestelle seit Ziehbeginn verschwunden ist</comment>
   </data>
+  <data name="UndoAppendReference" xml:space="preserve">
+    <value>Verweis einfügen</value>
+    <comment>Name der Aktion für „Rückgängig“ nach dem Anhängen eines Verweises im Wiederholungen-Assistenten</comment>
+  </data>
+  <data name="UndoRepetitionAccepted" xml:space="preserve">
+    <value>Wiederholung als gewollt abhaken</value>
+    <comment>Name der Aktion für „Rückgängig“, wenn beim Abhaken einer Wiederholung Block-IDs in die Buchdatei geschrieben wurden</comment>
+  </data>
+  <data name="RepetitionGone" xml:space="preserve">
+    <value>Diese Stelle gibt es nicht mehr.</value>
+    <comment>Hinweis, wenn ein Block eines Wiederholungs-Paars seit der Analyse verschwunden ist</comment>
+  </data>
   <data name="UndoMoveRange" xml:space="preserve">
     <value>Bereich verschieben</value>
     <comment>Name der Aktion für „Rückgängig“ nach dem Verschieben des markierten Bereichs an seinem Griff</comment>
@@ -2246,5 +2258,103 @@
   </data>
   <data name="DeletedBlocksEmpty" xml:space="preserve">
     <value>Keine gelöschten Blöcke in diesem Buch</value>
+  </data>
+
+  <!-- Wiederholungen im Buch -->
+  <data name="AssistantRepetitions" xml:space="preserve">
+    <value>Wiederholungen</value>
+    <comment>Eintrag im Menü Assistenten</comment>
+  </data>
+  <data name="RepetitionsTitle" xml:space="preserve">
+    <value>Wiederholungen im Buch</value>
+    <comment>Titel des Fensters</comment>
+  </data>
+  <data name="RepGroupLiteral" xml:space="preserve">
+    <value>Wörtlich ({0})</value>
+    <comment>Überschrift der Gruppe; {0} ist die Zahl der Paare</comment>
+  </data>
+  <data name="RepGroupSemantic" xml:space="preserve">
+    <value>Inhaltlich ähnlich ({0})</value>
+    <comment>Überschrift der Gruppe; {0} ist die Zahl der Paare</comment>
+  </data>
+  <data name="RepWords" xml:space="preserve">
+    <value>{0} Wörter</value>
+    <comment>Stärke eines wörtlichen Paars: Zahl der gemeinsamen Wörter</comment>
+  </data>
+  <data name="RepPercent" xml:space="preserve">
+    <value>{0} %</value>
+    <comment>Stärke eines inhaltlich ähnlichen Paars: Ähnlichkeit in Prozent</comment>
+  </data>
+  <data name="RepChapter" xml:space="preserve">
+    <value>Kapitel</value>
+    <comment>Filter der Liste nach Kapitel</comment>
+  </data>
+  <data name="RepAllChapters" xml:space="preserve">
+    <value>Alle</value>
+    <comment>Eintrag des Kapitelfilters ohne Einschränkung</comment>
+  </data>
+  <data name="RepShowAccepted" xml:space="preserve">
+    <value>Gewollte anzeigen</value>
+    <comment>Schalter: als gewollt abgehakte Paare einblenden</comment>
+  </data>
+  <data name="RepAppendReference" xml:space="preserve">
+    <value>Verweis einfügen</value>
+    <comment>Knopf unter einer Spalte: hängt einen Querverweis auf den anderen Block an</comment>
+  </data>
+  <data name="RepBoth" xml:space="preserve">
+    <value>In beide Richtungen</value>
+    <comment>Knopf: Verweise in beide Richtungen in einem Schritt</comment>
+  </data>
+  <data name="RepAccept" xml:space="preserve">
+    <value>Gewollt</value>
+    <comment>Knopf und Kennzeichnung: das Paar ist beabsichtigt</comment>
+  </data>
+  <data name="RepUnaccept" xml:space="preserve">
+    <value>Nicht mehr gewollt</value>
+    <comment>Knopf: nimmt ein Paar aus den gewollten zurück</comment>
+  </data>
+  <data name="SectionRepetitions" xml:space="preserve">
+    <value>Wiederholungen: {0}</value>
+    <comment>Zähler in der Abschnittsleiste: Paare mit mindestens einem Block im markierten Bereich ({0}: Zahl, bei unvollständiger Analyse mit „ …“)</comment>
+  </data>
+  <data name="RepetitionLiteral" xml:space="preserve">
+    <value>wörtlich</value>
+    <comment>Art einer wörtlichen Wiederholung in der Liste der Abschnittsleiste</comment>
+  </data>
+  <data name="BlockRepetitionsTitle" xml:space="preserve">
+    <value>{0} Wiederholungen</value>
+    <comment>Tooltip der Markierung „≈ n“ am Textblock (der Editor-Text steht gleich im Skript)</comment>
+  </data>
+  <data name="RepOpen" xml:space="preserve">
+    <value>Im Buch öffnen</value>
+    <comment>Knopf: zeigt beide Stellen in der geteilten Ansicht</comment>
+  </data>
+  <data name="RepReferenceExists" xml:space="preserve">
+    <value>Verweis besteht</value>
+    <comment>Hinweis am ausgegrauten Knopf, wenn der Block schon auf den anderen verweist</comment>
+  </data>
+  <data name="RepNone" xml:space="preserve">
+    <value>Keine Wiederholungen gefunden.</value>
+    <comment>Hinweis bei leerer Liste</comment>
+  </data>
+  <data name="RepNeedsAi" xml:space="preserve">
+    <value>Inhaltlich ähnliche Stellen brauchen die lokale KI.</value>
+    <comment>Hinweis, wenn die KI aus ist oder das Modell fehlt</comment>
+  </data>
+  <data name="RepProgress" xml:space="preserve">
+    <value>Wiederholungen: {0}/{1} Blöcke …</value>
+    <comment>Stand der Analyse, solange noch Blöcke nicht eingebettet sind</comment>
+  </data>
+  <data name="OutlineRepetitionsToggle" xml:space="preserve">
+    <value>Wiederholungen anzeigen</value>
+    <comment>Schalter im Kopf der Gliederung: Markierungen im Text und Zahlen in der Gliederung</comment>
+  </data>
+  <data name="OutlineRepetitions" xml:space="preserve">
+    <value>≈ {0}</value>
+    <comment>Zahl der Wiederholungen eines Abschnitts in der Gliederung ({0}: Zahl, bei unvollständiger Analyse mit „ …“)</comment>
+  </data>
+  <data name="AiRepetitionsProgress" xml:space="preserve">
+    <value> · Wiederholungen: {0}/{1} Blöcke</value>
+    <comment>Zusatz zur KI-Anzeige, solange die Analyse des Buchs nicht vollständig ist</comment>
   </data>
 </root>
