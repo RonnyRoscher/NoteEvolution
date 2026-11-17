@@ -164,7 +164,8 @@ public sealed class VaultSession : IDisposable
         _noteStatus = new NoteStatusTracker(timeProvider, logger, language is not null, () => _understanding, () => _aiParts?.Index,
             Dispatch);
         _coverage = new CoverageTracker(timeProvider, logger, dispatch, vault, Notes, () => _focusBook, () => _understanding);
-        AcceptedRepetitions = new AcceptedRepetitions(vault.Root);
+        AcceptedRepetitions = new AcceptedRepetitions(
+            vault.Root, ex => logger.LogError(ex, "The accepted repetitions (repetitions.json) could not be read"));
         _repetitions = new RepetitionTracker(logger, dispatch, AcceptedRepetitions,
             ai is null ? null : text => Semantic?.EmbedQuery(text), BookVectors, ai?.Model.Id ?? string.Empty,
             () => MayEmbedRepetitions(Semantic?.Status.State));
@@ -480,9 +481,15 @@ public sealed class VaultSession : IDisposable
 
         lock (_bookVectorsGate)
         {
-            if (_bookVectorsUnavailable || IsDisposed)
+            if (IsDisposed)
             {
                 return null;
+            }
+
+            // A cache that cannot be opened throws (the tracker then stays literal and complete); null only means "not yet".
+            if (_bookVectorsUnavailable)
+            {
+                throw new InvalidOperationException("The book blocks' vector cache could not be opened.");
             }
 
             try
@@ -493,7 +500,7 @@ public sealed class VaultSession : IDisposable
             {
                 _logger.LogError(ex, "The book blocks' vector cache could not be opened");
                 _bookVectorsUnavailable = true;
-                return null;
+                throw;
             }
         }
     }
@@ -1076,7 +1083,16 @@ public sealed class VaultSession : IDisposable
         var settled = MayEmbedRepetitions(_aiParts?.Index.Status.State);
         if (Interlocked.Exchange(ref _indexSettled, settled ? 1 : 0) == 0 && settled)
         {
-            Dispatch(() => ScheduleShownRepetitions(), "the repetitions of the shown book");
+            Dispatch(
+                () =>
+                {
+                    ScheduleShownRepetitions();
+                    if (!IsDisposed)
+                    {
+                        _repetitions.PruneCache(Vault.Books); // once per session; the books are read here, on the UI thread
+                    }
+                },
+                "the repetitions of the shown book");
         }
     }
 

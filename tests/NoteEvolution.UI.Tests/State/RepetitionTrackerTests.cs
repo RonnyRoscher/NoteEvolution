@@ -34,6 +34,9 @@ public sealed class RepetitionTrackerTests : IDisposable
     /// <summary>What the trackers' <c>mayEmbed</c> answers: whether the note index is ready.</summary>
     private volatile bool _indexReady = true;
 
+    /// <summary>Whether the trackers' cache function already gives the cache (null while the AI parts are still starting).</summary>
+    private volatile bool _cacheAvailable = true;
+
     public void Dispose()
     {
         foreach (var tracker in _trackers)
@@ -56,7 +59,7 @@ public sealed class RepetitionTrackerTests : IDisposable
             },
             accepted ?? new AcceptedRepetitions(_vault.Root),
             withEmbedder ? _embed.Embed : null,
-            () => _cache ??= VectorCache.Open(_vault.Root, Model, "book-vectors.db"),
+            () => _cacheAvailable ? _cache ??= VectorCache.Open(_vault.Root, Model, "book-vectors.db") : null,
             Model,
             () => _indexReady);
         _trackers.Add(tracker);
@@ -397,9 +400,114 @@ public sealed class RepetitionTrackerTests : IDisposable
         await tracker.WhenIdle();
 
         Assert.Equal(6, _embed.Calls); // the first book's run ended after its blocked call
-        Assert.False(tracker.Of(first).Complete);
+        Assert.Same(RepetitionSet.Empty, tracker.Of(first)); // forgotten with the page no longer shown
         Assert.True(tracker.Of(second).Complete);
     }
+
+    [Fact]
+    public async Task CacheNotYetAvailable_PublishesLiteralPairs_AsPendingWithTotal_ThenCompletesOnceAvailable()
+    {
+        _cacheAvailable = false;
+        var tracker = NewTracker();
+        var book = Book.Load(Parse());
+
+        tracker.Schedule(book);
+        await tracker.WhenIdle();
+
+        var waiting = tracker.Of(book);
+        Assert.Equal([(RepetitionKind.Literal, Key(book, "alpha"), Key(book, "beta"))], Pairs(waiting));
+        Assert.Equal((0, 5, false), (waiting.Embedded, waiting.Total, waiting.Complete));
+        Assert.Equal(0, _embed.Calls);
+
+        _cacheAvailable = true;
+        tracker.Schedule(book);
+        await tracker.WhenIdle();
+
+        Assert.True(tracker.Of(book).Complete);
+        Assert.Equal(5, tracker.Of(book).Total);
+    }
+
+    [Fact]
+    public async Task CancelExcept_ForgetsThePagesNoLongerShown_KeepsTheShownOnes()
+    {
+        var tracker = NewTracker();
+        var first = Book.Load(Parse("Buch - Eins.md"));
+        var second = Book.Load(Parse("Buch - Zwei.md"));
+        tracker.Schedule(first);
+        tracker.Schedule(second);
+        await tracker.WhenIdle();
+        Assert.True(tracker.Shown(first).Set.IsFor(first));
+
+        tracker.CancelExcept([second]);
+
+        Assert.Equal((RepetitionSet.Empty, false), tracker.Shown(first));
+        Assert.Same(RepetitionSet.Empty, tracker.Of(first));
+        Assert.True(tracker.Of(second).IsFor(second));
+        Assert.True(tracker.Shown(second).Set.IsFor(second));
+    }
+
+    [Fact]
+    public async Task PruneCache_RemovesVectorsOfTextsNoBookHasAnymore_KeepsLiveOnes_AndRunsOncePerSession()
+    {
+        var tracker = NewTracker();
+        var page = Parse();
+        tracker.Schedule(Book.Load(page));
+        await tracker.WhenIdle();
+        var stale = Hash(Book.Load(page), "epsilon"); // the text before the edit
+        var edited = Edit(page, "epsilon", "epsilon wolke regen schnee wind sturm nebel blitz");
+        var live = Hash(edited, "alpha");
+        Assert.Equal(2, _cache!.Get([stale, live]).Count);
+
+        tracker.PruneCache([edited]);
+        await tracker.WhenIdle();
+
+        var left = _cache.Get([stale, live]);
+        Assert.False(left.ContainsKey(stale));
+        Assert.True(left.ContainsKey(live));
+        Assert.Equal(3, _cache.Get([Hash(edited, "beta"), Hash(edited, "gamma"), Hash(edited, "delta")]).Count);
+
+        // Once per session: a vector stored afterwards survives a second call.
+        _cache.Put([("later", "x", new float[] { 1f })]);
+        tracker.PruneCache([edited]);
+        await tracker.WhenIdle();
+        Assert.True(_cache.Get(["later"]).ContainsKey("later"));
+    }
+
+    [Fact]
+    public async Task PruneCache_WithoutCacheYet_RunsAgainLater()
+    {
+        _cacheAvailable = false;
+        var tracker = NewTracker();
+        var book = Book.Load(Parse());
+
+        tracker.PruneCache([book]);
+        await tracker.WhenIdle();
+        _cacheAvailable = true;
+        _cache = VectorCache.Open(_vault.Root, Model, "book-vectors.db");
+        _cache.Put([("stale", "x", new float[] { 1f })]);
+        tracker.PruneCache([book]);
+        await tracker.WhenIdle();
+
+        Assert.Empty(_cache.Get(["stale"]));
+    }
+
+    [Fact]
+    public async Task PruneCache_CacheThrows_IsLoggedNotThrown()
+    {
+        _cache = VectorCache.Open(_vault.Root, Model, "book-vectors.db");
+        _cache.Dispose();
+        var tracker = NewTracker();
+
+        tracker.PruneCache([Book.Load(Parse())]);
+        await tracker.WhenIdle();
+
+        Assert.Single(_logger.Warnings);
+    }
+
+    private static string Hash(Book book, string marker) =>
+        NoteEvolution.AI.Embeddings.EmbeddingText.Hash(
+            Model, NoteEvolution.AI.Embeddings.EmbeddingText.ForRepetition(
+                ComparisonText.Of(book).Single(b => b.Paragraphs[0].Plain.StartsWith(marker, StringComparison.Ordinal))));
 
     [Fact]
     public async Task EmbedNull_LeavesBlockOut_AndLogsOnce()

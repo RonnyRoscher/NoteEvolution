@@ -345,7 +345,7 @@
         book is not null && pair is not null
         && ManuscriptEditor.RefersTo(book, pair.A, pair.B) && ManuscriptEditor.RefersTo(book, pair.B, pair.A);
 
-    private string CountText(int count) => _set.Complete ? count.ToString() : $"{count} …";
+    private string CountText(int count) => _set.Complete && !_pending ? count.ToString() : $"{count} …";
 
     private string StrengthOf(Repetition repetition) => repetition.Kind == RepetitionKind.Literal
         ? L["RepWords", repetition.Words].Value

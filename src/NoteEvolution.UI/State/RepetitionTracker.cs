@@ -51,6 +51,9 @@ internal sealed class RepetitionTracker : IDisposable
 
     private bool _disposed;
 
+    /// <summary>The cache was pruned (or is being) in this session.</summary>
+    private bool _pruneStarted;
+
     /// <param name="dispatch">Runs an action on the UI thread.</param>
     /// <param name="embed">Embeds one text that carries its role prefix, null on failure; null without AI.</param>
     /// <param name="cache">The book blocks' vector cache; null while the semantic part cannot run (it is literal only then).</param>
@@ -153,6 +156,11 @@ internal sealed class RepetitionTracker : IDisposable
         var keep = shown.Select(book => book.Page.FilePath).ToHashSet(StringComparer.OrdinalIgnoreCase);
         lock (_gate)
         {
+            foreach (var path in _computed.Keys.Where(path => !keep.Contains(path)).ToList())
+            {
+                _computed.Remove(path);
+            }
+
             foreach (var path in _runs.Keys.Where(path => !keep.Contains(path)).ToList())
             {
                 _runs.Remove(path, out var run);
@@ -160,6 +168,67 @@ internal sealed class RepetitionTracker : IDisposable
             }
         }
     }
+
+    /// <summary>
+    /// Once per session, in the background: removes the vectors of texts no block of <paramref name="books"/> has any more
+    /// (every saved edit leaves the old text's vector behind). Call it on the UI thread, with the vault's books, once the
+    /// cache is available; without cache (yet) or after a failure it does nothing and a later call tries again. A vector
+    /// stored meanwhile for a text outside the snapshot is lost at worst and embedded again later; the cache's lock keeps
+    /// prune and put apart.
+    /// </summary>
+    internal void PruneCache(IReadOnlyList<Book> books)
+    {
+        if (_embed is null)
+        {
+            return;
+        }
+
+        lock (_gate)
+        {
+            if (_disposed || _pruneStarted)
+            {
+                return;
+            }
+
+            _pruneStarted = true;
+            _tasks.RemoveAll(task => task.IsCompleted);
+            _tasks.Add(Task.Run(() => Prune(books)));
+        }
+    }
+
+    private void Prune(IReadOnlyList<Book> books)
+    {
+        try
+        {
+            var cache = _cache();
+            if (cache is null)
+            {
+                lock (_gate)
+                {
+                    _pruneStarted = false; // not available yet: the next call tries again
+                }
+
+                return;
+            }
+
+            var live = new HashSet<string>();
+            foreach (var book in books)
+            {
+                foreach (var block in ComparisonText.Of(book))
+                {
+                    live.Add(HashOf(block));
+                }
+            }
+
+            cache.Prune(live);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Pruning the book blocks' vector cache failed");
+        }
+    }
+
+    private string HashOf(ComparedBlock block) => EmbeddingText.Hash(_modelId, EmbeddingText.ForRepetition(block));
 
     /// <summary>The accepted pairs changed: the sets are built again from what is computed, without embedding.</summary>
     public void Refresh()
@@ -245,9 +314,10 @@ internal sealed class RepetitionTracker : IDisposable
             }
 
             var texts = blocks.Select(EmbeddingText.ForRepetition).ToArray();
-            var hashes = texts.Select(text => EmbeddingText.Hash(_modelId, text)).ToArray();
+            var hashes = blocks.Select(HashOf).ToArray();
             var known = new Dictionary<string, float[]>();
             VectorCache? cache;
+            var cacheFailed = false;
             try
             {
                 cache = _cache();
@@ -260,11 +330,14 @@ internal sealed class RepetitionTracker : IDisposable
             {
                 LogCacheFailure(ex);
                 cache = null;
+                cacheFailed = true;
             }
 
             if (cache is null)
             {
-                await PublishAsync(path, literalOnly, token);
+                // Failed: literal only, complete. Not available yet (the AI parts still start): the semantic pairs
+                // follow, so the blocks count as pending until the owner schedules again.
+                await PublishAsync(path, cacheFailed ? literalOnly : literalOnly with { Total = blocks.Count }, token);
                 return;
             }
 

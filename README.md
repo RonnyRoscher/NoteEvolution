@@ -453,12 +453,15 @@ in den Buchdateien; die Datei ist Arbeit des Nutzers und wird nie von selbst gel
 | KI-Modell (nach dem Download; immer nur eines) | `<Benutzerdaten>/models/<Modell-Id>/` |
 | Gespeicherte Bedeutungsvektoren der Notizen | `<vault>/.noteevolution/vectors.db` |
 | Änderungshistorie der Textblöcke | `<vault>/.noteevolution/history.db` |
+| Als „gewollt“ markierte Wiederholungen im Buch (Entscheidungen, nicht wiederherstellbar) | `<vault>/.noteevolution/repetitions.json` |
+| Bedeutungsvektoren der Buchblöcke (Cache, darf gelöscht werden, wird neu aufgebaut) | `<vault>/.noteevolution/book-vectors.db` |
 
 `<Benutzerdaten>` ist der Ordner `NoteEvolution` im Anwendungsdatenordner des Systems (Windows:
 `%APPDATA%\NoteEvolution`, Linux und macOS: `~/.config/NoteEvolution`).
 
-Die Dateien im Vault sind die einzige Wahrheit. Alles unter `.noteevolution/` ist Zusatz oder wiederherstellbar und kann
-von der Synchronisation (Obsidian, Syncthing usw.) ausgenommen werden; der Suchindex wird bei jedem Öffnen im Speicher
+Die Dateien im Vault sind die einzige Wahrheit. Das meiste unter `.noteevolution/` ist Zusatz oder wiederherstellbar und
+kann von der Synchronisation (Obsidian, Syncthing usw.) ausgenommen werden; `repetitions.json` gehört dagegen in die
+Synchronisation, denn die Entscheidungen „gewollt“ lassen sich nicht rekonstruieren. Der Suchindex wird bei jedem Öffnen im Speicher
 neu aufgebaut. Dasselbe Buch sollte nicht gleichzeitig in Logseq bearbeitet werden.
 
 ## Lokale KI

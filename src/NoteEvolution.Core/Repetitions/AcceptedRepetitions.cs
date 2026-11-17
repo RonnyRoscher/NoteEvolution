@@ -7,8 +7,11 @@ namespace NoteEvolution.Core.Repetitions;
 /// <summary>
 /// The accepted pairs in <c>.noteevolution/repetitions.json</c>: <c>{ "books": { "&lt;page name&gt;": [["&lt;id&gt;","&lt;id&gt;"], …] } }</c>.
 /// A missing or damaged file counts as empty. The file is read once and then kept in memory; every change is written atomically.
+/// A file that cannot be read right now (I/O or access error) is not cached as empty: reading gives empty and is tried
+/// again on the next call, and <see cref="Set"/> throws rather than overwrite what may be there.
 /// </summary>
-public sealed class AcceptedRepetitions(string vaultRoot)
+/// <param name="onError">Told about a read failure of the file (an I/O or access error).</param>
+public sealed class AcceptedRepetitions(string vaultRoot, Action<Exception>? onError = null)
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web) { WriteIndented = true };
 
@@ -21,7 +24,7 @@ public sealed class AcceptedRepetitions(string vaultRoot)
     {
         lock (_gate)
         {
-            return Books.TryGetValue(bookName, out var pairs) ? new HashSet<(Guid, Guid)>(pairs) : [];
+            return TryBooks() is { } books && books.TryGetValue(bookName, out var pairs) ? new HashSet<(Guid, Guid)>(pairs) : [];
         }
     }
 
@@ -29,7 +32,7 @@ public sealed class AcceptedRepetitions(string vaultRoot)
     {
         lock (_gate)
         {
-            return Books.TryGetValue(bookName, out var pairs) && pairs.Contains(Normalize(idA, idB));
+            return TryBooks() is { } books && books.TryGetValue(bookName, out var pairs) && pairs.Contains(Normalize(idA, idB));
         }
     }
 
@@ -42,9 +45,10 @@ public sealed class AcceptedRepetitions(string vaultRoot)
     {
         lock (_gate)
         {
-            var before = Books.TryGetValue(bookName, out var existing) ? new HashSet<(Guid, Guid)>(existing) : null;
+            var books = Books; // throws if the file cannot be read: nothing is written then
+            var before = books.TryGetValue(bookName, out var existing) ? new HashSet<(Guid, Guid)>(existing) : null;
             var pairs = existing ?? [];
-            Books[bookName] = pairs;
+            books[bookName] = pairs;
 
             pairs.RemoveWhere(p => !liveIds.Contains(p.Item1) || !liveIds.Contains(p.Item2));
             var pair = Normalize(idA, idB);
@@ -79,7 +83,22 @@ public sealed class AcceptedRepetitions(string vaultRoot)
 
     private static (Guid, Guid) Normalize(Guid a, Guid b) => a.CompareTo(b) <= 0 ? (a, b) : (b, a);
 
+    /// <summary>The books as read; throws on an I/O or access error, which is not cached (the next call reads again).</summary>
     private Dictionary<string, HashSet<(Guid, Guid)>> Books => _books ??= Read();
+
+    /// <summary>The books, or null when the file cannot be read right now (reported to the error callback).</summary>
+    private Dictionary<string, HashSet<(Guid, Guid)>>? TryBooks()
+    {
+        try
+        {
+            return Books;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            onError?.Invoke(ex);
+            return null;
+        }
+    }
 
     private Dictionary<string, HashSet<(Guid, Guid)>> Read()
     {
@@ -108,7 +127,7 @@ public sealed class AcceptedRepetitions(string vaultRoot)
 
             return books;
         }
-        catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
+        catch (JsonException)
         {
             return [];
         }

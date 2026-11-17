@@ -112,6 +112,43 @@ public class AcceptedRepetitionsTests
     }
 
     [Fact]
+    public void FileLockedDuringFirstRead_IsEmptyForNow_ThenReadAgainOnceReleased()
+    {
+        using var dir = new TempDir();
+        new AcceptedRepetitions(dir.Path).Set("Buch", A, B, true, Live(A, B));
+        var path = Path.Combine(dir.Path, ".noteevolution", "repetitions.json");
+        var errors = new List<Exception>();
+        var store = new AcceptedRepetitions(dir.Path, errors.Add);
+
+        using (new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+        {
+            Assert.Empty(store.Of("Buch"));
+            Assert.False(store.Contains("Buch", A, B));
+        }
+
+        Assert.NotEmpty(errors);
+        Assert.Equal([(A, B)], store.Of("Buch").ToArray());
+    }
+
+    [Fact]
+    public void Set_WhileFileIsLocked_Throws_AndLeavesTheFileUnchanged()
+    {
+        using var dir = new TempDir();
+        new AcceptedRepetitions(dir.Path).Set("Buch", A, B, true, Live(A, B));
+        var path = Path.Combine(dir.Path, ".noteevolution", "repetitions.json");
+        var before = File.ReadAllText(path);
+        var store = new AcceptedRepetitions(dir.Path);
+
+        using (new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+        {
+            Assert.ThrowsAny<IOException>(() => store.Set("Buch", A, C, true, Live(A, B, C)));
+        }
+
+        Assert.Equal(before, File.ReadAllText(path));
+        Assert.Equal([(A, B)], store.Of("Buch").ToArray());
+    }
+
+    [Fact]
     public void Set_Accept_WriteFails_StateStaysAsBefore_AlsoInANewCall()
     {
         using var dir = new TempDir();
