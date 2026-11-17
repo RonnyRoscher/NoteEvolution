@@ -595,8 +595,12 @@ verglichen; dadurch weiß jede Überschrift, worum es in ihren Unterabschnitten 
 
 **Systemanzeige:** Rechts in der Kopfzeile stehen Prozessorlast, belegter Arbeitsspeicher und freier Platz auf dem
 Laufwerk des Vaults, dazu als „App“ den Anteil von NoteEvolution zusammen mit Ollama, wenn es läuft (alle Prozesse
-`ollama…` und `llama-server`, das das Modell rechnet), sowie die Größe der Datenbanken des Vaults (`vectors.db`,
-`understanding.db` und `history.db`): „CPU 63 % (App 53 %) · RAM 9,8/15,8 GB (App 5,5 GB) · Frei 112 GB · App-Daten 38 MB“, alle 2 s. Über 90 % CPU oder unter 1 GB freiem Arbeitsspeicher erscheint der Wert in der Warnfarbe.
+`ollama…` und `llama-server`, das das Modell rechnet), sowie die Größe der App-Daten: „CPU 63 % (App 53 %) · RAM 9,8/15,8 GB (App 5,5 GB) · Frei 112 GB · App-Daten 38 MB“, alle 2 s. Über 90 % CPU oder unter 1 GB freiem Arbeitsspeicher erscheint der Wert in der Warnfarbe.
+„App-Daten“ ist alles im Ordner `.noteevolution` des Vaults (Datenbanken mit ihren `-wal`/`-shm`-Dateien, Sicherungen,
+Protokolle, weitere Dateien) plus die Markdown-Datei des offenen Buchs, gemessen höchstens alle 30 Sekunden. Der Tooltip
+schlüsselt das auf: `vectors.db`, `book-vectors.db`, `understanding.db`, `history.db`, Sicherungen, Protokolle, weitere
+Dateien und das Buch, darunter „Nicht in der Summe“: alle Seiten und Journale des Vaults und das KI-Modell im
+Benutzerdatenordner.
 Abschaltbar in den Einstellungen.
 
 ## Manuelle Abnahme

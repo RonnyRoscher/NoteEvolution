@@ -1573,7 +1573,55 @@
   </data>
   <data name="SysMeterData" xml:space="preserve">
     <value> · App-Daten {0}</value>
-    <comment>Anhang der Systemanzeige: {0} = Größe der Datenbanken des Vaults (Analyse und Historie) mit Einheit (z. B. „38 MB“); entfällt ohne Vault</comment>
+    <comment>Anhang der Systemanzeige: {0} = Größe der App-Daten (Ordner .noteevolution des Vaults und Datei des offenen Buchs) mit Einheit (z. B. „38 MB“); entfällt ohne Vault</comment>
+  </data>
+  <data name="SysMeterDataTitle" xml:space="preserve">
+    <value>App-Daten: {0}</value>
+    <comment>Erste Zeile des Tooltips von „App-Daten“: {0} = Summe mit Einheit</comment>
+  </data>
+  <data name="SysMeterDataNoteVectors" xml:space="preserve">
+    <value>Bedeutungsvektoren der Notizen (vectors.db): {0}</value>
+    <comment>Tooltip-Zeile; {0} = Größe mit Einheit</comment>
+  </data>
+  <data name="SysMeterDataBookVectors" xml:space="preserve">
+    <value>Bedeutungsvektoren der Buchblöcke (book-vectors.db): {0}</value>
+    <comment>Tooltip-Zeile; {0} = Größe mit Einheit</comment>
+  </data>
+  <data name="SysMeterDataUnderstanding" xml:space="preserve">
+    <value>Zusammenfassungen des Sprachmodells (understanding.db): {0}</value>
+    <comment>Tooltip-Zeile; {0} = Größe mit Einheit</comment>
+  </data>
+  <data name="SysMeterDataHistory" xml:space="preserve">
+    <value>Änderungshistorie (history.db): {0}</value>
+    <comment>Tooltip-Zeile; {0} = Größe mit Einheit</comment>
+  </data>
+  <data name="SysMeterDataBackups" xml:space="preserve">
+    <value>Tägliche Sicherungen (backups): {0}</value>
+    <comment>Tooltip-Zeile; {0} = Größe mit Einheit</comment>
+  </data>
+  <data name="SysMeterDataLogs" xml:space="preserve">
+    <value>Protokolle (logs): {0}</value>
+    <comment>Tooltip-Zeile; {0} = Größe mit Einheit</comment>
+  </data>
+  <data name="SysMeterDataOther" xml:space="preserve">
+    <value>Weitere Dateien in .noteevolution: {0}</value>
+    <comment>Tooltip-Zeile: Einstellungen, ausstehende Änderungen, Wiederholungen u. a.; {0} = Größe mit Einheit</comment>
+  </data>
+  <data name="SysMeterDataBook" xml:space="preserve">
+    <value>Buch ({1}): {0}</value>
+    <comment>Tooltip-Zeile: die Markdown-Datei des offenen Buchs; {0} = Größe mit Einheit, {1} = Dateiname</comment>
+  </data>
+  <data name="SysMeterDataNotCounted" xml:space="preserve">
+    <value>Nicht in der Summe:</value>
+    <comment>Tooltip: Überschrift der Teile, die nicht in „App-Daten“ eingerechnet sind</comment>
+  </data>
+  <data name="SysMeterDataPages" xml:space="preserve">
+    <value>Alle Seiten und Journale des Vaults: {0}</value>
+    <comment>Tooltip-Zeile (nicht in der Summe); {0} = Größe mit Einheit</comment>
+  </data>
+  <data name="SysMeterDataModel" xml:space="preserve">
+    <value>KI-Modell (Benutzerdaten/models): {0}</value>
+    <comment>Tooltip-Zeile (nicht in der Summe); {0} = Größe mit Einheit</comment>
   </data>
   <data name="SettingsSystemMeter" xml:space="preserve">
     <value>Systemanzeige in der Kopfzeile (CPU, Arbeitsspeicher, freier Platz)</value>

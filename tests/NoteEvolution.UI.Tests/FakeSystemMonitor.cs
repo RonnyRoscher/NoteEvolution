@@ -22,10 +22,14 @@ public sealed class FakeSystemMonitor : ISystemMonitor
     /// <summary>The vault folder of the last <see cref="Read"/>.</summary>
     public string? LastVaultRoot { get; private set; }
 
-    public SystemSnapshot Read(string? vaultRoot)
+    /// <summary>The open book's file of the last <see cref="Read"/>.</summary>
+    public string? LastBookFile { get; private set; }
+
+    public SystemSnapshot Read(string? vaultRoot, string? bookFile = null)
     {
         Interlocked.Increment(ref _reads);
         LastVaultRoot = vaultRoot;
+        LastBookFile = bookFile;
         return Snapshot;
     }
 }
