@@ -375,6 +375,97 @@ public class AiTests : UiTestContext
         Assert.Empty(cut.FindAll(".ne-ai-model-dialog"));
     }
 
+    // ---- Repetitions while the AI parts are missing ----
+
+    private TestVault BookVault()
+    {
+        const string run = "eins zwei drei vier fuenf sechs sieben acht neun";
+        var vault = TestVault.Create(
+            ("pages/Buch - Alpha.md", $"title:: Alpha\ntype:: book\n\n- # Eins\n\t- alpha {run}\n\t- beta {run}\n"));
+        _vaults.Add(vault);
+        return vault;
+    }
+
+    [Fact]
+    public async Task Repetitions_ModelMissing_AreLiteralOnlyAndComplete()
+    {
+        var ai = UseAi(installed: false, () => new FakeEmbedder());
+        var session = await OpenSessionAsync(BookVault(), ai);
+        await session.RepetitionsIdle();
+
+        var (set, pending) = session.RepetitionsShown(State.CurrentBook);
+
+        Assert.Equal(AiState.ModelMissing, session.AiStatus.State);
+        Assert.False(pending);
+        Assert.True(set.Complete);
+        Assert.Equal(0, set.Total);
+        Assert.Single(set.All);
+    }
+
+    [Fact]
+    public async Task Repetitions_PartsArriveLater_PendingFirst_ThenComplete()
+    {
+        using var gate = new ManualResetEventSlim();
+        var ai = UseAi(installed: true, () =>
+        {
+            gate.Wait(Wait);
+            return new FakeEmbedder();
+        });
+        try
+        {
+            var session = await OpenSessionAsync(BookVault(), ai);
+            await session.RepetitionsIdle();
+            var (waiting, pending) = session.RepetitionsShown(State.CurrentBook);
+            Assert.True(pending);
+            Assert.True(waiting.Total > 0);
+            Assert.Equal(0, waiting.Embedded);
+
+            gate.Set();
+
+            await Eventually(() => !session.RepetitionsShown(State.CurrentBook).Pending);
+            await session.RepetitionsIdle();
+            var done = session.RepetitionsShown(State.CurrentBook).Set;
+            Assert.True(done.Complete);
+            Assert.Equal(done.Total, done.Embedded);
+            Assert.True(done.Total > 0);
+        }
+        finally
+        {
+            gate.Set();
+        }
+    }
+
+    [Fact]
+    public async Task Repetitions_LoadEndsInFailed_PendingSetBecomesCompleteLiteralOnly()
+    {
+        using var gate = new ManualResetEventSlim();
+        var ai = UseAi(installed: true, () =>
+        {
+            gate.Wait(Wait);
+            throw new InvalidOperationException("onnx broken");
+        });
+        try
+        {
+            var session = await OpenSessionAsync(BookVault(), ai);
+            await session.RepetitionsIdle();
+            Assert.True(session.RepetitionsShown(State.CurrentBook).Pending);
+
+            gate.Set();
+
+            await Eventually(() => !session.RepetitionsShown(State.CurrentBook).Pending);
+            await session.RepetitionsIdle();
+            var (set, pending) = session.RepetitionsShown(State.CurrentBook);
+            Assert.Equal(AiState.Failed, session.AiStatus.State);
+            Assert.False(pending);
+            Assert.True(set.Complete);
+            Assert.Single(set.All);
+        }
+        finally
+        {
+            gate.Set();
+        }
+    }
+
     // ---- Vault switch ----
 
     [Fact]

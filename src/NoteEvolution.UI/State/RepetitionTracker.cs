@@ -24,6 +24,7 @@ internal sealed class RepetitionTracker : IDisposable
     private readonly Func<VectorCache?> _cache;
     private readonly string _modelId;
     private readonly Func<bool> _mayEmbed;
+    private readonly Func<bool> _cacheMayCome;
 
     // Everything below under _gate.
     private readonly object _gate = new();
@@ -63,9 +64,15 @@ internal sealed class RepetitionTracker : IDisposable
     /// an analysis publishes what the cache already holds and stops; the owner schedules again once it may. Always yes
     /// when null.
     /// </param>
+    /// <param name="cacheMayCome">
+    /// Whether a cache that is not available yet (null) may still become available (the AI parts are on their way). If not,
+    /// the set is literal only and complete; if so, it is pending until the owner schedules again. Always yes when null.
+    /// </param>
     public RepetitionTracker(ILogger logger, Func<Action, Task> dispatch, AcceptedRepetitions accepted,
-        Func<string, float[]?>? embed, Func<VectorCache?> cache, string modelId, Func<bool>? mayEmbed = null)
+        Func<string, float[]?>? embed, Func<VectorCache?> cache, string modelId, Func<bool>? mayEmbed = null,
+        Func<bool>? cacheMayCome = null)
     {
+        _cacheMayCome = cacheMayCome ?? (() => true);
         _logger = logger;
         _dispatch = dispatch;
         _accepted = accepted;
@@ -332,6 +339,9 @@ internal sealed class RepetitionTracker : IDisposable
                 cache = null;
                 cacheFailed = true;
             }
+
+            // Not available and never to come (model missing, load failed, AI off): literal only, as without AI.
+            cacheFailed |= cache is null && !_cacheMayCome();
 
             if (cache is null)
             {

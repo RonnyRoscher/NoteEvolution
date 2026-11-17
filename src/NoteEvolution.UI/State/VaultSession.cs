@@ -168,7 +168,8 @@ public sealed class VaultSession : IDisposable
             vault.Root, ex => logger.LogError(ex, "The accepted repetitions (repetitions.json) could not be read"));
         _repetitions = new RepetitionTracker(logger, dispatch, AcceptedRepetitions,
             ai is null ? null : text => Semantic?.EmbedQuery(text), BookVectors, ai?.Model.Id ?? string.Empty,
-            () => MayEmbedRepetitions(Semantic?.Status.State));
+            () => MayEmbedRepetitions(Semantic?.Status.State),
+            () => AiMayStillProvideParts(AiStatus.State));
         Watcher.ExternalChange += OnWatcherChange;
         if (_ai is not null)
         {
@@ -1096,6 +1097,34 @@ public sealed class VaultSession : IDisposable
         }
     }
 
+    /// <summary>
+    /// Whether the AI parts (embedder, vector cache) may still come while they are missing: not when the AI is off, the model
+    /// is missing or loading/creating failed (<see cref="AiState.Off"/>, <see cref="AiState.ModelMissing"/>,
+    /// <see cref="AiState.Failed"/>: the repetitions stay literal); yes while it downloads, loads or indexes.
+    /// </summary>
+    internal static bool AiMayStillProvideParts(AiState state) =>
+        state is not (AiState.Off or AiState.ModelMissing or AiState.Failed);
+
+    /// <summary>
+    /// On the UI thread, after the AI status changed: once the AI parts are there or can no longer come, the shown book's
+    /// repetitions are analysed again, so a set that waited for them resolves (once per change into that state).
+    /// </summary>
+    private void RescheduleRepetitionsWhenSettled()
+    {
+        var resolved = _aiParts is not null || !AiMayStillProvideParts(AiStatus.State);
+        if (resolved && !_repetitionsResolved)
+        {
+            _repetitionsResolved = true;
+            ScheduleShownRepetitions();
+        }
+        else if (!resolved)
+        {
+            _repetitionsResolved = false;
+        }
+    }
+
+    private bool _repetitionsResolved;
+
     /// <summary>1 while the notes' index last reported a settled state (<see cref="MayEmbedRepetitions"/>); for <see cref="OnIndexStatusChanged"/>.</summary>
     private int _indexSettled;
 
@@ -1207,6 +1236,7 @@ public sealed class VaultSession : IDisposable
                 if (!IsDisposed)
                 {
                     AiStatusChanged?.Invoke();
+                    RescheduleRepetitionsWhenSettled();
                 }
             },
             "the AI status");
