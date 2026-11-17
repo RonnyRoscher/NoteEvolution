@@ -11,7 +11,8 @@ namespace NoteEvolution.Desktop;
 /// the free space of the vault's drive everywhere (macOS shows only that). No WMI, nothing that starts a process. The
 /// computations are in <see cref="SystemReadings"/>; every read is guarded, a failing one leaves its value unknown.
 /// </summary>
-internal sealed class SystemMonitor(TimeProvider time) : ISystemMonitor
+/// <param name="modelsDirectory">The folder of the downloaded AI models, listed (not counted) with the app's data.</param>
+internal sealed class SystemMonitor(TimeProvider time, string? modelsDirectory = null) : ISystemMonitor
 {
     private readonly Lock _gate = new();
 
@@ -22,14 +23,14 @@ internal sealed class SystemMonitor(TimeProvider time) : ISystemMonitor
     private long _processesAt;
     private Dictionary<int, TimeSpan>? _processTimes;
 
-    /// <summary>How long the size of the data files is used before it is measured again.</summary>
+    /// <summary>How long the breakdown of the data is used before it is measured again.</summary>
     private static readonly TimeSpan DataInterval = TimeSpan.FromSeconds(30);
 
-    private string? _dataRoot;
+    private (string Root, string? Book)? _dataFor;
     private long _dataAt;
-    private long _dataBytes;
+    private DataUsage? _data;
 
-    public SystemSnapshot Read(string? vaultRoot)
+    public SystemSnapshot Read(string? vaultRoot, string? bookFile = null)
     {
         lock (_gate)
         {
@@ -54,28 +55,28 @@ internal sealed class SystemMonitor(TimeProvider time) : ISystemMonitor
 
             return new SystemSnapshot(
                 cpu, memory?.UsedGb, memory?.TotalGb, DiskFree(vaultRoot),
-                shares.OllamaCpu, shares.OllamaRam, shares.AppCpu, shares.AppRam, onBattery, VaultDataBytes(vaultRoot));
+                shares.OllamaCpu, shares.OllamaRam, shares.AppCpu, shares.AppRam, onBattery, Data(vaultRoot, bookFile));
         }
     }
 
-    /// <summary>The size of the vault's data files, measured at most every 30 s (and at once for another vault).</summary>
-    private long? VaultDataBytes(string? vaultRoot)
+    /// <summary>The breakdown of the app's data, measured at most every 30 s (and at once for another vault or book).</summary>
+    private DataUsage? Data(string? vaultRoot, string? bookFile)
     {
         if (vaultRoot is null)
         {
-            _dataRoot = null;
+            _dataFor = null;
             return null;
         }
 
         var now = time.GetTimestamp();
-        if (_dataRoot != vaultRoot || time.GetElapsedTime(_dataAt, now) >= DataInterval)
+        if (_dataFor != (vaultRoot, bookFile) || time.GetElapsedTime(_dataAt, now) >= DataInterval)
         {
-            _dataRoot = vaultRoot;
+            _dataFor = (vaultRoot, bookFile);
             _dataAt = now;
-            _dataBytes = SystemReadings.VaultDataBytes(vaultRoot);
+            _data = SystemReadings.DataUsage(vaultRoot, bookFile, modelsDirectory);
         }
 
-        return _dataBytes;
+        return _data;
     }
 
     private readonly record struct Shares(double? OllamaCpu, double? OllamaRam, double? AppCpu, double? AppRam);

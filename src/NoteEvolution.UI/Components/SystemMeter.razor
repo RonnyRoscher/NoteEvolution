@@ -10,7 +10,11 @@
    "App" is NoteEvolution and Ollama together (its language model works for the app). *@
 @if (Settings.SystemMeterVisible && _snapshot is { } snapshot)
 {
-    <span class="ne-sysmeter@(IsWarning(snapshot) ? " ne-sysmeter-warn" : "")">@Text(snapshot)</span>
+    <span class="ne-sysmeter@(IsWarning(snapshot) ? " ne-sysmeter-warn" : "")">@Text(snapshot)@if (snapshot.Data is { } data)
+        {
+            @* The size of the app's data; its tooltip lists every part, and what is not in the sum. *@
+            <span class="ne-sysmeter-data" title="@DataTooltip(data)">@L["SysMeterData", Size(data.Total)]</span>
+        }</span>
 }
 
 @code {
@@ -32,6 +36,9 @@
     /// <summary>The open vault's folder, taken on the UI thread; the readings on the timer's thread use it.</summary>
     private volatile string? _vaultRoot;
 
+    /// <summary>The open book's Markdown file, taken on the UI thread; counted with the app's data.</summary>
+    private volatile string? _bookFile;
+
     /// <summary>The latest reading; <c>null</c> before the first (or while the meter is switched off from the start).</summary>
     private SystemSnapshot? _snapshot;
 
@@ -45,9 +52,10 @@
 
         State.Changed += OnStateChanged;
         _vaultRoot = State.Session?.Vault.Root;
+        _bookFile = State.CurrentBook?.Page.FilePath;
         if (Settings.SystemMeterVisible)
         {
-            _snapshot = _monitor.Read(_vaultRoot);
+            _snapshot = _monitor.Read(_vaultRoot, _bookFile);
         }
 
         _timer = Time.CreateTimer(_ => OnTick(), null, Interval, Interval);
@@ -71,7 +79,7 @@
             return;
         }
 
-        var snapshot = monitor.Read(_vaultRoot);
+        var snapshot = monitor.Read(_vaultRoot, _bookFile);
         _ = InvokeAsync(() =>
         {
             if (_disposed)
@@ -96,11 +104,13 @@
         }
 
         var root = State.Session?.Vault.Root;
-        var otherVault = root != _vaultRoot;
+        var book = State.CurrentBook?.Page.FilePath;
+        var otherVault = root != _vaultRoot || book != _bookFile;
         _vaultRoot = root;
+        _bookFile = book;
         if (Settings.SystemMeterVisible && (_snapshot is null || otherVault))
         {
-            _snapshot = _monitor.Read(root);
+            _snapshot = _monitor.Read(root, book);
         }
 
         StateHasChanged();
@@ -110,8 +120,45 @@
     {
         var line = L["SysMeter", Whole(s.CpuPercent), Whole(Sum(s.AppCpuPercent, s.OllamaCpuPercent)), Decimal(s.RamUsedGb),
             Decimal(s.RamTotalGb), Decimal(Sum(s.AppRamGb, s.OllamaRamGb)), Whole(s.DiskFreeGb)].Value;
-        return line + (s.VaultDataBytes is { } bytes ? L["SysMeterData", Size(bytes)].Value : "");
+        return line;
     }
+
+    /// <summary>The resource of a part's line in the data tooltip.</summary>
+    private static string KeyOf(DataPartKind kind) => kind switch
+    {
+        DataPartKind.NoteVectors => "SysMeterDataNoteVectors",
+        DataPartKind.BookVectors => "SysMeterDataBookVectors",
+        DataPartKind.Understanding => "SysMeterDataUnderstanding",
+        DataPartKind.History => "SysMeterDataHistory",
+        DataPartKind.Backups => "SysMeterDataBackups",
+        DataPartKind.Logs => "SysMeterDataLogs",
+        DataPartKind.Other => "SysMeterDataOther",
+        DataPartKind.Book => "SysMeterDataBook",
+        DataPartKind.VaultPages => "SysMeterDataPages",
+        _ => "SysMeterDataModel",
+    };
+
+    /// <summary>The tooltip of the data size: the sum, every counted part, then the parts that are not in the sum.</summary>
+    private string DataTooltip(DataUsage data)
+    {
+        // The sum in the tooltip is as exact as its lines (below 1 MB in KB, where the meter shows "0 MB").
+        var lines = new List<string> { L["SysMeterDataTitle", PartSize(data.Total)] };
+        lines.AddRange(data.Parts.Where(p => p.Counted).Select(Line));
+        var others = data.Parts.Where(p => !p.Counted).ToList();
+        if (others.Count > 0)
+        {
+            lines.Add(L["SysMeterDataNotCounted"]);
+            lines.AddRange(others.Select(Line));
+        }
+
+        return string.Join('\n', lines);
+
+        string Line(DataPart part) => L[KeyOf(part.Kind), PartSize(part.Bytes), part.Name ?? ""];
+    }
+
+    /// <summary>A part's size: below 1 MB in whole KB (a part with anything in it shows at least 1 KB), else as <see cref="Size"/>.</summary>
+    private static string PartSize(long bytes) =>
+        bytes >= 1_000_000 ? Size(bytes) : (long)Math.Ceiling(bytes / 1000.0) + " KB";
 
     /// <summary>A size as the model dialogs show it (whole MB, rounded to tens above 100), in GB from 1000 MB on.</summary>
     private static string Size(long bytes) =>

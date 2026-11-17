@@ -82,37 +82,95 @@ public class SystemReadingsTests
     }
 
     [Fact]
-    public void SystemReadings_VaultDataBytes_SumsFilesAndToleratesMissingOrLocked()
+    public void SystemReadings_DataUsage_BreaksDownTheVaultFolderAndCountsTheBook()
     {
         var root = Path.Combine(Path.GetTempPath(), "ne-vault-data-" + Guid.NewGuid().ToString("N"));
+        var userData = Path.Combine(Path.GetTempPath(), "ne-user-data-" + Guid.NewGuid().ToString("N"));
         try
         {
-            // No folder at all: 0.
-            Assert.Equal(0, SystemReadings.VaultDataBytes(root));
+            static void Write(string path, int bytes)
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+                File.WriteAllBytes(path, new byte[bytes]);
+            }
 
-            var folder = Directory.CreateDirectory(Path.Combine(root, ".noteevolution")).FullName;
-            File.WriteAllBytes(Path.Combine(folder, "vectors.db"), new byte[1000]);
-            File.WriteAllBytes(Path.Combine(folder, "vectors.db-wal"), new byte[200]);
-            File.WriteAllBytes(Path.Combine(folder, "understanding.db-shm"), new byte[30]);
-            File.WriteAllBytes(Path.Combine(folder, "history.db"), new byte[4000]);
-            File.WriteAllBytes(Path.Combine(folder, "history.db-wal"), new byte[400]);
-            File.WriteAllBytes(Path.Combine(folder, "other.db"), new byte[5000]);
-            File.WriteAllBytes(Path.Combine(folder, "history.db.defekt-20261105120000"), new byte[7000]);
+            var folder = Path.Combine(root, ".noteevolution");
+            Write(Path.Combine(folder, "vectors.db"), 1000);
+            Write(Path.Combine(folder, "vectors.db-wal"), 200);
+            Write(Path.Combine(folder, "book-vectors.db"), 300);
+            Write(Path.Combine(folder, "book-vectors.db-shm"), 32);
+            Write(Path.Combine(folder, "understanding.db-shm"), 30);
+            Write(Path.Combine(folder, "history.db"), 4000);
+            Write(Path.Combine(folder, "history.db-wal"), 400);
+            Write(Path.Combine(folder, "backups", "2026-11-16", "pages", "Buch - Probe.md"), 500);
+            Write(Path.Combine(folder, "logs", "noteevolution-20261116.log"), 60);
+            Write(Path.Combine(folder, "repetitions.json"), 7);
+            Write(Path.Combine(folder, "other.db"), 5000);
+            Write(Path.Combine(folder, "history.db.defekt-20261105120000"), 7000);
+            var book = Path.Combine(root, "pages", "Buch - Probe.md");
+            Write(book, 900);
+            Write(Path.Combine(root, "pages", "Notiz.md"), 100);
+            Write(Path.Combine(root, "journals", "2026_11_16.md"), 50);
+            Write(Path.Combine(root, ".obsidian", "workspace.md"), 4444);
+            Write(Path.Combine(root, "pages", "bild.png"), 333);
+            var models = Path.Combine(userData, "models");
+            Write(Path.Combine(models, "e5-small", "model.onnx"), 2000);
 
-            // Missing files (understanding.db, vectors.db-shm, ...) count as 0; other files, also a history moved aside, do not count.
-            Assert.Equal(5630, SystemReadings.VaultDataBytes(root));
+            var usage = SystemReadings.DataUsage(root, book, models);
+
+            long Of(DataPartKind kind) => usage.Parts.Single(p => p.Kind == kind).Bytes;
+            Assert.Equal(1200, Of(DataPartKind.NoteVectors));
+            Assert.Equal(332, Of(DataPartKind.BookVectors));
+            Assert.Equal(30, Of(DataPartKind.Understanding));
+            Assert.Equal(4400, Of(DataPartKind.History));
+            Assert.Equal(500, Of(DataPartKind.Backups));
+            Assert.Equal(60, Of(DataPartKind.Logs));
+            // Everything else below .noteevolution, also a history moved aside and files the app adds later.
+            Assert.Equal(12_007, Of(DataPartKind.Other));
+            Assert.Equal(900, Of(DataPartKind.Book));
+            Assert.Equal("Buch - Probe.md", usage.Parts.Single(p => p.Kind == DataPartKind.Book).Name);
+            // The vault's Markdown pages and journals, without hidden folders and other files; not in the sum.
+            Assert.Equal(1050, Of(DataPartKind.VaultPages));
+            Assert.Equal(2000, Of(DataPartKind.Model));
+
+            // The sum: the .noteevolution folder and the book; not the vault's pages, not the model.
+            Assert.Equal(19_429, usage.Total);
+            Assert.All(usage.Parts.Where(p => p.Kind is DataPartKind.VaultPages or DataPartKind.Model), p => Assert.False(p.Counted));
+            Assert.All(usage.Parts.Where(p => p.Kind is not (DataPartKind.VaultPages or DataPartKind.Model)), p => Assert.True(p.Counted));
+
+            // Without a book and a models folder their parts are left out.
+            var noBook = SystemReadings.DataUsage(root, null, null);
+            Assert.DoesNotContain(noBook.Parts, p => p.Kind is DataPartKind.Book or DataPartKind.Model);
+            Assert.Equal(18_529, noBook.Total);
 
             // A file held open exclusively is no error.
-            using var locked = new FileStream(Path.Combine(folder, "vectors.db"), FileMode.Open, FileAccess.ReadWrite, FileShare.None);
-            Assert.InRange(SystemReadings.VaultDataBytes(root), 4630, 5630);
+            using (new FileStream(Path.Combine(folder, "vectors.db"), FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+            {
+                Assert.InRange(SystemReadings.DataUsage(root, book, models).Total, 18_429, 19_429);
+            }
         }
         finally
         {
-            if (Directory.Exists(root))
+            foreach (var dir in new[] { root, userData })
             {
-                Directory.Delete(root, true);
+                if (Directory.Exists(dir))
+                {
+                    Directory.Delete(dir, true);
+                }
             }
         }
+    }
+
+    [Fact]
+    public void SystemReadings_DataUsage_MissingFoldersAndBook_CountAsZero()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ne-vault-data-" + Guid.NewGuid().ToString("N"));
+
+        var usage = SystemReadings.DataUsage(root, Path.Combine(root, "pages", "fehlt.md"), Path.Combine(root, "models"));
+
+        Assert.Equal(0, usage.Total);
+        Assert.All(usage.Parts, p => Assert.Equal(0, p.Bytes));
+        Assert.Contains(usage.Parts, p => p.Kind == DataPartKind.Book);
     }
 
     [Fact]

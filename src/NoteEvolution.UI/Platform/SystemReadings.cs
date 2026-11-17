@@ -150,33 +150,143 @@ public static class SystemReadings
         return onBattery;
     }
 
+    /// <summary>The databases below <c>.noteevolution</c> that the breakdown names, each with its <c>-wal</c>/<c>-shm</c> files.</summary>
+    private static readonly (string Name, DataPartKind Kind)[] Databases =
+    [
+        ("vectors.db", DataPartKind.NoteVectors),
+        ("book-vectors.db", DataPartKind.BookVectors),
+        ("understanding.db", DataPartKind.Understanding),
+        ("history.db", DataPartKind.History),
+    ];
+
     /// <summary>
-    /// The size of the vault's data files in bytes: <c>vectors.db</c>, <c>understanding.db</c> and <c>history.db</c> in
-    /// <c>.noteevolution</c> with their <c>-wal</c>/<c>-shm</c> files. A missing or unreadable (locked) file counts as 0.
+    /// The app's data on disk, part by part. Counted: everything below <c>&lt;vault&gt;/.noteevolution</c> (the named
+    /// databases with their <c>-wal</c>/<c>-shm</c> files, the <c>backups</c> and <c>logs</c> folders, every other file,
+    /// also ones the app adds later) and the open book's file <paramref name="bookFile"/> (left out if <c>null</c>). Not
+    /// counted: the vault's Markdown pages and journals (outside hidden folders) and the models folder
+    /// <paramref name="modelsDirectory"/> (left out if <c>null</c>). A missing folder or a missing or unreadable (locked)
+    /// file counts as 0. Walks the folders: call it off the UI thread, and not more often than every few seconds.
     /// </summary>
-    public static long VaultDataBytes(string vaultRoot)
+    public static DataUsage DataUsage(string vaultRoot, string? bookFile, string? modelsDirectory)
     {
-        long sum = 0;
-        foreach (var name in new[] { "vectors.db", "understanding.db", "history.db" })
+        var folder = Path.Combine(vaultRoot, ".noteevolution");
+        var bytes = new Dictionary<DataPartKind, long>();
+        foreach (var file in Files(folder))
         {
-            foreach (var suffix in new[] { "", "-wal", "-shm" })
+            var relative = Path.GetRelativePath(folder, file.FullName);
+            var kind = KindOf(relative);
+            bytes[kind] = bytes.GetValueOrDefault(kind) + Length(file);
+        }
+
+        var parts = new List<DataPart>();
+        foreach (var kind in new[]
+                 {
+                     DataPartKind.NoteVectors, DataPartKind.BookVectors, DataPartKind.Understanding, DataPartKind.History,
+                     DataPartKind.Backups, DataPartKind.Logs, DataPartKind.Other,
+                 })
+        {
+            parts.Add(new DataPart(kind, bytes.GetValueOrDefault(kind), Counted: true));
+        }
+
+        if (bookFile is not null)
+        {
+            parts.Add(new DataPart(DataPartKind.Book, Length(new FileInfo(bookFile)), Counted: true, Path.GetFileName(bookFile)));
+        }
+
+        var pages = Files(vaultRoot, skip: dir => Path.GetFileName(dir).StartsWith('.'))
+            .Where(f => f.Extension.Equals(".md", StringComparison.OrdinalIgnoreCase) && !f.Name.StartsWith('.'))
+            .Sum(Length);
+        parts.Add(new DataPart(DataPartKind.VaultPages, pages, Counted: false));
+        if (modelsDirectory is not null)
+        {
+            parts.Add(new DataPart(DataPartKind.Model, Files(modelsDirectory).Sum(Length), Counted: false));
+        }
+
+        return new DataUsage(parts);
+    }
+
+    /// <summary>The part a file below <c>.noteevolution</c> belongs to, by its path relative to that folder.</summary>
+    private static DataPartKind KindOf(string relative)
+    {
+        var first = relative.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)[0];
+        if (relative.Length > first.Length)
+        {
+            return first switch
             {
-                try
-                {
-                    var file = new FileInfo(Path.Combine(vaultRoot, ".noteevolution", name + suffix));
-                    if (file.Exists)
-                    {
-                        sum += file.Length;
-                    }
-                }
-                catch (Exception)
-                {
-                    // locked or vanished meanwhile: counts as 0
-                }
+                "backups" => DataPartKind.Backups,
+                "logs" => DataPartKind.Logs,
+                _ => DataPartKind.Other,
+            };
+        }
+
+        foreach (var (name, kind) in Databases)
+        {
+            if (first == name || first == name + "-wal" || first == name + "-shm")
+            {
+                return kind;
             }
         }
 
-        return sum;
+        return DataPartKind.Other;
+    }
+
+    /// <summary>
+    /// The files below <paramref name="root"/>, skipping folders <paramref name="skip"/> names; a missing or unreadable
+    /// folder gives none.
+    /// </summary>
+    private static IEnumerable<FileInfo> Files(string root, Func<string, bool>? skip = null)
+    {
+        var pending = new Stack<string>();
+        pending.Push(root);
+        while (pending.Count > 0)
+        {
+            var dir = pending.Pop();
+            FileInfo[] files;
+            string[] subdirs;
+            try
+            {
+                var info = new DirectoryInfo(dir);
+                if (!info.Exists)
+                {
+                    continue;
+                }
+
+                files = info.GetFiles();
+                subdirs = Directory.GetDirectories(dir);
+            }
+            catch (Exception)
+            {
+                // unreadable or vanished meanwhile: nothing below it counts
+                continue;
+            }
+
+            foreach (var file in files)
+            {
+                yield return file;
+            }
+
+            foreach (var sub in subdirs)
+            {
+                if (skip?.Invoke(sub) != true)
+                {
+                    pending.Push(sub);
+                }
+            }
+        }
+    }
+
+    /// <summary>A file's size; a missing or unreadable (locked) file counts as 0.</summary>
+    private static long Length(FileInfo file)
+    {
+        try
+        {
+            file.Refresh();
+            return file.Exists ? file.Length : 0;
+        }
+        catch (Exception)
+        {
+            return 0;
+        }
     }
 
     /// <summary><paramref name="bytes"/> in GB (<see cref="BytesPerGb"/>).</summary>

@@ -29,13 +29,66 @@ public class SystemMeterTests : UiTestContext
     private string Text(string key, params object[] args) =>
         Services.GetRequiredService<IStringLocalizer<Strings>>()[key, args].Value.ReplaceLineEndings("\n");
 
+    /// <summary>A breakdown with all of <paramref name="bytes"/> in the history.</summary>
+    private static DataUsage Data(long bytes) => new([new DataPart(DataPartKind.History, bytes, Counted: true)]);
+
+    [Fact]
+    public void SystemMeter_DataTooltip_ListsEveryPart_AndWhatIsNotCounted()
+    {
+        SystemMonitor.Snapshot = new SystemSnapshot(10, 4, 16, 100, null, null, 1, 0.5, null, new DataUsage([
+            new DataPart(DataPartKind.NoteVectors, 180_000_000, true),
+            new DataPart(DataPartKind.BookVectors, 24_000_000, true),
+            new DataPart(DataPartKind.Understanding, 12_000_000, true),
+            new DataPart(DataPartKind.History, 95_000_000, true),
+            new DataPart(DataPartKind.Backups, 98_000_000, true),
+            new DataPart(DataPartKind.Logs, 3_000_000, true),
+            new DataPart(DataPartKind.Other, 7, true),
+            new DataPart(DataPartKind.Book, 412_000, true, "Buch - Probe.md"),
+            new DataPart(DataPartKind.VaultPages, 38_000_000, false),
+            new DataPart(DataPartKind.Model, 470_000_000, false),
+        ]));
+
+        var cut = Render<SystemMeter>();
+
+        var data = cut.Find(".ne-sysmeter-data");
+        Assert.Equal("· App-Daten 410 MB", data.TextContent.Trim());
+        Assert.Equal(string.Join("\n",
+            "App-Daten: 410 MB",
+            "Bedeutungsvektoren der Notizen (vectors.db): 180 MB",
+            "Bedeutungsvektoren der Buchblöcke (book-vectors.db): 24 MB",
+            "Zusammenfassungen des Sprachmodells (understanding.db): 12 MB",
+            "Änderungshistorie (history.db): 95 MB",
+            "Tägliche Sicherungen (backups): 98 MB",
+            "Protokolle (logs): 3 MB",
+            "Weitere Dateien in .noteevolution: 1 KB",
+            "Buch (Buch - Probe.md): 412 KB",
+            "Nicht in der Summe:",
+            "Alle Seiten und Journale des Vaults: 38 MB",
+            "KI-Modell (Benutzerdaten/models): 470 MB"), data.GetAttribute("title")?.ReplaceLineEndings("\n"));
+
+        // The meter as a whole still has no tooltip; only the data part has one.
+        Assert.Null(cut.Find(".ne-sysmeter").GetAttribute("title"));
+    }
+
+    [Fact]
+    public async Task SystemMeter_PassesTheOpenBooksFile_ToTheMonitor()
+    {
+        var tv = TestVault.Create(("pages/Buch - Probe.md", "title:: Probe\ntype:: book\n\n- # Eins\n"));
+        _vaults.Add(tv);
+        await OpenSessionAsync(tv);
+
+        Render<SystemMeter>();
+
+        Assert.Equal(Path.GetFullPath(Path.Combine(tv.Root, "pages", "Buch - Probe.md")), Path.GetFullPath(SystemMonitor.LastBookFile!));
+    }
+
     private static SystemSnapshot Snapshot(double? cpu, double? ramUsed, double? ramTotal, double? diskFree) =>
         new(cpu, ramUsed, ramTotal, diskFree, null, null, null, null, null);
 
     [Fact]
     public void SystemMeter_ShowsValues_GermanDecimal()
     {
-        SystemMonitor.Snapshot = new SystemSnapshot(63.4, 9.79, 15.84, 112.3, 40.2, 4.86, 12.4, 0.6, false, 38_400_000);
+        SystemMonitor.Snapshot = new SystemSnapshot(63.4, 9.79, 15.84, 112.3, 40.2, 4.86, 12.4, 0.6, false, Data(38_400_000));
 
         var cut = Render<SystemMeter>();
 
@@ -51,7 +104,7 @@ public class SystemMeterTests : UiTestContext
     [Fact]
     public void SystemMeter_WithoutOllama_AppAlone()
     {
-        SystemMonitor.Snapshot = new SystemSnapshot(63.4, 9.79, 15.84, 112.3, null, null, 12.4, 0.6, false, 38_400_000);
+        SystemMonitor.Snapshot = new SystemSnapshot(63.4, 9.79, 15.84, 112.3, null, null, 12.4, 0.6, false, Data(38_400_000));
 
         var cut = Render<SystemMeter>();
 
@@ -74,7 +127,7 @@ public class SystemMeterTests : UiTestContext
     {
         string TextFor(long? bytes)
         {
-            SystemMonitor.Snapshot = new SystemSnapshot(10, 4, 16, 100, null, null, 1, 0.5, null, bytes);
+            SystemMonitor.Snapshot = new SystemSnapshot(10, 4, 16, 100, null, null, 1, 0.5, null, bytes is { } b ? Data(b) : null);
             return Render<SystemMeter>().Find(".ne-sysmeter").TextContent;
         }
 
