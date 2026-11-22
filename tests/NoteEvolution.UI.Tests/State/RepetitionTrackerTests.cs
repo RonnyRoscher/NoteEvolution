@@ -152,6 +152,23 @@ public sealed class RepetitionTrackerTests : IDisposable
     }
 
     [Fact]
+    public async Task NearPairs_AreLoggedUpToALimit_ThenOnceThatTheRestIsNot()
+    {
+        // 30 blocks that mean the same (the same fake vector) and share no literal run: 435 near pairs.
+        var lines = string.Concat(Enumerable.Range(0, 30).Select(i =>
+            $"\t- gamma a{i} b{i} c{i} d{i} e{i} f{i} g{i} h{i}\n"));
+        var page = LogseqParser.Parse("Buch - Viele.md", Encoding.UTF8.GetBytes("type:: book\n\n- # Eins\n" + lines));
+        var tracker = NewTracker();
+
+        tracker.Schedule(Book.Load(page));
+        await tracker.WhenIdle();
+
+        Assert.Equal(RepetitionTracker.MaxNearLines,
+            _logger.Messages.Count(m => m.StartsWith("Repetition candidate ", StringComparison.Ordinal)));
+        Assert.Single(_logger.Messages, m => m.StartsWith("Repetition candidates:", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task SecondRun_EmbedsOnlyChangedBlocks()
     {
         var tracker = NewTracker();

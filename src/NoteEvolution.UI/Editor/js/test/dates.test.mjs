@@ -40,7 +40,7 @@ function setUp() {
     document.body.appendChild(host);
     const calls = [];
     const dotnet = { invokeMethodAsync: (method, ...args) => { calls.push({ method, args }); return Promise.resolve(); } };
-    const api = createEditor(host, dotnet, { barHeight: 0 });
+    const api = createEditor(host, dotnet, { barHeight: 0, changeDelay: 0 });
     api.setDocument(JSON.stringify({ type: 'doc', content: [block(A, 'Erster Text'), block(B, 'Zweiter Text')] }), false, false);
     const editor = host.querySelector('.ne-doc').editor;
     const datesOf = key => host.querySelector(`.ne-block[data-key="${key}"] .ne-block-dates`);

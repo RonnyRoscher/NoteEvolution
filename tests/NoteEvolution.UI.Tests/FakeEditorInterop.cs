@@ -136,6 +136,21 @@ public sealed class FakeEditorInterop : IEditorInterop, IDisposable
         return Task.CompletedTask;
     }
 
+    /// <summary>What the editor has typed but not sent yet; <see cref="TakePendingDocumentAsync"/> returns and clears it.</summary>
+    public string? PendingDocument { get; set; }
+
+    /// <summary>How often <see cref="TakePendingDocumentAsync"/> was called.</summary>
+    public int PendingTaken { get; private set; }
+
+    public Task<string?> TakePendingDocumentAsync()
+    {
+        PendingTaken++;
+        var json = PendingDocument;
+        PendingDocument = null;
+
+        return Task.FromResult(json);
+    }
+
     /// <summary>The marks passed to <see cref="SetBlockRepetitionsAsync"/>, in order.</summary>
     public List<IReadOnlyDictionary<Guid, RepetitionMark>> BlockRepetitions { get; } = [];
 

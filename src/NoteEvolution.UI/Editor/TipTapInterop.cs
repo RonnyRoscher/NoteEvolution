@@ -55,6 +55,8 @@ public sealed class TipTapInterop(IJSRuntime js, AppState state) : IEditorIntero
             "setBlockDates",
             [dates.Select(d => new { key = d.Key.ToString("D"), dates = d.Value?.Text, datesTitle = d.Value?.Title }).ToArray()]);
 
+    public async Task<string?> TakePendingDocumentAsync() => await Initialized.InvokeAsync<string?>("takePendingDocument");
+
     /// <summary>Passes the marks to the script as an object from the block's key to <c>{ count, title }</c>.</summary>
     public async Task SetBlockRepetitionsAsync(IReadOnlyDictionary<Guid, RepetitionMark> marks) =>
         await Initialized.InvokeVoidAsync(
@@ -114,6 +116,9 @@ public sealed class TipTapInterop(IJSRuntime js, AppState state) : IEditorIntero
 
     [JSInvokable]
     public Task DocumentChanged(string docJson) => _callbacks?.OnDocumentChanged(docJson) ?? Task.CompletedTask;
+
+    [JSInvokable]
+    public Task Typing() => _callbacks?.OnTyping() ?? Task.CompletedTask;
 
     /// <summary>
     /// The cursor moved: <paramref name="kind"/> is <c>heading</c>, <c>textBlock</c> or <c>detail</c> (<c>null</c>

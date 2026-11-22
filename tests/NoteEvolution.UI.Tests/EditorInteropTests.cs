@@ -132,6 +132,26 @@ public class EditorInteropTests
     }
 
     [Fact]
+    public async Task Typing_ReachesTheCallbacks()
+    {
+        var interop = await InitAsync();
+
+        await interop.Typing();
+
+        Assert.Equal(1, _callbacks.Typed);
+    }
+
+    [Fact]
+    public async Task TakePendingDocument_CallsTheScript()
+    {
+        var interop = await InitAsync();
+
+        await interop.TakePendingDocumentAsync();
+
+        Assert.Contains(_js.Calls, c => c.Method == "takePendingDocument");
+    }
+
+    [Fact]
     public async Task RepetitionClicked_ParsesTheKey_BadKeyIgnored()
     {
         var interop = await InitAsync();
@@ -291,6 +311,14 @@ public class EditorInteropTests
         public List<(double BarTop, bool Visible)> Boxes { get; } = [];
 
         public Task OnDocumentChanged(string docJson) => Task.CompletedTask;
+
+        public int Typed { get; private set; }
+
+        public Task OnTyping()
+        {
+            Typed++;
+            return Task.CompletedTask;
+        }
 
         public Task OnCursorChanged(CursorInfo? cursor)
         {

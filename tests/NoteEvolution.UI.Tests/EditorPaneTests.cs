@@ -118,6 +118,37 @@ public class EditorPaneTests : UiTestContext
     }
 
     [Fact]
+    public async Task Pane_Flush_TakesTheTextTheEditorHasNotSentYet()
+    {
+        using var tv = Alpha();
+        var (_, cut) = await RenderAsync(tv);
+        var doc = Doc(Editor.Json);
+
+        // Typed, but the editor sends the document only after a pause: a flush (before a command, a switch, closing)
+        // takes it from the editor and saves it.
+        SetText(doc, 1, "Zweiter Text, noch nicht gesendet");
+        Editor.PendingDocument = doc.ToJsonString();
+        await cut.InvokeAsync(() => State.FlushEditor!());
+
+        Assert.Contains("\t- Zweiter Text, noch nicht gesendet\n", tv.Read(BookPath));
+        Assert.Null(Editor.PendingDocument);
+        Assert.Single(Editor.Documents); // the editor is not reloaded after its own save
+    }
+
+    [Fact]
+    public async Task Pane_Flush_NothingUnsent_ChangesNothing()
+    {
+        using var tv = Alpha();
+        var (_, cut) = await RenderAsync(tv);
+        var before = tv.Read(BookPath);
+
+        await cut.InvokeAsync(() => State.FlushEditor!());
+
+        Assert.Equal(before, tv.Read(BookPath));
+        Assert.True(Editor.PendingTaken > 0);
+    }
+
+    [Fact]
     public async Task Pane_EditThenDebounce_SavesOnceAfter1000ms()
     {
         using var tv = Alpha();
@@ -601,6 +632,47 @@ public class EditorPaneTests : UiTestContext
         Assert.Contains("\t- Erster Text, lokal\n", book);
         Assert.Contains("\t- Zweiter Text, extern\n", book);
         cut.WaitForAssertion(() => Assert.Equal("Erster Text, lokal|Zweiter Text, extern|Dritter Text", TextsOf(Editor.Json)));
+    }
+
+    [Fact]
+    public async Task Pane_ExternalChangeWithUnsentText_MergesBoth_NothingLost()
+    {
+        using var tv = Alpha();
+        var (session, cut) = await RenderAsync(tv);
+        var doc = Doc(Editor.Json);
+        // Typed, but not sent yet (the editor waits for a pause): before the change from outside is brought in, the
+        // editor hands it over, so it is merged with the external version.
+        SetText(doc, 0, "Erster Text, ungesendet");
+        Editor.PendingDocument = doc.ToJsonString();
+        var path = Path.Combine(tv.Root, BookPath);
+        File.WriteAllText(path, tv.Read(BookPath).Replace("\t- Zweiter Text\n", "\t- Zweiter Text, extern\n"));
+
+        await cut.InvokeAsync(() => session.HandleExternalChangeAsync(path));
+
+        var book = tv.Read(BookPath);
+        Assert.Contains("\t- Erster Text, ungesendet\n", book);
+        Assert.Contains("\t- Zweiter Text, extern\n", book);
+        cut.WaitForAssertion(() => Assert.Equal("Erster Text, ungesendet|Zweiter Text, extern|Dritter Text", TextsOf(Editor.Json)));
+    }
+
+    [Fact]
+    public async Task Pane_SyncAfterAPageChange_LeavesUnsentTextInTheEditor()
+    {
+        using var tv = Alpha();
+        var (session, cut) = await RenderAsync(tv);
+        var before = tv.Read(BookPath);
+        var doc = Doc(Editor.Json);
+        SetText(doc, 1, "Zweiter Text, weiter getippt");
+        Editor.PendingDocument = doc.ToJsonString();
+        var notes = Path.Combine(tv.Root, NotesPath);
+        File.WriteAllText(notes, tv.Read(NotesPath) + "- Noch eine Notiz\n");
+
+        // Another page changed: the editor syncs, but it keeps what is being typed (it sends it after the pause), so
+        // saving does not run with every keystroke while the user types.
+        await cut.InvokeAsync(() => session.HandleExternalChange(notes));
+
+        Assert.NotNull(Editor.PendingDocument);
+        Assert.Equal(before, tv.Read(BookPath));
     }
 
     [Fact]

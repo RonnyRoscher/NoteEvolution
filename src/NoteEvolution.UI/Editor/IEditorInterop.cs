@@ -97,8 +97,15 @@ public sealed record ImageView(string? Src, string? Error);
 /// <summary>What the editor reports; implemented by the component that shows it (<c>EditorPane</c>).</summary>
 public interface IEditorCallbacks
 {
-    /// <summary>The document changed; <paramref name="docJson"/> is the whole document (see <see cref="EditorDocMapper"/>).</summary>
+    /// <summary>
+    /// The document changed; <paramref name="docJson"/> is the whole document (see <see cref="EditorDocMapper"/>). The
+    /// editor sends it once the typing pauses, not with every keystroke; what it has not sent yet is taken with
+    /// <see cref="IEditorInterop.TakePendingDocumentAsync"/>.
+    /// </summary>
     Task OnDocumentChanged(string docJson);
+
+    /// <summary>The user typed (at most about once a second, without the document).</summary>
+    Task OnTyping() => Task.CompletedTask;
 
     /// <summary>The cursor moved to another element or offset; <c>null</c> when it is in no element.</summary>
     Task OnCursorChanged(CursorInfo? cursor);
@@ -244,6 +251,12 @@ public interface IEditorInterop : IAsyncDisposable
     /// with the next document (<see cref="SetDocumentAsync"/>). Keys the editor does not show are ignored.
     /// </summary>
     Task SetBlockRepetitionsAsync(IReadOnlyDictionary<Guid, RepetitionMark> marks);
+
+    /// <summary>
+    /// The whole document if the user edited it since it was last sent or shown (it is then not sent later as
+    /// <see cref="IEditorCallbacks.OnDocumentChanged"/>); <c>null</c> if nothing is unsent. Called before a save.
+    /// </summary>
+    Task<string?> TakePendingDocumentAsync();
 
     /// <summary>
     /// Sets the labels of the shown cross references by target id without replacing the document (spec 2.3

@@ -1661,7 +1661,9 @@ function dropElement(view, event) {
  * ReferenceClicked(id), NoteDropped(afterKey, elementKey) (a drop from outside the editors: a note card or the marked range, see dropTarget and dropElement), BlocksDragStarted(keysJson), BlocksDragEnded(), BlocksDropped(keysJson, afterKey) (text blocks dragged from the other editor), UndoRequested() (Ctrl+Z with nothing to undo in the editor), PersonClicked(id), SourceClicked(id), CitationEdit(id, key, offset),
  * LoadImage(path) (returns a Promise of { src, error }: a data URL of the picture, or the text to show instead),
  * ImageEdit(key, offset) (a double click on an image, key and offset of the image's text as CitationEdit has them), ImagePasted(base64, mime) (an image in the clipboard; the paste changes nothing in the document) and
- * GlossaryClicked(entryKey). options.citeClickDelay is how long a click on a citation waits for a double click (ms). options.barHeight is the height of the section bar C# shows at the marking box's bottom
+ * GlossaryClicked(entryKey), Typing() (the user typed; at most once per options.typingInterval ms, default 1000).
+ * DocumentChanged is sent lazily: options.changeDelay ms (default 400) after the last change, or at once with 0; C# takes an
+ * unsent change before it saves with takePendingDocument(). options.citeClickDelay is how long a click on a citation waits for a double click (ms). options.barHeight is the height of the section bar C# shows at the marking box's bottom
  * (.ne-section-bar in the .ne-editor-pane) until the bar can be measured; the bar may wrap into more lines, so its
  * actual height is followed (the gap below the marking, --bar-height, and the scroll distance from the bottom).
  */
@@ -1857,9 +1859,11 @@ export function createEditor(host, dotnet, options = {}) {
         },
         // Dates and reference labels set by setBlockDates and setRefLabels are no edit: they are not reported (nothing to
         // save).
-        onUpdate: ({ editor: e, transaction }) => {
+        // The whole document is large (all blocks with their attributes): it is not sent with every keystroke, but once
+        // the typing pauses, or when C# takes it to save (takePendingDocument). Typing itself is reported cheaply.
+        onUpdate: ({ transaction }) => {
             if (!transaction.getMeta(shownOnlyKey)) {
-                call('DocumentChanged', JSON.stringify(e.getJSON()));
+                documentEdited();
             }
         },
         onSelectionUpdate: ({ editor: e }) => reportCursor(e.state),
@@ -1874,6 +1878,39 @@ export function createEditor(host, dotnet, options = {}) {
     });
 
     editorViews.add(editor.view);
+
+    // An edit not yet sent as DocumentChanged, the timer that sends it, and when Typing was reported last.
+    const changeDelay = options.changeDelay ?? 400;
+    const typingInterval = options.typingInterval ?? 1000;
+    let unsentChange = false;
+    let changeTimer = 0;
+    let typingAt = -Infinity;
+    const dropUnsentChange = () => {
+        clearTimeout(changeTimer);
+        changeTimer = 0;
+        unsentChange = false;
+    };
+    const sendChange = () => {
+        if (unsentChange) {
+            dropUnsentChange();
+            call('DocumentChanged', JSON.stringify(editor.getJSON()));
+        }
+    };
+    function documentEdited() {
+        const now = performance.now();
+        if (now - typingAt >= typingInterval) {
+            typingAt = now;
+            call('Typing');
+        }
+
+        unsentChange = true;
+        clearTimeout(changeTimer);
+        if (changeDelay <= 0) {
+            sendChange();
+        } else {
+            changeTimer = setTimeout(sendChange, changeDelay);
+        }
+    }
     installDragHelpers();
 
     // Scrolling (of any pane; the frame and the 1 px check keep that cheap) and resizing move the box too.
@@ -1892,6 +1929,8 @@ export function createEditor(host, dotnet, options = {}) {
         setDocument(json, showChips, keepCursor) {
             const doc = editor.schema.nodeFromJSON(JSON.parse(json));
             doc.check();
+            // C# took what was typed before it sent this document; a change still unsent belongs to the old one.
+            dropUnsentChange();
             if (!keepCursor) {
                 clearImageCache();
             }
@@ -2048,7 +2087,21 @@ export function createEditor(host, dotnet, options = {}) {
             updateAppendix(tr, editor.state.doc, byId(people), byId(sources), editor.state.selection);
             editor.view.dispatch(tr.setMeta(glossaryKey, true).setMeta('addToHistory', false).setMeta(shownOnlyKey, true));
         },
+        /**
+         * The document as DocumentChanged would send it, if there is an edit not sent yet (it is then not sent later);
+         * null if everything was sent. C# calls it before it saves.
+         */
+        takePendingDocument() {
+            if (!unsentChange) {
+                return null;
+            }
+
+            dropUnsentChange();
+            return JSON.stringify(editor.getJSON());
+        },
+
         destroy() {
+            dropUnsentChange();
             cancelAnimationFrame(boxFrame);
             resizes.disconnect();
             document.removeEventListener('scroll', scheduleBox, { capture: true });
