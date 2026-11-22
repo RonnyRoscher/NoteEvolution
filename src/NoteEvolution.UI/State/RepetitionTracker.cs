@@ -17,6 +17,12 @@ internal sealed class RepetitionTracker : IDisposable
     /// <summary>After how many newly embedded blocks the set is published again.</summary>
     internal const int PublishEvery = 20;
 
+    /// <summary>
+    /// How many near pairs a session logs at most: enough to judge the threshold, and a book of similar blocks does
+    /// not write hundreds of thousands of lines (each pair from <see cref="SemanticRepetitions.LogThreshold"/> on).
+    /// </summary>
+    internal const int MaxNearLines = 200;
+
     private readonly ILogger _logger;
     private readonly Func<Action, Task> _dispatch;
     private readonly AcceptedRepetitions _accepted;
@@ -515,12 +521,24 @@ internal sealed class RepetitionTracker : IDisposable
 
     private void LogNear(ComparedBlock a, string hashA, ComparedBlock b, string hashB, float score, bool listed)
     {
+        var limitReached = false;
         lock (_gate)
         {
-            if (!_logged.Add((hashA, hashB)))
+            if (_logged.Count > MaxNearLines || !_logged.Add((hashA, hashB)))
             {
                 return;
             }
+
+            if (_logged.Count > MaxNearLines)
+            {
+                limitReached = true; // the one entry past the limit only stands for "more"
+            }
+        }
+
+        if (limitReached)
+        {
+            _logger.LogInformation("Repetition candidates: more than {Max} this session, the rest is not logged", MaxNearLines);
+            return;
         }
 
         _logger.LogInformation("Repetition candidate {Score:F3} listed={Listed}: \"{A}\" ~ \"{B}\"",

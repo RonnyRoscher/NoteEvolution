@@ -259,7 +259,16 @@
     /// Saves the pending text now (the debounce is skipped) and shows what the book has. Registered as
     /// <see cref="MyView"/>'s <see cref="BookView.FlushEditor"/>: whoever changes the book page behind the editor's back awaits it first.
     /// </summary>
-    public async Task FlushAsync()
+    public Task FlushAsync() => FlushAsync(takeUnsent: true);
+
+    /// <summary>
+    /// <see cref="FlushAsync()"/>; with <paramref name="takeUnsent"/> the text the editor has not sent yet is saved too.
+    /// Without it (a sync after a page changed, a reveal, ...) the unsent text stays in the editor, which sends it after
+    /// the pause: a sync after its own save does not save again with every keystroke. Whoever replaces the editor's
+    /// document flushes first (a book switch, a command, an external change through
+    /// <see cref="VaultSession.ExternalChangeComing"/>).
+    /// </summary>
+    private async Task FlushAsync(bool takeUnsent)
     {
         if (!_ready || _disposed)
         {
@@ -269,7 +278,7 @@
         await _gate.WaitAsync();
         try
         {
-            await SyncCoreAsync();
+            await SyncCoreAsync(takeUnsent);
             await PushMarkedAsync();
         }
         finally
@@ -352,6 +361,38 @@
         CancelDebounce();
         var source = _debounce = new CancellationTokenSource();
         _ = SaveAfterDelayAsync(source.Token);
+    }
+
+    /// <summary>The user typed: background work that would compete with typing waits (the language model).</summary>
+    public Task OnTyping()
+    {
+        State.Session?.NotifyTyping();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Takes what the editor has typed but not sent yet (it sends the document only when the typing pauses) as pending
+    /// text, under the rules of <see cref="OnDocumentChanged"/>. A failing call is logged; the text then follows with the
+    /// editor's own send.
+    /// </summary>
+    private async Task TakeUnsentTextAsync()
+    {
+        if (_loading || _saver.Shown is null || ReadOnlyReason is not null)
+        {
+            return;
+        }
+
+        try
+        {
+            if (await Editor.TakePendingDocumentAsync() is { } json)
+            {
+                _saver.Pending = json;
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Logger.LogWarning(ex, "Taking the editor's unsent text failed");
+        }
     }
 
     /// <summary>
@@ -781,6 +822,22 @@
     private void OnConflictsChanged() => _ = InvokeAsync(StateHasChanged);
 
     /// <summary>
+    /// An external change of the shown book is about to be brought in: the text typed but not sent yet becomes the
+    /// pending text, which <see cref="OnExternalChangeStarting"/> then puts into the page to be merged.
+    /// </summary>
+    private async Task OnExternalChangeComingAsync(string path)
+    {
+        if (_disposed || _saver.Shown is not { } shown || State.Session is not { } session
+            || session.Vault.FindBook(shown.BookLink) is not { } book
+            || !string.Equals(Path.GetFullPath(book.Page.FilePath), path, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        await TakeUnsentTextAsync();
+    }
+
+    /// <summary>
     /// The session is about to bring in an external change: pending text of that page goes into the page first, so it
     /// is merged with the external version (R30).
     /// </summary>
@@ -805,6 +862,7 @@
             _session.PagesChanged += OnPagesChanged;
             _session.ConflictsChanged += OnConflictsChanged;
             _session.ExternalChangeStarting += OnExternalChangeStarting;
+            _session.ExternalChangeComing += OnExternalChangeComingAsync;
             _session.RepetitionsChanged += OnRepetitionsChanged;
         }
     }
@@ -816,6 +874,7 @@
             _session.PagesChanged -= OnPagesChanged;
             _session.ConflictsChanged -= OnConflictsChanged;
             _session.ExternalChangeStarting -= OnExternalChangeStarting;
+            _session.ExternalChangeComing -= OnExternalChangeComingAsync;
             _session.RepetitionsChanged -= OnRepetitionsChanged;
         }
     }
@@ -831,7 +890,7 @@
             return;
         }
 
-        await InvokeAsync(SyncAsync);
+        await InvokeAsync(() => SyncAsync(takeUnsent: true));
     }
 
     private void CancelDebounce()
@@ -842,11 +901,13 @@
     }
 
     /// <summary><see cref="FlushAsync"/> for events: failures are logged.</summary>
-    private async Task SyncAsync()
+    private async Task SyncAsync() => await SyncAsync(takeUnsent: false);
+
+    private async Task SyncAsync(bool takeUnsent)
     {
         try
         {
-            await FlushAsync();
+            await FlushAsync(takeUnsent);
         }
         catch (Exception ex)
         {
@@ -858,10 +919,15 @@
     /// Saves the pending text to the place it was typed in, then shows the current book and reveals a pending element.
     /// The editor is only given a new document when that differs from what it shows (keeping the cursor while typing).
     /// </summary>
-    private async Task SyncCoreAsync()
+    private async Task SyncCoreAsync(bool takeUnsent)
     {
         TrackSession();
         CancelDebounce();
+        if (takeUnsent)
+        {
+            await TakeUnsentTextAsync();
+        }
+
         _saver.Save();
         _saver.SaveDirtyPage();
         _saver.ApplyUnsavedEffects();
@@ -1032,7 +1098,8 @@
     private async Task ToggleChipsAsync(ChangeEventArgs e)
     {
         _showChips = e.Value is true;
-        await SyncAsync();
+        // The editor is given the document again: what was typed and not sent yet is saved first.
+        await FlushAsync();
     }
 
     /// <summary>

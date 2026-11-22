@@ -580,6 +580,13 @@ public sealed class VaultSession : IDisposable
     public event Action<string>? ExternalChangeStarting;
 
     /// <summary>
+    /// Raised on the UI thread with the full path before an external change found by the watcher is brought in, and
+    /// awaited (<see cref="HandleExternalChangeAsync"/>): an editor holding text it has not handed over yet takes it
+    /// now, so it joins the change as pending text (<see cref="ExternalChangeStarting"/>).
+    /// </summary>
+    public event Func<string, Task>? ExternalChangeComing;
+
+    /// <summary>
     /// Some conflict waits for the user's decision. Operations that may write any page (undo, and every UI-triggered
     /// write) are refused meanwhile, so no deleted file is recreated and no unresolved conflict is overwritten.
     /// </summary>
@@ -637,6 +644,34 @@ public sealed class VaultSession : IDisposable
                 throw;
             }
         });
+    }
+
+    /// <summary>
+    /// <see cref="HandleExternalChange"/> after the editors handed over the text they have not sent yet
+    /// (<see cref="ExternalChangeComing"/>): the watcher's way. Callers that flushed the editors themselves call
+    /// <see cref="HandleExternalChange"/> directly.
+    /// </summary>
+    public async Task HandleExternalChangeAsync(string path)
+    {
+        if (IsDisposed)
+        {
+            return;
+        }
+
+        var fullPath = Path.GetFullPath(path);
+        foreach (var coming in ExternalChangeComing?.GetInvocationList().Cast<Func<string, Task>>() ?? [])
+        {
+            try
+            {
+                await coming(fullPath);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Preparing the external change of {Path} failed", fullPath);
+            }
+        }
+
+        HandleExternalChange(fullPath);
     }
 
     /// <summary>
@@ -959,7 +994,7 @@ public sealed class VaultSession : IDisposable
         Dispatch(path);
     }
 
-    private void Dispatch(string path) => Dispatch(() => HandleExternalChange(path), "the external change of " + path);
+    private void Dispatch(string path) => Dispatch(() => _ = HandleExternalChangeAsync(path), "the external change of " + path);
 
     /// <summary>Runs <paramref name="action"/> through the dispatcher; never throws, a failure is logged.</summary>
     private void Dispatch(Action action, string what)
