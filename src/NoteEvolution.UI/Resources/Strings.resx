@@ -202,6 +202,10 @@
   <data name="SectionInsertHeadingAfter" xml:space="preserve">
     <value>Neue Überschrift danach</value>
   </data>
+  <data name="SectionInsertSubheadingAfter" xml:space="preserve">
+    <value>Neue Unterüberschrift danach</value>
+    <comment>Knopf an Textblock oder Unterpunkt: Überschrift eine Ebene tiefer hinter dem Textblock; die folgenden Überschriften bleiben, wo sie sind</comment>
+  </data>
   <data name="SectionInsertChild" xml:space="preserve">
     <value>Neuer Unterabschnitt</value>
   </data>

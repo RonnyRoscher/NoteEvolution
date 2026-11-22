@@ -1686,6 +1686,8 @@ public static class ManuscriptCommands
             SectionCommand.RemoveHeading => element.Kind == ElementKind.Heading,
             SectionCommand.ToggleRemark or SectionCommand.AddRemark or SectionCommand.Split or SectionCommand.InsertHeadingAfter =>
                 element.Kind != ElementKind.Heading,
+            SectionCommand.InsertSubheadingAfter => element.Kind != ElementKind.Heading
+                && BookElements.TextBlockOf(book, element)?.Section.Level < OutlineEditor.MaxLevel,
             _ => false,
         };
 
@@ -1725,6 +1727,9 @@ public static class ManuscriptCommands
                     break;
                 case SectionCommand.InsertHeadingAfter:
                     reveal = ManuscriptEditor.InsertHeadingAfter(book, element);
+                    break;
+                case SectionCommand.InsertSubheadingAfter:
+                    reveal = ManuscriptEditor.InsertSubheadingAfter(book, element);
                     break;
                 case SectionCommand.Indent:
                     ManuscriptEditor.Indent(book, element.Key);

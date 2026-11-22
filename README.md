@@ -141,9 +141,15 @@ Am unteren Rand der Markierung stehen die Abschnittsknöpfe und die Quellen:
 | Neuer Abschnitt danach (gleiche Ebene) | Alt+Enter |
 | Neuer Unterabschnitt (als erstes Element) | Alt+Umschalt+Enter |
 | Neue Überschrift danach (an Textblock oder Detail: teilt den Abschnitt dort, was danach kommt, gehört zur neuen Überschrift) | nur Knopf |
+| Neue Unterüberschrift danach (an Textblock oder Detail: eine Ebene tiefer hinter dem Textblock; die Textblöcke bis zur nächsten Überschrift gehören zu ihr, die folgenden Überschriften bleiben, wo sie sind; ausgegraut in einem Abschnitt der Ebene 6) | nur Knopf |
 | Element ein-/ausrücken („Einrücken ⇥“ / „⇤ Ausrücken“) | Tab / Umschalt+Tab |
 | Überschrift entfernen (der Titel wird ein Textblock, der Inhalt bleibt) | Rücktaste am Anfang des Titels |
 | Abschnitt löschen | nur Knopf |
+
+**Enter** legt im Textblock einen Unterpunkt an. Am Ende eines Textblocks ohne Unterpunkte legt es stattdessen einen
+neuen leeren Textblock auf derselben Ebene dahinter an (wie Strg+Enter dort); Tab macht daraus einen Unterpunkt. Am
+Ende eines Unterpunkts folgt ein Unterpunkt derselben Stufe, am Ende des eigenen Texts eines Blocks mit Unterpunkten
+ein neuer erster Unterpunkt.
 
 **Fett und kursiv:** Die Knöpfe **B** und *I* in der Leiste (wie Strg+B und Strg+I) setzen oder entfernen Fett bzw.
 Kursiv für den markierten Text, auch über mehrere Absätze; ohne Markierung gilt es für das, was als Nächstes getippt

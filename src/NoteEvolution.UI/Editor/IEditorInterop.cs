@@ -34,6 +34,12 @@ public enum SectionCommand
     /// <summary>Button only, at a text block or detail: a new heading of the section's level splits the section there.</summary>
     InsertHeadingAfter,
 
+    /// <summary>
+    /// Button only, at a text block or detail: a new heading one level below the section after its text block; the text
+    /// blocks up to the next heading go under it, the following headings stay.
+    /// </summary>
+    InsertSubheadingAfter,
+
     /// <summary>Tab in a heading: one level deeper.</summary>
     Indent,
 
