@@ -38,6 +38,7 @@ public class SectionBarTests : UiTestContext
         "\t\t\t- #### Vier\n" +
         "\t\t\t\t- ##### Fünf\n" +
         "\t\t\t\t\t- ###### Sechs\n" +
+        "\t\t\t\t\t\t- Ganz tief\n" +
         "- # Zwei\n" +
         "\t- Dritter Text\n" +
         $"\t  source:: (({Undated}))\n" +
@@ -255,6 +256,40 @@ public class SectionBarTests : UiTestContext
         var heading = Book.Root.Children.Single(node => node.Title == "");
         Assert.Equal(["Zweiter Text"], heading.TextBlocks.Select(t => t.Text));
         Assert.Equal(["Eins-A"], heading.Children.Select(c => c.Title));
+    }
+
+    [Fact]
+    public async Task SubheadingAfter_OnTextBlock_OneLevelDeeper_FollowingHeadingsStay_NotOnHeading()
+    {
+        var cut = await RenderAsync();
+        await MoveToAsync(cut, "# Eins");
+        cut.WaitForAssertion(() => Assert.Single(cut.FindAll(".ne-sec-after")));
+        Assert.Empty(cut.FindAll(".ne-sec-subheading-after"));
+
+        await MoveToAsync(cut, "Erster Text");
+        cut.WaitForAssertion(() => Assert.Equal(Text("SectionInsertSubheadingAfter"), cut.Find(".ne-sec-subheading-after").TextContent.Trim()));
+
+        await cut.InvokeAsync(() => cut.Find(".ne-sec-subheading-after").Click());
+
+        // After "Erster Text" with its detail: an H2 under "Eins"; "Zweiter Text" up to the next heading goes under it,
+        // "Eins-A" stays where it is.
+        cut.WaitForAssertion(() => Assert.Contains("\t\t- Ein Detail\n\t- ## \n\t\t- Zweiter Text\n", _vault.Read(BookPath)));
+        var eins = Book.Root.Children.Single(node => node.Title == "Eins");
+        var heading = eins.Children.Single(node => node.Title == "");
+        Assert.Equal(2, heading.Level);
+        Assert.Equal(["Zweiter Text"], heading.TextBlocks.Select(t => t.Text));
+        Assert.Equal(["", "Eins-A"], eins.Children.Select(c => c.Title).Take(2));
+        Assert.Equal(Text("UndoStructure"), State.Session!.Undo.NextDescription);
+    }
+
+    [Fact]
+    public async Task SubheadingAfter_InALevelSixSection_IsGreyedOut()
+    {
+        var cut = await RenderAsync();
+        await MoveToAsync(cut, "Ganz tief");
+
+        cut.WaitForAssertion(() => Assert.True(cut.Find(".ne-sec-subheading-after").HasAttribute("disabled")));
+        Assert.False(cut.Find(".ne-sec-heading-after").HasAttribute("disabled"));
     }
 
     [Fact]

@@ -77,6 +77,46 @@ public static partial class ManuscriptEditor
     }
 
     /// <summary>
+    /// "Neue Unterüberschrift danach": a new empty heading one level below the section of the text block or detail
+    /// <paramref name="current"/> (H1 in the prologue), right after its text block. The text blocks that follow it in the
+    /// section up to the next heading go along under the new heading (they are read as its text); the following headings
+    /// stay where they are, so nothing else moves in.
+    /// </summary>
+    /// <returns>The <see cref="Block.Key"/> of the new heading.</returns>
+    /// <exception cref="ArgumentException">
+    /// The element is a heading or not in the book, or the section is a level-6 heading (the new one would be deeper).
+    /// </exception>
+    public static Guid InsertSubheadingAfter(Book book, BookElement current)
+    {
+        if (current.Kind == ElementKind.Heading)
+        {
+            throw new ArgumentException("A heading has „Neuer Unterabschnitt“ instead.", nameof(current));
+        }
+
+        BlockOf(book, current); // throws for an element that is not in the book
+        var textBlock = BookElements.TextBlockOf(book, current)!;
+        var level = textBlock.Section.Level + 1;
+        if (level > OutlineEditor.MaxLevel)
+        {
+            throw new ArgumentException($"A heading below level {textBlock.Section.Level} would exceed level {OutlineEditor.MaxLevel}.", nameof(current));
+        }
+
+        var page = book.Page;
+        var block = textBlock.Block;
+        var following = (block.Parent?.Children ?? page.Roots).SkipWhile(child => child != block).Skip(1)
+            .TakeWhile(child => book.FindNode(child.Key) is null)
+            .ToList();
+        var heading = Block.CreateDetached(EmptyHeading(level));
+        page.InsertBlock(block.Parent, IndexOf(page, block) + 1, heading);
+        foreach (var item in following)
+        {
+            page.MoveBlock(item, heading, heading.Children.Count);
+        }
+
+        return heading.Key;
+    }
+
+    /// <summary>
     /// Adds a new empty element as the first child of <paramref name="current"/>: for a heading of level n a level-(n+1)
     /// heading after its own text blocks and before its existing sub-sections, for a text block a detail of depth 1,
     /// for a detail a detail one level deeper.

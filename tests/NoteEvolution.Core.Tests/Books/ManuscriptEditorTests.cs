@@ -132,6 +132,76 @@ public class ManuscriptEditorTests
     }
 
     [Fact]
+    public void InsertSubheadingAfter_TextBlock_OneLevelDeeper_FollowingHeadingsStay()
+    {
+        var book = Load(Text);
+
+        var key = ManuscriptEditor.InsertSubheadingAfter(book, ElementOf(book, "Text eins"));
+
+        Assert.Equal(Text.Replace("\t- ## Eins-A\n", "\t- ## \n\t- ## Eins-A\n"), Serialize(book));
+        var reloaded = Book.Load(book.Page);
+        var heading = reloaded.FindNode(key)!;
+        Assert.Equal(2, heading.Level);
+        Assert.Equal("", heading.Title);
+        Assert.Equal(KeyOf(book, "# Eins"), heading.Parent!.Key);
+        Assert.Empty(heading.TextBlocks);
+        Assert.Equal(["", "Eins-A", "Eins-B"], reloaded.FindNode(KeyOf(book, "# Eins"))!.Children.Select(c => c.Title));
+    }
+
+    [Fact]
+    public void InsertSubheadingAfter_FollowingTextBlocksUpToTheNextHeading_GoUnderIt()
+    {
+        const string text = "type:: book\n\n- # Eins\n\t- T1\n\t- T2\n\t\t- Detail\n\t- T3\n\t- ## Unter\n\t\t- U\n\t- T4\n";
+        var book = Load(text);
+
+        var key = ManuscriptEditor.InsertSubheadingAfter(book, ElementOf(book, "T1"));
+
+        Assert.Equal(
+            "type:: book\n\n- # Eins\n\t- T1\n\t- ## \n\t\t- T2\n\t\t\t- Detail\n\t\t- T3\n\t- ## Unter\n\t\t- U\n\t- T4\n",
+            Serialize(book));
+        var heading = Book.Load(book.Page).FindNode(key)!;
+        Assert.Equal(["T2", "T3"], heading.TextBlocks.Select(t => t.Text));
+        Assert.Empty(heading.Children);
+    }
+
+    [Fact]
+    public void InsertSubheadingAfter_Detail_AfterItsTextBlock()
+    {
+        var book = Load(Text);
+
+        var key = ManuscriptEditor.InsertSubheadingAfter(book, ElementOf(book, "Detail 1"));
+
+        Assert.Equal(Text.Replace("\t- ## Eins-A\n", "\t- ## \n\t- ## Eins-A\n"), Serialize(book));
+        Assert.Equal(2, Book.Load(book.Page).FindNode(key)!.Level);
+    }
+
+    [Fact]
+    public void InsertSubheadingAfter_Prologue_IsAFirstLevelHeading_TheChaptersStay()
+    {
+        var book = Load(Text);
+
+        var key = ManuscriptEditor.InsertSubheadingAfter(book, ElementOf(book, "Vorspann"));
+
+        Assert.Equal(Text.Replace("- Vorspann\n", "- Vorspann\n- # \n"), Serialize(book));
+        var reloaded = Book.Load(book.Page);
+        Assert.Equal(1, reloaded.FindNode(key)!.Level);
+        Assert.Equal(["", "Eins", "Zwei"], reloaded.Root.Children.Select(c => c.Title));
+    }
+
+    [Fact]
+    public void InsertSubheadingAfter_BelowLevelSix_OrOnAHeading_IsRefused_NothingChanges()
+    {
+        var deep = Load(LevelSix + "\t\t\t\t\t\t- tief\n");
+        var before = Serialize(deep);
+        Assert.Throws<ArgumentException>(() => ManuscriptEditor.InsertSubheadingAfter(deep, ElementOf(deep, "tief")));
+        Assert.Equal(before, Serialize(deep));
+
+        var book = Load(Text);
+        Assert.Throws<ArgumentException>(() => ManuscriptEditor.InsertSubheadingAfter(book, ElementOf(book, "# Eins")));
+        Assert.Equal(Text, Serialize(book));
+    }
+
+    [Fact]
     public void InsertHeadingAfter_SubSection_SameLevel_DeeperHeadingsGoAlong()
     {
         var book = Load(Text);

@@ -885,7 +885,8 @@ function insertBlockAfterHeading(tr, $from) {
 }
 
 /**
- * Enter: a new paragraph in the block (a sub-bullet, at least depth 1, without #notiz and status). Split inside a text,
+ * Enter: a new paragraph in the block (a sub-bullet, at least depth 1, without #notiz and status); at the end of a text
+ * block without sub-bullets a new text block after it instead (as Ctrl+Enter there). Split inside a text,
  * the new part gets splitFrom (the sub-bullet, or the text block for its own text); at the start of a sub-bullet an
  * empty one is put before it, so that the text keeps its key and its link.
  */
@@ -899,6 +900,12 @@ function newParagraph({ tr, dispatch }) {
     }
     if ($from.parent.type.name !== 'para') {
         return false;
+    }
+    // At the end of a text block that has no sub-points: a new text block on the same level, as Ctrl+Enter there
+    // (Tab makes it a sub-point).
+    if (tr.selection.empty && $from.depth === 2 && $from.node(1).childCount === 1
+        && $from.parentOffset === $from.parent.content.size) {
+        return splitTextBlock({ tr, dispatch });
     }
     if (dispatch) {
         if (!tr.selection.empty) {
