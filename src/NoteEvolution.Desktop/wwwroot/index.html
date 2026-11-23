@@ -182,9 +182,16 @@
                 const pane = document.querySelector('.ne-editor-pane.active') || panes[0];
                 const host = pane?.querySelector('.ne-editor-host');
                 if (!host) { return null; }
-                for (const element of [host, ...host.querySelectorAll('*')]) {
+                // The pane section around the editor scrolls (each half of a split view has its own): walk up first.
+                const scrolls = element => {
                     const overflow = getComputedStyle(element).overflowY;
-                    if (overflow === 'auto' || overflow === 'scroll') { return element; }
+                    return overflow === 'auto' || overflow === 'scroll';
+                };
+                for (let element = host; element && element !== document.body; element = element.parentElement) {
+                    if (scrolls(element)) { return element; }
+                }
+                for (const element of host.querySelectorAll('*')) {
+                    if (scrolls(element)) { return element; }
                 }
                 return host;
             },
