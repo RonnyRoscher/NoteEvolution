@@ -706,7 +706,7 @@ public sealed class RepetitionTrackerTests : IDisposable
         var set = tracker.Of(book);
         Assert.True(set.Complete);
         Assert.Empty(set.All);
-        Assert.Contains(_logger.Messages, m => m.StartsWith("Repetition candidate 0.000 listed=False", StringComparison.Ordinal));
+        Assert.Contains(_logger.Messages, m => m.StartsWith("Repetition candidate 0.900 listed=False", StringComparison.Ordinal));
     }
 
     [Fact]

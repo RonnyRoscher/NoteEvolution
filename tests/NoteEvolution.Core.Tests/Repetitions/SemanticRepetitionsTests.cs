@@ -268,16 +268,25 @@ public class SemanticRepetitionsTests
     [Fact]
     public void Near_ReportsTheBestSentenceOfEveryCandidate()
     {
-        var ids = Ids(3);
+        // ids[2] is rejected, but its best sentence pair (0.88, below the threshold) is reported all the same; ids[3] has
+        // no sentence vector at all: 0.
+        var ids = Ids(4);
         var seen = new List<(Guid A, Guid B, float Score, bool Listed)>();
 
         Confirm(
-            [(ids[0], ids[1], 0.9f), (ids[0], ids[2], 0.9f)],
-            new() { [ids[0]] = [First()], [ids[1]] = [Cos(0.95, 1)], [ids[2]] = [Cos(0.80, 2)] },
+            [(ids[0], ids[1], 0.9f), (ids[0], ids[2], 0.9f), (ids[0], ids[3], 0.9f)],
+            new()
+            {
+                [ids[0]] = [First(), Axis(5)],
+                [ids[1]] = [Cos(0.95, 1)],
+                [ids[2]] = [Cos(0.80, 2), Cos(0.88, 3)],
+                [ids[3]] = [null],
+            },
             (a, b, score, listed) => seen.Add((a, b, score, listed)));
 
-        Assert.Equal(2, seen.Count);
+        Assert.Equal(3, seen.Count);
         Assert.Equal((ids[1], 0.95f, true), (seen[0].B, (float)Math.Round(seen[0].Score, 2), seen[0].Listed));
-        Assert.Equal((ids[2], 0f, false), (seen[1].B, seen[1].Score, seen[1].Listed));
+        Assert.Equal((ids[2], 0.88f, false), (seen[1].B, (float)Math.Round(seen[1].Score, 2), seen[1].Listed));
+        Assert.Equal((ids[3], 0f, false), (seen[2].B, seen[2].Score, seen[2].Listed));
     }
 }

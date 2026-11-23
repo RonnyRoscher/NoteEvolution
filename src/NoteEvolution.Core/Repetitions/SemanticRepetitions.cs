@@ -104,7 +104,8 @@ public static class SemanticRepetitions
     /// best sentence pair's. A pair is kept if it is among the <see cref="PerBlock"/> best-scored counterparts of at least
     /// one of its two blocks, so a block can list more than <see cref="PerBlock"/> (counterparts that keep it in their own
     /// top). A sentence without a vector is left out; each block's sentence vectors are asked for once per call.
-    /// <paramref name="near"/> receives every candidate with its best sentence score (0 if none) and whether it is listed.
+    /// <paramref name="near"/> receives every candidate with the best cosine over all its sentence pairs with vectors, also
+    /// when it stays below <see cref="SentenceThreshold"/> (0 only if no sentence pair has vectors), and whether it is listed.
     /// </summary>
     public static IReadOnlyList<SemanticPair> Confirm(
         IReadOnlyList<(Guid A, Guid B, float Score)> candidates,
@@ -123,10 +124,12 @@ public static class SemanticRepetitions
         }
 
         var confirmed = new List<SemanticPair?>();
+        var best = new List<float>();
         foreach (var (a, b, _) in candidates)
         {
-            var sentences = ConfirmSentences(VectorsOf(a), VectorsOf(b));
+            var (sentences, bestScore) = ConfirmSentences(VectorsOf(a), VectorsOf(b));
             confirmed.Add(sentences.Count == 0 ? null : new SemanticPair(a, b, sentences[0].Score, sentences));
+            best.Add(bestScore ?? 0f);
         }
 
         var ranked = new Dictionary<Guid, List<(int Index, float Score)>>();
@@ -161,7 +164,7 @@ public static class SemanticRepetitions
         for (var i = 0; i < candidates.Count; i++)
         {
             var listed = confirmed[i] is not null && top.Contains(i);
-            near?.Invoke(candidates[i].A, candidates[i].B, confirmed[i]?.Score ?? 0f, listed);
+            near?.Invoke(candidates[i].A, candidates[i].B, best[i], listed);
             if (listed)
             {
                 pairs.Add(confirmed[i]!);
@@ -171,11 +174,16 @@ public static class SemanticRepetitions
         return pairs;
     }
 
-    private static List<SentencePair> ConfirmSentences(
+    /// <summary>
+    /// The sentence pairs from <see cref="SentenceThreshold"/> on, taken greedily by score, and the best cosine over all
+    /// sentence pairs with vectors (null if there is none), whether it reaches the threshold or not.
+    /// </summary>
+    private static (List<SentencePair> Taken, float? Best) ConfirmSentences(
         List<(ComparedSentence Sentence, float[] Vector, double Norm)> left,
         List<(ComparedSentence Sentence, float[] Vector, double Norm)> right)
     {
         var scored = new List<SentencePair>();
+        float? best = null;
         foreach (var (sentenceA, vectorA, normA) in left)
         {
             foreach (var (sentenceB, vectorB, normB) in right)
@@ -186,6 +194,7 @@ public static class SemanticRepetitions
                 }
 
                 var score = (float)(Dot(vectorA, vectorB) / (normA * normB));
+                best = Math.Max(best ?? score, score);
                 if (score >= SentenceThreshold)
                 {
                     scored.Add(new SentencePair(sentenceA, sentenceB, score));
@@ -212,7 +221,7 @@ public static class SemanticRepetitions
             }
         }
 
-        return taken;
+        return (taken, best);
     }
 
     private static List<(ComparedSentence Sentence, float[] Vector, double Norm)> Vectors(
