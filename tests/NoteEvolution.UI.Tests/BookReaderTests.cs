@@ -98,6 +98,63 @@ public class BookReaderTests : UiTestContext
     }
 
     [Fact]
+    public void Reader_NewResultWithTheSameHit_RendersAgain_ButDoesNotScroll()
+    {
+        var f = Build();
+        var cut = Render(f, f.Pair, f.Pair.B, revision: 1);
+        Assert.Equal(1, Scrolls);
+        var renders = cut.RenderCount;
+
+        // A new analysis result builds the same hit anew: equal by identity, but with new lists.
+        var same = f.Pair with { Runs = [.. f.Pair.Runs], Sentences = [.. f.Pair.Sentences] };
+        Assert.NotEqual(f.Pair, same);
+        cut.Render(p => p.Add(c => c.Current, same).Add(c => c.Revision, 2));
+
+        Assert.True(cut.RenderCount > renders);
+        Assert.Equal(1, Scrolls);
+    }
+
+    [Fact]
+    public void Reader_AnotherHitWithTheSameSide_Scrolls()
+    {
+        var book = Book.Load(LogseqParser.Parse("Buch - Test.md", Encoding.UTF8.GetBytes(
+            $"type:: book\n\n- # Eins\n\t- alpha {RunX}\n\t- beta {RunX}\n\t- gamma {RunX}\n")));
+        var blocks = ComparisonText.Of(book);
+        var set = RepetitionSet.Create(
+            book, blocks, LiteralRepetitions.Find(blocks), [], new HashSet<(Guid, Guid)>(), 0, 0);
+        Guid Key(string start) => blocks.Single(b => b.Paragraphs[0].Plain.StartsWith(start, StringComparison.Ordinal)).Key;
+        var alpha = Key("alpha");
+        var ab = set.All.Single(r => r.A == alpha && r.B == Key("beta"));
+        var ac = set.All.Single(r => r.A == alpha && r.B == Key("gamma"));
+        var cut = Render(new Fixture(book, set), ab, alpha, revision: 1);
+        Assert.Equal(1, Scrolls);
+
+        cut.Render(p => p.Add(c => c.Current, ac));
+
+        Assert.Equal(2, Scrolls);
+        Assert.Equal($"ne-reader-{alpha}", JSInterop.Invocations.Last(i => i.Identifier == "neLayout.scrollReaderTo").Arguments[1]);
+    }
+
+    [Fact]
+    public void Reader_SwitchOff_HidesTheUnderlines_ButNotTheCurrentHit()
+    {
+        var f = Build();
+
+        var cut = Render<BookReader>(p => p
+            .Add(c => c.Book, f.Book).Add(c => c.Set, f.Set).Add(c => c.Current, f.Pair).Add(c => c.Side, f.Pair.B)
+            .Add(c => c.Underline, false));
+
+        Assert.Empty(cut.FindAll(".ne-rep-literal"));
+        Assert.Equal(RunX, Assert.Single(cut.FindAll(".ne-rep-current")).TextContent);
+        Assert.Single(cut.FindAll(".ne-rep-current-block"));
+
+        // Switched on again, the reader renders again with the underlines.
+        cut.Render(p => p.Add(c => c.Underline, true));
+
+        Assert.Equal(2, cut.FindAll(".ne-rep-literal").Count);
+    }
+
+    [Fact]
     public void Reader_SameRevision_DoesNotRenderAgain()
     {
         var f = Build();

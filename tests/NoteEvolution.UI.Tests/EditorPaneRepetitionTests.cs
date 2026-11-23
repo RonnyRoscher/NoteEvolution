@@ -102,7 +102,7 @@ public class EditorPaneRepetitionTests : UiTestContext
     }
 
     [Fact]
-    public async Task Pane_SwitchOff_SendsNoMarks()
+    public async Task Pane_SwitchOff_SendsOnlyTheCurrentHit()
     {
         await RenderAsync();
         WaitFor(() => Assert.NotEmpty(Last));
@@ -112,9 +112,13 @@ public class EditorPaneRepetitionTests : UiTestContext
 
         WaitFor(() => Assert.Empty(Last));
 
-        // Nor with the tab open and a hit in focus.
+        // With the tab open and a hit in focus only that hit's origin is highlighted, nothing is underlined.
         State.SetRepetitionsTabOpen(true);
         State.SetRepetitionFocus(new RepetitionFocus(RepetitionKind.Literal, KeyOf("alpha"), KeyOf("beta"), false));
+        WaitFor(() => Assert.Equal(KeyOf("alpha"), Assert.Single(Last, m => m.Kind == RepetitionMarkKind.Current).ParagraphKey));
+        Assert.All(Last, m => Assert.Equal(RepetitionMarkKind.Current, m.Kind));
+
+        State.SetRepetitionsTabOpen(false);
         WaitFor(() => Assert.Empty(Last));
 
         Settings.ShowRepetitions = true;

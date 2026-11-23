@@ -373,6 +373,21 @@ public class RepetitionsTabTests : UiTestContext
     }
 
     [Fact]
+    public async Task SwitchOff_ReaderUnderlinesNothing_ButHighlightsTheHit()
+    {
+        await OpenAsync();
+        var cut = RenderTab();
+        Assert.NotEmpty(cut.FindAll(".ne-reader .ne-rep-literal"));
+
+        Settings.ShowRepetitions = false;
+        await cut.InvokeAsync(State.Notify);
+
+        cut.WaitForAssertion(() => Assert.Empty(cut.FindAll(".ne-reader .ne-rep-literal")));
+        Assert.NotEmpty(cut.FindAll(".ne-reader .ne-rep-current"));
+        Assert.Equal(ReaderId(KeyOf("beta")), ReaderSide(cut));
+    }
+
+    [Fact]
     public async Task DeletedBlock_ShowsRepetitionGone_NavigationStillWorks()
     {
         await OpenAsync();

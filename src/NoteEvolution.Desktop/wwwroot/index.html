@@ -195,27 +195,50 @@
                 }
                 return host;
             },
+            // The minimap's zones by key (data-key, top/height in percent), read once per refresh.
+            zones(minimap) {
+                const zones = new Map();
+                for (const zone of minimap.querySelectorAll('.ne-minimap-zone[data-key]')) {
+                    zones.set(zone.getAttribute('data-key'), {
+                        top: parseFloat(zone.style.top),
+                        height: parseFloat(zone.style.height),
+                    });
+                }
+                return zones;
+            },
             // Sets a viewport frame in the SAME scale as the marks: the first and last text block visible in the scroller
-            // are looked up in the minimap's zones (data-key, top/height in percent), so the frame contains the places
-            // it shows. `blocks` are the elements of the text blocks with their keys, in document order. Without a
-            // visible block the scroll fraction is the fallback.
-            frame(minimap, frameElement, scroller, blocks) {
+            // are looked up in the minimap's zones (`zones`, see zones()), so the frame contains the places it shows.
+            // `blocks` are the elements of the text blocks with their keys, in document order; only those with a zone
+            // count (text blocks, one after the other, so their positions grow in that order). The first visible one is
+            // found by binary search and the walk stops below the view, so a frame costs O(log n + visible) layout
+            // reads. Without a visible block the scroll fraction is the fallback.
+            frame(zones, frameElement, scroller, blocks) {
                 if (!frameElement) { return; }
                 if (!scroller || scroller.scrollHeight <= 0) { frameElement.style.display = 'none'; return; }
                 frameElement.style.display = '';
                 const view = scroller.getBoundingClientRect();
+                const zoned = [];
+                for (const [key, element] of blocks) {
+                    const zone = zones.get(key);
+                    if (zone) { zoned.push([zone, element]); }
+                }
+                // The first block that ends below the top of the view.
+                let low = 0;
+                let high = zoned.length;
+                while (low < high) {
+                    const middle = (low + high) >> 1;
+                    if (zoned[middle][1].getBoundingClientRect().bottom <= view.top) { low = middle + 1; } else { high = middle; }
+                }
                 let first = null;
                 let last = null;
-                for (const [key, element] of blocks) {
-                    const zone = minimap.querySelector('.ne-minimap-zone[data-key="' + key + '"]');
-                    if (!zone) { continue; }
+                for (let i = low; i < zoned.length; i++) {
+                    const [zone, element] = zoned[i];
                     const rect = element.getBoundingClientRect();
-                    if (rect.bottom <= view.top || rect.top >= view.bottom) { continue; }
-                    const top = parseFloat(zone.style.top);
-                    const height = parseFloat(zone.style.height);
+                    if (rect.top >= view.bottom) { break; }
+                    if (rect.bottom <= view.top) { continue; }
                     const share = at => rect.height > 0 ? Math.min(1, Math.max(0, (at - rect.top) / rect.height)) : 0;
-                    first ??= top + height * share(view.top);
-                    last = top + height * share(view.bottom);
+                    first ??= zone.top + zone.height * share(view.top);
+                    last = zone.top + zone.height * share(view.bottom);
                 }
                 if (first !== null && last !== null) {
                     frameElement.style.top = first + '%';
@@ -232,13 +255,14 @@
             // Positions both frames now (the minimap calls it after each render, so they are right before the first scroll).
             refresh(minimap) {
                 if (!minimap) { return; }
+                const zones = this.zones(minimap);
                 const book = this.bookScroller();
                 const bookBlocks = book ? [...book.querySelectorAll('[data-key]')].map(e => [e.getAttribute('data-key'), e]) : [];
-                this.frame(minimap, minimap.querySelector('.ne-minimap-view-book'), book, bookBlocks);
+                this.frame(zones, minimap.querySelector('.ne-minimap-view-book'), book, bookBlocks);
                 const reader = this.readerScroller(minimap);
                 const readerBlocks = reader
                     ? [...reader.querySelectorAll('.ne-reader-block')].map(e => [e.id.replace(/^ne-reader-/, ''), e]) : [];
-                this.frame(minimap, minimap.querySelector('.ne-minimap-view-reader'), reader, readerBlocks);
+                this.frame(zones, minimap.querySelector('.ne-minimap-view-reader'), reader, readerBlocks);
             },
             trackViewports(minimap) {
                 this.untrack(minimap);

@@ -6,8 +6,10 @@
 @inject IJSRuntime JS
 
 @* The whole book read-only (repetitions tab spec 4): headings and text blocks in book order without the appendix. Compared
-   blocks show their literal repetitions underlined; the side of the current hit is highlighted and scrolled to. Renders
-   again only for a new revision or another hit, so the tab's other changes do not redraw the book. *@
+   blocks show their literal repetitions underlined (with the switch „Wiederholungen zeigen“ on); the side of the current
+   hit is highlighted and scrolled to. Renders again only for a new revision, another hit or the switch, so the tab's other
+   changes do not redraw the book; scrolls only for another hit or side, so a new analysis result with the same hit leaves
+   the reader where the user scrolled it. *@
 <div class="ne-reader" @ref="_container">
     @foreach (var item in Book.Root.Items)
     {
@@ -19,10 +21,11 @@
     private ElementReference _container;
     private bool _rendered;
     private int _renderedRevision;
-    private Repetition? _renderedCurrent;
+    private (RepetitionKind, Guid, Guid)? _renderedHit;
     private Guid? _renderedSide;
+    private bool _renderedUnderline;
     private bool _scrolled;
-    private Repetition? _scrolledCurrent;
+    private (RepetitionKind, Guid, Guid)? _scrolledHit;
     private Guid? _scrolledSide;
 
     /// <summary>The reader's scrolling element (for the viewport frame of the minimap); valid after the first render.</summary>
@@ -41,23 +44,34 @@
     /// <summary>The new state of the book: a different value means the book or its repetitions changed.</summary>
     [Parameter] public int Revision { get; set; }
 
+    /// <summary>Whether the repetitions are underlined (the switch „Wiederholungen zeigen“); the current hit is highlighted anyway.</summary>
+    [Parameter] public bool Underline { get; set; } = true;
+
+    /// <summary>
+    /// The identity of the current hit. A new analysis result builds the same hit anew (new lists, so not equal as a
+    /// record); its new marks come with the new <see cref="Revision"/>.
+    /// </summary>
+    private (RepetitionKind, Guid, Guid)? Hit => Current is { } current ? (current.Kind, current.A, current.B) : null;
+
     protected override bool ShouldRender() =>
-        !_rendered || Revision != _renderedRevision || !Equals(Current, _renderedCurrent) || Side != _renderedSide;
+        !_rendered || Revision != _renderedRevision || Hit != _renderedHit || Side != _renderedSide
+        || Underline != _renderedUnderline;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         _rendered = true;
         _renderedRevision = Revision;
-        _renderedCurrent = Current;
+        _renderedHit = Hit;
         _renderedSide = Side;
+        _renderedUnderline = Underline;
 
-        if (_scrolled && Equals(Current, _scrolledCurrent) && Side == _scrolledSide)
+        if (_scrolled && Hit == _scrolledHit && Side == _scrolledSide)
         {
             return;
         }
 
         _scrolled = true;
-        _scrolledCurrent = Current;
+        _scrolledHit = Hit;
         _scrolledSide = Side;
         if (Side is { } side)
         {
@@ -107,13 +121,14 @@
     }
 
     /// <summary>
-    /// The marks of a compared block: its open literal repetitions underlined, and for the side of the current hit that
-    /// hit's stretches highlighted (semantic ones underlined dotted, only for the current hit).
+    /// The marks of a compared block: with <see cref="Underline"/> its open literal repetitions underlined; for the side
+    /// of the current hit that hit's stretches highlighted (and, with <see cref="Underline"/>, underlined: semantic ones
+    /// dotted, only for the current hit).
     /// </summary>
     private IReadOnlyList<(int Paragraph, int Start, int Length, RepetitionMarkKind Kind)> SpansOf(Guid key)
     {
         var spans = new List<(int Paragraph, int Start, int Length, RepetitionMarkKind Kind)>();
-        foreach (var repetition in Set.Of(key).Where(r => r.Kind == RepetitionKind.Literal))
+        foreach (var repetition in Set.Of(key).Where(r => Underline && r.Kind == RepetitionKind.Literal))
         {
             spans.AddRange(RepetitionMarks.Spans(repetition, key, Set)
                 .Select(span => (span.Paragraph, span.Start, span.Length, RepetitionMarkKind.Literal)));
@@ -124,7 +139,11 @@
             var kind = current.Kind == RepetitionKind.Literal ? RepetitionMarkKind.Literal : RepetitionMarkKind.Semantic;
             foreach (var span in RepetitionMarks.Spans(current, key, Set))
             {
-                spans.Add((span.Paragraph, span.Start, span.Length, kind));
+                if (Underline)
+                {
+                    spans.Add((span.Paragraph, span.Start, span.Length, kind));
+                }
+
                 spans.Add((span.Paragraph, span.Start, span.Length, RepetitionMarkKind.Current));
             }
         }

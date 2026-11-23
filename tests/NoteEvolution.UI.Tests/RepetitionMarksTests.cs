@@ -62,8 +62,8 @@ public class RepetitionMarksTests : UiTestContext
     }
 
     private IReadOnlyList<RepetitionTextMark> For(
-        Fixture f, bool tabOpen = false, RepetitionFocus? focus = null, bool showAccepted = false) =>
-        RepetitionMarks.For(f.Set, f.Book, tabOpen, focus, showAccepted, f.PlaceOf, L);
+        Fixture f, bool tabOpen = false, RepetitionFocus? focus = null, bool showAccepted = false, bool underline = true) =>
+        RepetitionMarks.For(f.Set, f.Book, underline, tabOpen, focus, showAccepted, f.PlaceOf, L);
 
     private string AlsoIn(string places) => L["RepetitionAlsoIn", places].Value;
 
@@ -129,6 +129,20 @@ public class RepetitionMarksTests : UiTestContext
         // A focus on a pair the set does not have (any more) marks nothing.
         var gone = new RepetitionFocus(RepetitionKind.Semantic, f.Key("alpha"), f.Key("beta"), Swapped: false);
         Assert.DoesNotContain(For(f, tabOpen: true, focus: gone), m => m.Kind == RepetitionMarkKind.Current);
+    }
+
+    [Fact]
+    public void SwitchOff_MarksOnlyTheCurrentHit_WithTheTab()
+    {
+        var f = Build(Body, semantic: true);
+        var literal = new RepetitionFocus(RepetitionKind.Literal, f.Key("alpha"), f.Key("beta"), Swapped: false);
+
+        Assert.Empty(For(f, underline: false));
+        Assert.Empty(For(f, tabOpen: true, underline: false));
+        Assert.Empty(For(f, focus: literal, underline: false));
+
+        var current = Assert.Single(For(f, tabOpen: true, focus: literal, underline: false));
+        Assert.Equal(new RepetitionTextMark(f.Key("alpha"), 6, RunX.Length, RepetitionMarkKind.Current, AlsoIn("Ort beta")), current);
     }
 
     [Fact]

@@ -1089,23 +1089,29 @@
     /// <summary>
     /// Gives the editor the repetition marks of <paramref name="book"/> (repetitions tab spec 3) if they differ from the
     /// ones it was given last: the literal repetitions, with the repetitions tab open also the semantic ones and the
-    /// current hit (<see cref="AppState.RepetitionFocus"/>); none when the switch is off. While the book's snapshot is not
-    /// analysed yet the marks stay as they are (typing moves them along). A failed push is tried again with the next one.
+    /// current hit (<see cref="AppState.RepetitionFocus"/>). With the switch off nothing is underlined, only the current
+    /// hit of the open tab is highlighted. While the book's snapshot is not analysed yet the marks stay as they are
+    /// (typing moves them along), less the underlines once the switch is off. A failed push is tried again with the next one.
     /// </summary>
     private async Task ShowRepetitionsAsync(Book book)
     {
-        IReadOnlyList<RepetitionTextMark> marks = [];
-        if (Settings.ShowRepetitions)
+        IReadOnlyList<RepetitionTextMark> marks;
+        var underline = Settings.ShowRepetitions;
+        var set = State.Session?.RepetitionsOf(book) ?? RepetitionSet.Empty;
+        if (!set.IsFor(book))
         {
-            var set = State.Session?.RepetitionsOf(book) ?? RepetitionSet.Empty;
-            if (!set.IsFor(book))
+            if (underline || _shownRepetitions is null)
             {
                 return;
             }
 
+            marks = State.RepetitionsTabOpen ? [.. _shownRepetitions.Where(m => m.Kind == RepetitionMarkKind.Current)] : [];
+        }
+        else
+        {
             // An accepted hit in focus is marked only while the tab shows accepted hits ("Gewollte anzeigen").
             marks = RepetitionMarks.For(
-                set, book, State.RepetitionsTabOpen, State.RepetitionFocus, State.RepetitionsShowAccepted,
+                set, book, underline, State.RepetitionsTabOpen, State.RepetitionFocus, State.RepetitionsShowAccepted,
                 key => RepetitionPlace.Of(book, set, key, L), L);
         }
 

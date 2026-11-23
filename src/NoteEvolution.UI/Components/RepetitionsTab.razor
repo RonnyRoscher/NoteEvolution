@@ -7,6 +7,7 @@
 @inject IStringLocalizer<Strings> L
 @inject ILogger<RepetitionsTab> Logger
 @inject IJSRuntime JS
+@inject UiSettings Settings
 
 @* The tab „Wiederholungen“ (repetitions tab spec 4): one hit at a time. Its origin is revealed in the book view (the
    active editor), the other side is shown in a read-only view of the whole book below the head row; ‹ › step through the
@@ -91,7 +92,8 @@
         <div class="ne-reps-body">
             <RepetitionMinimap Book="book" Hits="_hits" Current="hit" Origin="focus.Origin"
                                OnPick="PickAsync" />
-            <BookReader @ref="_reader" Book="book" Set="_set" Current="hit" Side="focus.Other" Revision="_revision" />
+            <BookReader @ref="_reader" Book="book" Set="_set" Current="hit" Side="focus.Other" Revision="_revision"
+                        Underline="Settings.ShowRepetitions" />
         </div>
     }
 </div>

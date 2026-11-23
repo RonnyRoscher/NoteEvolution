@@ -407,8 +407,9 @@ Seite stehen; das PDF ist kein PDF/X und enthält weder TrimBox noch BleedBox.
 mindestens 8 gleiche Wörter in Folge teilen (Groß- und Kleinschreibung und Satzzeichen zählen nicht). Inhaltlich
 ähnlich ist es, wenn ein Gedanke in anderen Worten wiederkehrt: Das lokale KI-Modell wählt zuerst ähnliche Blöcke vor
 (ab 0,85, je Block die 5 ähnlichsten), dann werden ihre Sätze verglichen, und das Paar zählt nur, wenn mindestens ein
-Satzpaar zu mindestens 0,92 übereinstimmt. Gemeldet werden höchstens drei Satzpaare je Blockpaar und höchstens drei
-inhaltliche Gegenstellen je Block; Sätze unter 5 Wörtern zählen nicht, und ein wörtliches Paar steht nicht zusätzlich
+Satzpaar zu mindestens 0,925 übereinstimmt. Gemeldet werden höchstens drei Satzpaare je Blockpaar; ein inhaltliches
+Paar bleibt, wenn es für mindestens einen seiner beiden Blöcke unter dessen drei besten Gegenstellen ist. Sätze unter 8
+Wörtern zählen nicht, und ein wörtliches Paar steht nicht zusätzlich
 bei den inhaltlichen. Nicht verglichen werden Blöcke mit Status „Relevant“ oder „Bemerkung“, der Anhang, Überschriften,
 Bildblöcke und Blöcke mit weniger als 8 Wörtern. Die Analyse läuft im Hintergrund: nach dem Öffnen des Buchs, nach
 jedem Speichern und nach jeder übernommenen äußeren Änderung der Datei, hinter dem Index der Notizen. Solange Blöcke
@@ -426,8 +427,9 @@ Tippen bleibt der Tab beim selben Paar, solange es das gibt, sonst beim nächste
 „Assistenten“ › „Wiederholungen“ öffnet den Tab. In der Leiste unter der Markierung steht „Wiederholungen: n“ für den
 markierten Bereich; ein Klick listet die Gegenstellen, und eine Zeile öffnet den Tab mit diesem Block als
 Ausgangstext. Die Gliederung zeigt je Überschrift „≈ n“ samt Unterabschnitten. Der Schalter „Wiederholungen anzeigen“
-neben „Abdeckung anzeigen“ blendet Unterstreichungen und Gliederungszahlen gemeinsam aus; die Einstellung wird
-gemerkt, der Zähler in der Leiste bleibt. „Gewollt“ liegt in `.noteevolution/repetitions.json` im Vault, je Buch als
+neben „Abdeckung anzeigen“ blendet Unterstreichungen (im Text und in der Leseansicht des Tabs) und Gliederungszahlen
+gemeinsam aus; die Einstellung wird gemerkt, der Zähler in der Leiste und bei offenem Tab die Hervorhebung des
+aktuellen Treffers bleiben. „Gewollt“ liegt in `.noteevolution/repetitions.json` im Vault, je Buch als
 Paare von Block-IDs; ein Block ohne `id::` bekommt beim Abhaken eine. Ein Paar bleibt gewollt, auch wenn die Blöcke
 umgeschrieben werden. Grenzen: Verglichen wird nur innerhalb eines Buchs, nicht zwischen Büchern. Im PDF erscheint
 nichts davon. Verweise, Quellenangaben und Bilder stehen nicht in der Leseansicht des Tabs.

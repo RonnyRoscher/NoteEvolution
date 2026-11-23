@@ -60,14 +60,15 @@ public static class RepetitionMarks
     }
 
     /// <summary>
-    /// The marks of <paramref name="set"/> in editor offsets: the literal repetitions that are not accepted always; with
-    /// the tab open (<paramref name="tabOpen"/>) the semantic ones too, and the origin side of <paramref name="focus"/>
-    /// as <see cref="RepetitionMarkKind.Current"/> (an accepted pair only with <paramref name="showAccepted"/>, as the
-    /// tab shows it then). The tooltip names the other places (<paramref name="placeOf"/>); a stretch marked the same
+    /// The marks of <paramref name="set"/> in editor offsets: with <paramref name="underline"/> (the switch „Wiederholungen
+    /// zeigen“) the literal repetitions that are not accepted, with the tab open (<paramref name="tabOpen"/>) the semantic
+    /// ones too; with the tab open, whatever the switch, the origin side of <paramref name="focus"/> as
+    /// <see cref="RepetitionMarkKind.Current"/> (an accepted pair only with <paramref name="showAccepted"/>, as the tab
+    /// shows it then). The tooltip names the other places (<paramref name="placeOf"/>); a stretch marked the same
     /// way for several pairs is one mark that names them all. Empty if <paramref name="set"/> is not for <paramref name="book"/>.
     /// </summary>
     public static IReadOnlyList<RepetitionTextMark> For(
-        RepetitionSet set, Book book, bool tabOpen, RepetitionFocus? focus, bool showAccepted, Func<Guid, string> placeOf,
+        RepetitionSet set, Book book, bool underline, bool tabOpen, RepetitionFocus? focus, bool showAccepted, Func<Guid, string> placeOf,
         IStringLocalizer<Strings> l)
     {
         if (!set.IsFor(book))
@@ -104,7 +105,7 @@ public static class RepetitionMarks
             }
         }
 
-        foreach (var repetition in set.All.Where(r => !r.Accepted && (tabOpen || r.Kind == RepetitionKind.Literal)))
+        foreach (var repetition in set.All.Where(r => underline && !r.Accepted && (tabOpen || r.Kind == RepetitionKind.Literal)))
         {
             var kind = repetition.Kind == RepetitionKind.Literal ? RepetitionMarkKind.Literal : RepetitionMarkKind.Semantic;
             Add(repetition, repetition.A, repetition.B, kind);

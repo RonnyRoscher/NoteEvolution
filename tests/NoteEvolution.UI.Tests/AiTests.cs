@@ -131,7 +131,7 @@ public class AiTests : UiTestContext
             });
 
             cut.WaitForAssertion(
-                () => Assert.EndsWith(" · Wiederholungen: 1/2 Blöcke", cut.Find(".ne-ai").TextContent.Trim()),
+                () => Assert.EndsWith(" · Wiederholungen: 1/2 Texte", cut.Find(".ne-ai").TextContent.Trim()),
                 TimeSpan.FromSeconds(20));
             Assert.StartsWith(Text("AiLocal"), cut.Find(".ne-ai").TextContent);
         }

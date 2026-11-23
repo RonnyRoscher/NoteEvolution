@@ -2386,8 +2386,8 @@
     <comment>Zahl der Wiederholungen eines Abschnitts in der Gliederung ({0}: Zahl, bei unvollständiger Analyse mit „ …“)</comment>
   </data>
   <data name="AiRepetitionsProgress" xml:space="preserve">
-    <value> · Wiederholungen: {0}/{1} Blöcke</value>
-    <comment>Zusatz zur KI-Anzeige, solange die Analyse des Buchs nicht vollständig ist</comment>
+    <value> · Wiederholungen: {0}/{1} Texte</value>
+    <comment>Zusatz zur KI-Anzeige, solange die Analyse des Buchs nicht vollständig ist: {0} schon eingebettete Texte (Blöcke und Sätze) von {1}</comment>
   </data>
   <data name="NotesTabRepetitions" xml:space="preserve">
     <value>Wiederholungen</value>
