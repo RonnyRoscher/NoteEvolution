@@ -120,10 +120,11 @@ public sealed class RepetitionTrackerTests : IDisposable
         tracker.Schedule(book);
         await tracker.WhenIdle();
 
+        // Gamma and delta are candidates; each is one sentence with the block's own text, so its vector is the block's.
         var set = tracker.Of(book);
         Assert.True(set.Complete);
-        Assert.Equal(5, set.Embedded);
-        Assert.Equal(5, set.Total);
+        Assert.Equal(7, set.Embedded);
+        Assert.Equal(7, set.Total);
         Assert.Equal(
             [
                 (RepetitionKind.Literal, Key(book, "alpha"), Key(book, "beta")),
@@ -154,8 +155,8 @@ public sealed class RepetitionTrackerTests : IDisposable
     [Fact]
     public async Task NearPairs_AreLoggedUpToALimit_ThenOnceThatTheRestIsNot()
     {
-        // 30 blocks that mean the same (the same fake vector) and share no literal run: 435 near pairs.
-        var lines = string.Concat(Enumerable.Range(0, 30).Select(i =>
+        // 50 blocks that mean the same (the same fake vector) and share no literal run: 235 candidates (top five each).
+        var lines = string.Concat(Enumerable.Range(0, 50).Select(i =>
             $"\t- gamma a{i} b{i} c{i} d{i} e{i} f{i} g{i} h{i}\n"));
         var page = LogseqParser.Parse("Buch - Viele.md", Encoding.UTF8.GetBytes("type:: book\n\n- # Eins\n" + lines));
         var tracker = NewTracker();
@@ -397,7 +398,7 @@ public sealed class RepetitionTrackerTests : IDisposable
         await tracker.WhenIdle();
 
         Assert.True(tracker.Of(book).Complete);
-        Assert.Equal(5, tracker.Of(book).Embedded);
+        Assert.Equal(7, tracker.Of(book).Embedded);
         Assert.NotEmpty(_logger.Warnings);
     }
 
@@ -441,7 +442,7 @@ public sealed class RepetitionTrackerTests : IDisposable
         await tracker.WhenIdle();
 
         Assert.True(tracker.Of(book).Complete);
-        Assert.Equal(5, tracker.Of(book).Total);
+        Assert.Equal(7, tracker.Of(book).Total); // the five blocks and the sentences of the candidates gamma and delta
     }
 
     [Fact]
@@ -488,6 +489,24 @@ public sealed class RepetitionTrackerTests : IDisposable
         tracker.PruneCache([edited]);
         await tracker.WhenIdle();
         Assert.True(_cache.Get(["later"]).ContainsKey("later"));
+    }
+
+    [Fact]
+    public async Task PruneCache_KeepsTheSentenceVectorsOfLiveBlocks()
+    {
+        var tracker = NewTracker();
+        var book = TopicBook(closeSentence: true);
+        tracker.Schedule(book);
+        await tracker.WhenIdle();
+        var block = ComparisonText.Of(book)[0];
+        var sentence = NoteEvolution.AI.Embeddings.EmbeddingText.Hash(
+            Model, NoteEvolution.AI.Embeddings.EmbeddingText.ForSentence(block, Sentences.Of(block)[0]));
+        Assert.Single(_cache!.Get([sentence]));
+
+        tracker.PruneCache([book]);
+        await tracker.WhenIdle();
+
+        Assert.Single(_cache.Get([sentence]));
     }
 
     [Fact]
@@ -541,14 +560,14 @@ public sealed class RepetitionTrackerTests : IDisposable
 
         var set = tracker.Of(book);
         Assert.True(set.Complete);
-        Assert.Equal(4, set.Embedded);
+        Assert.Equal(6, set.Embedded); // four blocks and the two sentences of gamma and delta
         Assert.Equal(1, _embed.CallsFor("epsilon"));
         Assert.Single(_logger.Warnings);
         Assert.Contains(set.All, r => r.Kind == RepetitionKind.Semantic);
     }
 
     [Fact]
-    public async Task NoEmbedder_OnlyLiteral_AndComplete()
+    public async Task WithoutModel_OnlyLiteral()
     {
         var tracker = NewTracker(withEmbedder: false);
         var book = Book.Load(Parse());
@@ -608,9 +627,142 @@ public sealed class RepetitionTrackerTests : IDisposable
         Assert.Equal(1, changes);
     }
 
+    // P and Q are about the same topic (block cosine 0.9, a candidate); R stands alone. Each sentence has its own vector.
+    private const string P1 = "Der Hund läuft schnell über die Wiese.";
+    private const string P2 = "Die Katze schläft lange auf dem Sofa.";
+    private const string Q1 = "Ein Vogel singt hoch oben im Baum.";
+    private const string Q2 = "Ein Köter rennt rasch quer durchs Gras.";
+    private const string R1 = "Das Meer ist heute sehr ruhig und blau.";
+
+    private static float[] Vector(params float[] values) => values;
+
+    /// <summary>The book P, Q, R with their vectors set in the fake; Q2 is close to P1 if <paramref name="closeSentence"/>.</summary>
+    private Book TopicBook(bool closeSentence)
+    {
+        var page = LogseqParser.Parse(
+            "Buch - Thema.md",
+            Encoding.UTF8.GetBytes($"type:: book\n\n- # Eins\n\t- {P1} {P2}\n\t- {Q1} {Q2}\n\t- {R1}\n"));
+        var book = Book.Load(page);
+        var blocks = ComparisonText.Of(book);
+        _embed.ByText[BlockText(blocks[0])] = Vector(1, 0, 0, 0, 0);
+        _embed.ByText[BlockText(blocks[1])] = Vector(0.9f, 0.43589f, 0, 0, 0);
+        _embed.ByText[BlockText(blocks[2])] = Vector(0, 0, 0, 0, 1);
+        _embed.ByText[P1] = Vector(0, 1, 0, 0, 0);
+        _embed.ByText[P2] = Vector(0, 0, 1, 0, 0);
+        _embed.ByText[Q1] = Vector(0, 0, 0, 1, 0);
+        _embed.ByText[Q2] = closeSentence ? Vector(0, 0.95f, 0, 0.31225f, 0) : Vector(0, 0.9f, 0, 0.43589f, 0);
+        _embed.ByText[R1] = Vector(0, 0, 0, 0, 1);
+        return book;
+    }
+
+    private static string BlockText(ComparedBlock block) =>
+        NoteEvolution.AI.Embeddings.EmbeddingText.ForRepetition(block)["query: ".Length..];
+
+    private static Guid KeyOf(Book book, int index) => ComparisonText.Of(book)[index].Key;
+
+    [Fact]
+    public async Task Sentences_AreEmbeddedOnlyForCandidateBlocks()
+    {
+        var tracker = NewTracker();
+        var book = TopicBook(closeSentence: true);
+
+        tracker.Schedule(book);
+        await tracker.WhenIdle();
+
+        var sentences = _embed.Texts.Where(text => text.EndsWith('.')).Select(text => text["query: ".Length..]).ToList();
+        Assert.Equal([P1, P2, Q1, Q2], sentences);
+        Assert.Equal(7, _embed.Calls); // three blocks, four sentences; R is no candidate
+        var set = tracker.Of(book);
+        Assert.Equal((7, 7, true), (set.Embedded, set.Total, set.Complete));
+    }
+
+    [Fact]
+    public async Task SentenceVectors_ComeFromTheCache_OnTheNextRun()
+    {
+        var book = TopicBook(closeSentence: true);
+        var first = NewTracker();
+        first.Schedule(book);
+        await first.WhenIdle();
+        Assert.Equal(7, _embed.Calls);
+
+        var restarted = NewTracker();
+        restarted.Schedule(book);
+        await restarted.WhenIdle();
+
+        Assert.Equal(7, _embed.Calls);
+        Assert.True(restarted.Of(book).Complete);
+        Assert.Contains(restarted.Of(book).All, r => r.Kind == RepetitionKind.Semantic);
+    }
+
+    [Fact]
+    public async Task TopicPair_WithoutCloseSentence_IsNotListed()
+    {
+        var tracker = NewTracker();
+        var book = TopicBook(closeSentence: false);
+
+        tracker.Schedule(book);
+        await tracker.WhenIdle();
+
+        var set = tracker.Of(book);
+        Assert.True(set.Complete);
+        Assert.Empty(set.All);
+        Assert.Contains(_logger.Messages, m => m.StartsWith("Repetition candidate 0.000 listed=False", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task CloseSentence_ListsThePair_WithItsSentences()
+    {
+        var tracker = NewTracker();
+        var book = TopicBook(closeSentence: true);
+
+        tracker.Schedule(book);
+        await tracker.WhenIdle();
+
+        var pair = Assert.Single(tracker.Of(book).All);
+        Assert.Equal((RepetitionKind.Semantic, KeyOf(book, 0), KeyOf(book, 1)), (pair.Kind, pair.A, pair.B));
+        Assert.Equal(0.95f, pair.Score, 3);
+        var blocks = ComparisonText.Of(book);
+        var sentence = Assert.Single(pair.Sentences);
+        Assert.Equal((P1, Q2), (Sentences.Text(blocks[0], sentence.A), Sentences.Text(blocks[1], sentence.B)));
+        Assert.Contains(_logger.Messages, m => m.StartsWith("Repetition candidate 0.950 listed=True", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Pending_UntilTheSentencesAreEmbedded()
+    {
+        _embed.OnEmbed = word =>
+        {
+            if (word == "Das")
+            {
+                _indexReady = false; // busy again after the last block, before the sentences
+            }
+        };
+        var tracker = NewTracker();
+        var book = TopicBook(closeSentence: true);
+
+        tracker.Schedule(book);
+        await tracker.WhenIdle();
+
+        var waiting = tracker.Of(book);
+        Assert.Equal(3, _embed.Calls);
+        Assert.Equal((3, 7, false), (waiting.Embedded, waiting.Total, waiting.Complete));
+        Assert.True(tracker.Shown(book).Pending);
+        Assert.Empty(waiting.All);
+
+        _indexReady = true;
+        tracker.Schedule(book);
+        await tracker.WhenIdle();
+
+        var done = tracker.Of(book);
+        Assert.Equal((7, 7, true), (done.Embedded, done.Total, done.Complete));
+        Assert.False(tracker.Shown(book).Pending);
+        Assert.Single(done.All);
+    }
+
     /// <summary>
-    /// Embeds by the first word of the text (after the role prefix): "gamma" and "delta" give the same vector, every other
-    /// word its own one. Can hold a call until released and fail for given words.
+    /// Embeds a text (after the role prefix) found in <see cref="ByText"/> with its vector there; any other by its first
+    /// word: "gamma" and "delta" give the same vector, every other word its own one. Can hold a call until released and
+    /// fail for given words.
     /// </summary>
     private sealed class FakeEmbed
     {
@@ -620,6 +772,9 @@ public sealed class RepetitionTrackerTests : IDisposable
         public ConcurrentQueue<string> Texts { get; } = new();
 
         public ConcurrentBag<string> Failing { get; } = [];
+
+        /// <summary>The vector of a text (without its role prefix), set by the test.</summary>
+        public ConcurrentDictionary<string, float[]> ByText { get; } = new();
 
         public int Calls => Volatile.Read(ref _calls);
 
@@ -644,6 +799,11 @@ public sealed class RepetitionTrackerTests : IDisposable
             if (Failing.Contains(word))
             {
                 return null;
+            }
+
+            if (ByText.TryGetValue(text["query: ".Length..], out var set))
+            {
+                return set;
             }
 
             var vector = new float[Words.Length];

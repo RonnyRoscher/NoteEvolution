@@ -21,124 +21,6 @@ public class SemanticRepetitionsTests
 
     private static float[] First() => Cos(1, 1);
 
-    private static IReadOnlyList<SemanticPair> Find(
-        Guid[] blocks, Dictionary<Guid, float[]> vectors, IReadOnlySet<(Guid A, Guid B)>? literal = null,
-        Action<Guid, Guid, float, bool>? near = null) =>
-        SemanticRepetitions.Find(blocks, key => vectors.GetValueOrDefault(key), literal ?? NoLiteral, near);
-
-    [Fact]
-    public void BelowThreshold_NoPair()
-    {
-        var ids = Ids(2);
-
-        Assert.Empty(Find(ids, new() { [ids[0]] = First(), [ids[1]] = Cos(0.899, 1) }));
-    }
-
-    [Fact]
-    public void AtThreshold_Pair()
-    {
-        var ids = Ids(2);
-
-        var pair = Assert.Single(Find(ids, new() { [ids[0]] = First(), [ids[1]] = Cos(0.90, 1) }));
-
-        Assert.Equal((ids[0], ids[1]), (pair.A, pair.B));
-        Assert.Equal(0.90f, pair.Score, 4);
-    }
-
-    [Fact]
-    public void ReversedInput_KeepsOrderOfBlocks()
-    {
-        var ids = Ids(2);
-
-        var pair = Assert.Single(Find([ids[1], ids[0]], new() { [ids[0]] = First(), [ids[1]] = Cos(0.95, 1) }));
-
-        Assert.Equal((ids[1], ids[0]), (pair.A, pair.B));
-    }
-
-    [Fact]
-    public void FourCounterparts_AllListed_WhenEachHasTheBlockAmongItsThree()
-    {
-        // X has four counterparts above the threshold, mutually below it (products of the cosines are < 0.90).
-        var ids = Ids(5);
-        var vectors = new Dictionary<Guid, float[]>
-        {
-            [ids[0]] = First(),
-            [ids[1]] = Cos(0.95, 1),
-            [ids[2]] = Cos(0.94, 2),
-            [ids[3]] = Cos(0.93, 3),
-            [ids[4]] = Cos(0.92, 4),
-        };
-
-        var pairs = Find(ids, vectors);
-
-        Assert.Equal(4, pairs.Count(p => p.A == ids[0]));
-    }
-
-    [Fact]
-    public void FourCounterparts_WeakestIsListedOnlyWhenXIsAmongItsOwnThree()
-    {
-        var ids = Ids(8);
-        var x = ids[0];
-        var weakest = ids[4];
-        var vectors = new Dictionary<Guid, float[]>
-        {
-            [x] = First(),
-            [ids[1]] = Cos(0.95, 1),
-            [ids[2]] = Cos(0.94, 2),
-            [ids[3]] = Cos(0.93, 3),
-            [weakest] = Cos(0.90, 4),
-        };
-
-        // Three counterparts that are closer to the weakest than X is, and that stay below the threshold towards X.
-        var direction = vectors[weakest];
-        var closer = new[] { (ids[5], 0.96, 5), (ids[6], 0.95, 6), (ids[7], 0.94, 7) };
-        foreach (var (id, d, axis) in closer)
-        {
-            var v = new float[Dimensions];
-            for (var i = 0; i < Dimensions; i++)
-            {
-                v[i] = (float)(d * direction[i]);
-            }
-
-            v[axis] = (float)Math.Sqrt(1 - d * d);
-            vectors[id] = v;
-        }
-
-        var pairs = Find(ids, vectors);
-
-        Assert.Equal(3, pairs.Count(p => p.A == x));
-        Assert.DoesNotContain(pairs, p => p.A == x && p.B == weakest);
-        Assert.Equal(3, pairs.Count(p => p.A == weakest || p.B == weakest));
-    }
-
-    [Fact]
-    public void LiteralPairs_AreLeftOut()
-    {
-        var ids = Ids(2);
-        var vectors = new Dictionary<Guid, float[]> { [ids[0]] = First(), [ids[1]] = Cos(0.99, 1) };
-
-        Assert.Empty(Find(ids, vectors, new HashSet<(Guid A, Guid B)> { (ids[0], ids[1]) }));
-        Assert.Empty(Find(ids, vectors, new HashSet<(Guid A, Guid B)> { (ids[1], ids[0]) }));
-    }
-
-    [Fact]
-    public void MissingVector_OrOtherLength_LeavesBlockOut()
-    {
-        var ids = Ids(4);
-        var vectors = new Dictionary<Guid, float[]>
-        {
-            [ids[0]] = First(),
-            [ids[1]] = Cos(0.99, 1),
-            [ids[3]] = [1f, 0f], // other length
-        };
-
-        var pair = Assert.Single(Find(ids, vectors)); // ids[2] has no vector
-
-        Assert.Equal((ids[0], ids[1]), (pair.A, pair.B));
-    }
-
-    // ---- Candidates + Confirm ----
-
     private static IReadOnlyList<(Guid A, Guid B, float Score)> Candidates(
         Guid[] blocks, Dictionary<Guid, float[]> vectors, IReadOnlySet<(Guid A, Guid B)>? literal = null) =>
         SemanticRepetitions.Candidates(blocks, key => vectors.GetValueOrDefault(key), literal ?? NoLiteral);
@@ -213,15 +95,17 @@ public class SemanticRepetitionsTests
     [Fact]
     public void Confirm_ASentenceIsUsedOnce_GreedyByScore()
     {
-        // B0 is close to both A0 (0.99) and A1 (0.95); B1 is close to A0 only (0.93). Greedy: A0-B0, then A1-B1 is not close, so A1-B0 is blocked too.
+        // B0 (0.93) and B1 (0.99) are both close to A0; A1 is orthogonal to both and plays no part. The better B1 comes
+        // second, so only taking the pairs by score (not in order) pairs A0 with B1 and leaves B0 out.
         var ids = Ids(2);
-        var a = new float[]?[] { Axis(0), Cos2(1, 1) };
-        var b = new float[]?[] { Cos2(0, 0.99), Cos2(0, 0.93) };
+        var a = new float[]?[] { Axis(0), Axis(1) };
+        var b = new float[]?[] { Cos2(0, 0.93), Cos2(0, 0.99) };
 
         var pair = Assert.Single(Confirm([(ids[0], ids[1], 0.9f)], new() { [ids[0]] = a, [ids[1]] = b }));
 
         var sentence = Assert.Single(pair.Sentences);
-        Assert.Equal((S(0), S(0)), (sentence.A, sentence.B));
+        Assert.Equal((S(0), S(1)), (sentence.A, sentence.B));
+        Assert.Equal(0.99f, sentence.Score, 4);
     }
 
     [Fact]
@@ -262,6 +146,74 @@ public class SemanticRepetitionsTests
             new() { [ids[0]] = [First(), Axis(5)], [ids[1]] = [null, Axis(6)] });
 
         Assert.Empty(pairs);
+
+        // The sentence without a vector does not stop the next one from pairing.
+        var pair = Assert.Single(Confirm(
+            [(ids[0], ids[1], 0.9f)],
+            new() { [ids[0]] = [First()], [ids[1]] = [null, Cos(0.95, 1)] }));
+        Assert.Equal((S(0), S(1)), (pair.Sentences[0].A, pair.Sentences[0].B));
+    }
+
+    [Fact]
+    public void Confirm_AsksForEachBlocksSentenceVectorsOncePerCall()
+    {
+        var ids = Ids(3);
+        var asked = new List<Guid>();
+
+        SemanticRepetitions.Confirm(
+            [(ids[0], ids[1], 0.9f), (ids[0], ids[2], 0.9f), (ids[1], ids[2], 0.9f)],
+            _ => [S(0), S(1)],
+            (key, _) =>
+            {
+                asked.Add(key);
+                return First();
+            });
+
+        Assert.Equal(6, asked.Count);
+        Assert.All(ids, id => Assert.Equal(2, asked.Count(k => k == id)));
+    }
+
+    [Theory]
+    [InlineData(0.849, false)]
+    [InlineData(0.85, true)]
+    public void Candidates_From085(double cosine, bool candidate)
+    {
+        var ids = Ids(2);
+
+        var candidates = Candidates(ids, new() { [ids[0]] = First(), [ids[1]] = Cos(cosine, 1) });
+
+        Assert.Equal(candidate, candidates.Count == 1);
+        if (candidate)
+        {
+            Assert.Equal((ids[0], ids[1]), (candidates[0].A, candidates[0].B));
+            Assert.Equal((float)cosine, candidates[0].Score, 4);
+        }
+    }
+
+    [Fact]
+    public void Candidates_ReversedInput_KeepsOrderOfBlocks()
+    {
+        var ids = Ids(2);
+
+        var candidate = Assert.Single(Candidates([ids[1], ids[0]], new() { [ids[0]] = First(), [ids[1]] = Cos(0.95, 1) }));
+
+        Assert.Equal((ids[1], ids[0]), (candidate.A, candidate.B));
+    }
+
+    [Fact]
+    public void Candidates_MissingVector_OrOtherLength_LeavesBlockOut()
+    {
+        var ids = Ids(4);
+        var vectors = new Dictionary<Guid, float[]>
+        {
+            [ids[0]] = First(),
+            [ids[1]] = Cos(0.99, 1),
+            [ids[3]] = [1f, 0f], // other length
+        };
+
+        var candidate = Assert.Single(Candidates(ids, vectors)); // ids[2] has no vector
+
+        Assert.Equal((ids[0], ids[1]), (candidate.A, candidate.B));
     }
 
     [Fact]
@@ -327,29 +279,5 @@ public class SemanticRepetitionsTests
         Assert.Equal(2, seen.Count);
         Assert.Equal((ids[1], 0.95f, true), (seen[0].B, (float)Math.Round(seen[0].Score, 2), seen[0].Listed));
         Assert.Equal((ids[2], 0f, false), (seen[1].B, seen[1].Score, seen[1].Listed));
-    }
-
-    [Theory]
-    [InlineData(0.84, false, false)]
-    [InlineData(0.85, true, false)]
-    [InlineData(0.89, true, false)]
-    [InlineData(0.95, true, true)]
-    public void Near_ReportsFrom085_WithListedFlag(double cosine, bool reported, bool listed)
-    {
-        var ids = Ids(2);
-        var seen = new List<(Guid A, Guid B, float Score, bool Listed)>();
-
-        Find(ids, new() { [ids[0]] = First(), [ids[1]] = Cos(cosine, 1) }, near: (a, b, score, isListed) => seen.Add((a, b, score, isListed)));
-
-        if (!reported)
-        {
-            Assert.Empty(seen);
-            return;
-        }
-
-        var entry = Assert.Single(seen);
-        Assert.Equal((ids[0], ids[1]), (entry.A, entry.B));
-        Assert.Equal((float)cosine, entry.Score, 4);
-        Assert.Equal(listed, entry.Listed);
     }
 }

@@ -185,6 +185,22 @@ public class EmbeddingTextTests
     }
 
     [Fact]
+    public void ForSentence_IsAQueryWithTheSentenceText()
+    {
+        var block = new ComparedBlock(
+            Guid.NewGuid(),
+            [Paragraph(0, "Kurz. Der zweite Satz hat genug Wörter, sagt er.")],
+            [
+                new ComparedWord(0, 0, 4, "kurz"), new ComparedWord(0, 6, 3, "der"), new ComparedWord(0, 10, 6, "zweite"),
+                new ComparedWord(0, 17, 4, "satz"), new ComparedWord(0, 22, 3, "hat"), new ComparedWord(0, 26, 5, "genug"),
+                new ComparedWord(0, 32, 6, "wörter"), new ComparedWord(0, 40, 4, "sagt"), new ComparedWord(0, 45, 2, "er"),
+            ]);
+        var sentence = Assert.Single(Sentences.Of(block));
+
+        Assert.Equal("query: Der zweite Satz hat genug Wörter, sagt er.", EmbeddingText.ForSentence(block, sentence));
+    }
+
+    [Fact]
     public void Hash_DependsOnModelAndText()
     {
         var hash = EmbeddingText.Hash("m1", "text");
