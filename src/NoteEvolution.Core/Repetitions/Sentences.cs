@@ -6,8 +6,12 @@ public readonly record struct ComparedSentence(int Paragraph, int Start, int Len
 /// <summary>Splits the paragraphs of a compared block into sentences.</summary>
 public static class Sentences
 {
-    /// <summary>Sentences with fewer words are left out.</summary>
-    public const int MinWords = 5;
+    /// <summary>
+    /// Sentences with fewer words are left out. The same length as a literal repetition's run
+    /// (<see cref="LiteralRepetitions.MinRun"/>): shorter sentences reached high cosines by their structure alone (two 5- and
+    /// 7-word lines naming different body regions scored 0.930).
+    /// </summary>
+    public const int MinWords = 8;
 
     /// <summary>
     /// The sentences of the block in order. A sentence ends at ".", "!", "?" or "…" followed by whitespace and then an uppercase

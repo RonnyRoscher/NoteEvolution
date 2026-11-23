@@ -31,16 +31,16 @@ public class SentencesTests
     public void Of_SplitsAtSentenceEnds_WithinEachParagraph()
     {
         var block = Block(
-            "Schlaf festigt das Gedächtnis sehr. Das Gehirn sortiert nachts Erlebtes neu!",
+            "Schlaf festigt das Gedächtnis jeder Nacht sehr stark. Das Gehirn sortiert nachts Erlebtes ganz von selbst neu!",
             "Am Morgen ist vieles klarer als am Abend");
 
         var sentences = Sentences.Of(block);
 
         Assert.Equal(
-            ["Schlaf festigt das Gedächtnis sehr.", "Das Gehirn sortiert nachts Erlebtes neu!", "Am Morgen ist vieles klarer als am Abend"],
+            ["Schlaf festigt das Gedächtnis jeder Nacht sehr stark.", "Das Gehirn sortiert nachts Erlebtes ganz von selbst neu!", "Am Morgen ist vieles klarer als am Abend"],
             Texts(block));
         Assert.Equal([0, 0, 1], sentences.Select(s => s.Paragraph));
-        Assert.Equal([5, 6, 8], sentences.Select(s => s.Words));
+        Assert.Equal([8, 9, 8], sentences.Select(s => s.Words));
     }
 
     [Fact]
@@ -52,11 +52,11 @@ public class SentencesTests
     }
 
     [Theory]
-    [InlineData("Das ist ein langer Satz zum Ende. 2024 war ein gutes Jahr für uns")]
-    [InlineData("Das ist ein langer Satz zum Ende. „Zitat folgt hier gleich und dann mehr")]
-    [InlineData("Das ist ein langer Satz zum Ende. \"Zitat folgt hier gleich und dann mehr")]
-    [InlineData("Das ist ein langer Satz zum Ende… »Zitat folgt hier gleich und dann mehr")]
-    [InlineData("Ist das ein langer Satz zum Ende? “Zitat folgt hier gleich und dann mehr")]
+    [InlineData("Das ist ein ziemlich langer Satz zum Ende. 2024 war ein gutes Jahr für uns alle")]
+    [InlineData("Das ist ein ziemlich langer Satz zum Ende. „Zitat folgt hier gleich und dann noch mehr")]
+    [InlineData("Das ist ein ziemlich langer Satz zum Ende. \"Zitat folgt hier gleich und dann noch mehr")]
+    [InlineData("Das ist ein ziemlich langer Satz zum Ende… »Zitat folgt hier gleich und dann noch mehr")]
+    [InlineData("Ist das wirklich ein langer Satz zum Ende? “Zitat folgt hier gleich und dann noch mehr")]
     public void Of_SplitsBeforeDigitAndQuote(string text)
     {
         var block = Block(text);
@@ -72,21 +72,30 @@ public class SentencesTests
     [Fact]
     public void Of_ShortSentences_AreLeftOut()
     {
-        var block = Block("Ja. Das ist ein Satz mit sechs Worten.");
+        var block = Block("Ja. Das ist ein Satz mit acht Worten hier.");
 
-        Assert.Equal(["Das ist ein Satz mit sechs Worten."], Texts(block));
+        Assert.Equal(["Das ist ein Satz mit acht Worten hier."], Texts(block));
+    }
+
+    [Fact]
+    public void Of_Boundary_SevenWordsLeftOut_EightKept()
+    {
+        var block = Block("Das sind genau sieben Worte in Folge. Das sind genau acht Worte in einer Folge.");
+
+        Assert.Equal(8, Sentences.MinWords);
+        Assert.Equal(["Das sind genau acht Worte in einer Folge."], Texts(block));
     }
 
     [Fact]
     public void Of_SpanExcludesTrailingWhitespace()
     {
-        var block = Block("Schlaf festigt das Gedächtnis sehr.   \tDas Gehirn sortiert nachts Erlebtes neu!  ");
+        var block = Block("Schlaf festigt das Gedächtnis jeder Nacht sehr stark.   \tDas Gehirn sortiert nachts Erlebtes ganz von selbst neu!  ");
 
         var sentences = Sentences.Of(block);
 
         Assert.Equal(2, sentences.Count);
         Assert.Equal(0, sentences[0].Start);
-        Assert.Equal("Schlaf festigt das Gedächtnis sehr.".Length, sentences[0].Length);
-        Assert.Equal("Das Gehirn sortiert nachts Erlebtes neu!", Sentences.Text(block, sentences[1]));
+        Assert.Equal("Schlaf festigt das Gedächtnis jeder Nacht sehr stark.".Length, sentences[0].Length);
+        Assert.Equal("Das Gehirn sortiert nachts Erlebtes ganz von selbst neu!", Sentences.Text(block, sentences[1]));
     }
 }

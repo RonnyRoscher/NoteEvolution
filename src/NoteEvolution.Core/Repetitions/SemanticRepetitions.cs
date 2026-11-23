@@ -20,8 +20,12 @@ public static class SemanticRepetitions
     /// <summary>How many candidates a block gets at most (its most similar ones).</summary>
     public const int CandidatesPerBlock = 5;
 
-    /// <summary>The sentence cosine from which two sentences count as a repetition.</summary>
-    public const float SentenceThreshold = 0.92f;
+    /// <summary>
+    /// The sentence cosine from which two sentences count as a repetition. Calibrated on a real book (101 compared blocks,
+    /// 380 candidates): from 0.925 on, the best sentence pairs were nearly all the same thought restated in other words;
+    /// between 0.917 and 0.925 they were mostly the same topic with different statements.
+    /// </summary>
+    public const float SentenceThreshold = 0.925f;
 
     /// <summary>How many sentence pairs a block pair keeps at most.</summary>
     public const int SentencePairs = 3;

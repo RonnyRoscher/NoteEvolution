@@ -25,7 +25,7 @@ public class SemanticRepetitionsTests
         Guid[] blocks, Dictionary<Guid, float[]> vectors, IReadOnlySet<(Guid A, Guid B)>? literal = null) =>
         SemanticRepetitions.Candidates(blocks, key => vectors.GetValueOrDefault(key), literal ?? NoLiteral);
 
-    private static ComparedSentence S(int index) => new(0, index * 10, 9, 5);
+    private static ComparedSentence S(int index) => new(0, index * 10, 9, 8);
 
     /// <summary>Confirm over blocks whose sentences S(0..n-1) have the given vectors (null = none).</summary>
     private static IReadOnlyList<SemanticPair> Confirm(
@@ -67,6 +67,18 @@ public class SemanticRepetitionsTests
         Assert.Equal(0.93f, pair.Score, 4);
         var sentence = Assert.Single(pair.Sentences);
         Assert.Equal((S(0), S(1)), (sentence.A, sentence.B));
+    }
+
+    [Theory]
+    [InlineData(0.922, false)]
+    [InlineData(0.926, true)]
+    public void Confirm_SentenceThreshold_0925(double cosine, bool listed)
+    {
+        var ids = Ids(2);
+
+        var pairs = Confirm([(ids[0], ids[1], 0.9f)], new() { [ids[0]] = [First()], [ids[1]] = [Cos(cosine, 1)] });
+
+        Assert.Equal(listed, pairs.Count == 1);
     }
 
     [Fact]

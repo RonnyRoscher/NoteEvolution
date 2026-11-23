@@ -628,11 +628,11 @@ public sealed class RepetitionTrackerTests : IDisposable
     }
 
     // P and Q are about the same topic (block cosine 0.9, a candidate); R stands alone. Each sentence has its own vector.
-    private const string P1 = "Der Hund läuft schnell über die Wiese.";
-    private const string P2 = "Die Katze schläft lange auf dem Sofa.";
-    private const string Q1 = "Ein Vogel singt hoch oben im Baum.";
-    private const string Q2 = "Ein Köter rennt rasch quer durchs Gras.";
-    private const string R1 = "Das Meer ist heute sehr ruhig und blau.";
+    private const string P1 = "Der Hund läuft heute schnell über die grüne Wiese.";
+    private const string P2 = "Die Katze schläft heute lange auf dem weichen Sofa.";
+    private const string Q1 = "Ein Vogel singt heute hoch oben im alten Baum.";
+    private const string Q2 = "Ein Köter rennt heute rasch quer durchs hohe Gras.";
+    private const string R1 = "Das Meer ist heute sehr ruhig und tiefblau.";
 
     private static float[] Vector(params float[] values) => values;
 
