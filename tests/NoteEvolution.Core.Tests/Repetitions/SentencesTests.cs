@@ -10,7 +10,8 @@ public class SentencesTests
     private static ComparedBlock Block(params string[] paragraphs)
     {
         var compared = paragraphs
-            .Select((text, index) => new ComparedParagraph(index == 0 ? 0 : 1, [new InlineRun(text, false, false)], text))
+            .Select((text, index) => new ComparedParagraph(
+                Guid.NewGuid(), index == 0 ? 0 : 1, [new InlineRun(text, false, false)], text, [.. Enumerable.Range(0, text.Length + 1)]))
             .ToList();
         var words = new List<ComparedWord>();
         for (var index = 0; index < paragraphs.Length; index++)

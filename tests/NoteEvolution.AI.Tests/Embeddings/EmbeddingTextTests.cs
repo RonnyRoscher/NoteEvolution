@@ -163,15 +163,18 @@ public class EmbeddingTextTests
         Assert.Equal("xquery: a", EmbeddingText.ForModel("xquery: a", ModelCatalog.BgeM3));
     }
 
+    private static ComparedParagraph Paragraph(int depth, string plain) =>
+        new(Guid.NewGuid(), depth, [], plain, [.. Enumerable.Range(0, plain.Length + 1)]);
+
     [Fact]
     public void ForRepetition_QueryPrefix_WordsOfEachParagraphOnALine()
     {
         var block = new ComparedBlock(
             Guid.NewGuid(),
             [
-                new ComparedParagraph(0, [], "Eins, zwei: drei."),
-                new ComparedParagraph(1, [], "--"),
-                new ComparedParagraph(1, [], "Vier fünf"),
+                Paragraph(0, "Eins, zwei: drei."),
+                Paragraph(1, "--"),
+                Paragraph(1, "Vier fünf"),
             ],
             [
                 new ComparedWord(0, 0, 4, "eins"), new ComparedWord(0, 6, 4, "zwei"), new ComparedWord(0, 12, 4, "drei"),
