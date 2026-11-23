@@ -143,6 +143,12 @@ else
         State.NotesTabRequested += OnNotesTabRequested;
         State.NotesChanged += OnNotesChanged;
         TrackSession();
+
+        // A pane created for a request (the shell expanded it) starts with the requested tab.
+        if (State.Session is not null && State.TakeRequestedNotesTab() is { } requested)
+        {
+            _tab = TabOf(requested);
+        }
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -261,18 +267,20 @@ else
     /// <summary>Shows the requested tab.</summary>
     private void OnNotesTabRequested(NotesTab requested) => _ = InvokeAsync(() =>
     {
-        var tab = requested switch
-        {
-            NotesTab.Relevant => Tab.Relevant,
-            NotesTab.Search => Tab.Search,
-            NotesTab.Journal => Tab.Journal,
-            NotesTab.Coverage => Tab.Coverage,
-            NotesTab.Repetitions => Tab.Repetitions,
-            _ => throw new ArgumentOutOfRangeException(nameof(requested)),
-        };
-        SelectTab(tab);
+        State.TakeRequestedNotesTab();
+        SelectTab(TabOf(requested));
         StateHasChanged();
     });
+
+    private static Tab TabOf(NotesTab requested) => requested switch
+    {
+        NotesTab.Relevant => Tab.Relevant,
+        NotesTab.Search => Tab.Search,
+        NotesTab.Journal => Tab.Journal,
+        NotesTab.Coverage => Tab.Coverage,
+        NotesTab.Repetitions => Tab.Repetitions,
+        _ => throw new ArgumentOutOfRangeException(nameof(requested)),
+    };
 
     /// <summary>Shows <paramref name="tab"/>; another tab than the one shown clears the active note block.</summary>
     private void SelectTab(Tab tab)

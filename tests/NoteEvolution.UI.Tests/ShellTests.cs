@@ -25,6 +25,50 @@ public class ShellTests : UiTestContext
         [.. JSInterop.Invocations.Where(i => i.Identifier.StartsWith("neSplash.", StringComparison.Ordinal)).Select(i => i.Identifier)];
 
     [Fact]
+    public async Task CollapsedNotesPane_RepetitionsEntry_ExpandsIt_ShowsTheTab_AndRevealsTheOrigin()
+    {
+        const string run = "eins zwei drei vier fuenf sechs sieben acht neun";
+        using var tv = TestVault.Create(
+            ("pages/Buch - Alpha.md", $"title:: Alpha\ntype:: book\n\n- # Eins\n\t- alpha {run}\n\t- beta {run}\n"));
+        Settings.LastVault = tv.Root;
+        Settings.NotesCollapsed = true;
+        var cut = Render<Shell>();
+        WaitForVaultOpened(cut);
+        await State.Session!.RepetitionsIdle();
+        Assert.Empty(cut.FindAll(".ne-notes-pane"));
+
+        cut.Find(".ne-assistants-toggle").Click();
+        cut.Find(".ne-assistant-repetitions").Click();
+
+        cut.WaitForAssertion(() => Assert.Single(cut.FindAll(".ne-reps .ne-reps-count")));
+        Assert.Single(cut.FindAll(".ne-tab-repetitions.active"));
+        Assert.False(UiSettings.Load(Platform.UserDataDirectory).NotesCollapsed);
+        var alpha = State.CurrentBook!.Page.AllBlocks().Single(b => b.Content.StartsWith("alpha", StringComparison.Ordinal)).Key;
+        cut.WaitForAssertion(() => Assert.Equal(alpha, State.Cursor?.Key));
+        Assert.Null(State.RequestedNotesTab);
+    }
+
+    [Fact]
+    public void CollapsedNotesPane_AnyTabRequest_ExpandsIt_OnThatTab()
+    {
+        using var tv = TwoBooks();
+        Settings.LastVault = tv.Root;
+        Settings.NotesCollapsed = true;
+        var cut = Render<Shell>();
+        WaitForVaultOpened(cut);
+
+        cut.InvokeAsync(() => State.RequestNotesTab(NotesTab.Coverage));
+
+        cut.WaitForAssertion(() => Assert.Single(cut.FindAll(".ne-tab-coverage.active")));
+        Assert.False(Settings.NotesCollapsed);
+
+        // With the pane open, a request just switches the tab.
+        cut.InvokeAsync(() => State.RequestNotesTab(NotesTab.Search));
+        cut.WaitForAssertion(() => Assert.Single(cut.FindAll(".ne-tab-search.active")));
+        Assert.Null(State.RequestedNotesTab);
+    }
+
+    [Fact]
     public void Startup_WithLastVault_SplashSaysOpening_EndsWhenTheVaultIsOpen()
     {
         using var tv = TwoBooks();

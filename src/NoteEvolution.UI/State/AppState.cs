@@ -819,8 +819,29 @@ public sealed class AppState
     /// </summary>
     public void RevealNote(Guid noteId) => NoteRevealRequested?.Invoke(noteId);
 
-    /// <summary>Asks the notes pane to show <paramref name="tab"/>.</summary>
-    public void RequestNotesTab(NotesTab tab) => NotesTabRequested?.Invoke(tab);
+    /// <summary>
+    /// The tab last asked for (<see cref="RequestNotesTab"/>) that no notes pane has shown yet: a pane created later (the
+    /// shell expands a collapsed one for the request) starts with it (<see cref="TakeRequestedNotesTab"/>).
+    /// </summary>
+    public NotesTab? RequestedNotesTab { get; private set; }
+
+    /// <summary>
+    /// Asks the notes pane to show <paramref name="tab"/>; the shell expands the pane if it is collapsed, and the pane
+    /// then starts with this tab (<see cref="RequestedNotesTab"/>).
+    /// </summary>
+    public void RequestNotesTab(NotesTab tab)
+    {
+        RequestedNotesTab = tab;
+        NotesTabRequested?.Invoke(tab);
+    }
+
+    /// <summary>Returns <see cref="RequestedNotesTab"/> and clears it; called by the notes pane that shows the tab.</summary>
+    public NotesTab? TakeRequestedNotesTab()
+    {
+        var tab = RequestedNotesTab;
+        RequestedNotesTab = null;
+        return tab;
+    }
 
     /// <summary>
     /// Asks the editor to scroll to the element of <see cref="CurrentBook"/> with <paramref name="elementKey"/> (a
