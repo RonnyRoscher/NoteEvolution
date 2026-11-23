@@ -1744,6 +1744,8 @@ export function createEditor(host, dotnet, options = {}) {
         }
         const pane = host.closest('.ne-editor-pane') ?? host;
         measureBar(pane.querySelector('.ne-section-bar'));
+        // A new bar height changes the gap below the marking, which may lie above a revealed element.
+        keepRevealAnchor();
         const area = visibleArea(scrollParent(host));
         const first = root.querySelector('.ne-current-first');
         const ends = root.querySelectorAll('.ne-current-last');
@@ -1789,6 +1791,41 @@ export function createEditor(host, dotnet, options = {}) {
             root.style.setProperty('--bar-height', `${height}px`);
         }
     };
+    /**
+     * The element reveal last showed, while it is to stay where reveal left it: { pos, top (client top after the
+     * reveal), until (time) }, else null. C# gives the editor the new marking only after the reveal (setMarked): the
+     * old marking's gap for the section bar (margin-bottom of ne-current-last) then disappears, and where the old
+     * marking lies above the revealed element, that element slides up by the bar's height, out of view. So every
+     * transaction and box report shortly after a reveal scrolls the element back to its place. The user's own input
+     * (wheel, pointer, key, touch) ends this at once; otherwise it ends after revealAnchorTime ms.
+     */
+    let revealAnchor = null;
+    const revealAnchorTime = 1500;
+    const keepRevealAnchor = () => {
+        if (!revealAnchor) {
+            return;
+        }
+        if (performance.now() > revealAnchor.until || !root.isConnected) {
+            revealAnchor = null;
+            return;
+        }
+        const dom = editor.view.nodeDOM(revealAnchor.pos);
+        if (!(dom instanceof Element)) {
+            revealAnchor = null;
+            return;
+        }
+        const shift = dom.getBoundingClientRect().top - revealAnchor.top;
+        if (Math.abs(shift) >= 1) {
+            scrollParent(host).scrollTop += shift;
+        }
+    };
+    const endRevealAnchor = () => {
+        revealAnchor = null;
+    };
+    const userInputs = ['wheel', 'pointerdown', 'keydown', 'touchstart'];
+    for (const type of userInputs) {
+        document.addEventListener(type, endRevealAnchor, { capture: true, passive: true });
+    }
     // Read by ProseMirror at each scroll into view: the line being typed in or moved to stays above the bar.
     const scrollThreshold = { top: 0, right: 0, left: 0, get bottom() { return barHeight + 8; } };
     const scrollMargin = { top: 5, right: 5, left: 5, get bottom() { return barHeight + 8; } };
@@ -1908,7 +1945,14 @@ export function createEditor(host, dotnet, options = {}) {
             call('EditorFocused');
             reportCursor(e.state);
         },
-        onTransaction: scheduleBox,
+        // The DOM already shows the transaction: a revealed element moved by it (e.g. the marking) goes back first.
+        onTransaction: ({ transaction }) => {
+            if (revealAnchor) {
+                revealAnchor.pos = transaction.mapping.map(revealAnchor.pos);
+                keepRevealAnchor();
+            }
+            scheduleBox();
+        },
     });
 
     editorViews.add(editor.view);
@@ -1965,6 +2009,8 @@ export function createEditor(host, dotnet, options = {}) {
             doc.check();
             // C# took what was typed before it sent this document; a change still unsent belongs to the old one.
             dropUnsentChange();
+            // Its positions are the old document's.
+            revealAnchor = null;
             if (!keepCursor) {
                 clearImageCache();
             }
@@ -2005,6 +2051,7 @@ export function createEditor(host, dotnet, options = {}) {
             editor.chain().focus().command(shiftDepth(delta)).run();
         },
         reveal(key, textOffset = 0, focus = true) {
+            revealAnchor = null;
             const doc = editor.state.doc;
             let target = key ? null : { pos: 0, at: TextSelection.atStart(doc).from, size: 0 };
             doc.forEach((node, offset) => {
@@ -2042,6 +2089,8 @@ export function createEditor(host, dotnet, options = {}) {
                 if (rect.top < area.top || rect.bottom > area.bottom) {
                     dom.scrollIntoView({ block: 'start' });
                 }
+                // It stays there while the marking (and with it the section bar's gap) follows (see revealAnchor).
+                revealAnchor = { pos: target.pos, top: dom.getBoundingClientRect().top, until: performance.now() + revealAnchorTime };
             }
         },
         /**
@@ -2128,6 +2177,9 @@ export function createEditor(host, dotnet, options = {}) {
             resizes.disconnect();
             document.removeEventListener('scroll', scheduleBox, { capture: true });
             window.removeEventListener('resize', scheduleBox);
+            for (const type of userInputs) {
+                document.removeEventListener(type, endRevealAnchor, { capture: true });
+            }
             editorViews.delete(editor.view);
             editor.destroy();
             root.remove();
