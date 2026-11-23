@@ -360,12 +360,12 @@ public class WhereToTests : UiTestContext
             TimeSpan.FromSeconds(10));
         var index = Texts().IndexOf(NoteText);
         Assert.True(index >= 0);
-        cut.FindAll(".ne-note-card")[index].QuerySelector(".ne-note-text")!.Click();
-        cut.FindAll(".ne-note-card")[index].QuerySelector(".ne-note-whereto")!.Click();
+        cut.FindAll(".ne-note-card")[index].Find(".ne-note-text").Click();
+        cut.FindAll(".ne-note-card")[index].Find(".ne-note-whereto").Click();
         cut.WaitForAssertion(() => Assert.NotEmpty(cut.FindAll(".ne-note-whereto-item")));
         cut.FindAll(".ne-note-whereto-item")[0].Click();
         cut.WaitForAssertion(() => Assert.NotNull(State.PendingReveal));
-        cut.FindAll(".ne-note-card")[index].QuerySelector(".ne-note-adopt-cursor")!.Click();
+        cut.FindAll(".ne-note-card")[index].Find(".ne-note-adopt-cursor").Click();
         cut.WaitForAssertion(() => Assert.True(Note(session, NoteText).IsUsed));
 
         // Another page changes: the tab reads its notes again, which leaves out the used note, but not while its list is open.
@@ -380,7 +380,7 @@ public class WhereToTests : UiTestContext
 
         // The note stays active while its card stays. Closing the list lets the card go, and with it the selection.
         Assert.Equal(Note(session, NoteText).Key, State.ActiveNote?.NoteKey);
-        cut.FindAll(".ne-note-card")[index].QuerySelector(".ne-note-whereto")!.Click();
+        cut.FindAll(".ne-note-card")[index].Find(".ne-note-whereto").Click();
 
         cut.WaitForAssertion(() =>
         {
@@ -469,7 +469,7 @@ public class WhereToTests : UiTestContext
 
         // Made active, the box is the frame of its range; the bar stands at its bottom, below the sub-blocks, and the list
         // opens in the bar.
-        garden.QuerySelector(":scope > .ne-note-child-row")!.Click();
+        garden.Find(":scope > .ne-note-child-row").Click();
         cut.Find(".ne-note-whereto").Click();
         cut.WaitForAssertion(() => Assert.NotNull(cut.FindAll(".ne-note-body > .ne-note-child")[0].QuerySelector(":scope > .ne-note-bar > .ne-note-whereto-results")));
         var box = cut.FindAll(".ne-note-body > .ne-note-child")[0];

@@ -44,10 +44,10 @@ public class JournalDayMarksTests : UiTestContext
         cut.FindAll(".ne-journal-day").Single(d => d.QuerySelector(".ne-journal-day-date")!.TextContent == date);
 
     private static IElement NotRelevantBox(IRenderedComponent<NotesPane> cut, string date) =>
-        Day(cut, date).QuerySelector(".ne-journal-day-head .ne-day-not-relevant")!;
+        Day(cut, date).Find(".ne-journal-day-head .ne-day-not-relevant");
 
     private static IElement LaterBox(IRenderedComponent<NotesPane> cut, string date) =>
-        Day(cut, date).QuerySelector(".ne-journal-day-head .ne-day-later")!;
+        Day(cut, date).Find(".ne-journal-day-head .ne-day-later");
 
     private static List<string> Dates(IRenderedComponent<NotesPane> cut) =>
         [.. cut.FindAll(".ne-journal-day-date").Select(e => e.TextContent)];
@@ -168,14 +168,16 @@ public class JournalDayMarksTests : UiTestContext
         var cut = RenderJournal();
 
         var later = LaterBox(cut, "02.10.2026");
+        var laterRefresh = Refresh(later);
         later.Change(true);
         Assert.Equal(Text("JournalDayReadOnly"), Message(cut, "02.10.2026"));
-        AssertRecreated(later, LaterBox(cut, "02.10.2026"));
+        AssertRecreated(laterRefresh, LaterBox(cut, "02.10.2026"));
         var notRelevant = NotRelevantBox(cut, "02.10.2026");
+        var notRelevantRefresh = Refresh(notRelevant);
         notRelevant.Change(true);
 
         Assert.Equal(Text("JournalDayReadOnly"), Message(cut, "02.10.2026"));
-        AssertRecreated(notRelevant, NotRelevantBox(cut, "02.10.2026"));
+        AssertRecreated(notRelevantRefresh, NotRelevantBox(cut, "02.10.2026"));
         Assert.Equal(broken, tv.Read("journals/2026_10_02.md"));
         Assert.False(LaterBox(cut, "02.10.2026").HasAttribute("checked"));
         Assert.False(NotRelevantBox(cut, "02.10.2026").HasAttribute("checked"));
@@ -201,9 +203,12 @@ public class JournalDayMarksTests : UiTestContext
         cut.WaitForAssertion(() => Assert.Null(Message(cut, "02.10.2026")));
     }
 
+    /// <summary>The input's refresh mark, taken before the click: the element itself shows the latest render.</summary>
+    private static string? Refresh(IElement box) => box.GetAttribute("data-mark-refresh");
+
     /// <summary>A toggle that was not saved as clicked recreates the input (so the DOM cannot keep the clicked state).</summary>
-    private static void AssertRecreated(IElement before, IElement after) =>
-        Assert.NotEqual(before.GetAttribute("data-mark-refresh"), after.GetAttribute("data-mark-refresh"));
+    private static void AssertRecreated(string? refreshBefore, IElement after) =>
+        Assert.NotEqual(refreshBefore, Refresh(after));
 
     [Fact]
     public async Task OpenConflict_RefusesWithoutChanges()
@@ -218,11 +223,12 @@ public class JournalDayMarksTests : UiTestContext
         Assert.True(session.HasOpenConflict(page.FilePath));
         var cut = RenderJournal();
         var later = LaterBox(cut, "01.10.2026");
+        var refresh = Refresh(later);
 
         later.Change(true);
 
         Assert.Equal(Text("NoteAdoptConflict"), Message(cut, "01.10.2026"));
-        AssertRecreated(later, LaterBox(cut, "01.10.2026"));
+        AssertRecreated(refresh, LaterBox(cut, "01.10.2026"));
         Assert.Equal("- Extern geändert\n\t- Unterpunkt\n", tv.Read(October));
         Assert.Null(session.Vault.FindPageByPath(path)!.GetPageProperty("later"));
     }
@@ -251,11 +257,12 @@ public class JournalDayMarksTests : UiTestContext
 
         // A read-only file cannot be replaced: the write fails after its retries.
         var later = LaterBox(cut, "01.10.2026");
+        var refresh = Refresh(later);
         File.SetAttributes(path, FileAttributes.ReadOnly);
         try
         {
             later.Change(true);
-            AssertRecreated(later, LaterBox(cut, "01.10.2026"));
+            AssertRecreated(refresh, LaterBox(cut, "01.10.2026"));
         }
         finally
         {

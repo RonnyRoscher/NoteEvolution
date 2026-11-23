@@ -118,7 +118,7 @@ public class NotesPaneTests : UiTestContext
         Assert.Empty(cut.FindAll(".ne-journal-day .ne-note-logseq"));
 
         // The day's own "In Logseq öffnen" opens its page.
-        days[0].QuerySelector(".ne-journal-day-logseq")!.Click();
+        days[0].Find(".ne-journal-day-logseq").Click();
         var page = Note(session, "Gedächtnis im Alltag").Page;
         Assert.Equal(
             [$"logseq://graph/{Uri.EscapeDataString(Path.GetFileName(tv.Root))}?page={Uri.EscapeDataString(page.Name)}"],
@@ -304,7 +304,7 @@ public class NotesPaneTests : UiTestContext
         Search(cut, "Schlaf");
 
         cut.ClickBlock("Gedächtnis braucht Schlaf");
-        CardOf(cut, "Gedächtnis braucht Schlaf").QuerySelector(".ne-note-adopt-cursor")!.Click();
+        CardOf(cut, "Gedächtnis braucht Schlaf").Find(".ne-note-adopt-cursor").Click();
 
         var eins = State.CurrentBook!.Root.Children.First();
         Assert.Equal(["Erster Text", "Zweiter Text", "Gedächtnis braucht Schlaf"], eins.TextBlocks.Select(t => t.Text));

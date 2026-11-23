@@ -92,7 +92,7 @@ public class HandledPlacementTests : UiTestContext
     private static readonly TimeSpan PlaceCheckInterval = TimeSpan.FromMilliseconds(200);
 
     private static IElement Place(IRenderedComponent<HandledWizard> cut, int item) =>
-        cut.FindAll(".ne-handled-item")[item].QuerySelector(".ne-handled-place")!;
+        cut.FindAll(".ne-handled-item")[item].Find(".ne-handled-place");
 
     private static string OptionFor(IElement place, string startsWith) =>
         place.QuerySelectorAll("option").First(o => o.TextContent.StartsWith(startsWith, StringComparison.Ordinal)).GetAttribute("value")!;

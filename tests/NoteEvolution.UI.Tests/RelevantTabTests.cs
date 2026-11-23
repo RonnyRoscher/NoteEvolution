@@ -280,19 +280,19 @@ public class RelevantTabTests : UiTestContext
         Assert.Contains(Sleep, shown[0]);
         const int index = 2;
         var note = session.Notes.All().Single(n => n.Block.Content == shown[index]);
-        cut.FindAll(".ne-relevant-list .ne-note-card")[index].QuerySelector(".ne-note-text")!.Click();
+        cut.FindAll(".ne-relevant-list .ne-note-card")[index].Find(".ne-note-text").Click();
 
         // Making a block active does not compute the list again.
         await LetTimePass();
         Assert.Equal(shown, Texts(cut));
-        cut.FindAll(".ne-relevant-list .ne-note-card")[index].QuerySelector(".ne-note-whereto")!.Click();
+        cut.FindAll(".ne-relevant-list .ne-note-card")[index].Find(".ne-note-whereto").Click();
         cut.WaitForAssertion(() => Assert.Equal(3, WhereToItems(cut, index).Count));
         var music = State.CurrentBook!.Root.Children.ElementAt(1).TextBlocks.Single();
 
         // The jump to the music text block moves the cursor, adopting the note changes the notes: the list stays as it is.
         WhereToItems(cut, index).Single(item => item.TextContent.Contains("Musik", StringComparison.Ordinal)).Click();
         cut.WaitForAssertion(() => Assert.Equal(music.Key, State.PendingReveal));
-        cut.FindAll(".ne-relevant-list .ne-note-card")[index].QuerySelector(".ne-note-adopt-after")!.Click();
+        cut.FindAll(".ne-relevant-list .ne-note-card")[index].Find(".ne-note-adopt-after").Click();
         cut.WaitForAssertion(() => Assert.True(note.IsUsed));
         await LetTimePass();
 
@@ -301,7 +301,7 @@ public class RelevantTabTests : UiTestContext
         Assert.NotNull(cut.FindAll(".ne-relevant-list .ne-note-card")[index].QuerySelector(".ne-note-used"));
 
         // The cursor is in the area of the adopted text: closing the list only lets the used note go.
-        cut.FindAll(".ne-relevant-list .ne-note-card")[index].QuerySelector(".ne-note-whereto")!.Click();
+        cut.FindAll(".ne-relevant-list .ne-note-card")[index].Find(".ne-note-whereto").Click();
 
         cut.WaitForAssertion(() => Assert.Equal(shown.Where(text => text != note.Block.Content), Texts(cut)));
         Assert.Empty(State.WhereToOpenNotes);

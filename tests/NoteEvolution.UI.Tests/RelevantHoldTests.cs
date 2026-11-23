@@ -95,9 +95,9 @@ public class RelevantHoldTests : UiTestContext
     {
         var content = Texts(cut)[index];
         var note = session.Notes.All().Single(n => n.Block.Content == content);
-        cut.FindAll(".ne-relevant-list .ne-note-card")[index].QuerySelector(".ne-note-text")!.Click();
+        cut.FindAll(".ne-relevant-list .ne-note-card")[index].Find(".ne-note-text").Click();
         cut.WaitForAssertion(() => Assert.NotNull(cut.FindAll(".ne-relevant-list .ne-note-card")[index].QuerySelector(button)));
-        cut.FindAll(".ne-relevant-list .ne-note-card")[index].QuerySelector(button)!.Click();
+        cut.FindAll(".ne-relevant-list .ne-note-card")[index].Find(button).Click();
         cut.WaitForAssertion(() => Assert.True(note.IsUsed));
         cut.WaitForAssertion(() => Assert.NotNull(State.RelevantHold));
     }
