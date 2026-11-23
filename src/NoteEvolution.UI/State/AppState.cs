@@ -1,6 +1,7 @@
 using System.Runtime.ExceptionServices;
 using Microsoft.Extensions.Logging;
 using NoteEvolution.Core.Books;
+using NoteEvolution.Core.Repetitions;
 using NoteEvolution.Core.Vaults;
 using NoteEvolution.UI.Editor;
 
@@ -13,6 +14,21 @@ public enum NotesTab
     Search,
     Journal,
     Coverage,
+    Repetitions,
+}
+
+/// <summary>
+/// The repetition the repetitions tab shows: the pair (<paramref name="A"/> before <paramref name="B"/>, as in
+/// <see cref="Repetition"/>) and which side is the origin, the place shown in the book view (<see cref="Origin"/>); the
+/// tab shows the other one (<see cref="Other"/>). <paramref name="Swapped"/> makes B the origin.
+/// </summary>
+public sealed record RepetitionFocus(RepetitionKind Kind, Guid A, Guid B, bool Swapped)
+{
+    /// <summary>The side shown in the book view.</summary>
+    public Guid Origin => Swapped ? B : A;
+
+    /// <summary>The side shown in the tab.</summary>
+    public Guid Other => Swapped ? A : B;
 }
 
 /// <summary>
@@ -403,6 +419,63 @@ public sealed class AppState
     /// <summary>Raises <see cref="NotesChanged"/>.</summary>
     public void NotifyNotesChanged() => NotesChanged?.Invoke();
 
+    /// <summary>
+    /// The hit the repetitions tab shows (repetitions tab spec 3): its place in the book view, the origin, is highlighted;
+    /// <c>null</c> while there is none.
+    /// </summary>
+    public RepetitionFocus? RepetitionFocus { get; private set; }
+
+    /// <summary>Whether the repetitions tab is open: the editors then show the semantic repetitions and the current hit too.</summary>
+    public bool RepetitionsTabOpen { get; private set; }
+
+    /// <summary>
+    /// Whether the repetitions tab shows the accepted hits too („Gewollte anzeigen“); the current hit is then marked in
+    /// the editors even if it is accepted.
+    /// </summary>
+    public bool RepetitionsShowAccepted { get; private set; }
+
+    /// <summary>
+    /// Raised when <see cref="RepetitionFocus"/>, <see cref="RepetitionsTabOpen"/> or <see cref="RepetitionsShowAccepted"/>
+    /// changed.
+    /// </summary>
+    public event Action? RepetitionViewChanged;
+
+    /// <summary>Sets <see cref="RepetitionsShowAccepted"/>; raises <see cref="RepetitionViewChanged"/> if it changed.</summary>
+    public void SetRepetitionsShowAccepted(bool show)
+    {
+        if (show == RepetitionsShowAccepted)
+        {
+            return;
+        }
+
+        RepetitionsShowAccepted = show;
+        RepetitionViewChanged?.Invoke();
+    }
+
+    /// <summary>Sets <see cref="RepetitionFocus"/>; raises <see cref="RepetitionViewChanged"/> if it changed.</summary>
+    public void SetRepetitionFocus(RepetitionFocus? focus)
+    {
+        if (focus == RepetitionFocus)
+        {
+            return;
+        }
+
+        RepetitionFocus = focus;
+        RepetitionViewChanged?.Invoke();
+    }
+
+    /// <summary>Sets <see cref="RepetitionsTabOpen"/>; raises <see cref="RepetitionViewChanged"/> if it changed.</summary>
+    public void SetRepetitionsTabOpen(bool open)
+    {
+        if (open == RepetitionsTabOpen)
+        {
+            return;
+        }
+
+        RepetitionsTabOpen = open;
+        RepetitionViewChanged?.Invoke();
+    }
+
     /// <summary>How many note bars show each selection (see <see cref="ShowNoteBar"/>).</summary>
     private readonly Dictionary<NoteSelection, int> _noteBars = [];
 
@@ -589,8 +662,11 @@ public sealed class AppState
     /// <summary>Someone asked for the history of a text block (see <see cref="RequestBlockHistory"/>); the shell shows it.</summary>
     public event Action<Guid>? BlockHistoryRequested;
 
-    /// <summary>Someone asked for the repetitions assistant (see <see cref="RequestRepetitions"/>); the shell shows it.</summary>
-    public event Action<(Guid A, Guid B)?>? RepetitionsRequested;
+    /// <summary>
+    /// Someone asked for the repetitions tab (see <see cref="RequestRepetitions"/>); the tab shows the hit of
+    /// <see cref="RepetitionFocus"/> and reveals its origin.
+    /// </summary>
+    public event Action? RepetitionsRequested;
 
     /// <summary>
     /// The user chose another book (<see cref="SelectBook"/>, or back/forward into another book); the shell remembers it
@@ -713,10 +789,29 @@ public sealed class AppState
     public void RequestBlockHistory(Guid textBlockKey) => BlockHistoryRequested?.Invoke(textBlockKey);
 
     /// <summary>
-    /// Asks the shell to show the repetitions assistant, with the pair of text blocks (their keys, in either order) selected;
-    /// without a pair the first entry is selected.
+    /// Shows the repetitions tab of the notes pane (<see cref="NotesTab.Repetitions"/>) at a hit of
+    /// <see cref="CurrentBook"/>: the one between the two text blocks of <paramref name="pair"/> (their keys, in either
+    /// order), else the first one of <paramref name="origin"/> among the hits the tab shows; <paramref name="origin"/>
+    /// is the side shown in the book view. Without either (or without such a hit) the tab stays at its hit.
     /// </summary>
-    public void RequestRepetitions((Guid A, Guid B)? pair = null) => RepetitionsRequested?.Invoke(pair);
+    public void RequestRepetitions((Guid A, Guid B)? pair = null, Guid? origin = null)
+    {
+        if (CurrentBook is { } book && (pair is not null || origin is not null))
+        {
+            var set = Session?.RepetitionsShown(book).Set ?? RepetitionSet.Empty;
+            var hits = RepetitionHits.Ordered(set, book, RepetitionsShowAccepted, null);
+            var hit = pair is var (a, b)
+                ? set.All.FirstOrDefault(r => (r.A == a && r.B == b) || (r.A == b && r.B == a))
+                : hits.FirstOrDefault(r => r.A == origin || r.B == origin);
+            if (hit is not null)
+            {
+                SetRepetitionFocus(RepetitionHits.FocusOn(hit, origin));
+            }
+        }
+
+        RequestNotesTab(NotesTab.Repetitions);
+        RepetitionsRequested?.Invoke();
+    }
 
     /// <summary>
     /// Asks the notes pane to bring the note with the block id <paramref name="noteId"/> (the <c>id::</c> a
@@ -724,8 +819,29 @@ public sealed class AppState
     /// </summary>
     public void RevealNote(Guid noteId) => NoteRevealRequested?.Invoke(noteId);
 
-    /// <summary>Asks the notes pane to show <paramref name="tab"/>.</summary>
-    public void RequestNotesTab(NotesTab tab) => NotesTabRequested?.Invoke(tab);
+    /// <summary>
+    /// The tab last asked for (<see cref="RequestNotesTab"/>) that no notes pane has shown yet: a pane created later (the
+    /// shell expands a collapsed one for the request) starts with it (<see cref="TakeRequestedNotesTab"/>).
+    /// </summary>
+    public NotesTab? RequestedNotesTab { get; private set; }
+
+    /// <summary>
+    /// Asks the notes pane to show <paramref name="tab"/>; the shell expands the pane if it is collapsed, and the pane
+    /// then starts with this tab (<see cref="RequestedNotesTab"/>).
+    /// </summary>
+    public void RequestNotesTab(NotesTab tab)
+    {
+        RequestedNotesTab = tab;
+        NotesTabRequested?.Invoke(tab);
+    }
+
+    /// <summary>Returns <see cref="RequestedNotesTab"/> and clears it; called by the notes pane that shows the tab.</summary>
+    public NotesTab? TakeRequestedNotesTab()
+    {
+        var tab = RequestedNotesTab;
+        RequestedNotesTab = null;
+        return tab;
+    }
 
     /// <summary>
     /// Asks the editor to scroll to the element of <see cref="CurrentBook"/> with <paramref name="elementKey"/> (a

@@ -8,18 +8,19 @@ namespace NoteEvolution.UI.State;
 
 /// <summary>
 /// The repetitions of the shown books (spec 4), computed in the background from immutable <see cref="Book"/> snapshots:
-/// the literal pairs at once, the semantic ones as the blocks' vectors arrive. Vectors are cached by the hash of the
-/// block's comparison text (never by block key), so an unchanged block is not embedded again, not even after a restart.
+/// the literal pairs at once, the semantic ones as the vectors arrive: first the blocks' (they give the candidate pairs),
+/// then the sentences' of the candidate blocks (they confirm a pair). Vectors are cached by the hash of the embedded text
+/// (never by block key), so an unchanged block or sentence is not embedded again, not even after a restart.
 /// The results are immutable <see cref="RepetitionSet"/>s, one per page, swapped in as they grow.
 /// </summary>
 internal sealed class RepetitionTracker : IDisposable
 {
-    /// <summary>After how many newly embedded blocks the set is published again.</summary>
+    /// <summary>After how many newly embedded texts (blocks or sentences) the set is published again.</summary>
     internal const int PublishEvery = 20;
 
     /// <summary>
-    /// How many near pairs a session logs at most: enough to judge the threshold, and a book of similar blocks does
-    /// not write hundreds of thousands of lines (each pair from <see cref="SemanticRepetitions.LogThreshold"/> on).
+    /// How many candidate pairs a session logs at most (each with its best sentence score): enough to judge the
+    /// thresholds, and a book of similar blocks does not write hundreds of thousands of lines.
     /// </summary>
     internal const int MaxNearLines = 200;
 
@@ -183,7 +184,8 @@ internal sealed class RepetitionTracker : IDisposable
     }
 
     /// <summary>
-    /// Once per session, in the background: removes the vectors of texts no block of <paramref name="books"/> has any more
+    /// Once per session, in the background: removes the vectors of texts no block (or sentence of a block) of
+    /// <paramref name="books"/> has any more
     /// (every saved edit leaves the old text's vector behind). Call it on the UI thread, with the vault's books, once the
     /// cache is available; without cache (yet) or after a failure it does nothing and a later call tries again. A vector
     /// stored meanwhile for a text outside the snapshot is lost at worst and embedded again later; the cache's lock keeps
@@ -230,6 +232,10 @@ internal sealed class RepetitionTracker : IDisposable
                 foreach (var block in ComparisonText.Of(book))
                 {
                     live.Add(HashOf(block));
+                    foreach (var sentence in Sentences.Of(block))
+                    {
+                        live.Add(EmbeddingText.Hash(_modelId, EmbeddingText.ForSentence(block, sentence)));
+                    }
                 }
             }
 
@@ -308,9 +314,10 @@ internal sealed class RepetitionTracker : IDisposable
     }
 
     /// <summary>
-    /// The literal pairs with the vectors already cached, published once; then, while <c>mayEmbed</c> allows it,
-    /// the missing blocks embedded one by one (each stored at once), published again every <see cref="PublishEvery"/>
-    /// blocks and at the end. A failing cache leaves the run literal only (reading) or the block out (storing). Never throws.
+    /// The literal pairs with the vectors already cached, published once; then, while <c>mayEmbed</c> allows it, the
+    /// missing blocks embedded one by one and, after them, the missing sentences of the candidate blocks (from all block
+    /// vectors known by then), each stored at once, published again every <see cref="PublishEvery"/> texts and at the end.
+    /// A failing cache leaves the run literal only (reading) or the text out (storing). Never throws.
     /// </summary>
     private async Task AnalyseAsync(Book book, string path, string name, CancellationToken token)
     {
@@ -328,6 +335,7 @@ internal sealed class RepetitionTracker : IDisposable
 
             var texts = blocks.Select(EmbeddingText.ForRepetition).ToArray();
             var hashes = blocks.Select(HashOf).ToArray();
+            var sentences = new SentenceTexts(blocks, _modelId);
             var known = new Dictionary<string, float[]>();
             VectorCache? cache;
             var cacheFailed = false;
@@ -337,6 +345,13 @@ internal sealed class RepetitionTracker : IDisposable
                 foreach (var (hash, vector) in cache?.Get(hashes) ?? new Dictionary<string, float[]>())
                 {
                     known[hash] = vector;
+                }
+
+                // The sentences of the blocks that are candidates with the cached block vectors (the usual case once a
+                // book was analysed); those of later candidates are read when they are known.
+                if (cache is not null)
+                {
+                    ReadSentences(cache, CandidatesOf(blocks, hashes, known, literal), sentences, known, token);
                 }
             }
             catch (Exception ex) when (!token.IsCancellationRequested)
@@ -358,53 +373,52 @@ internal sealed class RepetitionTracker : IDisposable
             }
 
             // One first set: the literal pairs with what the cache already holds.
-            await PublishAsync(path, Compute(book, name, blocks, literal, hashes, known), token);
+            await PublishAsync(path, Compute(book, name, blocks, literal, hashes, known, sentences), token);
 
             var sincePublished = 0;
-            for (var i = 0; i < blocks.Count; i++)
+
+            // Embeds the missing texts one by one; false if mayEmbed stopped it (scheduled again once it may).
+            async Task<bool> EmbedMissingAsync(IEnumerable<(string Hash, string Text, string What, string Excerpt)> missing)
             {
-                if (known.ContainsKey(hashes[i]) || IsFailed(hashes[i]))
+                foreach (var (hash, text, what, excerpt) in missing)
                 {
-                    continue; // also a second block with the same text
-                }
-
-                token.ThrowIfCancellationRequested();
-                if (!_mayEmbed())
-                {
-                    break; // the notes' index is busy: scheduled again once it is settled
-                }
-
-                var vector = embed(texts[i]);
-                token.ThrowIfCancellationRequested();
-                if (vector is { Length: > 0 })
-                {
-                    try
+                    if (known.ContainsKey(hash) || IsFailed(hash))
                     {
-                        cache.Put([(hashes[i], path, vector)]);
-                        known[hashes[i]] = vector;
+                        continue; // also a second block or sentence with the same text
                     }
-                    catch (Exception ex) when (!token.IsCancellationRequested)
+
+                    token.ThrowIfCancellationRequested();
+                    if (!_mayEmbed())
                     {
-                        LogCacheFailure(ex);
-                        MarkFailed(hashes[i]);
+                        return false; // the notes' index is busy: scheduled again once it is settled
+                    }
+
+                    EmbedAndStore(embed, cache, path, hash, text, known, what, excerpt, token);
+                    if (++sincePublished == PublishEvery)
+                    {
+                        sincePublished = 0;
+                        await PublishAsync(path, Compute(book, name, blocks, literal, hashes, known, sentences), token);
                     }
                 }
-                else if (MarkFailed(hashes[i]))
-                {
-                    _logger.LogWarning("Embedding a block for the repetitions failed; it is left out: \"{Block}\"",
-                        Excerpt.FirstLine(blocks[i].Paragraphs[0].Plain, 40));
-                }
 
-                if (++sincePublished == PublishEvery)
-                {
-                    sincePublished = 0;
-                    await PublishAsync(path, Compute(book, name, blocks, literal, hashes, known), token);
-                }
+                return true;
             }
 
-            if (sincePublished > 0)
+            var blocksDone = await EmbedMissingAsync(
+                blocks.Select((block, i) => (hashes[i], texts[i], "block", block.Paragraphs[0].Plain)));
+            var unpublished = false;
+            if (blocksDone)
             {
-                await PublishAsync(path, Compute(book, name, blocks, literal, hashes, known), token);
+                // The candidates from every block vector known now: their sentences, cached or embedded.
+                var candidates = CandidatesOf(blocks, hashes, known, literal);
+                unpublished = ReadSentences(cache, candidates, sentences, known, token);
+                await EmbedMissingAsync(sentences.OfBlocksIn(candidates)
+                    .Select(sentence => (sentence.Hash, sentence.Text, "sentence", sentence.Excerpt)));
+            }
+
+            if (sincePublished > 0 || unpublished)
+            {
+                await PublishAsync(path, Compute(book, name, blocks, literal, hashes, known, sentences), token);
             }
         }
         catch (Exception) when (token.IsCancellationRequested)
@@ -417,9 +431,100 @@ internal sealed class RepetitionTracker : IDisposable
         }
     }
 
-    /// <summary>The semantic pairs from the vectors known so far; blocks whose embedding failed do not count in the total.</summary>
+    /// <summary>
+    /// Adds the cached vectors of the candidate blocks' sentences that are not known yet; true if it added any. A failing
+    /// cache is logged and adds nothing (the sentences are then embedded, and left out if storing fails too).
+    /// </summary>
+    private bool ReadSentences(VectorCache cache, IReadOnlyList<(Guid A, Guid B, float Score)> candidates,
+        SentenceTexts sentences, Dictionary<string, float[]> known, CancellationToken token)
+    {
+        var missing = sentences.OfBlocksIn(candidates).Select(s => s.Hash).Where(hash => !known.ContainsKey(hash)).Distinct().ToList();
+        if (missing.Count == 0)
+        {
+            return false;
+        }
+
+        try
+        {
+            var found = cache.Get(missing);
+            foreach (var (hash, vector) in found)
+            {
+                known[hash] = vector;
+            }
+
+            return found.Count > 0;
+        }
+        catch (Exception ex) when (!token.IsCancellationRequested)
+        {
+            LogCacheFailure(ex);
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Embeds one text and stores its vector at once; a text whose embedding or storing fails is left out for this session
+    /// (a failed embedding is logged once per text).
+    /// </summary>
+    private void EmbedAndStore(Func<string, float[]?> embed, VectorCache cache, string path, string hash, string text,
+        Dictionary<string, float[]> known, string what, string excerpt, CancellationToken token)
+    {
+        var vector = embed(text);
+        token.ThrowIfCancellationRequested();
+        if (vector is { Length: > 0 })
+        {
+            try
+            {
+                cache.Put([(hash, path, vector)]);
+                known[hash] = vector;
+            }
+            catch (Exception ex) when (!token.IsCancellationRequested)
+            {
+                LogCacheFailure(ex);
+                MarkFailed(hash);
+            }
+        }
+        else if (MarkFailed(hash))
+        {
+            _logger.LogWarning("Embedding a {What} for the repetitions failed; it is left out: \"{Text}\"",
+                what, Excerpt.FirstLine(excerpt, 40));
+        }
+    }
+
+    /// <summary>The blocks' vectors known so far, by block key.</summary>
+    private static Dictionary<Guid, float[]> BlockVectors(
+        IReadOnlyList<ComparedBlock> blocks, string[] hashes, IReadOnlyDictionary<string, float[]> known)
+    {
+        var vectors = new Dictionary<Guid, float[]>();
+        for (var i = 0; i < blocks.Count; i++)
+        {
+            if (known.TryGetValue(hashes[i], out var vector))
+            {
+                vectors[blocks[i].Key] = vector;
+            }
+        }
+
+        return vectors;
+    }
+
+    /// <summary>The candidate pairs from the block vectors known so far.</summary>
+    private static IReadOnlyList<(Guid A, Guid B, float Score)> CandidatesOf(IReadOnlyList<ComparedBlock> blocks,
+        string[] hashes, IReadOnlyDictionary<string, float[]> known, IReadOnlyList<LiteralPair> literal) =>
+        CandidatesOf(blocks, BlockVectors(blocks, hashes, known), literal);
+
+    private static IReadOnlyList<(Guid A, Guid B, float Score)> CandidatesOf(IReadOnlyList<ComparedBlock> blocks,
+        Dictionary<Guid, float[]> vectors, IReadOnlyList<LiteralPair> literal) =>
+        SemanticRepetitions.Candidates(
+            [.. blocks.Select(block => block.Key)],
+            vectors.GetValueOrDefault,
+            literal.Select(pair => (pair.A, pair.B)).ToHashSet());
+
+    /// <summary>
+    /// The semantic pairs from the vectors known so far: candidates by block vectors, confirmed by sentence vectors. The
+    /// counts take the blocks and the sentences of the candidate blocks (each sentence text once); texts whose embedding
+    /// failed do not count in the total.
+    /// </summary>
     private Computed Compute(Book book, string name, IReadOnlyList<ComparedBlock> blocks, IReadOnlyList<LiteralPair> literal,
-        string[] hashes, IReadOnlyDictionary<string, float[]> known)
+        string[] hashes, IReadOnlyDictionary<string, float[]> known, SentenceTexts sentences)
     {
         HashSet<string> failed;
         lock (_gate)
@@ -427,28 +532,40 @@ internal sealed class RepetitionTracker : IDisposable
             failed = [.. _failed];
         }
 
-        var vectors = new Dictionary<Guid, float[]>();
+        var vectors = BlockVectors(blocks, hashes, known);
         var index = new Dictionary<Guid, int>();
         var left = 0;
         for (var i = 0; i < blocks.Count; i++)
         {
             index[blocks[i].Key] = i;
-            if (known.TryGetValue(hashes[i], out var vector))
-            {
-                vectors[blocks[i].Key] = vector;
-            }
-            else if (failed.Contains(hashes[i]))
+            if (!known.ContainsKey(hashes[i]) && failed.Contains(hashes[i]))
             {
                 left++;
             }
         }
 
-        var semantic = SemanticRepetitions.Find(
-            [.. blocks.Select(block => block.Key)],
-            vectors.GetValueOrDefault,
-            literal.Select(pair => (pair.A, pair.B)).ToHashSet(),
-            (a, b, score, listed) => LogNear(blocks[index[a]], hashes[index[a]], blocks[index[b]], hashes[index[b]], score, listed));
-        return new Computed(book, name, blocks, literal, semantic, vectors.Count, blocks.Count - left, RepetitionSet.Empty);
+        var candidates = CandidatesOf(blocks, vectors, literal);
+        var sentenceHashes = sentences.OfBlocksIn(candidates).Select(s => s.Hash).ToHashSet();
+        var sentencesEmbedded = sentenceHashes.Count(known.ContainsKey);
+        var sentencesLeft = sentenceHashes.Count(hash => !known.ContainsKey(hash) && failed.Contains(hash));
+
+        // A candidate is logged once per session, so only once its score is final: every sentence of both blocks is
+        // embedded or left out.
+        bool Settled(Guid key) => sentences.Of(key).All(s => known.ContainsKey(s.Hash) || failed.Contains(s.Hash));
+
+        var semantic = SemanticRepetitions.Confirm(
+            candidates,
+            sentences.SentencesOf,
+            (key, sentence) => known.GetValueOrDefault(sentences.HashOf(key, sentence)),
+            (a, b, score, listed) =>
+            {
+                if (Settled(a) && Settled(b))
+                {
+                    LogNear(blocks[index[a]], hashes[index[a]], blocks[index[b]], hashes[index[b]], score, listed);
+                }
+            });
+        return new Computed(book, name, blocks, literal, semantic, vectors.Count + sentencesEmbedded,
+            blocks.Count - left + sentenceHashes.Count - sentencesLeft, RepetitionSet.Empty);
     }
 
     /// <summary>
@@ -587,4 +704,47 @@ internal sealed class RepetitionTracker : IDisposable
     private sealed record Computed(
         Book Book, string Name, IReadOnlyList<ComparedBlock> Blocks, IReadOnlyList<LiteralPair> Literal,
         IReadOnlyList<SemanticPair> Semantic, int Embedded, int Total, RepetitionSet Set);
+
+    /// <summary>A sentence of a block: its embedding text (with role prefix), that text's hash, and the sentence as it stands.</summary>
+    private sealed record SentenceText(ComparedSentence Sentence, string Text, string Hash, string Excerpt);
+
+    /// <summary>The sentences of one analysis' blocks, split and hashed once per block when first asked for.</summary>
+    private sealed class SentenceTexts
+    {
+        private readonly Dictionary<Guid, ComparedBlock> _blocks = [];
+        private readonly Dictionary<Guid, IReadOnlyList<SentenceText>> _of = [];
+        private readonly string _modelId;
+
+        public SentenceTexts(IReadOnlyList<ComparedBlock> blocks, string modelId)
+        {
+            _modelId = modelId;
+            foreach (var block in blocks)
+            {
+                _blocks.TryAdd(block.Key, block);
+            }
+        }
+
+        public IReadOnlyList<SentenceText> Of(Guid key)
+        {
+            if (!_of.TryGetValue(key, out var sentences))
+            {
+                var block = _blocks[key];
+                _of[key] = sentences = [.. Sentences.Of(block).Select(sentence =>
+                {
+                    var text = EmbeddingText.ForSentence(block, sentence);
+                    return new SentenceText(sentence, text, EmbeddingText.Hash(_modelId, text), Sentences.Text(block, sentence));
+                })];
+            }
+
+            return sentences;
+        }
+
+        public IReadOnlyList<ComparedSentence> SentencesOf(Guid key) => [.. Of(key).Select(s => s.Sentence)];
+
+        public string HashOf(Guid key, ComparedSentence sentence) => Of(key).First(s => s.Sentence == sentence).Hash;
+
+        /// <summary>The sentences of every block in <paramref name="candidates"/>, block by block in order of appearance.</summary>
+        public IEnumerable<SentenceText> OfBlocksIn(IReadOnlyList<(Guid A, Guid B, float Score)> candidates) =>
+            candidates.SelectMany(c => new[] { c.A, c.B }).Distinct().SelectMany(Of);
+    }
 }

@@ -9,9 +9,9 @@ using NoteEvolution.UI.State;
 namespace NoteEvolution.UI.Tests;
 
 /// <summary>
-/// The commands of the repetitions assistant: a reference in one or both directions
+/// The commands of the repetitions tab: a reference in one or both directions
 /// (<see cref="ManuscriptCommands.AppendReferenceAsync"/>), "Gewollt" (<see cref="ManuscriptCommands.SetRepetitionAcceptedAsync"/>)
-/// and showing a pair in both halves (<see cref="ManuscriptCommands.OpenRepetitionAsync"/>).
+/// and revealing a hit's origin in the active view (<see cref="ManuscriptCommands.RevealRepetitionAsync"/>).
 /// </summary>
 public class RepetitionCommandsTests : UiTestContext
 {
@@ -197,20 +197,33 @@ public class RepetitionCommandsTests : UiTestContext
     }
 
     [Fact]
-    public async Task Open_SplitsAndRevealsBoth()
+    public async Task Reveal_ShowsTheOriginInTheActiveView_WithoutSplit()
     {
         await OpenAsync();
-        var first = KeyOf("Erster Text");
         var third = KeyOf("Dritter Text");
 
-        await ManuscriptCommands.OpenRepetitionAsync(State, first, third);
+        Assert.Null(await ManuscriptCommands.RevealRepetitionAsync(State, third));
+
+        Assert.False(State.IsSplit);
+        Assert.Equal(third, State.Views[0].PendingReveal);
+        Assert.Equal(third, State.Views[0].Cursor!.Key);
+        Assert.Equal(KeyOf("# Zwei"), State.Views[0].CurrentSectionKey);
+    }
+
+    [Fact]
+    public async Task Reveal_SplitView_RevealsInTheActiveHalf_SplitStays()
+    {
+        await OpenAsync();
+        State.SetSplit(true);
+        await State.ActivateAsync(State.Views[1]);
+        var third = KeyOf("Dritter Text");
+
+        Assert.Null(await ManuscriptCommands.RevealRepetitionAsync(State, third));
 
         Assert.True(State.IsSplit);
-        Assert.Equal(first, State.Views[0].PendingReveal);
+        Assert.Same(State.Views[1], State.ActiveView);
         Assert.Equal(third, State.Views[1].PendingReveal);
-        Assert.Equal(first, State.Views[0].Cursor!.Key);
-        Assert.Equal(third, State.Views[1].Cursor!.Key);
-        Assert.Equal(KeyOf("# Zwei"), State.Views[1].CurrentSectionKey);
+        Assert.Null(State.Views[0].PendingReveal);
     }
 
     [Fact]
@@ -277,31 +290,14 @@ public class RepetitionCommandsTests : UiTestContext
     }
 
     [Fact]
-    public async Task Open_BlockGone_NoSplit_ReturnsMessage()
+    public async Task Reveal_BlockGone_ReturnsMessage_NothingRevealed()
     {
         await OpenAsync();
 
-        var message = await ManuscriptCommands.OpenRepetitionAsync(State, KeyOf("Erster Text"), Guid.NewGuid());
+        var message = await ManuscriptCommands.RevealRepetitionAsync(State, Guid.NewGuid());
 
         Assert.Equal(new AdoptMessage("RepetitionGone", true), message);
         Assert.False(State.IsSplit);
-        Assert.Null(State.Views[0].PendingReveal);
-    }
-
-    [Fact]
-    public async Task Open_FirstHalfCannotBeActivated_SecondRevealIsNotDoneInIt()
-    {
-        await OpenAsync();
-        State.SetSplit(true);
-        await State.ActivateAsync(State.Views[1]);
-        // The lower half holds text it could not save: the upper half cannot become active.
-        State.Views[1].HasFailedEditorText = () => true;
-        var third = KeyOf("Dritter Text");
-
-        Assert.Null(await ManuscriptCommands.OpenRepetitionAsync(State, KeyOf("Erster Text"), third));
-
-        Assert.Same(State.Views[1], State.ActiveView);
-        Assert.NotEqual(third, State.Views[1].PendingReveal);
         Assert.Null(State.Views[0].PendingReveal);
     }
 }

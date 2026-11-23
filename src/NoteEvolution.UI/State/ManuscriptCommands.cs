@@ -189,7 +189,7 @@ public static class ManuscriptCommands
             state, null, (book, key, offset, now) => ManuscriptEditor.InsertReference(book, key, offset, targetKey, now), undoDescription, logger);
 
     /// <summary>
-    /// Whether the writing actions of the repetitions assistant are possible now: a book is shown, it is writable (the
+    /// Whether the writing actions of the repetitions tab are possible now: a book is shown, it is writable (the
     /// editor is not locked) and no conflict is open for it (R26).
     /// </summary>
     public static bool CanChangeRepetition(AppState state) =>
@@ -320,39 +320,26 @@ public static class ManuscriptCommands
     }
 
     /// <summary>
-    /// Shows the text block <paramref name="a"/> in the upper and <paramref name="b"/> in the lower half of the split
-    /// view, each revealed and marked (<see cref="AppState.RevealElement"/> acts on the active half, so each half is
-    /// made active in turn); the lower half stays active. A block that is no longer in the book shows
-    /// <c>RepetitionGone</c> and changes nothing (no split). A half that cannot be made active (the editor of the
-    /// active one holds text it could not save) gets no reveal, and the second reveal is not done either.
+    /// Shows the text block <paramref name="origin"/> (the origin of the repetitions tab's hit) in the active view, as
+    /// <see cref="AppState.RevealElement"/> does; a split view stays as it is. A block that is no longer in the book
+    /// shows <c>RepetitionGone</c> and changes nothing.
     /// </summary>
-    /// <returns>The message to show, or <c>null</c> if the pair was shown (or there is no book).</returns>
-    public static async Task<AdoptMessage?> OpenRepetitionAsync(AppState state, Guid a, Guid b)
+    /// <returns>The message to show, or <c>null</c> if the block was revealed (or there is no book).</returns>
+    public static Task<AdoptMessage?> RevealRepetitionAsync(AppState state, Guid origin)
     {
         if (state.CurrentBook is not { } book)
         {
-            return null;
+            return Task.FromResult<AdoptMessage?>(null);
         }
 
-        if (book.FindTextBlock(a) is null || book.FindTextBlock(b) is null)
+        if (book.FindTextBlock(origin) is null)
         {
-            return RepetitionGone;
+            return Task.FromResult<AdoptMessage?>(RepetitionGone);
         }
 
-        state.SetSplit(true);
-        await state.ActivateAsync(state.Views[0]);
-        if (ReferenceEquals(state.ActiveView, state.Views[0]))
-        {
-            state.RevealElement(a);
-            await state.ActivateAsync(state.Views[1]);
-            if (ReferenceEquals(state.ActiveView, state.Views[1]))
-            {
-                state.RevealElement(b);
-            }
-        }
-
+        state.RevealElement(origin);
         state.Notify();
-        return null;
+        return Task.FromResult<AdoptMessage?>(null);
     }
 
     /// <summary>Adds the ids of all text blocks in <paramref name="node"/> and below it to <paramref name="ids"/>.</summary>

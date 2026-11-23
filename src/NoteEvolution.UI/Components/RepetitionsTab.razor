@@ -1,0 +1,399 @@
+@using Microsoft.JSInterop
+@using NoteEvolution.Core.Books
+@using NoteEvolution.Core.Repetitions
+@using NoteEvolution.Core.Vaults
+@implements IDisposable
+@inject AppState State
+@inject IStringLocalizer<Strings> L
+@inject ILogger<RepetitionsTab> Logger
+@inject IJSRuntime JS
+@inject UiSettings Settings
+
+@* The tab „Wiederholungen“ (repetitions tab spec 4): one hit at a time. Its origin is revealed in the book view (the
+   active editor), the other side is shown in a read-only view of the whole book below the head row; ‹ › step through the
+   hits in the order of RepetitionHits.Ordered. The tab never writes by itself; its buttons call the commands of
+   ManuscriptCommands. *@
+@{
+    var book = State.CurrentBook;
+    var hit = CurrentHit;
+    var focus = State.RepetitionFocus;
+    var canChange = ManuscriptCommands.CanChangeRepetition(State);
+}
+<div class="ne-reps">
+    <div class="ne-reps-head">
+        @if (book is not null && hit is not null && focus is not null)
+        {
+            <button type="button" class="ne-reps-prev" title="@L["RepPrevious"]" aria-label="@L["RepPrevious"]"
+                    disabled="@(_index <= 0)" @onclick="() => Go(_index - 1)">‹</button>
+            <span class="ne-reps-count">@($"{_index + 1} / {_hits.Count}")</span>
+            <button type="button" class="ne-reps-next" title="@L["RepNext"]" aria-label="@L["RepNext"]"
+                    disabled="@(_index >= _hits.Count - 1)" @onclick="() => Go(_index + 1)">›</button>
+            <span class="ne-reps-kind">@(hit.Kind == RepetitionKind.Literal ? L["RepetitionLiteral"] : L["RepetitionSemantic"])</span>
+            <button type="button" class="ne-reps-swap" title="@L["RepSwap"]" aria-label="@L["RepSwap"]" @onclick="Swap">⇄</button>
+            <button type="button" class="ne-reps-accept" disabled="@(_busy || !canChange)"
+                    @onclick="() => AcceptAsync(hit)">@(hit.Accepted ? L["RepUnaccept"] : L["RepAccept"])</button>
+            <span class="ne-reps-ref-area">
+                <button type="button" class="ne-reps-ref" disabled="@(_busy || !canChange)" aria-expanded="@(_refOpen ? "true" : "false")"
+                        @onclick="() => _refOpen = !_refOpen">@L["RepReference"]</button>
+                @if (_refOpen && canChange)
+                {
+                    var forward = ManuscriptEditor.RefersTo(book, focus.Origin, focus.Other);
+                    var back = ManuscriptEditor.RefersTo(book, focus.Other, focus.Origin);
+                    <span class="ne-reps-ref-menu">
+                        <button type="button" class="ne-reps-ref-forward" disabled="@(forward || _busy)" title="@(forward ? ExistsTitle : null)"
+                                @onclick="() => AppendAsync(focus.Origin, focus.Other, false)">@L["RepReferenceForward"]</button>
+                        <button type="button" class="ne-reps-ref-back" disabled="@(back || _busy)" title="@(back ? ExistsTitle : null)"
+                                @onclick="() => AppendAsync(focus.Other, focus.Origin, false)">@L["RepReferenceBack"]</button>
+                        <button type="button" class="ne-reps-ref-both" disabled="@((forward && back) || _busy)"
+                                @onclick="() => AppendAsync(focus.Origin, focus.Other, true)">@L["RepBoth"]</button>
+                    </span>
+                }
+            </span>
+        }
+        <button type="button" class="ne-reps-filter" title="@L["RepFilter"]" aria-label="@L["RepFilter"]"
+                aria-expanded="@(_filterOpen ? "true" : "false")" @onclick="() => _filterOpen = !_filterOpen">⚙</button>
+    </div>
+    @if (_filterOpen)
+    {
+        <div class="ne-reps-filters">
+            <label>@L["RepChapter"]
+                <select class="ne-reps-chapter" value="@(_chapter?.ToString() ?? "")" @onchange="OnChapterChanged">
+                    <option value="">@L["RepAllChapters"]</option>
+                    @foreach (var chapter in Chapters(book))
+                    {
+                        <option value="@chapter.Key">@RepetitionPlace.TitleOf(chapter, L)</option>
+                    }
+                </select>
+            </label>
+            <label>
+                <input type="checkbox" class="ne-reps-show-accepted" checked="@State.RepetitionsShowAccepted" @onchange="OnShowAcceptedChanged" />
+                @L["RepShowAccepted"]
+            </label>
+        </div>
+    }
+    @if (book is not null && !_set.Complete)
+    {
+        <p class="ne-reps-progress">@L["RepProgress", _set.Embedded, _set.Total]</p>
+    }
+    @if (State.Session?.AiStatus.State is AiState.Off or AiState.ModelMissing or AiState.Failed)
+    {
+        <p class="ne-reps-nomodel">@L["RepNeedsAi"]</p>
+    }
+    @if (_message is not null)
+    {
+        <p class="ne-reps-message" role="alert">@_message</p>
+    }
+    @if (book is null || (!_stale && _hits.Count == 0))
+    {
+        <p class="ne-reps-empty">@L["RepNone"]</p>
+    }
+    else if (hit is not null && focus is not null)
+    {
+        <div class="ne-reps-body">
+            <RepetitionMinimap Book="book" Hits="_hits" Current="hit" Origin="focus.Origin"
+                               OnPick="PickAsync" />
+            <BookReader @ref="_reader" Book="book" Set="_set" Current="hit" Side="focus.Other" Revision="_revision"
+                        Underline="Settings.ShowRepetitions" />
+        </div>
+    }
+</div>
+
+@code {
+    /// <summary>The set the hits come from: that of the current book, or its last one while the new snapshot is analysed.</summary>
+    private RepetitionSet _set = RepetitionSet.Empty;
+
+    /// <summary>The book <see cref="_set"/> and the hits were taken for.</summary>
+    private Book? _book;
+
+    /// <summary><see cref="_set"/> is the last set of an older snapshot: no conclusions about missing hits.</summary>
+    private bool _stale;
+
+    /// <summary>The hits the tab steps through, filtered (<see cref="RepetitionHits.Ordered"/>).</summary>
+    private IReadOnlyList<Repetition> _hits = [];
+
+    /// <summary>The index of the shown hit in <see cref="_hits"/>; −1 for none.</summary>
+    private int _index = -1;
+
+    /// <summary>Counts new sets and books, so the reader renders the book again (it skips other renders).</summary>
+    private int _revision;
+
+    /// <summary>The chapter filter: only hits with a side in this chapter; <c>null</c>: all.</summary>
+    private Guid? _chapter;
+
+    private bool _filterOpen;
+
+    private bool _refOpen;
+
+    /// <summary>The origin is to be revealed in the book view after the next render (opening, a request, a step).</summary>
+    private bool _revealPending = true;
+
+    private string? _message;
+
+    private BookReader? _reader;
+
+    private bool _busy;
+
+    private VaultSession? _session;
+
+    private Repetition? CurrentHit => _index >= 0 && _index < _hits.Count ? _hits[_index] : null;
+
+    private string ExistsTitle => L["RepReferenceExists"].Value;
+
+    protected override void OnInitialized()
+    {
+        State.Changed += OnStateChanged;
+        State.RepetitionsRequested += OnRepetitionsRequested;
+        TrackSession();
+        State.SetRepetitionsTabOpen(true);
+        Sync();
+    }
+
+    public void Dispose()
+    {
+        State.Changed -= OnStateChanged;
+        State.RepetitionsRequested -= OnRepetitionsRequested;
+        if (_session is not null)
+        {
+            _session.RepetitionsChanged -= OnRepetitionsChanged;
+        }
+
+        State.SetRepetitionsTabOpen(false);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_revealPending)
+        {
+            return;
+        }
+
+        if (State.RepetitionFocus is not { } focus || CurrentHit is null)
+        {
+            // Nothing to show yet: the reveal waits for the analysis of the book, not for a hit typed later.
+            _revealPending = _stale;
+            return;
+        }
+
+        _revealPending = false;
+        var message = await ManuscriptCommands.RevealRepetitionAsync(State, focus.Origin);
+        var text = message is null ? null : L[message.Key].Value;
+        if (text != _message)
+        {
+            _message = text;
+            StateHasChanged();
+        }
+    }
+
+    private void OnStateChanged() => _ = InvokeAsync(() =>
+    {
+        TrackSession();
+        Sync();
+        StateHasChanged();
+    });
+
+    private void OnRepetitionsChanged() => _ = InvokeAsync(() =>
+    {
+        Sync();
+        StateHasChanged();
+    });
+
+    /// <summary>
+    /// A request (a counter in the section bar, the assistants menu) set the focus: the tab shows it and reveals its
+    /// origin. A chapter filter that hides the requested hit is cleared.
+    /// </summary>
+    private void OnRepetitionsRequested() => _ = InvokeAsync(() =>
+    {
+        if (_chapter is not null && State.RepetitionFocus is { } focus && State.CurrentBook is { } book)
+        {
+            var chapter = book.FindNode(_chapter.Value);
+            if (chapter is null || !RepetitionHits.Ordered(_set, book, State.RepetitionsShowAccepted, chapter).Any(r => Is(r, focus)))
+            {
+                _chapter = null;
+            }
+        }
+
+        _message = null;
+        _revealPending = true;
+        Sync();
+        StateHasChanged();
+    });
+
+    /// <summary>Follows the session of the vault for its analysis results.</summary>
+    private void TrackSession()
+    {
+        if (ReferenceEquals(State.Session, _session))
+        {
+            return;
+        }
+
+        if (_session is not null)
+        {
+            _session.RepetitionsChanged -= OnRepetitionsChanged;
+        }
+
+        _session = State.Session;
+        if (_session is not null)
+        {
+            _session.RepetitionsChanged += OnRepetitionsChanged;
+        }
+    }
+
+    /// <summary>
+    /// Reads the hits of the current book and stays at the focused pair, else at the next hit after its place
+    /// (<see cref="RepetitionHits.IndexAfterChange"/>), else at the first one; the focus follows. The origin is not
+    /// revealed here: a change of the book (typing) must not move the cursor.
+    /// </summary>
+    private void Sync()
+    {
+        var book = State.CurrentBook;
+        var (set, pending) = State.Session?.RepetitionsShown(book) ?? (RepetitionSet.Empty, false);
+        if (!ReferenceEquals(set, _set) || !ReferenceEquals(book, _book))
+        {
+            _revision++;
+        }
+
+        _set = set;
+        _book = book;
+        _stale = pending && !set.IsFor(book);
+        if (book is null)
+        {
+            _hits = [];
+            _index = -1;
+            return;
+        }
+
+        var chapter = _chapter is { } key ? book.FindNode(key) : null;
+        if (_chapter is not null && chapter is null && !_stale)
+        {
+            _chapter = null;
+        }
+
+        _hits = RepetitionHits.Ordered(set, book, State.RepetitionsShowAccepted, chapter);
+        var focus = State.RepetitionFocus;
+        _index = focus is null ? (_hits.Count > 0 ? 0 : -1) : RepetitionHits.IndexAfterChange(_hits, focus, book);
+        var next = CurrentHit is not { } hit ? null
+            : focus is not null && Is(hit, focus) ? focus
+            : RepetitionHits.FocusOn(hit, focus?.Origin);
+        if (next is not null || !_stale)
+        {
+            State.SetRepetitionFocus(next);
+        }
+    }
+
+    /// <summary>Whether <paramref name="focus"/> is on <paramref name="hit"/>.</summary>
+    private static bool Is(Repetition hit, RepetitionFocus focus) => hit.Kind == focus.Kind && hit.A == focus.A && hit.B == focus.B;
+
+    /// <summary>Shows the hit at <paramref name="index"/> with its earlier side as the origin, and reveals it.</summary>
+    private void Go(int index)
+    {
+        if (index < 0 || index >= _hits.Count)
+        {
+            return;
+        }
+
+        Show(_hits[index], null);
+    }
+
+    /// <summary>Focuses <paramref name="hit"/> (with <paramref name="origin"/> as its origin) and reveals it after the render.</summary>
+    private void Show(Repetition hit, Guid? origin)
+    {
+        _message = null;
+        _refOpen = false;
+        _revealPending = true;
+        State.SetRepetitionFocus(RepetitionHits.FocusOn(hit, origin));
+        Sync();
+    }
+
+    /// <summary>A click in the minimap: the reader scrolls to the picked block.</summary>
+    private async Task PickAsync(Guid key) => await JS.InvokeVoidAsync("neLayout.scrollReaderTo", _reader?.Container, $"ne-reader-{key}");
+
+    /// <summary>⇄: the other side becomes the origin in the book view.</summary>
+    private void Swap()
+    {
+        if (State.RepetitionFocus is not { } focus)
+        {
+            return;
+        }
+
+        _message = null;
+        _revealPending = true;
+        State.SetRepetitionFocus(focus with { Swapped = !focus.Swapped });
+    }
+
+    /// <summary>A filter changed: the tab stays at its hit if it is still shown; another hit is revealed.</summary>
+    private void Refilter()
+    {
+        var before = State.RepetitionFocus;
+        Sync();
+        if (State.RepetitionFocus is not null && State.RepetitionFocus != before)
+        {
+            _message = null;
+            _revealPending = true;
+        }
+    }
+
+    private void OnChapterChanged(ChangeEventArgs e)
+    {
+        _chapter = Guid.TryParse(e.Value?.ToString(), out var key) ? key : null;
+        Refilter();
+    }
+
+    private void OnShowAcceptedChanged(ChangeEventArgs e)
+    {
+        State.SetRepetitionsShowAccepted(e.Value is true);
+        Refilter();
+    }
+
+    private Task AppendAsync(Guid from, Guid to, bool both)
+    {
+        _refOpen = false;
+        return RunAsync(() => ManuscriptCommands.AppendReferenceAsync(State, from, to, both, L["UndoAppendReference"], Logger));
+    }
+
+    /// <summary>
+    /// „Gewollt“ / „Nicht mehr gewollt“. After „Gewollt“ the tab goes on to the next hit (the last one, which then
+    /// leaves the list, goes back to the one before it).
+    /// </summary>
+    private async Task AcceptAsync(Repetition hit)
+    {
+        var accepting = !hit.Accepted;
+        var index = _index;
+        var next = !accepting ? null
+            : index + 1 < _hits.Count ? _hits[index + 1]
+            : !State.RepetitionsShowAccepted && index > 0 ? _hits[index - 1]
+            : null;
+        var done = await RunAsync(() => ManuscriptCommands.SetRepetitionAcceptedAsync(
+            State, hit.A, hit.B, accepting, L["UndoRepetitionAccepted"], Logger));
+        if (done && next is not null)
+        {
+            Show(next, null);
+        }
+    }
+
+    /// <summary>Runs a command of the tab and shows its message (a failure, or „Diese Stelle gibt es nicht mehr.“).</summary>
+    /// <returns>Whether the command ran without a message.</returns>
+    private async Task<bool> RunAsync(Func<Task<AdoptMessage?>> command)
+    {
+        if (_busy)
+        {
+            return false;
+        }
+
+        _busy = true;
+        _message = null;
+        try
+        {
+            var message = await command();
+            _message = message is null ? null : L[message.Key].Value;
+            return message is null;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    /// <summary>The chapters (headings of the top level) of the book; the appendix is not compared.</summary>
+    private static IEnumerable<OutlineNode> Chapters(Book? book) =>
+        book?.Root.Children.Where(c => c.AppendixKind == AppendixKind.None) ?? [];
+}

@@ -99,6 +99,89 @@ public class ComparisonTextTests
             compared.Select(c => c.Key));
     }
 
+    private const string Glossary = "- # Glossar\n  anhang:: glossar\n\t- Wort\n\t  id:: 33333333-3333-4333-8333-333333333333\n";
+
+    /// <summary>The span of the word "wort" in the editor, checked against the glossary hit AppendixIndex gives for the same text.</summary>
+    private static (Guid Key, int Start, int Length) WortSpan(string text, string pad = Eight)
+    {
+        var book = Load($"- # Eins\n\t- {text} {pad}\n{Glossary}");
+        var block = ComparisonText.Of(Block(book, $"{text} {pad}"))!;
+        var word = block.Words.Single(w => w.Normal == "wort");
+        var span = ComparisonText.ShownSpan(block, word.Paragraph, word.Start, word.Length);
+
+        var hit = Assert.Single(AppendixIndex.Of(book).GlossaryHits);
+        Assert.Equal((hit.ParagraphKey, hit.Start, hit.Length), span);
+        return span;
+    }
+
+    [Fact]
+    public void ShownSpan_AfterBlockReference_CountsItAsOneUnit()
+    {
+        var (_, start, length) = WortSpan("vor ((22222222-2222-4222-8222-222222222222)) Wort");
+
+        Assert.Equal(("vor ".Length + 1 + " ".Length, "Wort".Length), (start, length));
+    }
+
+    [Fact]
+    public void ShownSpan_AfterSourceCitation_CountsItAsOneUnit()
+    {
+        var (_, start, length) = WortSpan($"vor {{{{quelle (({Id})) S. 3}}}} Wort");
+
+        Assert.Equal(("vor ".Length + 1 + " ".Length, "Wort".Length), (start, length));
+    }
+
+    [Fact]
+    public void ShownSpan_InsideBold_SkipsTheStars()
+    {
+        var (_, start, _) = WortSpan("**fett** Wort");
+
+        Assert.Equal(5, start);
+        Assert.Equal(("fett ".Length, "Wort".Length), (start, "Wort".Length));
+    }
+
+    [Fact]
+    public void ShownSpan_AfterLink_UsesTheShownLinkText()
+    {
+        const string link = "[Seite](https://x.org)";
+        var (_, start, length) = WortSpan($"{link} Wort");
+
+        Assert.Equal((link.Length + 1, "Wort".Length), (start, length));
+    }
+
+    [Fact]
+    public void ShownSpan_AfterEscapedStar_CountsItAsOneUnit()
+    {
+        var (_, start, _) = WortSpan(@"a \* Wort");
+
+        Assert.Equal("a * ".Length, start);
+    }
+
+    [Fact]
+    public void Paragraph_Keys_AreTheBlockAndItsDetails()
+    {
+        var book = Load($"- # Eins\n\t- {Eight}\n\t\t- erster Unterpunkt\n\t\t\t- tiefer Unterpunkt\n{Glossary}");
+        var text = Block(book, Eight);
+
+        var compared = ComparisonText.Of(text)!;
+
+        Assert.Equal([text.Key, .. text.Paragraphs.Select(p => p.Block.Key)], compared.Paragraphs.Select(p => p.Key));
+        Assert.Equal(3, compared.Paragraphs.Count);
+        Assert.All(compared.Paragraphs, p => Assert.Equal(p.Plain.Length + 1, p.Shown.Count));
+        var detail = ComparisonText.ShownSpan(compared, 1, 7, 10);
+        Assert.Equal((text.Paragraphs[0].Block.Key, 7, 10), detail);
+    }
+
+    [Fact]
+    public void ReferenceOnlyParagraph_EndsAfterItsOneUnit()
+    {
+        var book = Load($"- # Eins\n\t- {Eight}\n\t\t- ((22222222-2222-4222-8222-222222222222))\n");
+
+        var compared = ComparisonText.Of(Block(book, Eight))!;
+
+        Assert.Equal("", compared.Paragraphs[1].Plain);
+        Assert.Equal([1], compared.Paragraphs[1].Shown);
+    }
+
     [Fact]
     public void RemarkSubPoints_AreLeftOut()
     {

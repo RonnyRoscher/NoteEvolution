@@ -119,16 +119,27 @@ public class EditorInteropTests
     }
 
     [Fact]
-    public async Task SetBlockRepetitions_Serializes_KeyToCount()
+    public async Task SetRepetitionMarks_Serializes_TheRangesWithTheirKind()
     {
         var interop = await InitAsync();
 
-        await interop.SetBlockRepetitionsAsync(new Dictionary<Guid, RepetitionMark> { [Guid.Parse(Key)] = new(2, "zwei"), [Guid.Parse(BlockKey)] = new(1, "eins") });
-        await interop.SetBlockRepetitionsAsync(new Dictionary<Guid, RepetitionMark>());
+        await interop.SetRepetitionMarksAsync(
+        [
+            new(Guid.Parse(Key), 2, 5, RepetitionMarkKind.Literal, "eins"),
+            new(Guid.Parse(BlockKey), 0, 3, RepetitionMarkKind.Semantic, "zwei"),
+            new(Guid.Parse(BlockKey), 0, 3, RepetitionMarkKind.Current, "drei"),
+        ]);
+        await interop.SetRepetitionMarksAsync([]);
 
-        var payloads = _js.Calls.Where(c => c.Method == "setBlockRepetitions").Select(c => JsonSerializer.Serialize(c.Args.Single())).ToArray();
+        var payloads = _js.Calls.Where(c => c.Method == "setRepetitionMarks").Select(c => JsonSerializer.Serialize(c.Args.Single())).ToArray();
         Assert.Equal(
-            [$$$"""{"{{{Key}}}":{"count":2,"title":"zwei"},"{{{BlockKey}}}":{"count":1,"title":"eins"}}""", "{}"], payloads);
+            [
+                $$$"""[{"key":"{{{Key}}}","start":2,"length":5,"kind":"literal","title":"eins"},"""
+                + $$$"""{"key":"{{{BlockKey}}}","start":0,"length":3,"kind":"semantic","title":"zwei"},"""
+                + $$$"""{"key":"{{{BlockKey}}}","start":0,"length":3,"kind":"current","title":"drei"}]""",
+                "[]",
+            ],
+            payloads);
     }
 
     [Fact]
@@ -149,17 +160,6 @@ public class EditorInteropTests
         await interop.TakePendingDocumentAsync();
 
         Assert.Contains(_js.Calls, c => c.Method == "takePendingDocument");
-    }
-
-    [Fact]
-    public async Task RepetitionClicked_ParsesTheKey_BadKeyIgnored()
-    {
-        var interop = await InitAsync();
-
-        await interop.RepetitionClicked(BlockKey);
-        await interop.RepetitionClicked("broken");
-
-        Assert.Equal([Guid.Parse(BlockKey)], _callbacks.RepetitionMarks);
     }
 
     [Fact]
@@ -349,14 +349,6 @@ public class EditorInteropTests
         public Task OnChipClicked(Guid noteId) => Task.CompletedTask;
 
         public Task OnChipRemoved(Guid textBlockKey, Guid noteId) => Task.CompletedTask;
-
-        public List<Guid> RepetitionMarks { get; } = [];
-
-        public Task OnRepetitionMarkClicked(Guid textBlockKey)
-        {
-            RepetitionMarks.Add(textBlockKey);
-            return Task.CompletedTask;
-        }
 
         public List<Guid> References { get; } = [];
 

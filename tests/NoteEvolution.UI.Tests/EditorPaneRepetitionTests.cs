@@ -2,7 +2,9 @@ using Bunit;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Localization;
 using Microsoft.Extensions.Logging.Abstractions;
+using NoteEvolution.AI.Tests;
 using NoteEvolution.Core.Books;
+using NoteEvolution.Core.Repetitions;
 using NoteEvolution.TestSupport;
 using NoteEvolution.UI.Components;
 using NoteEvolution.UI.Editor;
@@ -12,9 +14,8 @@ using NoteEvolution.UI.State;
 namespace NoteEvolution.UI.Tests;
 
 /// <summary>
-/// The repetition marks of the editor (repetitions spec 6): the pane sends the number of repetitions per text block after
-/// a document and when the set changes, nothing when the switch is off, and a click on a mark shows the block and opens
-/// the bar's list.
+/// The repetition marks of the editor (repetitions tab spec 3): the pane sends the underlines after a document and when
+/// the set or the repetitions tab changes, nothing when the switch is off, the same to both halves of a split view.
 /// </summary>
 public class EditorPaneRepetitionTests : UiTestContext
 {
@@ -46,11 +47,14 @@ public class EditorPaneRepetitionTests : UiTestContext
 
     private Guid KeyOf(string start) => Book.Page.AllBlocks().Single(b => b.Content.StartsWith(start, StringComparison.Ordinal)).Key;
 
-    private IReadOnlyDictionary<Guid, int> LastCounts => Editor.BlockRepetitions[^1].ToDictionary(m => m.Key, m => m.Value.Count);
+    private IReadOnlyList<RepetitionTextMark> Last => Editor.RepetitionMarks[^1];
 
-    private async Task<IRenderedComponent<EditorPane>> RenderAsync()
+    /// <summary>The paragraphs the last marks are in, each once, in order.</summary>
+    private List<Guid> MarkedBlocks => [.. Last.Select(m => m.ParagraphKey).Distinct()];
+
+    private async Task<IRenderedComponent<EditorPane>> RenderAsync(TestVault? vault = null, bool ai = false)
     {
-        var session = await OpenSessionAsync(_vault);
+        var session = ai ? await OpenWithAiAsync(vault ?? _vault) : await OpenSessionAsync(vault ?? _vault);
         await session.RepetitionsIdle();
         var cut = Render<EditorPane>();
         cut.WaitForAssertion(() => Assert.NotEmpty(Editor.Documents));
@@ -59,85 +63,143 @@ public class EditorPaneRepetitionTests : UiTestContext
     }
 
     [Fact]
-    public async Task SendsCounts_AfterDocument_AndOnChange()
+    public async Task SendsUnderlines_AfterDocument_AndOnChange()
     {
         var cut = await RenderAsync();
 
-        WaitFor(() => Assert.NotEmpty(Editor.BlockRepetitions));
-        // Only blocks with repetitions are in the map; epsilon has none.
-        Assert.Equal(
-            new Dictionary<Guid, int> { [KeyOf("alpha")] = 1, [KeyOf("beta")] = 1, [KeyOf("gamma")] = 1, [KeyOf("delta")] = 1 },
-            LastCounts);
-        // The tooltip is localized here, not in the script.
-        Assert.Equal(Text("BlockRepetitionsTitle", 1), Editor.BlockRepetitions[^1][KeyOf("alpha")].Title);
-        var sent = Editor.BlockRepetitions.Count;
+        WaitFor(() => Assert.NotEmpty(Editor.RepetitionMarks));
+        // Only blocks with repetitions are marked, each at its shared run; epsilon has none.
+        Assert.Equal([KeyOf("alpha"), KeyOf("beta"), KeyOf("gamma"), KeyOf("delta")], MarkedBlocks);
+        Assert.All(Last, m => Assert.Equal(RepetitionMarkKind.Literal, m.Kind));
+        var alpha = Last.Single(m => m.ParagraphKey == KeyOf("alpha"));
+        Assert.Equal((6, RunX.Length), (alpha.Start, alpha.Length));
+        // The tooltip is localized here, not in the script, and names the other place.
+        Assert.Equal(Text("RepetitionAlsoIn", $"Eins{ManuscriptEditor.SectionPathSeparator}beta {RunX}"), alpha.Title);
+        var sent = Editor.RepetitionMarks.Count;
 
-        // „Gewollt“ for alpha~beta changes the set: the new counts are sent.
+        // „Gewollt“ for alpha~beta changes the set: the new marks are sent.
         Assert.Null(await cut.InvokeAsync(() => ManuscriptCommands.SetRepetitionAcceptedAsync(
             State, KeyOf("alpha"), KeyOf("beta"), true, Text("UndoRepetitionAccepted"), NullLogger.Instance)));
         await State.Session!.RepetitionsIdle();
 
-        WaitFor(() => Assert.Equal(
-            new Dictionary<Guid, int> { [KeyOf("gamma")] = 1, [KeyOf("delta")] = 1 }, LastCounts));
-        Assert.True(Editor.BlockRepetitions.Count > sent);
+        WaitFor(() => Assert.Equal([KeyOf("gamma"), KeyOf("delta")], MarkedBlocks));
+        Assert.True(Editor.RepetitionMarks.Count > sent);
     }
 
     [Fact]
     public async Task SendsNothingAgain_WhenNothingChanged()
     {
         var cut = await RenderAsync();
-        WaitFor(() => Assert.NotEmpty(Editor.BlockRepetitions));
-        var sent = Editor.BlockRepetitions.Count;
+        WaitFor(() => Assert.NotEmpty(Editor.RepetitionMarks));
+        var sent = Editor.RepetitionMarks.Count;
 
         State.Notify();
         await cut.InvokeAsync(() => Editor.Callbacks!.OnCursorChanged(new CursorInfo(ElementKind.TextBlock, KeyOf("beta"), KeyOf("beta"), 0)));
+        // Opening the tab without semantic repetitions or a focus changes no mark either.
+        await cut.InvokeAsync(() => State.SetRepetitionsTabOpen(true));
 
-        Assert.Equal(sent, Editor.BlockRepetitions.Count);
+        Assert.Equal(sent, Editor.RepetitionMarks.Count);
     }
 
     [Fact]
-    public async Task SwitchOff_SendsEmpty()
+    public async Task Pane_SwitchOff_SendsOnlyTheCurrentHit()
     {
         await RenderAsync();
-        WaitFor(() => Assert.NotEmpty(LastCounts));
+        WaitFor(() => Assert.NotEmpty(Last));
 
         Settings.ShowRepetitions = false;
         State.Notify();
 
-        WaitFor(() => Assert.Empty(LastCounts));
+        WaitFor(() => Assert.Empty(Last));
+
+        // With the tab open and a hit in focus only that hit's origin is highlighted, nothing is underlined.
+        State.SetRepetitionsTabOpen(true);
+        State.SetRepetitionFocus(new RepetitionFocus(RepetitionKind.Literal, KeyOf("alpha"), KeyOf("beta"), false));
+        WaitFor(() => Assert.Equal(KeyOf("alpha"), Assert.Single(Last, m => m.Kind == RepetitionMarkKind.Current).ParagraphKey));
+        Assert.All(Last, m => Assert.Equal(RepetitionMarkKind.Current, m.Kind));
+
+        State.SetRepetitionsTabOpen(false);
+        WaitFor(() => Assert.Empty(Last));
 
         Settings.ShowRepetitions = true;
         State.Notify();
 
-        WaitFor(() => Assert.Equal(4, LastCounts.Count));
+        WaitFor(() => Assert.Equal(4, MarkedBlocks.Count));
     }
 
     [Fact]
-    public async Task MarkClick_RevealsBlock_AndExpandsBarList()
+    public async Task Pane_FocusWithTheTab_HighlightsTheOrigin()
     {
-        var cut = await RenderAsync();
-        WaitFor(() => Assert.NotEmpty(Editor.BlockRepetitions));
-        Assert.Empty(cut.FindAll(".ne-sec-rep-list"));
-        var beta = KeyOf("beta");
+        await RenderAsync();
+        WaitFor(() => Assert.NotEmpty(Last));
 
-        await cut.InvokeAsync(() => Editor.Callbacks!.OnRepetitionMarkClicked(beta));
+        State.SetRepetitionFocus(new RepetitionFocus(RepetitionKind.Literal, KeyOf("alpha"), KeyOf("beta"), Swapped: true));
+        Assert.DoesNotContain(Last, m => m.Kind == RepetitionMarkKind.Current);
 
-        cut.WaitForAssertion(() => Assert.Single(cut.FindAll(".ne-sec-rep-list")));
-        Assert.Equal(beta, State.Cursor!.Key);
-        Assert.Contains(beta, Editor.Reveals);
-        Assert.Equal("true", cut.Find(".ne-sec-reps").GetAttribute("aria-expanded"));
-        Assert.Single(cut.FindAll(".ne-sec-rep"));
+        State.SetRepetitionsTabOpen(true);
+
+        WaitFor(() => Assert.Equal(KeyOf("beta"), Assert.Single(Last, m => m.Kind == RepetitionMarkKind.Current).ParagraphKey));
+
+        State.SetRepetitionsTabOpen(false);
+
+        WaitFor(() => Assert.DoesNotContain(Last, m => m.Kind == RepetitionMarkKind.Current));
+    }
+
+    [Fact]
+    public async Task Pane_TabOpened_SendsTheSemanticMarksToo()
+    {
+        // The fake embedder gives texts with the same letters the same vector: sonne… and schnee… mean the same.
+        using var vault = TestVault.Create((BookPath, "title:: Alpha\ntype:: book\n\n"
+            + "- # Eins\n\t- sonne mond sterne himmel wolken regen wind schnee\n"
+            + "\t- schnee wind regen wolken himmel sterne mond sonne\n"));
+        await RenderAsync(vault, ai: true);
+        WaitFor(() => Assert.Contains(State.Session!.RepetitionsOf(Book).All, r => r.Kind == RepetitionKind.Semantic));
+        // Without the tab there is nothing to mark: no literal repetitions here.
+        Assert.DoesNotContain(Editor.RepetitionMarks.SelectMany(marks => marks), m => m.Kind == RepetitionMarkKind.Semantic);
+
+        State.SetRepetitionsTabOpen(true);
+
+        WaitFor(() => Assert.Equal(
+            [KeyOf("sonne"), KeyOf("schnee")], Last.Where(m => m.Kind == RepetitionMarkKind.Semantic).Select(m => m.ParagraphKey)));
+
+        State.SetRepetitionsTabOpen(false);
+
+        WaitFor(() => Assert.DoesNotContain(Last, m => m.Kind == RepetitionMarkKind.Semantic));
+    }
+
+    [Fact]
+    public async Task SplitView_BothPanesGetTheSameMarks()
+    {
+        UseEditorPerPane();
+        var session = await OpenSessionAsync(_vault);
+        await session.RepetitionsIdle();
+        State.SetSplit(true);
+        var upper = Render<EditorPane>(p => p.Add(e => e.View, State.Views[0]));
+        var lower = Render<EditorPane>(p => p.Add(e => e.View, State.Views[1]));
+        upper.WaitForAssertion(() => Assert.NotEmpty(Editors[0].Documents));
+        lower.WaitForAssertion(() => Assert.NotEmpty(Editors[1].Documents));
+
+        WaitFor(() => Assert.NotEmpty(Editors[0].RepetitionMarks));
+        WaitFor(() => Assert.NotEmpty(Editors[1].RepetitionMarks));
+        Assert.Equal(Editors[0].RepetitionMarks[^1], Editors[1].RepetitionMarks[^1]);
+
+        State.SetRepetitionFocus(new RepetitionFocus(RepetitionKind.Literal, KeyOf("gamma"), KeyOf("delta"), false));
+        State.SetRepetitionsTabOpen(true);
+
+        WaitFor(() => Assert.Contains(Editors[0].RepetitionMarks[^1], m => m.Kind == RepetitionMarkKind.Current));
+        WaitFor(() => Assert.Equal(Editors[0].RepetitionMarks[^1], Editors[1].RepetitionMarks[^1]));
     }
 
     [Fact]
     public async Task Marks_AreNoEdit_NothingIsSaved()
     {
-        var cut = await RenderAsync();
-        WaitFor(() => Assert.NotEmpty(Editor.BlockRepetitions));
+        await RenderAsync();
+        WaitFor(() => Assert.NotEmpty(Editor.RepetitionMarks));
         var documents = Editor.Documents.Count;
 
-        await cut.InvokeAsync(() => Editor.Callbacks!.OnRepetitionMarkClicked(KeyOf("beta")));
-        cut.WaitForAssertion(() => Assert.Single(cut.FindAll(".ne-sec-rep-list")));
+        State.SetRepetitionFocus(new RepetitionFocus(RepetitionKind.Literal, KeyOf("alpha"), KeyOf("beta"), false));
+        State.SetRepetitionsTabOpen(true);
+        WaitFor(() => Assert.Contains(Last, m => m.Kind == RepetitionMarkKind.Current));
 
         // No document was loaded again for the marks and the file is as it was.
         Assert.Equal(documents, Editor.Documents.Count);

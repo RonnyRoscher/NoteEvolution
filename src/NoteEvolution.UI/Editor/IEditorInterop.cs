@@ -138,9 +138,6 @@ public interface IEditorCallbacks
     /// <summary>The × of a source chip was clicked.</summary>
     Task OnChipRemoved(Guid textBlockKey, Guid noteId);
 
-    /// <summary>The "≈ n" mark at the right edge of a text block was clicked.</summary>
-    Task OnRepetitionMarkClicked(Guid textBlockKey);
-
     /// <summary>A cross reference was clicked; <paramref name="targetId"/> is the <c>id::</c> it refers to.</summary>
     Task OnReferenceClicked(Guid targetId);
 
@@ -251,12 +248,12 @@ public interface IEditorInterop : IAsyncDisposable
     Task SetBlockDatesAsync(IReadOnlyDictionary<Guid, BlockDateLabel?> dates);
 
     /// <summary>
-    /// Sets the repetition marks ("≈ n", with their localized tooltip) of the shown text blocks by key: a block that is missing (or has count 0) has none,
-    /// so the map is the whole set and an empty one removes all marks. Like <see cref="SetBlockDatesAsync"/> this is shown
-    /// state only: no <see cref="IEditorCallbacks.OnDocumentChanged"/>, no undo step, the cursor stays; the marks are gone
-    /// with the next document (<see cref="SetDocumentAsync"/>). Keys the editor does not show are ignored.
+    /// Sets the repetition marks (repetitions tab spec 3) as decorations: the list is the whole set, an empty one removes
+    /// all. Like the glossary marks of <see cref="SetAppendixLabelsAsync"/> they are shown only (no
+    /// <see cref="IEditorCallbacks.OnDocumentChanged"/>, no undo step, the cursor stays), move along with typing and are
+    /// kept for later documents. Marks of paragraphs the editor does not show are ignored.
     /// </summary>
-    Task SetBlockRepetitionsAsync(IReadOnlyDictionary<Guid, RepetitionMark> marks);
+    Task SetRepetitionMarksAsync(IReadOnlyList<RepetitionTextMark> marks);
 
     /// <summary>
     /// The whole document if the user edited it since it was last sent or shown (it is then not sent later as

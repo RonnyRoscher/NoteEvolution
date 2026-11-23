@@ -86,6 +86,10 @@ public static class EmbeddingText
             .Select(words => string.Join(' ', words.Select(word =>
                 block.Paragraphs[word.Paragraph].Plain.Substring(word.Start, word.Length)))));
 
+    /// <summary>The text of one sentence of a compared block as it stands, as a query (like the blocks it is compared within).</summary>
+    public static string ForSentence(ComparedBlock block, ComparedSentence sentence) =>
+        QueryPrefix + Sentences.Text(block, sentence);
+
     /// <summary>
     /// Maps the role marker (<see cref="QueryPrefix"/> / <see cref="PassagePrefix"/>) at the start of
     /// <paramref name="markedText"/> to the prefix <paramref name="model"/> expects (possibly none). Other text is unchanged.

@@ -163,15 +163,18 @@ public class EmbeddingTextTests
         Assert.Equal("xquery: a", EmbeddingText.ForModel("xquery: a", ModelCatalog.BgeM3));
     }
 
+    private static ComparedParagraph Paragraph(int depth, string plain) =>
+        new(Guid.NewGuid(), depth, [], plain, [.. Enumerable.Range(0, plain.Length + 1)]);
+
     [Fact]
     public void ForRepetition_QueryPrefix_WordsOfEachParagraphOnALine()
     {
         var block = new ComparedBlock(
             Guid.NewGuid(),
             [
-                new ComparedParagraph(0, [], "Eins, zwei: drei."),
-                new ComparedParagraph(1, [], "--"),
-                new ComparedParagraph(1, [], "Vier fünf"),
+                Paragraph(0, "Eins, zwei: drei."),
+                Paragraph(1, "--"),
+                Paragraph(1, "Vier fünf"),
             ],
             [
                 new ComparedWord(0, 0, 4, "eins"), new ComparedWord(0, 6, 4, "zwei"), new ComparedWord(0, 12, 4, "drei"),
@@ -179,6 +182,22 @@ public class EmbeddingTextTests
             ]);
 
         Assert.Equal("query: Eins zwei drei\nVier fünf", EmbeddingText.ForRepetition(block));
+    }
+
+    [Fact]
+    public void ForSentence_IsAQueryWithTheSentenceText()
+    {
+        var block = new ComparedBlock(
+            Guid.NewGuid(),
+            [Paragraph(0, "Kurz. Der zweite Satz hat genug Wörter, sagt er.")],
+            [
+                new ComparedWord(0, 0, 4, "kurz"), new ComparedWord(0, 6, 3, "der"), new ComparedWord(0, 10, 6, "zweite"),
+                new ComparedWord(0, 17, 4, "satz"), new ComparedWord(0, 22, 3, "hat"), new ComparedWord(0, 26, 5, "genug"),
+                new ComparedWord(0, 32, 6, "wörter"), new ComparedWord(0, 40, 4, "sagt"), new ComparedWord(0, 45, 2, "er"),
+            ]);
+        var sentence = Assert.Single(Sentences.Of(block));
+
+        Assert.Equal("query: Der zweite Satz hat genug Wörter, sagt er.", EmbeddingText.ForSentence(block, sentence));
     }
 
     [Fact]

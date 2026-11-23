@@ -342,13 +342,6 @@
     [Parameter]
     public bool Visible { get; set; }
 
-    /// <summary>
-    /// Opens the list of repetitions with this render: set by the editor when a repetition mark of a text block was clicked
-    /// (and the block became the marked range); <c>false</c> in the renders after it.
-    /// </summary>
-    [Parameter]
-    public bool ExpandRepetitions { get; set; }
-
     /// <summary>The cursor element (<see cref="AppState.CurrentElement"/>) of the current book; <c>null</c> shows nothing.</summary>
     [Parameter]
     public BookElement? Element { get; set; }
@@ -511,11 +504,6 @@
             _repKeys = rangeKeys;
             _repKeySet = [.. rangeKeys];
             _repCountSet = null;
-        }
-
-        if (ExpandRepetitions)
-        {
-            _repExpanded = true;
         }
 
         if (Locked || !ManuscriptCommands.CanInsertReference(State))
@@ -783,11 +771,17 @@
         await OnSource.InvokeAsync(noteBlockKey);
     }
 
-    /// <summary>A row of the list of repetitions opens the assistant at its pair.</summary>
+    /// <summary>
+    /// A row of the list of repetitions opens the repetitions tab at its pair, with the side in the marked range as the
+    /// origin (the block at the cursor if both are).
+    /// </summary>
     private void ShowRepetition(Repetition repetition)
     {
         _repExpanded = false;
-        State.RequestRepetitions((repetition.A, repetition.B));
+        var origin = _repKeySet.Contains(repetition.A) && _repKeySet.Contains(repetition.B)
+            ? (State.Cursor?.TextBlockKey == repetition.B ? repetition.B : repetition.A)
+            : _repKeySet.Contains(repetition.B) ? repetition.B : repetition.A;
+        State.RequestRepetitions((repetition.A, repetition.B), origin);
     }
 
     private void RevealBackRef(CrossRefSource source)

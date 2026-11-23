@@ -65,7 +65,7 @@ public class RepetitionSetTests
 
         var set = f.Create(
             literal: [Literal(f.B, f.C), Literal(f.A, f.D), Literal(f.A, f.B)],
-            semantic: [new SemanticPair(f.D, f.E, 0.91f), new SemanticPair(f.A, f.E, 0.95f), new SemanticPair(f.A, f.C, 0.92f)]);
+            semantic: [new SemanticPair(f.D, f.E, 0.91f, []), new SemanticPair(f.A, f.E, 0.95f, []), new SemanticPair(f.A, f.C, 0.92f, [])]);
 
         Assert.Equal(
             [
@@ -83,7 +83,7 @@ public class RepetitionSetTests
 
         var set = f.Create(
             literal: [new LiteralPair(f.A, f.B, runs)],
-            semantic: [new SemanticPair(f.C, f.D, 0.93f)]);
+            semantic: [new SemanticPair(f.C, f.D, 0.93f, [])]);
 
         var literal = set.All[0];
         Assert.Equal(runs, literal.Runs);
@@ -100,7 +100,7 @@ public class RepetitionSetTests
         var f = Build();
         var set = f.Create(
             literal: [Literal(f.A, f.B), Literal(f.C, f.D)],
-            semantic: [new SemanticPair(f.A, f.E, 0.95f), new SemanticPair(f.B, f.E, 0.91f)],
+            semantic: [new SemanticPair(f.A, f.E, 0.95f, []), new SemanticPair(f.B, f.E, 0.91f, [])],
             accepted: new HashSet<(Guid, Guid)> { (IdA, IdB) });
 
         var ofA = set.Of(f.A);
@@ -128,7 +128,7 @@ public class RepetitionSetTests
         var f = Build();
         var set = f.Create(
             literal: [Literal(f.A, f.B)],
-            semantic: [new SemanticPair(f.A, f.E, 0.95f)],
+            semantic: [new SemanticPair(f.A, f.E, 0.95f, [])],
             accepted: new HashSet<(Guid, Guid)> { (IdB, IdA) });
 
         Assert.Equal(1, set.Count(Keys(f.A, f.B, f.E)));
@@ -143,7 +143,7 @@ public class RepetitionSetTests
         var f = Build();
         var set = f.Create(
             literal: [Literal(f.A, f.B), Literal(f.C, f.D)],
-            semantic: [new SemanticPair(f.D, f.E, 0.91f), new SemanticPair(f.A, f.E, 0.92f)]);
+            semantic: [new SemanticPair(f.D, f.E, 0.91f, []), new SemanticPair(f.A, f.E, 0.92f, [])]);
 
         Assert.Equal(2, set.CountIn(f.Zwei));   // c-d, d-e
         Assert.Equal(4, set.CountIn(f.Eins));   // a-b, c-d (sub-section), d-e, a-e: each once
@@ -157,7 +157,7 @@ public class RepetitionSetTests
         var f = Build();
         var set = f.Create(
             literal: [Literal(f.A, f.B), Literal(f.C, f.D)],
-            semantic: [new SemanticPair(f.A, f.E, 0.95f)],
+            semantic: [new SemanticPair(f.A, f.E, 0.95f, [])],
             accepted: new HashSet<(Guid, Guid)> { (IdA, IdB) });
 
         Assert.Equal(2, set.Count(new HashSet<Guid>(f.Blocks.Select(b => b.Key))));
@@ -179,12 +179,23 @@ public class RepetitionSetTests
         var f = Build();
         var set = f.Create(
             literal: [Literal(f.A, f.B), Literal(f.A, f.C)],
-            semantic: [new SemanticPair(f.B, f.A, 0.95f)],
+            semantic: [new SemanticPair(f.B, f.A, 0.95f, [])],
             accepted: new HashSet<(Guid, Guid)> { (IdB, IdA) });
 
         Assert.True(set.All[0].Accepted);   // a-b, ids given in the other order
         Assert.False(set.All[1].Accepted);  // c has no id
         Assert.True(set.All[2].Accepted);
+    }
+
+    [Fact]
+    public void Create_SemanticRepetitions_CarryTheirSentencePairs()
+    {
+        var f = Build();
+        var pair = new SentencePair(new ComparedSentence(0, 0, 10, 5), new ComparedSentence(0, 3, 12, 6), 0.95f);
+        var set = f.Create(literal: [Literal(f.A, f.B)], semantic: [new SemanticPair(f.A, f.E, 0.95f, [pair])]);
+
+        Assert.Empty(set.All[0].Sentences);
+        Assert.Equal(pair, Assert.Single(set.All[1].Sentences));
     }
 
     [Fact]

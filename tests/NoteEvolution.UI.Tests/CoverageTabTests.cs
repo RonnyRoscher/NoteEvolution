@@ -96,7 +96,7 @@ public class CoverageTabTests : UiTestContext
         var cut = Render<NotesPane>();
 
         var tabs = cut.FindAll(".ne-tab").Select(t => t.ClassList.First(c => c.StartsWith("ne-tab-"))).ToList();
-        Assert.Equal(["ne-tab-relevant", "ne-tab-search", "ne-tab-journal", "ne-tab-coverage"], tabs);
+        Assert.Equal(["ne-tab-relevant", "ne-tab-search", "ne-tab-journal", "ne-tab-coverage", "ne-tab-repetitions"], tabs);
         Assert.Contains("active", cut.Find(".ne-tab-journal").ClassList);
         Assert.Empty(cut.FindAll(".ne-coverage"));
     }

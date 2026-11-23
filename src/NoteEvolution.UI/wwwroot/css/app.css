@@ -1527,35 +1527,6 @@ html, body {
     display: none;
 }
 
-/*
- * The repetition mark „≈ n“ (setBlockRepetitions) sits at the right edge below the dates, in the flow so that the first
- * lines wrap around it like around the dates. A click on it marks the block and opens the section bar's list.
- */
-.ne-block-rep {
-    float: right;
-    clear: right;
-    margin-left: 8px;
-    padding: 0 6px;
-    border: 1px solid var(--border);
-    border-radius: 9px;
-    background: transparent;
-    font-family: var(--font-ui);
-    font-size: 11px;
-    line-height: 1.5;
-    color: var(--fg-muted);
-    cursor: pointer;
-    user-select: none;
-}
-
-.ne-block-rep:hover {
-    background: var(--hint-bg);
-    color: var(--fg);
-}
-
-.ne-block-rep[hidden] {
-    display: none;
-}
-
 /* Beside the dates a narrow column would break the first line's words (ProseMirror wraps with break-word). */
 @container (max-width: 480px) {
     .ne-block-dates {
@@ -1564,16 +1535,34 @@ html, body {
         margin-left: 0;
         text-align: right;
     }
+}
 
-    .ne-block-rep {
-        float: none;
-        display: block;
-        margin: 0 0 0 auto;
-    }
+/*
+ * Repetitions in the text (setRepetitionMarks): a literal run underlined, a semantic sentence underlined dotted in a
+ * second colour, and the current hit of the repetitions tab highlighted, its block with a border line.
+ */
+.ne-rep-literal {
+    text-decoration: underline solid var(--warning);
+    text-decoration-thickness: 1.5px;
+    text-underline-offset: 0.2em;
+}
 
-    .ne-block-rep[hidden] {
-        display: none;
-    }
+.ne-rep-semantic {
+    text-decoration: underline dotted var(--accent);
+    text-decoration-thickness: 2px;
+    text-underline-offset: 0.2em;
+}
+
+.ne-rep-current {
+    background: var(--hint-bg);
+    border-radius: 2px;
+}
+
+.ne-block.ne-rep-current-block,
+.ne-reader-block.ne-rep-current-block {
+    outline: 2px solid var(--warning);
+    outline-offset: 3px;
+    border-radius: 3px;
 }
 
 .ne-para {
@@ -3117,133 +3106,106 @@ html, body {
     opacity: 0.75;
 }
 
-/* „Wiederholungen“ (repetitions assistant): the pairs on the left, the selected pair side by side on the right. */
-.ne-modal.ne-rep {
-    width: min(1180px, 96vw);
-    height: 86vh;
-}
-
-.ne-rep .ne-modal-body {
+/* The repetitions tab: a head row with the hit's navigation and actions, then the book reader filling the rest. */
+.ne-reps {
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 6px;
+    flex: 1;
+    min-height: 0;
+    padding: 0 8px 8px;
 }
 
-.ne-rep-filters {
+.ne-reps-head {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    flex: none;
+}
+
+.ne-reps-count {
+    min-width: 4em;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+}
+
+.ne-reps-kind {
+    color: var(--fg-muted);
+    font-size: 12px;
+}
+
+/* The filter button sits at the right end of the head row. */
+.ne-reps-filter {
+    margin-left: auto;
+}
+
+.ne-reps-ref-area {
+    position: relative;
+}
+
+.ne-reps-ref-menu {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    z-index: 5;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-top: 2px;
+    padding: 4px;
+    white-space: nowrap;
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.ne-reps-ref-menu button {
+    text-align: left;
+}
+
+.ne-reps-filters {
     display: flex;
     align-items: center;
     flex-wrap: wrap;
     gap: 16px;
-}
-
-.ne-rep-body {
-    flex: 1;
-    min-height: 0;
-    display: flex;
-    gap: 14px;
-}
-
-.ne-rep-list {
-    flex: 0 0 340px;
-    min-height: 0;
-    overflow-y: auto;
-    padding-right: 4px;
-}
-
-.ne-rep-items {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-}
-
-.ne-rep-item {
-    display: grid;
-    grid-template-columns: 1fr auto;
-    gap: 2px 8px;
-    width: 100%;
-    padding: 5px 8px;
-    text-align: left;
-    font-family: var(--font-ui);
+    flex: none;
     font-size: 12px;
-    color: var(--fg);
-    background: var(--bg-raised);
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    cursor: pointer;
 }
 
-.ne-rep-item.ne-rep-selected {
-    border-color: var(--accent);
-    box-shadow: inset 3px 0 0 var(--accent);
-}
-
-.ne-rep-item.ne-rep-accepted {
+.ne-reps-progress,
+.ne-reps-nomodel,
+.ne-reps-empty {
+    margin: 0;
     color: var(--fg-muted);
+    font-size: 12px;
 }
 
-.ne-rep-place {
-    grid-column: 1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+.ne-reps-message {
+    margin: 0;
+    color: var(--danger);
+    font-size: 12px;
 }
 
-.ne-rep-strength {
-    grid-column: 2;
-    grid-row: 1;
-    color: var(--fg-muted);
-    white-space: nowrap;
-}
-
-.ne-rep-badge {
-    grid-column: 2;
-    grid-row: 2;
-    color: var(--fg-muted);
-    font-style: italic;
-}
-
-.ne-rep-empty {
-    color: var(--fg-muted);
-}
-
-.ne-rep-detail {
-    flex: 1;
-    min-width: 0;
-    min-height: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-}
-
-.ne-rep-sides {
+/* The minimap of the book (left) and the reader side by side; only the reader scrolls. */
+.ne-reps-body {
     flex: 1;
     min-height: 0;
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 12px;
-}
-
-.ne-rep-side {
     display: flex;
-    flex-direction: column;
     gap: 6px;
-    min-width: 0;
-    min-height: 0;
-}
-
-.ne-rep-path {
-    color: var(--fg-muted);
-    font-size: 12px;
-}
-
-.ne-rep-text {
-    flex: 1;
-    min-height: 0;
-    overflow-y: auto;
-    padding: 8px 10px;
-    font-family: var(--font-text);
     border: 1px solid var(--border);
     border-radius: 4px;
+}
+
+.ne-reps-body .ne-reader {
+    flex: 1;
+    min-width: 0;
+}
+
+/* A compared block as the repetitions views show it (RepetitionText). */
+.ne-rep-text {
+    font-family: var(--font-text);
     user-select: text;
 }
 
@@ -3251,19 +3213,113 @@ html, body {
     margin: 0 0 6px;
 }
 
-/* The shared words: the accent colour as a wash over the text, readable in the light and the dark theme. */
-mark.ne-rep-shared {
-    color: inherit;
-    background: color-mix(in srgb, var(--accent) 30%, transparent);
-    border-radius: 2px;
+/* The book reader of the repetitions tab: the whole book read-only, in its own scrolling container. */
+.ne-reader {
+    height: 100%;
+    overflow-y: auto;
+    padding: 8px 12px;
+    font-family: var(--font-text);
+    user-select: text;
 }
 
-.ne-rep-ref {
-    align-self: flex-start;
+.ne-reader-heading {
+    margin: 16px 0 6px;
+    font-weight: 600;
 }
 
-.ne-rep-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
+.ne-reader-h1 { font-size: 1.5em; }
+.ne-reader-h2 { font-size: 1.3em; }
+.ne-reader-h3 { font-size: 1.15em; }
+.ne-reader-h4 { font-size: 1.05em; }
+.ne-reader-h5,
+.ne-reader-h6 { font-size: 1em; }
+
+.ne-reader-block {
+    margin: 0 0 10px;
+}
+
+
+/* The minimap of the repetitions tab: a narrow strip over the whole book; positions are percentages of its height. */
+.ne-minimap {
+    position: relative;
+    flex: 0 0 28px;
+    width: 28px;
+    margin: 4px 0 4px 4px;
+    background: var(--bg-subtle, transparent);
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.ne-minimap-chapter {
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: var(--border);
+    pointer-events: none;
+}
+
+.ne-minimap-hit,
+.ne-minimap-a,
+.ne-minimap-b {
+    position: absolute;
+    height: 3px;
+    pointer-events: none;
+}
+
+.ne-minimap-hit {
+    left: 4px;
+    right: 4px;
+    background: var(--accent);
+    opacity: 0.25;
+}
+
+.ne-minimap-a,
+.ne-minimap-b {
+    left: 2px;
+    right: 2px;
+    height: 4px;
+    background: var(--accent);
+}
+
+.ne-minimap-b {
+    background: var(--danger);
+}
+
+.ne-minimap-link {
+    position: absolute;
+    left: 50%;
+    width: 2px;
+    margin-left: -1px;
+    background: var(--accent);
+    opacity: 0.5;
+    pointer-events: none;
+}
+
+.ne-minimap-zone {
+    position: absolute;
+    left: 0;
+    right: 0;
+    min-height: 2px;
+    cursor: pointer;
+}
+
+.ne-minimap-view-book,
+.ne-minimap-view-reader {
+    position: absolute;
+    top: 0;
+    height: 0;
+    border: 1px solid var(--fg-muted);
+    box-sizing: border-box;
+    pointer-events: none;
+}
+
+.ne-minimap-view-book {
+    left: 0;
+    width: 50%;
+}
+
+.ne-minimap-view-reader {
+    right: 0;
+    width: 50%;
 }

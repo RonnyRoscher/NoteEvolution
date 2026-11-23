@@ -4,6 +4,7 @@ using Microsoft.Extensions.Localization;
 using Microsoft.Extensions.Logging.Abstractions;
 using NoteEvolution.AI.Tests;
 using NoteEvolution.Core.Books;
+using NoteEvolution.Core.Repetitions;
 using NoteEvolution.TestSupport;
 using NoteEvolution.UI.Components;
 using NoteEvolution.UI.Editor;
@@ -14,7 +15,7 @@ namespace NoteEvolution.UI.Tests;
 
 /// <summary>
 /// "Wiederholungen: n" in the section bar (repetitions spec 6): the pairs with a block in the marked range, shown whenever
-/// there are some, and the list of their counterparts that opens the assistant at the pair.
+/// there are some, and the list of their counterparts that opens the repetitions tab at the pair.
 /// </summary>
 public class SectionBarRepetitionTests : UiTestContext
 {
@@ -212,13 +213,15 @@ public class SectionBarRepetitionTests : UiTestContext
     }
 
     [Fact]
-    public async Task Expanded_ListsCounterparts_ClickOpensAssistantAtPair()
+    public async Task Expanded_ListsCounterparts_ClickOpensTheTabAtPair()
     {
         var cut = await RenderAsync(Cross);
         await MoveToAsync(cut, "beta");
         cut.WaitForAssertion(() => Assert.Equal("Wiederholungen: 2", cut.Find(".ne-sec-reps").TextContent.Trim()));
-        (Guid A, Guid B)? requested = null;
-        State.RepetitionsRequested += pair => requested = pair;
+        var requested = 0;
+        State.RepetitionsRequested += () => requested++;
+        var tabs = new List<NotesTab>();
+        State.NotesTabRequested += tabs.Add;
 
         cut.Find(".ne-sec-reps").Click();
 
@@ -235,7 +238,25 @@ public class SectionBarRepetitionTests : UiTestContext
 
         rows[1].Click();
 
-        Assert.Equal((KeyOf("beta"), KeyOf("zeta")), requested);
+        Assert.Equal(1, requested);
+        Assert.Equal([NotesTab.Repetitions], tabs);
+        // beta is the block of the bar: the origin, here the earlier side.
+        Assert.Equal(new RepetitionFocus(RepetitionKind.Literal, KeyOf("beta"), KeyOf("zeta"), Swapped: false), State.RepetitionFocus);
+    }
+
+    [Fact]
+    public async Task SectionBarCounter_OpensTheTab_WithThatBlockAsOrigin()
+    {
+        var cut = await RenderAsync(Cross);
+        await MoveToAsync(cut, "zeta");
+        cut.WaitForAssertion(() => Assert.Equal("Wiederholungen: 2", cut.Find(".ne-sec-reps").TextContent.Trim()));
+
+        cut.Find(".ne-sec-reps").Click();
+        // alpha~zeta: zeta, the block of the bar, is the later side and becomes the origin.
+        cut.FindAll(".ne-sec-rep")[0].Click();
+
+        Assert.Equal(new RepetitionFocus(RepetitionKind.Literal, KeyOf("alpha"), KeyOf("zeta"), Swapped: true), State.RepetitionFocus);
+        Assert.Equal(KeyOf("zeta"), State.RepetitionFocus!.Origin);
     }
 
     [Fact]
