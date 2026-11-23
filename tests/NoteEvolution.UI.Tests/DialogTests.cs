@@ -1302,7 +1302,9 @@ public class DialogTests : UiTestContext
         cut.Find(".ne-assistants-toggle").Click();
         OpenAndClose(cut, ".ne-assistant-deleted", ".ne-deleted", ".ne-deleted-close");
         cut.Find(".ne-assistants-toggle").Click();
-        OpenAndClose(cut, ".ne-assistant-repetitions", ".ne-rep", ".ne-rep-close");
+        // „Wiederholungen“ is no dialog: it shows the repetitions tab of the notes pane.
+        cut.Find(".ne-assistant-repetitions").Click();
+        cut.WaitForAssertion(() => Assert.Single(cut.FindAll(".ne-tab-repetitions.active")));
         cut.Find(".ne-assistants-toggle").Click();
         OpenAndClose(cut, ".ne-assistant-subpoints", ".ne-subpoints", ".ne-subpoints-close");
     }

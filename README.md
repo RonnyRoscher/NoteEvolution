@@ -405,24 +405,32 @@ Seite stehen; das PDF ist kein PDF/X und enthält weder TrimBox noch BleedBox.
 
 **Wiederholungen:** Die App findet Stellen, die ein Buch doppelt enthält. Wörtlich ist ein Paar, wenn zwei Textblöcke
 mindestens 8 gleiche Wörter in Folge teilen (Groß- und Kleinschreibung und Satzzeichen zählen nicht). Inhaltlich
-ähnlich ist es, wenn die Bedeutung nach dem lokalen KI-Modell zu mindestens 0,90 übereinstimmt; je Block zählen
-höchstens drei Gegenstellen, und ein wörtliches Paar steht nicht zusätzlich in dieser Gruppe. Nicht verglichen werden
-Blöcke mit Status „Relevant“ oder „Bemerkung“, der Anhang, Überschriften, Bildblöcke und Blöcke mit weniger als 8
-Wörtern. Die Analyse läuft im Hintergrund: nach dem Öffnen des Buchs, nach jedem Speichern und nach jeder
-übernommenen äußeren Änderung der Datei, hinter dem Index der Notizen. Solange Blöcke noch nicht eingebettet sind,
-steht hinter den Zahlen ein „…“ und die Statuszeile zeigt „Wiederholungen: n/m Blöcke“. Ohne lokale KI gibt es nur
-die wörtlichen Paare. Angezeigt werden sie an drei Stellen. Der Assistent „Wiederholungen“ (Menü „Assistenten“) listet
-beide Gruppen und zeigt das gewählte Paar nebeneinander mit den gemeinsamen Folgen; dort setzt „Verweis einfügen“ einen
-Querverweis auf den anderen Block (auch „In beide Richtungen“), „Gewollt“ nimmt das Paar aus Liste und Zählung, und
-„Im Buch öffnen“ zeigt beide Stellen in der geteilten Ansicht. In der Leiste unter der Markierung steht „Wiederholungen:
-n“ für den markierten Bereich; ein Klick listet die Gegenstellen. Im Text sind wörtliche Folgen unterstrichen (der
-Tooltip nennt die andere Stelle), und die Gliederung zeigt je Überschrift „≈ n“ samt Unterabschnitten. Der Schalter
-„Wiederholungen anzeigen“ neben „Abdeckung anzeigen“ blendet Unterstreichungen und Gliederungszahlen gemeinsam aus; die Einstellung wird gemerkt, der Zähler in der
-Leiste bleibt. „Gewollt“ liegt in `.noteevolution/repetitions.json` im Vault, je Buch als Paare von Block-IDs; ein
-Block ohne `id::` bekommt beim Abhaken eine. Ein Paar bleibt gewollt, auch wenn die Blöcke umgeschrieben werden.
-Grenzen: Bei langen Blöcken liest das Modell etwa die ersten 500 Wortteile, inhaltlich zählt dort der Anfang. Verglichen
-wird nur innerhalb eines Buchs, nicht zwischen Büchern. Im PDF erscheint nichts davon. Verweise, Quellenangaben und
-Bilder stehen nicht in der Gegenüberstellung.
+ähnlich ist es, wenn ein Gedanke in anderen Worten wiederkehrt: Das lokale KI-Modell wählt zuerst ähnliche Blöcke vor
+(ab 0,85, je Block die 5 ähnlichsten), dann werden ihre Sätze verglichen, und das Paar zählt nur, wenn mindestens ein
+Satzpaar zu mindestens 0,92 übereinstimmt. Gemeldet werden höchstens drei Satzpaare je Blockpaar und höchstens drei
+inhaltliche Gegenstellen je Block; Sätze unter 5 Wörtern zählen nicht, und ein wörtliches Paar steht nicht zusätzlich
+bei den inhaltlichen. Nicht verglichen werden Blöcke mit Status „Relevant“ oder „Bemerkung“, der Anhang, Überschriften,
+Bildblöcke und Blöcke mit weniger als 8 Wörtern. Die Analyse läuft im Hintergrund: nach dem Öffnen des Buchs, nach
+jedem Speichern und nach jeder übernommenen äußeren Änderung der Datei, hinter dem Index der Notizen. Solange Blöcke
+und Sätze noch nicht eingebettet sind, steht hinter den Zahlen ein „…“ und die Statuszeile zeigt den Stand. Ohne
+lokale KI gibt es nur die wörtlichen Paare.
+Im Text sind wörtliche Folgen durchgezogen unterstrichen, auf beiden Seiten (der Tooltip nennt die andere Stelle). Der
+Tab „Wiederholungen“ rechts neben „Abdeckung“ zeigt immer einen Treffer: seinen Ausgangstext (die frühere Stelle) in
+der Buchansicht, in der aktiven Hälfte, die Gegenstelle im Tab in einer Leseansicht des ganzen Buchs. Beide sind
+hervorgehoben, mit dem, was an ihnen ähnlich ist. Solange der Tab offen ist, sind auch die inhaltlich ähnlichen Sätze
+gepunktet unterstrichen. ‹ und › gehen zum vorigen und nächsten Treffer (erst die wörtlichen, dann die inhaltlichen,
+je nach Stelle im Buch), ⇄ tauscht Ausgangstext und Gegenstelle. „Verweis ▾“ setzt einen Querverweis vom Ausgangstext
+zur Gegenstelle, umgekehrt oder in beide Richtungen; „Gewollt“ nimmt das Paar aus Zählung und Markierung und geht zum
+nächsten Treffer. ⚙ filtert nach Kapitel und blendet mit „Gewollte anzeigen“ die gewollten Paare wieder ein. Beim
+Tippen bleibt der Tab beim selben Paar, solange es das gibt, sonst beim nächsten nach derselben Stelle. Das Menü
+„Assistenten“ › „Wiederholungen“ öffnet den Tab. In der Leiste unter der Markierung steht „Wiederholungen: n“ für den
+markierten Bereich; ein Klick listet die Gegenstellen, und eine Zeile öffnet den Tab mit diesem Block als
+Ausgangstext. Die Gliederung zeigt je Überschrift „≈ n“ samt Unterabschnitten. Der Schalter „Wiederholungen anzeigen“
+neben „Abdeckung anzeigen“ blendet Unterstreichungen und Gliederungszahlen gemeinsam aus; die Einstellung wird
+gemerkt, der Zähler in der Leiste bleibt. „Gewollt“ liegt in `.noteevolution/repetitions.json` im Vault, je Buch als
+Paare von Block-IDs; ein Block ohne `id::` bekommt beim Abhaken eine. Ein Paar bleibt gewollt, auch wenn die Blöcke
+umgeschrieben werden. Grenzen: Verglichen wird nur innerhalb eines Buchs, nicht zwischen Büchern. Im PDF erscheint
+nichts davon. Verweise, Quellenangaben und Bilder stehen nicht in der Leseansicht des Tabs.
 
 ## Änderungshistorie
 
@@ -730,11 +738,13 @@ Assistenten und Prüfung
 - [ ] `[handled]`-Assistent: der ganze Notiztext steht da; eine Stelle wählen zeigt ihren Text und Abschnitt daneben.
 - [ ] Journal: „nicht relevant“ bei einem Tag setzen und wieder entfernen: die Datei ist danach unverändert; mit einem
       anderen Buch gesetzt bleibt der Eintrag des ersten Buchs erhalten; „später“ unabhängig davon. Filter blenden aus.
-- [ ] Wiederholungen: ein Buch mit einer wörtlichen und einer umformulierten Wiederholung; nach dem Öffnen stehen
-      „≈“ am Block, die Zahl in der Leiste und die Zahlen in der Gliederung, der Assistent listet beide Gruppen
-      nebeneinander; „Verweis einfügen“ setzt den Querverweis (Rückgängig nimmt ihn zurück); „Gewollt“ nimmt das Paar
-      aus Liste und Zählung, auch nach einem Neustart; der Schalter „Wiederholungen anzeigen“ blendet „≈“ und die
-      Gliederungszahlen aus, nicht den Zähler der Leiste, und bleibt nach dem Neustart.
+- [ ] Wiederholungen: ein Buch mit einer wörtlichen und einer umformulierten Wiederholung; nach dem Öffnen ist die
+      wörtliche Folge im Text unterstrichen, die Zahl steht in der Leiste und in der Gliederung. Der Tab
+      „Wiederholungen“ zeigt den ersten Treffer: Ausgangstext in der Buchansicht, Gegenstelle im Tab, beide
+      hervorgehoben; mit offenem Tab ist der umformulierte Satz gepunktet unterstrichen. ‹ › und ⇄ springen in der
+      Buchansicht mit; „Verweis ▾“ setzt den Querverweis (Rückgängig nimmt ihn zurück); „Gewollt“ geht zum nächsten
+      Treffer und nimmt das Paar aus der Zählung, auch nach einem Neustart; der Schalter „Wiederholungen anzeigen“
+      blendet Unterstreichungen und Gliederungszahlen aus, nicht den Zähler der Leiste, und bleibt nach dem Neustart.
 
 Lokale KI (Modell installiert, Test-Vault mit einigen Dutzend Notizen und einem Buch)
 - [ ] Ohne Modell: das Angebot beim Öffnen des Vaults ablehnen; die Kopfzeile zeigt „KI: Modell fehlt“, der Reiter

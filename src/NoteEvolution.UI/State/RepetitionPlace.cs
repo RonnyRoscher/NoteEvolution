@@ -5,7 +5,7 @@ using NoteEvolution.UI.Resources;
 
 namespace NoteEvolution.UI.State;
 
-/// <summary>How a place of a repetition is named in lists: "Abschnitt › Textanfang" (the assistant and the section bar).</summary>
+/// <summary>How a place of a repetition is named: "Abschnitt › Textanfang" (the section bar and the tooltips of the marks).</summary>
 internal static class RepetitionPlace
 {
     public const int ExcerptLength = 60;

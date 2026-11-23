@@ -2317,29 +2317,13 @@
     <value>Wiederholungen</value>
     <comment>Eintrag im Menü Assistenten</comment>
   </data>
-  <data name="RepetitionsTitle" xml:space="preserve">
-    <value>Wiederholungen im Buch</value>
-    <comment>Titel des Fensters</comment>
-  </data>
-  <data name="RepGroupLiteral" xml:space="preserve">
-    <value>Wörtlich ({0})</value>
-    <comment>Überschrift der Gruppe; {0} ist die Zahl der Paare</comment>
-  </data>
-  <data name="RepGroupSemantic" xml:space="preserve">
-    <value>Inhaltlich ähnlich ({0})</value>
-    <comment>Überschrift der Gruppe; {0} ist die Zahl der Paare</comment>
-  </data>
-  <data name="RepWords" xml:space="preserve">
-    <value>{0} Wörter</value>
-    <comment>Stärke eines wörtlichen Paars: Zahl der gemeinsamen Wörter</comment>
-  </data>
   <data name="RepPercent" xml:space="preserve">
     <value>{0} %</value>
     <comment>Stärke eines inhaltlich ähnlichen Paars: Ähnlichkeit in Prozent</comment>
   </data>
   <data name="RepChapter" xml:space="preserve">
     <value>Kapitel</value>
-    <comment>Filter der Liste nach Kapitel</comment>
+    <comment>Filter des Tabs „Wiederholungen“: nur Treffer mit einer Stelle im Kapitel</comment>
   </data>
   <data name="RepAllChapters" xml:space="preserve">
     <value>Alle</value>
@@ -2349,13 +2333,9 @@
     <value>Gewollte anzeigen</value>
     <comment>Schalter: als gewollt abgehakte Paare einblenden</comment>
   </data>
-  <data name="RepAppendReference" xml:space="preserve">
-    <value>Verweis einfügen</value>
-    <comment>Knopf unter einer Spalte: hängt einen Querverweis auf den anderen Block an</comment>
-  </data>
   <data name="RepBoth" xml:space="preserve">
     <value>In beide Richtungen</value>
-    <comment>Knopf: Verweise in beide Richtungen in einem Schritt</comment>
+    <comment>Eintrag im Menü „Verweis“ des Tabs „Wiederholungen“: Verweise in beide Richtungen in einem Schritt</comment>
   </data>
   <data name="RepAccept" xml:space="preserve">
     <value>Gewollt</value>
@@ -2381,25 +2361,21 @@
     <value>Auch in: {0}</value>
     <comment>Tooltip einer Wiederholungs-Unterstreichung im Editor; {0} die andere Stelle („Abschnitt › Textanfang“), mehrere mit „; “ verbunden</comment>
   </data>
-  <data name="RepOpen" xml:space="preserve">
-    <value>Im Buch öffnen</value>
-    <comment>Knopf: zeigt beide Stellen in der geteilten Ansicht</comment>
-  </data>
   <data name="RepReferenceExists" xml:space="preserve">
     <value>Verweis besteht</value>
     <comment>Hinweis am ausgegrauten Knopf, wenn der Block schon auf den anderen verweist</comment>
   </data>
   <data name="RepNone" xml:space="preserve">
     <value>Keine Wiederholungen gefunden.</value>
-    <comment>Hinweis bei leerer Liste</comment>
+    <comment>Hinweis im Tab „Wiederholungen“, wenn er keinen Treffer zeigt</comment>
   </data>
   <data name="RepNeedsAi" xml:space="preserve">
     <value>Inhaltlich ähnliche Stellen brauchen die lokale KI.</value>
     <comment>Hinweis, wenn die KI aus ist oder das Modell fehlt</comment>
   </data>
   <data name="RepProgress" xml:space="preserve">
-    <value>Wiederholungen: {0}/{1} Blöcke …</value>
-    <comment>Stand der Analyse, solange noch Blöcke nicht eingebettet sind</comment>
+    <value>inhaltlich: {0} von {1} Texten</value>
+    <comment>Kopfzeile des Tabs „Wiederholungen“ während der Analyse: {0} schon eingebettete Texte (Blöcke und Sätze) von {1}</comment>
   </data>
   <data name="OutlineRepetitionsToggle" xml:space="preserve">
     <value>Wiederholungen anzeigen</value>
@@ -2412,5 +2388,41 @@
   <data name="AiRepetitionsProgress" xml:space="preserve">
     <value> · Wiederholungen: {0}/{1} Blöcke</value>
     <comment>Zusatz zur KI-Anzeige, solange die Analyse des Buchs nicht vollständig ist</comment>
+  </data>
+  <data name="NotesTabRepetitions" xml:space="preserve">
+    <value>Wiederholungen</value>
+    <comment>Tab rechts: geht die Wiederholungen des Buchs einzeln durch</comment>
+  </data>
+  <data name="RepetitionSemantic" xml:space="preserve">
+    <value>inhaltlich</value>
+    <comment>Art einer inhaltlich ähnlichen Wiederholung in der Kopfzeile des Tabs „Wiederholungen“</comment>
+  </data>
+  <data name="RepPrevious" xml:space="preserve">
+    <value>Vorige Wiederholung</value>
+    <comment>Tooltip des Pfeils ‹ im Tab „Wiederholungen“</comment>
+  </data>
+  <data name="RepNext" xml:space="preserve">
+    <value>Nächste Wiederholung</value>
+    <comment>Tooltip des Pfeils › im Tab „Wiederholungen“</comment>
+  </data>
+  <data name="RepSwap" xml:space="preserve">
+    <value>Seiten tauschen</value>
+    <comment>Tooltip von ⇄ im Tab „Wiederholungen“: die Gegenstelle wird zum Ausgangstext in der Buchansicht</comment>
+  </data>
+  <data name="RepReference" xml:space="preserve">
+    <value>Verweis ▾</value>
+    <comment>Knopf im Tab „Wiederholungen“: öffnet die Auswahl der Verweisrichtung</comment>
+  </data>
+  <data name="RepReferenceForward" xml:space="preserve">
+    <value>Vom Ausgangstext zur Gegenstelle</value>
+    <comment>Eintrag im Menü „Verweis“: hängt an den Ausgangstext (Buchansicht) einen Verweis auf die Gegenstelle (Tab) an</comment>
+  </data>
+  <data name="RepReferenceBack" xml:space="preserve">
+    <value>Von der Gegenstelle zum Ausgangstext</value>
+    <comment>Eintrag im Menü „Verweis“: hängt an die Gegenstelle (Tab) einen Verweis auf den Ausgangstext an</comment>
+  </data>
+  <data name="RepFilter" xml:space="preserve">
+    <value>Filter</value>
+    <comment>Tooltip von ⚙ im Tab „Wiederholungen“: öffnet Kapitelfilter und „Gewollte anzeigen“</comment>
   </data>
 </root>

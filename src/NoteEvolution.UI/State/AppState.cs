@@ -14,6 +14,7 @@ public enum NotesTab
     Search,
     Journal,
     Coverage,
+    Repetitions,
 }
 
 /// <summary>
@@ -427,8 +428,29 @@ public sealed class AppState
     /// <summary>Whether the repetitions tab is open: the editors then show the semantic repetitions and the current hit too.</summary>
     public bool RepetitionsTabOpen { get; private set; }
 
-    /// <summary>Raised when <see cref="RepetitionFocus"/> or <see cref="RepetitionsTabOpen"/> changed.</summary>
+    /// <summary>
+    /// Whether the repetitions tab shows the accepted hits too („Gewollte anzeigen“); the current hit is then marked in
+    /// the editors even if it is accepted.
+    /// </summary>
+    public bool RepetitionsShowAccepted { get; private set; }
+
+    /// <summary>
+    /// Raised when <see cref="RepetitionFocus"/>, <see cref="RepetitionsTabOpen"/> or <see cref="RepetitionsShowAccepted"/>
+    /// changed.
+    /// </summary>
     public event Action? RepetitionViewChanged;
+
+    /// <summary>Sets <see cref="RepetitionsShowAccepted"/>; raises <see cref="RepetitionViewChanged"/> if it changed.</summary>
+    public void SetRepetitionsShowAccepted(bool show)
+    {
+        if (show == RepetitionsShowAccepted)
+        {
+            return;
+        }
+
+        RepetitionsShowAccepted = show;
+        RepetitionViewChanged?.Invoke();
+    }
 
     /// <summary>Sets <see cref="RepetitionFocus"/>; raises <see cref="RepetitionViewChanged"/> if it changed.</summary>
     public void SetRepetitionFocus(RepetitionFocus? focus)
@@ -640,8 +662,11 @@ public sealed class AppState
     /// <summary>Someone asked for the history of a text block (see <see cref="RequestBlockHistory"/>); the shell shows it.</summary>
     public event Action<Guid>? BlockHistoryRequested;
 
-    /// <summary>Someone asked for the repetitions assistant (see <see cref="RequestRepetitions"/>); the shell shows it.</summary>
-    public event Action<(Guid A, Guid B)?>? RepetitionsRequested;
+    /// <summary>
+    /// Someone asked for the repetitions tab (see <see cref="RequestRepetitions"/>); the tab shows the hit of
+    /// <see cref="RepetitionFocus"/> and reveals its origin.
+    /// </summary>
+    public event Action? RepetitionsRequested;
 
     /// <summary>
     /// The user chose another book (<see cref="SelectBook"/>, or back/forward into another book); the shell remembers it
@@ -764,10 +789,29 @@ public sealed class AppState
     public void RequestBlockHistory(Guid textBlockKey) => BlockHistoryRequested?.Invoke(textBlockKey);
 
     /// <summary>
-    /// Asks the shell to show the repetitions assistant, with the pair of text blocks (their keys, in either order) selected;
-    /// without a pair the first entry is selected.
+    /// Shows the repetitions tab of the notes pane (<see cref="NotesTab.Repetitions"/>) at a hit of
+    /// <see cref="CurrentBook"/>: the one between the two text blocks of <paramref name="pair"/> (their keys, in either
+    /// order), else the first one of <paramref name="origin"/> among the hits the tab shows; <paramref name="origin"/>
+    /// is the side shown in the book view. Without either (or without such a hit) the tab stays at its hit.
     /// </summary>
-    public void RequestRepetitions((Guid A, Guid B)? pair = null) => RepetitionsRequested?.Invoke(pair);
+    public void RequestRepetitions((Guid A, Guid B)? pair = null, Guid? origin = null)
+    {
+        if (CurrentBook is { } book && (pair is not null || origin is not null))
+        {
+            var set = Session?.RepetitionsShown(book).Set ?? RepetitionSet.Empty;
+            var hits = RepetitionHits.Ordered(set, book, RepetitionsShowAccepted, null);
+            var hit = pair is var (a, b)
+                ? set.All.FirstOrDefault(r => (r.A == a && r.B == b) || (r.A == b && r.B == a))
+                : hits.FirstOrDefault(r => r.A == origin || r.B == origin);
+            if (hit is not null)
+            {
+                SetRepetitionFocus(RepetitionHits.FocusOn(hit, origin));
+            }
+        }
+
+        RequestNotesTab(NotesTab.Repetitions);
+        RepetitionsRequested?.Invoke();
+    }
 
     /// <summary>
     /// Asks the notes pane to bring the note with the block id <paramref name="noteId"/> (the <c>id::</c> a

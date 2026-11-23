@@ -72,7 +72,7 @@
     }
 
     @* The commands next to undo; the indicators (read-only files, AI, language model, system meter) at the right end. *@
-    @if (OnHandledWizard.HasDelegate || OnDraftWizard.HasDelegate || OnNormalizeOutline.HasDelegate || OnDeletedBlocks.HasDelegate || OnSubPointLinks.HasDelegate || OnRepetitions.HasDelegate)
+    @if (OnHandledWizard.HasDelegate || OnDraftWizard.HasDelegate || OnNormalizeOutline.HasDelegate || OnDeletedBlocks.HasDelegate || OnSubPointLinks.HasDelegate)
     {
         <div class="ne-assistants">
             <button type="button" class="ne-assistants-toggle" disabled="@(State.Session is null)" aria-expanded="@(_assistantsOpen ? "true" : "false")"
@@ -86,7 +86,7 @@
                             @onclick="OpenNormalize">@L["AssistantNormalize"]</button>
                     <button type="button" class="ne-assistant-deleted" disabled="@(State.CurrentBook is null || !OnDeletedBlocks.HasDelegate)"
                             @onclick="OpenDeleted">@L["AssistantDeletedBlocks"]</button>
-                    <button type="button" class="ne-assistant-repetitions" disabled="@(State.CurrentBook is null || !OnRepetitions.HasDelegate)"
+                    <button type="button" class="ne-assistant-repetitions" disabled="@(State.CurrentBook is null)"
                             @onclick="OpenRepetitions">@L["AssistantRepetitions"]</button>
                     <button type="button" class="ne-assistant-subpoints" @onclick="OpenSubPoints">@L["AssistantSubPoints"]</button>
                 </div>
@@ -228,9 +228,6 @@
 
     /// <summary>Opens the list of the deleted blocks of the current book; its entry is disabled without a book or while unset.</summary>
     [Parameter] public EventCallback OnDeletedBlocks { get; set; }
-
-    /// <summary>Opens the repetitions assistant for the current book; its entry is disabled without a book or while unset.</summary>
-    [Parameter] public EventCallback OnRepetitions { get; set; }
 
     /// <summary>Opens „Verknüpfungen der Unterpunkte nachtragen“ (the assistants menu).</summary>
     [Parameter] public EventCallback OnSubPointLinks { get; set; }
@@ -573,10 +570,11 @@
         await OnDeletedBlocks.InvokeAsync();
     }
 
-    private async Task OpenRepetitions()
+    /// <summary>„Wiederholungen“ shows the repetitions tab of the notes pane at its current hit; the entry needs a book.</summary>
+    private void OpenRepetitions()
     {
         _assistantsOpen = false;
-        await OnRepetitions.InvokeAsync();
+        State.RequestRepetitions();
     }
 
     private async Task OpenSubPoints()

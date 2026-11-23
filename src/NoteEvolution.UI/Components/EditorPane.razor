@@ -1097,9 +1097,9 @@
                 return;
             }
 
-            // The tab focuses only hits it lists, so an accepted pair in focus is one it shows ("Gewollte anzeigen").
+            // An accepted hit in focus is marked only while the tab shows accepted hits ("Gewollte anzeigen").
             marks = RepetitionMarks.For(
-                set, book, State.RepetitionsTabOpen, State.RepetitionFocus, showAccepted: true,
+                set, book, State.RepetitionsTabOpen, State.RepetitionFocus, State.RepetitionsShowAccepted,
                 key => RepetitionPlace.Of(book, set, key, L), L);
         }
 
