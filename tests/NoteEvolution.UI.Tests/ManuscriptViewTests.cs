@@ -229,6 +229,8 @@ public class ManuscriptViewTests : UiTestContext
         Row(outline, "Zwei").Click();
 
         editor.WaitForAssertion(() => Assert.Equal([zwei.Key], Editor.Reveals));
+        // Its marking is in place before it is scrolled to (the gap for the section bar moves with the marking).
+        Assert.Equal(["marked", $"reveal:{zwei.Key}"], Editor.Calls.TakeLast(2));
         Assert.Equal(zwei.Key, State.CurrentSectionKey);
         Assert.Equal(new BookElement(ElementKind.Heading, zwei.Key), State.CurrentElement);
         Assert.Contains("selected", Row(outline, "Zwei").ClassList);
@@ -260,8 +262,8 @@ public class ManuscriptViewTests : UiTestContext
 
         var beta = session.Vault.FindBook(BetaBook)!;
         var target = TextBlocks(beta.Root).Single(t => t.Text == "Beta Text");
-        // The other book is loaded first, then the block is revealed and marked in it.
-        editor.WaitForAssertion(() => Assert.Equal(["doc", "doc", $"reveal:{target.Key}", "marked"], Editor.Calls));
+        // The other book is loaded first, then the block is marked and revealed in it (the layout is final when it scrolls).
+        editor.WaitForAssertion(() => Assert.Equal(["doc", "doc", "marked", $"reveal:{target.Key}"], Editor.Calls));
         Assert.Equal(BetaBook, State.CurrentBook!.LinkName);
         Assert.Contains("Beta Text", Editor.Json);
         Assert.Equal(target.Section.Key, State.CurrentSectionKey);

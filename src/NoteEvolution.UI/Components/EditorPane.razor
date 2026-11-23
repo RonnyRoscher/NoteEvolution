@@ -1062,13 +1062,19 @@
         }
     }
 
-    /// <summary>Scrolls to the element <see cref="MyView"/> is to reveal (<see cref="AppState.RevealElement"/>), now that the book is shown.</summary>
+    /// <summary>
+    /// Scrolls to the element <see cref="MyView"/> is to reveal (<see cref="AppState.RevealElement"/>), now that the book
+    /// is shown. Its marking goes to the editor first (the cursor already is there): the marking's gap for the section
+    /// bar moves with it, and where the old marking lay above the element, that gap disappearing after the scroll would
+    /// push the element up out of view.
+    /// </summary>
     private async Task RevealPendingAsync()
     {
         var offset = MyView.PendingRevealOffset;
         var focus = MyView.PendingRevealFocus;
         if (MyView.TakePendingReveal() is { } elementKey)
         {
+            await PushMarkedAsync();
             await Editor.RevealAsync(elementKey, offset, focus);
         }
     }

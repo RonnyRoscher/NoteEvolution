@@ -1,5 +1,5 @@
-// reveal in a DOM (jsdom) with a faked layout: a revealed block stays at the top of the pane when the marking that C#
-// sends after the reveal removes the section bar's gap above it. Run with `npm test` in the folder above.
+// reveal in a DOM (jsdom) with a faked layout: the marking's gap for the section bar (ne-current-last) above a revealed
+// block must be gone before the reveal scrolls, which is why EditorPane sends the marking first. Run with `npm test` in the folder above.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
@@ -56,7 +56,7 @@ const keys = ['6650a1c2-1b7e-4c1d-9a0f-2b3c4d5e6f70', '92c1b3d4-6d3f-4a0c-8e5b-3
     'a3d2c4e5-7e40-4b1d-9f6c-4d5e6f708192', 'b4e3d5f6-8f51-4c2e-a07d-5e6f708192a3'];
 const block = (key, text) => ({ type: 'textBlock', attrs: { key }, content: [{ type: 'para', attrs: { key: null }, content: [{ type: 'text', text }] }] });
 
-test('a revealed block stays at the top when the marking above it (and its gap for the section bar) moves to it', () => {
+test('a block revealed after its marking is in place stays at the top; marked after the reveal it slides up', () => {
     const dotnet = { invokeMethodAsync: () => Promise.resolve() };
     const api = createEditor(host, dotnet, { barHeight: GAP });
     api.setDocument(JSON.stringify({ type: 'doc', content: keys.map((key, i) => block(key, `Text ${i}`)) }), false, false);
@@ -67,16 +67,14 @@ test('a revealed block stays at the top when the marking above it (and its gap f
     api.setMarked([{ key: keys[0], ownTextOnly: false }]);
     assert.equal(top(2), 2 * BLOCK + GAP);
 
-    // Revealing the third block scrolls it to the top; then C# marks it, the gap above goes away.
+    // As EditorPane does it: the new marking first (the gap above goes away), then the reveal scrolls to the block.
+    api.setMarked([{ key: keys[2], ownTextOnly: false }]);
     api.reveal(keys[2]);
     assert.equal(top(2), 0);
-    api.setMarked([{ key: keys[2], ownTextOnly: false }]);
-    assert.equal(top(2), 0);
 
-    // The user's own input ends that: the marking moving again moves the text as it is.
+    // The other order (the bug): the gap above the revealed block disappears after the scroll and pushes it up.
     api.reveal(keys[3]);
     assert.equal(top(3), 0);
-    document.dispatchEvent(new window.Event('wheel'));
     api.setMarked([{ key: keys[3], ownTextOnly: false }]);
     assert.equal(top(3), -GAP);
 
