@@ -162,6 +162,14 @@
             scrollSelectedIntoView(container) {
                 container?.querySelector('.ne-outline-row.selected')?.scrollIntoView({ block: 'nearest' });
             },
+            // Called by the book reader of the repetitions tab (BookReader.razor): scrolls the element with the id to the
+            // top of the reader's container, without moving the page around it.
+            scrollReaderTo(container, id) {
+                const element = id ? document.getElementById(id) : null;
+                if (container && element && container.contains(element)) {
+                    container.scrollTop += element.getBoundingClientRect().top - container.getBoundingClientRect().top;
+                }
+            },
         };
 
         // Called by a note card (NoteCard.razor) before a click makes its block active: a click that marked text in the

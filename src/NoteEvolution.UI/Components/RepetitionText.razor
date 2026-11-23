@@ -1,8 +1,10 @@
 @using NoteEvolution.Core.Repetitions
 @using NoteEvolution.Core.Text
+@using NoteEvolution.UI.Editor
 
-@* One block of the side-by-side view of the repetitions assistant (spec 5.2): its own text and its sub-points (indented by
-   depth) with **bold** and *italic* shown as such, and the shared words marked. The text is not editable. *@
+@* One block of the repetitions views: its own text and its sub-points (indented by depth) with **bold** and *italic* shown
+   as such, and the marked stretches underlined or highlighted the way the editor does (the classes of app.css). The text
+   is not editable. *@
 <div class="ne-rep-text">
     @for (var index = 0; index < Block.Paragraphs.Count; index++)
     {
@@ -10,12 +12,12 @@
         <p class="ne-rep-para" style="@Indent(paragraph.Depth)">
             @foreach (var piece in Pieces(index, paragraph))
             {
-                if (piece.Marked)
+                if (piece.Kinds.Count > 0)
                 {
-                    <mark class="ne-rep-shared">@foreach (var run in piece.Runs)
+                    <span class="@ClassOf(piece.Kinds)">@foreach (var run in piece.Runs)
                     {
                         @Emphasized(run)
-                    }</mark>
+                    }</span>
                 }
                 else
                 {
@@ -32,15 +34,25 @@
 @code {
     private const int IndentPixels = 24;
 
-    /// <summary>A stretch of a paragraph's runs that is marked as shared or not.</summary>
-    private sealed record Piece(bool Marked, List<InlineRun> Runs);
+    /// <summary>A stretch of a paragraph's runs that is marked in one way (or not marked, with no kinds).</summary>
+    private sealed record Piece(IReadOnlyList<RepetitionMarkKind> Kinds, List<InlineRun> Runs);
 
     [Parameter, EditorRequired] public ComparedBlock Block { get; set; } = default!;
 
-    /// <summary>The shared stretches as word ranges of <see cref="ComparedBlock.Words"/>: first word and word count.</summary>
-    [Parameter] public IReadOnlyList<(int Start, int Words)> Ranges { get; set; } = [];
+    /// <summary>
+    /// The marked stretches as <see cref="ComparedParagraph.Plain"/> offsets of the compared paragraphs (paragraph, start,
+    /// length) with the way they are marked; stretches may overlap and then show both ways.
+    /// </summary>
+    [Parameter] public IReadOnlyList<(int Paragraph, int Start, int Length, RepetitionMarkKind Kind)> Spans { get; set; } = [];
 
     private static string? Indent(int depth) => depth == 0 ? null : $"margin-left: {depth * IndentPixels}px";
+
+    private static string ClassOf(IReadOnlyList<RepetitionMarkKind> kinds) => string.Join(' ', kinds.Select(kind => kind switch
+    {
+        RepetitionMarkKind.Literal => "ne-rep-literal",
+        RepetitionMarkKind.Semantic => "ne-rep-semantic",
+        _ => "ne-rep-current",
+    }));
 
     private static RenderFragment Emphasized(InlineRun run) => run switch
     {
@@ -50,45 +62,30 @@
         _ => @<text>@run.Text</text>,
     };
 
+    /// <summary>The ways the character at <paramref name="at"/> of the paragraph is marked, in a fixed order.</summary>
+    private IReadOnlyList<RepetitionMarkKind> KindsAt(int paragraph, int at) =>
+        [.. Spans
+            .Where(span => span.Paragraph == paragraph && span.Start <= at && at < span.Start + span.Length)
+            .Select(span => span.Kind)
+            .Distinct()
+            .OrderBy(kind => kind)];
+
     /// <summary>
-    /// The character ranges of the paragraph's text that the shared word ranges cover: one per range and paragraph, from
-    /// the start of its first word to the end of its last word in that paragraph.
+    /// The next offset after <paramref name="at"/> where the marking of the paragraph may change (a span starts or ends).
     /// </summary>
-    private List<(int Start, int End)> MarkedIn(int paragraph)
-    {
-        var spans = new List<(int Start, int End)>();
-        foreach (var (first, count) in Ranges)
-        {
-            int? start = null;
-            var end = 0;
-            for (var i = first; i < first + count && i < Block.Words.Count; i++)
-            {
-                var word = Block.Words[i];
-                if (word.Paragraph != paragraph)
-                {
-                    continue;
-                }
-
-                start ??= word.Start;
-                end = word.Start + word.Length;
-            }
-
-            if (start is { } from)
-            {
-                spans.Add((from, end));
-            }
-        }
-
-        return spans;
-    }
+    private int NextEdge(int paragraph, int at) =>
+        Spans.Where(span => span.Paragraph == paragraph)
+            .SelectMany(span => new[] { span.Start, span.Start + span.Length })
+            .Where(edge => edge > at)
+            .DefaultIfEmpty(int.MaxValue)
+            .Min();
 
     /// <summary>
-    /// The runs of the paragraph cut at the marked ranges' edges; neighbours that are marked together (a mark across a
-    /// bold run) form one piece, so they get one <c>mark</c>.
+    /// The runs of the paragraph cut at the marked stretches' edges; neighbours that are marked the same way (a mark
+    /// across a bold run) form one piece, so they get one element.
     /// </summary>
     private List<Piece> Pieces(int index, ComparedParagraph paragraph)
     {
-        var spans = MarkedIn(index);
         var pieces = new List<Piece>();
         var position = 0;
         foreach (var run in paragraph.Runs)
@@ -97,20 +94,16 @@
             while (from < run.Text.Length)
             {
                 var at = position + from;
-                var inside = spans.FirstOrDefault(span => span.Start <= at && at < span.End);
-                var marked = inside != default;
-                var next = marked
-                    ? inside.End
-                    : spans.Where(span => span.Start > at).Select(span => span.Start).DefaultIfEmpty(int.MaxValue).Min();
-                var length = Math.Min(run.Text.Length - from, next - at);
+                var kinds = KindsAt(index, at);
+                var length = Math.Min(run.Text.Length - from, NextEdge(index, at) - at);
                 var part = run with { Text = run.Text.Substring(from, length) };
-                if (pieces.Count > 0 && pieces[^1].Marked == marked)
+                if (pieces.Count > 0 && pieces[^1].Kinds.SequenceEqual(kinds))
                 {
                     pieces[^1].Runs.Add(part);
                 }
                 else
                 {
-                    pieces.Add(new Piece(marked, [part]));
+                    pieces.Add(new Piece(kinds, [part]));
                 }
 
                 from += length;

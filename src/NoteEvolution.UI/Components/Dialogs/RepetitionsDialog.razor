@@ -86,12 +86,16 @@
                     {
                         var compared = _set.Block(key);
                         var exists = ManuscriptEditor.RefersTo(book, key, other);
-                        var ranges = pair.Runs.Select(run => left ? (run.StartA, run.Words) : (run.StartB, run.Words)).ToList();
+                        var kind = pair.Kind == RepetitionKind.Literal
+                            ? NoteEvolution.UI.Editor.RepetitionMarkKind.Literal
+                            : NoteEvolution.UI.Editor.RepetitionMarkKind.Semantic;
+                        var spans = NoteEvolution.UI.State.RepetitionMarks.Spans(pair, key, _set)
+                            .Select(span => (span.Paragraph, span.Start, span.Length, kind)).ToList();
                         <div class="ne-rep-side">
                             <div class="ne-rep-path">@PathOf(book, key)</div>
                             @if (compared is not null)
                             {
-                                <RepetitionText Block="compared" Ranges="ranges" />
+                                <RepetitionText Block="compared" Spans="spans" />
                             }
                             <button type="button" class="ne-rep-ref" disabled="@(exists || _busy || !canChange)" title="@(exists ? ExistsTitle : null)"
                                     @onclick="() => AppendAsync(key, other, false)">@L["RepAppendReference"]</button>

@@ -174,8 +174,8 @@ public class RepetitionsDialogTests : UiTestContext
         Assert.Equal("Zwei", sides[1].QuerySelector(".ne-rep-path")!.TextContent);
         Assert.Equal($"alpha {RunX}", sides[0].QuerySelector(".ne-rep-text")!.TextContent);
         Assert.Equal($"zeta {RunX}", sides[1].QuerySelector(".ne-rep-text")!.TextContent);
-        Assert.Equal(RunX, Assert.Single(sides[0].QuerySelectorAll("mark.ne-rep-shared")).TextContent);
-        Assert.Equal(RunX, Assert.Single(sides[1].QuerySelectorAll("mark.ne-rep-shared")).TextContent);
+        Assert.Equal(RunX, Assert.Single(sides[0].QuerySelectorAll(".ne-rep-literal")).TextContent);
+        Assert.Equal(RunX, Assert.Single(sides[1].QuerySelectorAll(".ne-rep-literal")).TextContent);
     }
 
     [Fact]
@@ -188,8 +188,8 @@ public class RepetitionsDialogTests : UiTestContext
         var cut = RenderDialog();
 
         var sides = cut.FindAll(".ne-rep-side");
-        var left = Assert.Single(sides[0].QuerySelectorAll("mark.ne-rep-shared"));
-        var right = Assert.Single(sides[1].QuerySelectorAll("mark.ne-rep-shared"));
+        var left = Assert.Single(sides[0].QuerySelectorAll(".ne-rep-literal"));
+        var right = Assert.Single(sides[1].QuerySelectorAll(".ne-rep-literal"));
         Assert.Equal(RunX, left.TextContent);
         Assert.Equal(RunX, right.TextContent);
         Assert.Equal("eins", right.QuerySelector("strong")!.TextContent);

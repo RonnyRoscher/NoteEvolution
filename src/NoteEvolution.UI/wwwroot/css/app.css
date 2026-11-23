@@ -1558,7 +1558,8 @@ html, body {
     border-radius: 2px;
 }
 
-.ne-block.ne-rep-current-block {
+.ne-block.ne-rep-current-block,
+.ne-reader-block.ne-rep-current-block {
     outline: 2px solid var(--warning);
     outline-offset: 3px;
     border-radius: 3px;
@@ -3239,13 +3240,6 @@ html, body {
     margin: 0 0 6px;
 }
 
-/* The shared words: the accent colour as a wash over the text, readable in the light and the dark theme. */
-mark.ne-rep-shared {
-    color: inherit;
-    background: color-mix(in srgb, var(--accent) 30%, transparent);
-    border-radius: 2px;
-}
-
 .ne-rep-ref {
     align-self: flex-start;
 }
@@ -3254,4 +3248,32 @@ mark.ne-rep-shared {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
+}
+
+/* The book reader of the repetitions tab: the whole book read-only, in its own scrolling container. */
+.ne-reader {
+    height: 100%;
+    overflow-y: auto;
+    padding: 8px 12px;
+    font-family: var(--font-text);
+    user-select: text;
+}
+
+.ne-reader-heading {
+    margin: 16px 0 6px;
+    font-weight: 600;
+}
+
+.ne-reader-h1 { font-size: 1.5em; }
+.ne-reader-h2 { font-size: 1.3em; }
+.ne-reader-h3 { font-size: 1.15em; }
+
+.ne-reader-block {
+    margin: 0 0 10px;
+}
+
+.ne-reader-block .ne-rep-text {
+    overflow: visible;
+    padding: 0;
+    border: 0;
 }
