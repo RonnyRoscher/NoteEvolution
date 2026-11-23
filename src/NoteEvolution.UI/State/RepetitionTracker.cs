@@ -549,11 +549,21 @@ internal sealed class RepetitionTracker : IDisposable
         var sentencesEmbedded = sentenceHashes.Count(known.ContainsKey);
         var sentencesLeft = sentenceHashes.Count(hash => !known.ContainsKey(hash) && failed.Contains(hash));
 
+        // A candidate is logged once per session, so only once its score is final: every sentence of both blocks is
+        // embedded or left out.
+        bool Settled(Guid key) => sentences.Of(key).All(s => known.ContainsKey(s.Hash) || failed.Contains(s.Hash));
+
         var semantic = SemanticRepetitions.Confirm(
             candidates,
             sentences.SentencesOf,
             (key, sentence) => known.GetValueOrDefault(sentences.HashOf(key, sentence)),
-            (a, b, score, listed) => LogNear(blocks[index[a]], hashes[index[a]], blocks[index[b]], hashes[index[b]], score, listed));
+            (a, b, score, listed) =>
+            {
+                if (Settled(a) && Settled(b))
+                {
+                    LogNear(blocks[index[a]], hashes[index[a]], blocks[index[b]], hashes[index[b]], score, listed);
+                }
+            });
         return new Computed(book, name, blocks, literal, semantic, vectors.Count + sentencesEmbedded,
             blocks.Count - left + sentenceHashes.Count - sentencesLeft, RepetitionSet.Empty);
     }

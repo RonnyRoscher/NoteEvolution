@@ -728,6 +728,54 @@ public sealed class RepetitionTrackerTests : IDisposable
     }
 
     [Fact]
+    public async Task Candidate_IsLoggedOnlyOnceItsSentencesAreSettled()
+    {
+        // P and Q come first, then 25 standalone blocks: the set is published after 20 blocks, when P and Q are already
+        // a candidate but their sentences are not embedded yet. That publish must not log the pair (with 0).
+        const int Dimensions = 30;
+        float[] On(params (int Axis, float Value)[] parts)
+        {
+            var v = new float[Dimensions];
+            foreach (var (axis, value) in parts)
+            {
+                v[axis] = value;
+            }
+
+            return v;
+        }
+
+        var fillers = Enumerable.Range(0, 25).Select(i => $"f{i} a{i} b{i} c{i} d{i} e{i} g{i} h{i}").ToList();
+        var page = LogseqParser.Parse(
+            "Buch - Viele Themen.md",
+            Encoding.UTF8.GetBytes($"type:: book\n\n- # Eins\n\t- {P1} {P2}\n\t- {Q1} {Q2}\n" +
+                string.Concat(fillers.Select(f => $"\t- {f}\n"))));
+        var book = Book.Load(page);
+        var blocks = ComparisonText.Of(book);
+        _embed.ByText[BlockText(blocks[0])] = On((0, 1));
+        _embed.ByText[BlockText(blocks[1])] = On((0, 0.9f), (1, 0.43589f));
+        for (var i = 0; i < fillers.Count; i++)
+        {
+            _embed.ByText[BlockText(blocks[i + 2])] = On((i + 2, 1));
+        }
+
+        _embed.ByText[P1] = On((27, 1));
+        _embed.ByText[P2] = On((28, 1));
+        _embed.ByText[Q1] = On((29, 1));
+        _embed.ByText[Q2] = On((27, 0.95f), (29, 0.31225f));
+        var publishes = 0;
+        var tracker = NewTracker();
+        tracker.Changed += () => publishes++;
+
+        tracker.Schedule(book);
+        await tracker.WhenIdle();
+
+        Assert.True(publishes >= 3); // the first set, after 20 blocks, at the end
+        Assert.Single(tracker.Of(book).All);
+        var line = Assert.Single(_logger.Messages, m => m.StartsWith("Repetition candidate", StringComparison.Ordinal));
+        Assert.StartsWith("Repetition candidate 0.950 listed=True", line);
+    }
+
+    [Fact]
     public async Task Pending_UntilTheSentencesAreEmbedded()
     {
         _embed.OnEmbed = word =>
