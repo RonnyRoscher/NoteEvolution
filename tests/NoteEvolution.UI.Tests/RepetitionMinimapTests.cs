@@ -74,6 +74,8 @@ public class RepetitionMinimapTests : UiTestContext
         cut.Find($".ne-minimap-zone[data-key='{pair.B}']").Click();
 
         Assert.Equal(pair.B, picked);
+        // The viewport frames read the zones (key, top, height) to use the same scale as the marks.
+        Assert.Equal(3, cut.FindAll(".ne-minimap-zone").Count(z => z.GetAttribute("data-key") is { Length: > 0 }));
     }
 
     [Fact]
