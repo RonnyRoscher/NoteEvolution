@@ -61,6 +61,10 @@ public abstract class UiTestContext : BunitContext
         // Scrolls the book reader to a block (index.html).
         JSInterop.SetupVoid("neLayout.scrollReaderTo", _ => true).SetVoidResult();
 
+        // The viewport frames of the repetitions minimap (index.html).
+        JSInterop.SetupVoid("neRepetitions.trackViewports", _ => true).SetVoidResult();
+        JSInterop.SetupVoid("neRepetitions.untrack", _ => true).SetVoidResult();
+
         // The header registers for Alt+Left/Right, which index.html catches in the whole window.
         JSInterop.SetupVoid("neNav.register", _ => true).SetVoidResult();
 

@@ -3188,7 +3188,7 @@ html, body {
     font-size: 12px;
 }
 
-/* The minimap of the book (left, a later step) and the reader side by side; only the reader scrolls. */
+/* The minimap of the book (left) and the reader side by side; only the reader scrolls. */
 .ne-reps-body {
     flex: 1;
     min-height: 0;
@@ -3238,3 +3238,88 @@ html, body {
     margin: 0 0 10px;
 }
 
+
+/* The minimap of the repetitions tab: a narrow strip over the whole book; positions are percentages of its height. */
+.ne-minimap {
+    position: relative;
+    flex: 0 0 28px;
+    width: 28px;
+    margin: 4px 0 4px 4px;
+    background: var(--bg-subtle, transparent);
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.ne-minimap-chapter {
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: var(--border);
+    pointer-events: none;
+}
+
+.ne-minimap-hit,
+.ne-minimap-a,
+.ne-minimap-b {
+    position: absolute;
+    height: 3px;
+    pointer-events: none;
+}
+
+.ne-minimap-hit {
+    left: 4px;
+    right: 4px;
+    background: var(--accent);
+    opacity: 0.25;
+}
+
+.ne-minimap-a,
+.ne-minimap-b {
+    left: 2px;
+    right: 2px;
+    height: 4px;
+    background: var(--accent);
+}
+
+.ne-minimap-b {
+    background: var(--danger);
+}
+
+.ne-minimap-link {
+    position: absolute;
+    left: 50%;
+    width: 2px;
+    margin-left: -1px;
+    background: var(--accent);
+    opacity: 0.5;
+    pointer-events: none;
+}
+
+.ne-minimap-zone {
+    position: absolute;
+    left: 0;
+    right: 0;
+    min-height: 2px;
+    cursor: pointer;
+}
+
+.ne-minimap-view-book,
+.ne-minimap-view-reader {
+    position: absolute;
+    top: 0;
+    height: 0;
+    border: 1px solid var(--fg-muted);
+    box-sizing: border-box;
+    pointer-events: none;
+}
+
+.ne-minimap-view-book {
+    left: 0;
+    width: 50%;
+}
+
+.ne-minimap-view-reader {
+    right: 0;
+    width: 50%;
+}

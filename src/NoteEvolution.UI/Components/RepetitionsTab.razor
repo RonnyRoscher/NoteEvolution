@@ -1,3 +1,4 @@
+@using Microsoft.JSInterop
 @using NoteEvolution.Core.Books
 @using NoteEvolution.Core.Repetitions
 @using NoteEvolution.Core.Vaults
@@ -5,6 +6,7 @@
 @inject AppState State
 @inject IStringLocalizer<Strings> L
 @inject ILogger<RepetitionsTab> Logger
+@inject IJSRuntime JS
 
 @* The tab „Wiederholungen“ (repetitions tab spec 4): one hit at a time. Its origin is revealed in the book view (the
    active editor), the other side is shown in a read-only view of the whole book below the head row; ‹ › step through the
@@ -87,8 +89,9 @@
     else if (hit is not null && focus is not null)
     {
         <div class="ne-reps-body">
-            @* The minimap of the whole book goes here, left of the reader (repetitions tab spec 4). *@
-            <BookReader Book="book" Set="_set" Current="hit" Side="focus.Other" Revision="_revision" />
+            <RepetitionMinimap Book="book" Hits="_hits" Current="hit" Origin="focus.Origin" Reader="_reader?.Container"
+                               OnPick="PickAsync" />
+            <BookReader @ref="_reader" Book="book" Set="_set" Current="hit" Side="focus.Other" Revision="_revision" />
         </div>
     }
 </div>
@@ -123,6 +126,8 @@
     private bool _revealPending = true;
 
     private string? _message;
+
+    private BookReader? _reader;
 
     private bool _busy;
 
@@ -296,6 +301,9 @@
         State.SetRepetitionFocus(RepetitionHits.FocusOn(hit, origin));
         Sync();
     }
+
+    /// <summary>A click in the minimap: the reader scrolls to the picked block.</summary>
+    private async Task PickAsync(Guid key) => await JS.InvokeVoidAsync("neLayout.scrollReaderTo", _reader?.Container, $"ne-reader-{key}");
 
     /// <summary>⇄: the other side becomes the origin in the book view.</summary>
     private void Swap()

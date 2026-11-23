@@ -172,6 +172,56 @@
             },
         };
 
+        // The minimap of the repetitions tab (RepetitionMinimap.razor): its two viewport frames follow the scroll position
+        // of the book view (the editor of the active view) and of the reader, at most once per animation frame.
+        window.neRepetitions = {
+            tracked: new Map(),
+            // The scrolling element of the active book view's editor: the first element with scrollable overflow in its host.
+            bookScroller() {
+                const panes = document.querySelectorAll('.ne-editor-pane');
+                const pane = document.querySelector('.ne-editor-pane.active') || panes[0];
+                const host = pane?.querySelector('.ne-editor-host');
+                if (!host) { return null; }
+                for (const element of [host, ...host.querySelectorAll('*')]) {
+                    const overflow = getComputedStyle(element).overflowY;
+                    if (overflow === 'auto' || overflow === 'scroll') { return element; }
+                }
+                return host;
+            },
+            frame(frameElement, scroller) {
+                if (!frameElement) { return; }
+                if (!scroller || scroller.scrollHeight <= 0) { frameElement.style.display = 'none'; return; }
+                frameElement.style.display = '';
+                frameElement.style.top = (100 * scroller.scrollTop / scroller.scrollHeight) + '%';
+                frameElement.style.height = (100 * Math.min(1, scroller.clientHeight / scroller.scrollHeight)) + '%';
+            },
+            trackViewports(minimap, reader) {
+                this.untrack(minimap);
+                if (!minimap) { return; }
+                let pending = false;
+                const update = () => {
+                    pending = false;
+                    this.frame(minimap.querySelector('.ne-minimap-view-book'), this.bookScroller());
+                    this.frame(minimap.querySelector('.ne-minimap-view-reader'), reader);
+                };
+                const schedule = () => {
+                    if (!pending) { pending = true; requestAnimationFrame(update); }
+                };
+                // Scroll does not bubble: listen in the capture phase to catch the editor, whichever element scrolls.
+                document.addEventListener('scroll', schedule, true);
+                window.addEventListener('resize', schedule);
+                this.tracked.set(minimap, () => {
+                    document.removeEventListener('scroll', schedule, true);
+                    window.removeEventListener('resize', schedule);
+                });
+                schedule();
+            },
+            untrack(minimap) {
+                const stop = this.tracked.get(minimap);
+                if (stop) { stop(); this.tracked.delete(minimap); }
+            },
+        };
+
         // Called by a note card (NoteCard.razor) before a click makes its block active: a click that marked text in the
         // notes pane does not, so marking and copying stay possible.
         window.neNotes = {

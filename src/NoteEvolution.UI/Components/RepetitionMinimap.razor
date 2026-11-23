@@ -1,0 +1,164 @@
+@using System.Globalization
+@using Microsoft.JSInterop
+@using NoteEvolution.Core.Books
+@using NoteEvolution.Core.Repetitions
+@implements IAsyncDisposable
+@inject IJSRuntime JS
+@inject IStringLocalizer<Strings> L
+
+@* The minimap of the whole book (repetitions tab spec 4): a narrow strip from the top to the bottom of the book. Every
+   text block has a position by the share of characters before it; chapters are lines, every hit is a faint mark on each
+   side, the current hit's origin (A) and other side (B) are strong and joined by a bar. Two frames show what the book
+   view and the reader show (set by neRepetitions.trackViewports). A click picks the block at that place. *@
+<div class="ne-minimap" @ref="_root" role="navigation" aria-label="@L["RepMinimap"]">
+    @foreach (var chapter in _chapters)
+    {
+        <div class="ne-minimap-chapter" style="@Top(chapter)"></div>
+    }
+    @foreach (var key in HitKeys())
+    {
+        if (_positions.TryGetValue(key, out var place))
+        {
+            <div class="ne-minimap-hit" style="@Top(place.Start)"></div>
+        }
+    }
+    @if (Current is not null && _positions.TryGetValue(OriginKey, out var a) && _positions.TryGetValue(OtherKey, out var b))
+    {
+        var low = Math.Min(a.Start, b.Start);
+        var high = Math.Max(a.Start, b.Start);
+        <div class="ne-minimap-link" style="@($"top: {Percent(low)}; height: {Percent(high - low)}")"></div>
+        <div class="ne-minimap-a" style="@Top(a.Start)"></div>
+        <div class="ne-minimap-b" style="@Top(b.Start)"></div>
+    }
+    @foreach (var (key, place) in _positions)
+    {
+        <div class="ne-minimap-zone" data-key="@key" style="@($"top: {Percent(place.Start)}; height: {Percent(place.Length)}")"
+             @onclick="() => OnPick.InvokeAsync(key)"></div>
+    }
+    <div class="ne-minimap-view-book"></div>
+    <div class="ne-minimap-view-reader"></div>
+</div>
+
+@code {
+    private ElementReference _root;
+    private bool _tracking;
+    private Book? _positionsBook;
+    private Dictionary<Guid, (double Start, double Length)> _positions = [];
+    private List<double> _chapters = [];
+
+    /// <summary>The book the strip shows.</summary>
+    [Parameter, EditorRequired] public Book Book { get; set; } = default!;
+
+    /// <summary>The hits shown as faint marks, one on each side.</summary>
+    [Parameter] public IReadOnlyList<Repetition> Hits { get; set; } = [];
+
+    /// <summary>The current hit: its two sides are the strong marks A and B.</summary>
+    [Parameter] public Repetition? Current { get; set; }
+
+    /// <summary>The side of <see cref="Current"/> that is the origin (mark A); <c>null</c>: its first side.</summary>
+    [Parameter] public Guid? Origin { get; set; }
+
+    /// <summary>The reader's scrolling element for its viewport frame; <c>null</c>: found next to the strip.</summary>
+    [Parameter] public ElementReference? Reader { get; set; }
+
+    /// <summary>A click: the block at the clicked place.</summary>
+    [Parameter] public EventCallback<Guid> OnPick { get; set; }
+
+    private Guid OriginKey => Origin is { } o && Current is { } c && (o == c.A || o == c.B) ? o : Current?.A ?? Guid.Empty;
+
+    private Guid OtherKey => Current is { } c ? (OriginKey == c.A ? c.B : c.A) : Guid.Empty;
+
+    private IEnumerable<Guid> HitKeys() => Hits.SelectMany(h => new[] { h.A, h.B });
+
+    private static string Percent(double share) => (share * 100).ToString("0.###", CultureInfo.InvariantCulture) + "%";
+
+    private static string Top(double share) => $"top: {Percent(share)}";
+
+    protected override void OnParametersSet()
+    {
+        if (!ReferenceEquals(_positionsBook, Book))
+        {
+            _positionsBook = Book;
+            Layout();
+        }
+    }
+
+    /// <summary>
+    /// The size of a block is the length of what the reader shows of it: its own text plus its exported sub-points
+    /// (an excluded block only shows its own text), at least 1 so that empty blocks keep a place. Positions of the marks
+    /// and the blocks of a click use this one measure. The appendix is left out like in the reader.
+    /// </summary>
+    private static int SizeOf(TextBlock text) =>
+        Math.Max(1, text.Text.Length + (BlockStatuses.IsExcluded(text.Status) ? 0 : text.ExportedParagraphs.Sum(p => p.Text.Length)));
+
+    private void Layout()
+    {
+        var sizes = new List<(Guid Key, int Size)>();
+        var chapterAt = new List<int>();
+        var total = 0;
+        void Walk(BookItem item)
+        {
+            switch (item)
+            {
+                case OutlineNode { AppendixKind: not AppendixKind.None }:
+                    break;
+                case OutlineNode node:
+                    if (node.Level == 1)
+                    {
+                        chapterAt.Add(total);
+                    }
+
+                    foreach (var child in node.Items)
+                    {
+                        Walk(child);
+                    }
+
+                    break;
+                case TextBlock text:
+                    var size = SizeOf(text);
+                    sizes.Add((text.Key, size));
+                    total += size;
+                    break;
+            }
+        }
+
+        foreach (var item in Book.Root.Items)
+        {
+            Walk(item);
+        }
+
+        var whole = Math.Max(1, total);
+        _chapters = chapterAt.Select(c => (double)c / whole).ToList();
+        _positions = [];
+        var before = 0;
+        foreach (var (key, size) in sizes)
+        {
+            _positions[key] = ((double)before / whole, (double)size / whole);
+            before += size;
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _tracking = true;
+            await JS.InvokeVoidAsync("neRepetitions.trackViewports", _root, Reader);
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_tracking)
+        {
+            _tracking = false;
+            try
+            {
+                await JS.InvokeVoidAsync("neRepetitions.untrack", _root);
+            }
+            catch (JSDisconnectedException)
+            {
+            }
+        }
+    }
+}

@@ -25,6 +25,9 @@
     private Repetition? _scrolledCurrent;
     private Guid? _scrolledSide;
 
+    /// <summary>The reader's scrolling element (for the viewport frame of the minimap); valid after the first render.</summary>
+    public ElementReference Container => _container;
+
     [Parameter, EditorRequired] public Book Book { get; set; } = default!;
 
     [Parameter, EditorRequired] public RepetitionSet Set { get; set; } = RepetitionSet.Empty;

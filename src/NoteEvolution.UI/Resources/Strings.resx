@@ -2401,6 +2401,10 @@
     <value>Vorige Wiederholung</value>
     <comment>Tooltip des Pfeils ‹ im Tab „Wiederholungen“</comment>
   </data>
+  <data name="RepMinimap" xml:space="preserve">
+    <value>Übersicht des Buches</value>
+    <comment>Beschriftung der Miniansicht im Tab „Wiederholungen“</comment>
+  </data>
   <data name="RepNext" xml:space="preserve">
     <value>Nächste Wiederholung</value>
     <comment>Tooltip des Pfeils › im Tab „Wiederholungen“</comment>
