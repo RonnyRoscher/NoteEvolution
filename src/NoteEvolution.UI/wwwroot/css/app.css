@@ -1527,35 +1527,6 @@ html, body {
     display: none;
 }
 
-/*
- * The repetition mark „≈ n“ (setBlockRepetitions) sits at the right edge below the dates, in the flow so that the first
- * lines wrap around it like around the dates. A click on it marks the block and opens the section bar's list.
- */
-.ne-block-rep {
-    float: right;
-    clear: right;
-    margin-left: 8px;
-    padding: 0 6px;
-    border: 1px solid var(--border);
-    border-radius: 9px;
-    background: transparent;
-    font-family: var(--font-ui);
-    font-size: 11px;
-    line-height: 1.5;
-    color: var(--fg-muted);
-    cursor: pointer;
-    user-select: none;
-}
-
-.ne-block-rep:hover {
-    background: var(--hint-bg);
-    color: var(--fg);
-}
-
-.ne-block-rep[hidden] {
-    display: none;
-}
-
 /* Beside the dates a narrow column would break the first line's words (ProseMirror wraps with break-word). */
 @container (max-width: 480px) {
     .ne-block-dates {
@@ -1564,16 +1535,33 @@ html, body {
         margin-left: 0;
         text-align: right;
     }
+}
 
-    .ne-block-rep {
-        float: none;
-        display: block;
-        margin: 0 0 0 auto;
-    }
+/*
+ * Repetitions in the text (setRepetitionMarks): a literal run underlined, a semantic sentence underlined dotted in a
+ * second colour, and the current hit of the repetitions tab highlighted, its block with a border line.
+ */
+.ne-rep-literal {
+    text-decoration: underline solid var(--warning);
+    text-decoration-thickness: 1.5px;
+    text-underline-offset: 0.2em;
+}
 
-    .ne-block-rep[hidden] {
-        display: none;
-    }
+.ne-rep-semantic {
+    text-decoration: underline dotted var(--accent);
+    text-decoration-thickness: 2px;
+    text-underline-offset: 0.2em;
+}
+
+.ne-rep-current {
+    background: var(--hint-bg);
+    border-radius: 2px;
+}
+
+.ne-block.ne-rep-current-block {
+    outline: 2px solid var(--warning);
+    outline-offset: 3px;
+    border-radius: 3px;
 }
 
 .ne-para {

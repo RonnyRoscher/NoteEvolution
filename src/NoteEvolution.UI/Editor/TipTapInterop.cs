@@ -57,10 +57,26 @@ public sealed class TipTapInterop(IJSRuntime js, AppState state) : IEditorIntero
 
     public async Task<string?> TakePendingDocumentAsync() => await Initialized.InvokeAsync<string?>("takePendingDocument");
 
-    /// <summary>Passes the marks to the script as an object from the block's key to <c>{ count, title }</c>.</summary>
-    public async Task SetBlockRepetitionsAsync(IReadOnlyDictionary<Guid, RepetitionMark> marks) =>
+    /// <summary>
+    /// Passes the marks to the script as an array of <c>{ key, start, length, kind, title }</c>, the kind as
+    /// <c>literal</c>, <c>semantic</c> or <c>current</c>.
+    /// </summary>
+    public async Task SetRepetitionMarksAsync(IReadOnlyList<RepetitionTextMark> marks) =>
         await Initialized.InvokeVoidAsync(
-            "setBlockRepetitions", [marks.ToDictionary(m => m.Key.ToString("D"), m => new { count = m.Value.Count, title = m.Value.Title })]);
+            "setRepetitionMarks",
+            [marks.Select(m => new
+            {
+                key = m.ParagraphKey.ToString("D"),
+                start = m.Start,
+                length = m.Length,
+                kind = m.Kind switch
+                {
+                    RepetitionMarkKind.Semantic => "semantic",
+                    RepetitionMarkKind.Current => "current",
+                    _ => "literal",
+                },
+                title = m.Title,
+            }).ToArray()]);
 
     /// <summary>Passes the labels to the script as an array of <c>{ id, label, title, missing, foreign }</c>.</summary>
     public async Task SetRefLabelsAsync(IReadOnlyDictionary<Guid, RefLabel> labels) =>
@@ -178,10 +194,6 @@ public sealed class TipTapInterop(IJSRuntime js, AppState state) : IEditorIntero
     [JSInvokable]
     public Task ChipClicked(string noteId) =>
         _callbacks is not null && Guid.TryParse(noteId, out var id) ? _callbacks.OnChipClicked(id) : Task.CompletedTask;
-
-    [JSInvokable]
-    public Task RepetitionClicked(string textBlockKey) =>
-        _callbacks is not null && Guid.TryParse(textBlockKey, out var key) ? _callbacks.OnRepetitionMarkClicked(key) : Task.CompletedTask;
 
     [JSInvokable]
     public Task ChipRemoved(string textBlockKey, string noteId) =>

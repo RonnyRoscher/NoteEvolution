@@ -415,9 +415,9 @@ die wörtlichen Paare. Angezeigt werden sie an drei Stellen. Der Assistent „Wi
 beide Gruppen und zeigt das gewählte Paar nebeneinander mit den gemeinsamen Folgen; dort setzt „Verweis einfügen“ einen
 Querverweis auf den anderen Block (auch „In beide Richtungen“), „Gewollt“ nimmt das Paar aus Liste und Zählung, und
 „Im Buch öffnen“ zeigt beide Stellen in der geteilten Ansicht. In der Leiste unter der Markierung steht „Wiederholungen:
-n“ für den markierten Bereich; ein Klick listet die Gegenstellen. Am Block steht am rechten Rand „≈ n“, und die
-Gliederung zeigt je Überschrift „≈ n“ samt Unterabschnitten. Der Schalter „Wiederholungen anzeigen“ neben „Abdeckung
-anzeigen“ blendet Randmarkierung und Gliederungszahlen gemeinsam aus; die Einstellung wird gemerkt, der Zähler in der
+n“ für den markierten Bereich; ein Klick listet die Gegenstellen. Im Text sind wörtliche Folgen unterstrichen (der
+Tooltip nennt die andere Stelle), und die Gliederung zeigt je Überschrift „≈ n“ samt Unterabschnitten. Der Schalter
+„Wiederholungen anzeigen“ neben „Abdeckung anzeigen“ blendet Unterstreichungen und Gliederungszahlen gemeinsam aus; die Einstellung wird gemerkt, der Zähler in der
 Leiste bleibt. „Gewollt“ liegt in `.noteevolution/repetitions.json` im Vault, je Buch als Paare von Block-IDs; ein
 Block ohne `id::` bekommt beim Abhaken eine. Ein Paar bleibt gewollt, auch wenn die Blöcke umgeschrieben werden.
 Grenzen: Bei langen Blöcken liest das Modell etwa die ersten 500 Wortteile, inhaltlich zählt dort der Anfang. Verglichen
