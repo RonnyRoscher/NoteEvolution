@@ -6,10 +6,12 @@ public enum RepetitionKind { Literal, Semantic }
 
 /// <summary>
 /// A repetition between two blocks (by key, A before B in the book). Literal ones carry their shared runs and the shared
-/// word count; semantic ones their similarity. Accepted ones are known and not counted.
+/// word count; semantic ones their similarity and their confirmed sentence pairs (empty for literal ones). Accepted ones
+/// are known and not counted.
 /// </summary>
 public sealed record Repetition(
-    RepetitionKind Kind, Guid A, Guid B, IReadOnlyList<SharedRun> Runs, int Words, float Score, bool Accepted);
+    RepetitionKind Kind, Guid A, Guid B, IReadOnlyList<SharedRun> Runs, int Words, float Score, bool Accepted,
+    IReadOnlyList<SentencePair> Sentences);
 
 /// <summary>
 /// All repetitions found in one book, the counts derived from them, and how far the semantic comparison got. Accepted
@@ -75,10 +77,10 @@ public sealed class RepetitionSet
 
         var literalRepetitions = literal
             .OrderBy(p => Position(p.A)).ThenBy(p => Position(p.B))
-            .Select(p => new Repetition(RepetitionKind.Literal, p.A, p.B, p.Runs, p.Words, 1f, Accepted(p.A, p.B)));
+            .Select(p => new Repetition(RepetitionKind.Literal, p.A, p.B, p.Runs, p.Words, 1f, Accepted(p.A, p.B), []));
         var semanticRepetitions = semantic
             .OrderBy(p => Position(p.A)).ThenBy(p => Position(p.B))
-            .Select(p => new Repetition(RepetitionKind.Semantic, p.A, p.B, [], 0, p.Score, Accepted(p.A, p.B)));
+            .Select(p => new Repetition(RepetitionKind.Semantic, p.A, p.B, [], 0, p.Score, Accepted(p.A, p.B), p.Sentences));
 
         return new RepetitionSet(
             book, blocks.ToDictionary(b => b.Key), [.. literalRepetitions, .. semanticRepetitions], embedded, total);
