@@ -89,7 +89,7 @@
     else if (hit is not null && focus is not null)
     {
         <div class="ne-reps-body">
-            <RepetitionMinimap Book="book" Hits="_hits" Current="hit" Origin="focus.Origin" Reader="_reader?.Container"
+            <RepetitionMinimap Book="book" Hits="_hits" Current="hit" Origin="focus.Origin"
                                OnPick="PickAsync" />
             <BookReader @ref="_reader" Book="book" Set="_set" Current="hit" Side="focus.Other" Revision="_revision" />
         </div>

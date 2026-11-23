@@ -58,9 +58,6 @@
     /// <summary>The side of <see cref="Current"/> that is the origin (mark A); <c>null</c>: its first side.</summary>
     [Parameter] public Guid? Origin { get; set; }
 
-    /// <summary>The reader's scrolling element for its viewport frame; <c>null</c>: found next to the strip.</summary>
-    [Parameter] public ElementReference? Reader { get; set; }
-
     /// <summary>A click: the block at the clicked place.</summary>
     [Parameter] public EventCallback<Guid> OnPick { get; set; }
 
@@ -143,8 +140,11 @@
         if (firstRender)
         {
             _tracking = true;
-            await JS.InvokeVoidAsync("neRepetitions.trackViewports", _root, Reader);
+            await JS.InvokeVoidAsync("neRepetitions.trackViewports", _root);
         }
+
+        // The frames are right before the first scroll; JS finds the reader next to the strip itself.
+        await JS.InvokeVoidAsync("neRepetitions.refresh", _root);
     }
 
     public async ValueTask DisposeAsync()

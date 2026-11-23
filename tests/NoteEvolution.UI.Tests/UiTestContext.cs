@@ -63,6 +63,7 @@ public abstract class UiTestContext : BunitContext
 
         // The viewport frames of the repetitions minimap (index.html).
         JSInterop.SetupVoid("neRepetitions.trackViewports", _ => true).SetVoidResult();
+        JSInterop.SetupVoid("neRepetitions.refresh", _ => true).SetVoidResult();
         JSInterop.SetupVoid("neRepetitions.untrack", _ => true).SetVoidResult();
 
         // The header registers for Alt+Left/Right, which index.html catches in the whole window.

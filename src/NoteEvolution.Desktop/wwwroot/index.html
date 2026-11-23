@@ -195,14 +195,23 @@
                 frameElement.style.top = (100 * scroller.scrollTop / scroller.scrollHeight) + '%';
                 frameElement.style.height = (100 * Math.min(1, scroller.clientHeight / scroller.scrollHeight)) + '%';
             },
-            trackViewports(minimap, reader) {
+            // The reader's scrolling element, next to the strip (found on every update: the tab may show a new reader).
+            readerScroller(minimap) {
+                return minimap?.parentElement?.querySelector('.ne-reader') ?? null;
+            },
+            // Positions both frames now (the minimap calls it after each render, so they are right before the first scroll).
+            refresh(minimap) {
+                if (!minimap) { return; }
+                this.frame(minimap.querySelector('.ne-minimap-view-book'), this.bookScroller());
+                this.frame(minimap.querySelector('.ne-minimap-view-reader'), this.readerScroller(minimap));
+            },
+            trackViewports(minimap) {
                 this.untrack(minimap);
                 if (!minimap) { return; }
                 let pending = false;
                 const update = () => {
                     pending = false;
-                    this.frame(minimap.querySelector('.ne-minimap-view-book'), this.bookScroller());
-                    this.frame(minimap.querySelector('.ne-minimap-view-reader'), reader);
+                    this.refresh(minimap);
                 };
                 const schedule = () => {
                     if (!pending) { pending = true; requestAnimationFrame(update); }

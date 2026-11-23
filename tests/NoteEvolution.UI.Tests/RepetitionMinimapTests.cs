@@ -82,7 +82,9 @@ public class RepetitionMinimapTests : UiTestContext
         var (book, pair) = Build();
         var cut = Render(book, pair);
 
-        Assert.Single(JSInterop.Invocations, i => i.Identifier == "neRepetitions.trackViewports");
+        var track = Assert.Single(JSInterop.Invocations, i => i.Identifier == "neRepetitions.trackViewports");
+        Assert.Single(track.Arguments); // only the strip: JS resolves the reader itself
+        Assert.Contains(JSInterop.Invocations, i => i.Identifier == "neRepetitions.refresh");
         Assert.DoesNotContain(JSInterop.Invocations, i => i.Identifier == "neRepetitions.untrack");
 
         await cut.Instance.DisposeAsync();
