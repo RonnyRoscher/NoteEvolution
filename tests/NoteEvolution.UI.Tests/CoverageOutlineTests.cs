@@ -129,7 +129,7 @@ public class CoverageOutlineTests : UiTestContext
         State.NotesTabRequested += requested.Add;
         var cut = Render<OutlinePane>();
 
-        Row(cut, "Zwei").QuerySelector(".ne-outline-coverage")!.Click();
+        Row(cut, "Zwei").Find(".ne-outline-coverage").Click();
 
         Assert.Equal(Node("Zwei").Key, State.CurrentSectionKey);
         Assert.Equal([NotesTab.Relevant], requested);

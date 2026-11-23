@@ -65,10 +65,10 @@ public class OutlineRangeDropTests : UiTestContext
         cut.FindAll(".ne-outline-item").First(li => li.QuerySelector(".ne-outline-row .ne-outline-title")?.TextContent == title);
 
     private static IElement Row(IRenderedComponent<OutlinePane> cut, string title) =>
-        Item(cut, title).QuerySelector(".ne-outline-row")!;
+        Item(cut, title).Find(".ne-outline-row");
 
     private static IElement Before(IRenderedComponent<OutlinePane> cut, string title) =>
-        Item(cut, title).QuerySelector(".ne-drop-before")!;
+        Item(cut, title).Find(".ne-drop-before");
 
     private async Task<IRenderedComponent<OutlinePane>> RenderAsync()
     {

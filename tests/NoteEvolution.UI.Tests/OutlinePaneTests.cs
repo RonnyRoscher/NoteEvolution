@@ -34,10 +34,10 @@ public class OutlinePaneTests : UiTestContext
         row.QuerySelector(".ne-outline-title")?.TextContent ?? row.QuerySelector(".ne-outline-rename")?.GetAttribute("value") ?? "";
 
     private static IElement Row(IRenderedComponent<OutlinePane> cut, string title) =>
-        Item(cut, title).QuerySelector(".ne-outline-row")!;
+        Item(cut, title).Find(".ne-outline-row");
 
     private static IElement Before(IRenderedComponent<OutlinePane> cut, string title) =>
-        Item(cut, title).QuerySelector(".ne-drop-before")!;
+        Item(cut, title).Find(".ne-drop-before");
 
     private static List<string> Titles(IRenderedComponent<OutlinePane> cut) =>
         [.. cut.FindAll(".ne-outline-tree .ne-outline-row").Select(Title)];
@@ -248,7 +248,7 @@ public class OutlinePaneTests : UiTestContext
         await OpenSessionAsync(tv);
         var cut = Render<OutlinePane>();
 
-        Row(cut, "Eins").QuerySelector(".ne-outline-add")!.Click();
+        Row(cut, "Eins").Find(".ne-outline-add").Click();
 
         Assert.Equal(["Eins", "Neue Überschrift", "Zwei", "Zwei-A", "Drei"], Titles(cut));
         Assert.Contains("\t- ## Neue Überschrift", tv.Read(BookPath));

@@ -152,7 +152,7 @@ public class UsedBlocksTests : UiTestContext
         Assert.Single(used.QuerySelectorAll(":scope > .ne-note-child-row .ne-note-used"));
         Assert.Empty(ChildOf(cut, "Enkel des verwendeten").QuerySelectorAll(".ne-note-used"));
 
-        used.QuerySelector(":scope > .ne-note-child-row .ne-note-used")!.Click();
+        used.Find(":scope > .ne-note-child-row .ne-note-used").Click();
 
         var beta = session.Vault.FindBook(BetaBook)!;
         var section = beta.Root.Children.Single().Children.Single();
